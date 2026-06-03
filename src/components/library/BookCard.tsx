@@ -58,6 +58,36 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
         >
           <MoreVerticalIcon className="w-4 h-4" />
         </button>
+
+        {/* 下拉菜单 */}
+        {menuOpen && (
+          <div
+            ref={menuRef}
+            className="absolute right-0 top-full mt-1 z-20 bg-popover border rounded-lg shadow-lg py-1 min-w-28"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left"
+              onClick={() => { onOpen(book); setMenuOpen(false) }}
+            >
+              <EditIcon className="w-3 h-3" /> 打开编辑
+            </button>
+            <button
+              className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left text-destructive"
+              onClick={handleDelete}
+            >
+              <Trash2Icon className="w-3 h-3" /> 删除
+            </button>
+          </div>
+        )}
+
+        {/* 遮盖层关闭菜单 */}
+        {menuOpen && (
+          <div
+            className="fixed inset-0 z-10"
+            onClick={() => setMenuOpen(false)}
+          />
+        )}
       </div>
     )
   }

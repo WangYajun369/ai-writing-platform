@@ -1,6 +1,7 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAtom } from 'jotai'
+import { XIcon } from 'lucide-react'
 import { sidebarOpenAtom, zenModeAtom, aiPanelOpenAtom, worldPanelOpenAtom } from '@/stores/uiAtoms'
 import { useAppStore } from '@/stores/appStore'
 import { chapterApi, volumeApi } from '@/lib/tauri-bridge'
@@ -17,7 +18,7 @@ export default function EditorPage() {
   const { bookId } = useParams<{ bookId: string }>()
   const navigate = useNavigate()
   const [sidebarOpen] = useAtom(sidebarOpenAtom)
-  const [zenMode] = useAtom(zenModeAtom)
+  const [zenMode, setZenMode] = useAtom(zenModeAtom)
   const [aiPanelOpen] = useAtom(aiPanelOpenAtom)
   const [worldPanelOpen] = useAtom(worldPanelOpenAtom)
   const {
@@ -25,13 +26,20 @@ export default function EditorPage() {
     setVolumes,
     setChapters,
     setLoadingChapters,
+    currentChapterId,
+    setCurrentChapterId,
+    addChapter,
   } = useAppStore()
+  const loadedBookIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!bookId) {
       navigate('/')
       return
     }
+    // StrictMode 下 effect 会执行两次，用 ref 防止并发重复加载
+    if (loadedBookIdRef.current === bookId) return
+    loadedBookIdRef.current = bookId
     setCurrentBookId(bookId)
     loadBookTree(bookId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -46,6 +54,15 @@ export default function EditorPage() {
       ])
       setVolumes(volumes)
       setChapters(chapters)
+
+      // 无章节时自动创建第一章；无选中章节时自动选中第一章
+      if (chapters.length === 0) {
+        const ch = await chapterApi.create({ bookId: id, title: '第一章', sortOrder: 0 })
+        addChapter(ch)
+        setCurrentChapterId(ch.id)
+      } else if (!currentChapterId || !chapters.some((c) => c.id === currentChapterId)) {
+        setCurrentChapterId(chapters[0].id)
+      }
     } catch (err) {
       console.error('加载章节树失败', err)
     } finally {
@@ -53,10 +70,33 @@ export default function EditorPage() {
     }
   }
 
+  const exitZenMode = useCallback(() => setZenMode(false), [setZenMode])
+
+  // Esc 键退出专注模式
+  useEffect(() => {
+    if (!zenMode) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') exitZenMode()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [zenMode, exitZenMode])
+
   return (
     <div className={cn('h-screen flex flex-col overflow-hidden', zenMode && 'zen-mode')}>
       {/* 顶部工具栏 */}
       {!zenMode && <EditorToolbar />}
+
+      {/* 专注模式退出按钮 */}
+      {zenMode && (
+        <button
+          onClick={exitZenMode}
+          className="fixed top-4 right-4 z-50 p-2 rounded-lg bg-card/80 border border-border/50 text-muted-foreground hover:text-foreground hover:bg-card transition-colors shadow-sm"
+          title="退出专注模式 (Esc)"
+        >
+          <XIcon className="w-4 h-4" />
+        </button>
+      )}
 
       {/* 主编辑区 */}
       <div className="flex-1 flex overflow-hidden">

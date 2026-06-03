@@ -70,7 +70,7 @@
 
 .tiptap-editor p {
   text-indent: 2em;
-  margin-bottom: 0.5em;
+  margin-bottom: 0.25em;
 }
 
 .tiptap-editor p.is-editor-empty:first-child::before {

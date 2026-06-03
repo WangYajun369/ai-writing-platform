@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
@@ -94,14 +94,26 @@ export default function RichTextEditor() {
     onBlur: () => setEditorFocus(false),
   })
 
-  // 当切换章节时更新内容
+  // 当切换章节时加载并设置内容
   useEffect(() => {
     if (!editor || !currentChapter) return
-    const current = editor.getHTML()
-    const incoming = currentChapter.contentHtml ?? '<p></p>'
-    if (current !== incoming) {
-      editor.commands.setContent(incoming, false)
-    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        // list_chapters 不返回 contentHtml，需要单独请求
+        const html = await chapterApi.getContent(currentChapter.id)
+        if (!cancelled) {
+          const current = editor.getHTML()
+          const incoming = html || '<p></p>'
+          if (current !== incoming) {
+            editor.commands.setContent(incoming, false)
+          }
+        }
+      } catch (err) {
+        console.error('加载章节内容失败', err)
+      }
+    })()
+    return () => { cancelled = true }
   }, [editor, currentChapter?.id]) // 只在章节 id 变化时触发
 
   // 定时自动保存（3 分钟）
@@ -116,6 +128,23 @@ export default function RichTextEditor() {
     return () => clearInterval(timer)
   }, [editor, saveContent])
 
+  // 章节标题编辑
+  const [titleValue, setTitleValue] = useState(currentChapter?.title ?? '')
+  useEffect(() => setTitleValue(currentChapter?.title ?? ''), [currentChapter?.id, currentChapter?.title])
+
+  async function handleTitleBlur() {
+    if (!currentChapter) return
+    const trimmed = titleValue.trim()
+    if (!trimmed || trimmed === currentChapter.title) return
+    try {
+      await chapterApi.rename(currentChapter.id, trimmed)
+      updateChapter(currentChapter.id, { title: trimmed })
+    } catch (err) {
+      console.error('重命名章节失败', err)
+      setTitleValue(currentChapter.title)
+    }
+  }
+
   if (!currentChapter) {
     return (
       <div className="flex-1 flex items-center justify-center text-muted-foreground">
@@ -127,8 +156,15 @@ export default function RichTextEditor() {
   return (
     <div className="flex-1 overflow-y-auto bg-background">
       <div className="max-w-3xl mx-auto py-8">
-        {/* 章节标题展示 */}
-        <h2 className="text-2xl font-bold px-8 mb-4 text-foreground/80">{currentChapter.title}</h2>
+        {/* 章节标题（可直接编辑） */}
+        <input
+          value={titleValue}
+          onChange={(e) => setTitleValue(e.target.value)}
+          onBlur={handleTitleBlur}
+          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+          className="w-full text-2xl font-bold px-8 mb-1 bg-transparent outline-none border-b-2 border-transparent focus:border-primary/30 transition-colors text-foreground/80 placeholder:text-muted-foreground/40"
+          placeholder="输入章节标题…"
+        />
         {/* 编辑器正文 */}
         <EditorContent editor={editor} />
       </div>

@@ -11,12 +11,12 @@ import {
   LayoutIcon,
 } from 'lucide-react'
 import {
-  sidebarOpenAtom,
-  zenModeAtom,
-  typewriterModeAtom,
-  aiPanelOpenAtom,
-  worldPanelOpenAtom,
-  historyPanelOpenAtom,
+    sidebarOpenAtom,
+    zenModeAtom,
+    typewriterModeAtom,
+    aiPanelOpenAtom,
+    worldPanelOpenAtom,
+    historyPanelOpenAtom, isSavingAtom, lastSavedAtom,
 } from '@/stores/uiAtoms.ts'
 import { useCurrentBook } from '@/stores/appStore.ts'
 import { cn } from '@/lib/utils.ts'
@@ -131,8 +131,8 @@ function ToolbarBtn({
 }
 
 function SaveIndicator() {
-  const [isSaving] = useAtom(require('../../stores/uiAtoms').isSavingAtom)
-  const [lastSaved] = useAtom(require('../../stores/uiAtoms').lastSavedAtom)
+  const [isSaving] = useAtom(isSavingAtom)
+  const [lastSaved] = useAtom(lastSavedAtom)
 
   if (isSaving) {
     return (

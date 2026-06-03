@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { PlusIcon, FolderIcon, FileTextIcon, ChevronRightIcon, ChevronDownIcon } from 'lucide-react'
 import { useAppStore } from '@/stores/appStore'
 import { chapterApi, volumeApi } from '@/lib/tauri-bridge'
@@ -10,9 +10,18 @@ interface OutlinePanelProps {
   bookId: string
 }
 
+interface InputDialogState {
+  open: boolean
+  label: string
+  defaultValue: string
+  onSubmit: (value: string) => void
+}
+
 export default function OutlinePanel({ bookId }: OutlinePanelProps) {
-  const { volumes, chapters, currentChapterId, setCurrentChapterId, addChapter, updateChapter } = useAppStore()
+  const { volumes, chapters, currentChapterId, setCurrentChapterId, addChapter, updateChapter, setVolumes } = useAppStore()
   const [collapsedVolumes, setCollapsedVolumes] = useState<Set<string>>(new Set())
+  const [inputDialog, setInputDialog] = useState<InputDialogState>({ open: false, label: '', defaultValue: '', onSubmit: () => {} })
+  const inputRef = useRef<HTMLInputElement>(null)
 
   // 按卷分组章节
   const chaptersByVolume: Record<string, Chapter[]> = {}
@@ -29,33 +38,55 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
       }
     })
 
-  async function handleAddChapter(volumeId?: string) {
-    const title = prompt('新章节标题：')
-    if (!title?.trim()) return
-    try {
-      const chapter = await chapterApi.create({
-        bookId,
-        volumeId,
-        title: title.trim(),
-        sortOrder: chapters.length,
-      })
-      addChapter(chapter)
-      setCurrentChapterId(chapter.id)
-    } catch (err) {
-      console.error('新建章节失败', err)
+  const openInput = useCallback((label: string, defaultValue: string, onSubmit: (value: string) => void) => {
+    setInputDialog({ open: true, label, defaultValue, onSubmit })
+  }, [])
+
+  // 对话框打开时聚焦并选中输入框
+  useEffect(() => {
+    if (inputDialog.open) {
+      setTimeout(() => inputRef.current?.select(), 0)
     }
+  }, [inputDialog.open])
+
+  function handleDialogConfirm() {
+    const value = inputRef.current?.value?.trim()
+    if (value) {
+      inputDialog.onSubmit(value)
+    }
+    setInputDialog((prev) => ({ ...prev, open: false }))
   }
 
-  async function handleAddVolume() {
-    const title = prompt('新卷标题：')
-    if (!title?.trim()) return
-    try {
-      await volumeApi.create(bookId, title.trim(), volumes.length)
-      // 重新加载，简化处理
-      window.location.reload()
-    } catch (err) {
-      console.error('新建卷失败', err)
-    }
+  function handleDialogCancel() {
+    setInputDialog((prev) => ({ ...prev, open: false }))
+  }
+
+  function handleAddChapter(volumeId?: string) {
+    openInput('新章节标题', '', async (title) => {
+      try {
+        const chapter = await chapterApi.create({
+          bookId,
+          volumeId,
+          title,
+          sortOrder: chapters.length,
+        })
+        addChapter(chapter)
+        setCurrentChapterId(chapter.id)
+      } catch (err) {
+        console.error('新建章节失败', err)
+      }
+    })
+  }
+
+  function handleAddVolume() {
+    openInput('新卷标题', '', async (title) => {
+      try {
+        const vol = await volumeApi.create(bookId, title, volumes.length)
+        setVolumes([...volumes, vol])
+      } catch (err) {
+        console.error('新建卷失败', err)
+      }
+    })
   }
 
   function toggleVolume(id: string) {
@@ -89,6 +120,40 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
           </button>
         </div>
       </div>
+
+      {/* 输入对话框 */}
+      {inputDialog.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={handleDialogCancel} />
+          <div className="relative bg-card border border-border rounded-lg shadow-lg p-4 w-72">
+            <label className="block text-sm font-medium text-foreground mb-2">{inputDialog.label}</label>
+            <input
+              ref={inputRef}
+              autoFocus
+              defaultValue={inputDialog.defaultValue}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleDialogConfirm()
+                if (e.key === 'Escape') handleDialogCancel()
+              }}
+              className="w-full px-3 py-1.5 text-sm bg-background border border-border rounded-md outline-none focus:border-primary"
+            />
+            <div className="flex justify-end gap-2 mt-3">
+              <button
+                onClick={handleDialogCancel}
+                className="px-3 py-1 text-sm rounded-md hover:bg-muted text-muted-foreground"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleDialogConfirm}
+                className="px-3 py-1 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                确定
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 章节树 */}
       <div className="flex-1 overflow-y-auto py-1">
@@ -212,7 +277,7 @@ function ChapterItem({
 
   return (
     <div
-      onClick={onSelect}
+      onClick={() => { if (!isActive) onSelect() }}
       onDoubleClick={() => setEditing(true)}
       className={cn(
         'flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer group transition-colors rounded-md mx-1',
