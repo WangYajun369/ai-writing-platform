@@ -17,46 +17,57 @@ import {
   lastSavedAtom,
   wordCountAtom,
   typewriterModeAtom,
+  contentRefreshAtom,
 } from '@/stores/uiAtoms.ts'
 import { useAppStore, useCurrentChapter } from '@/stores/appStore.ts'
 import { chapterApi } from '@/lib/tauri-bridge.ts'
-import { cn, debounce, countWordsFromHtml } from '@/lib/utils.ts'
+import { cn, debounce, countWordsFromHtml, calcBookWordCount } from '@/lib/utils.ts'
 
 const AUTOSAVE_DEBOUNCE_MS = 300
 const AUTOSAVE_INTERVAL_MS = 3 * 60 * 1000 // 3 分钟
 
 export default function RichTextEditor() {
   const currentChapter = useCurrentChapter()
-  const { updateChapter } = useAppStore()
+  const { updateChapter, updateBook, chapters } = useAppStore()
   const [, setEditorFocus] = useAtom(editorFocusAtom)
   const [, setIsSaving] = useAtom(isSavingAtom)
   const [, setLastSaved] = useAtom(lastSavedAtom)
   const [, setWordCount] = useAtom(wordCountAtom)
   const [typewriterMode] = useAtom(typewriterModeAtom)
+  const [contentRefresh] = useAtom(contentRefreshAtom)
   const autoSaveTimer = useRef<ReturnType<typeof setInterval>>(null)
+  // 用 ref 保持最新引用，避免 useEditor onUpdate 闭包过期
+  const chaptersRef = useRef(chapters)
+  chaptersRef.current = chapters
+  const currentChapterRef = useRef(currentChapter)
+  currentChapterRef.current = currentChapter
 
-  // 保存函数
+  // 保存函数（持久化 + 用后端返回的全书总字数校正 wordCountAtom.total）
   const saveContent = useCallback(
     async (html: string) => {
       if (!currentChapter) return
       setIsSaving(true)
       try {
-        const { wordCount } = await chapterApi.save(currentChapter.id, html)
-        updateChapter(currentChapter.id, { contentHtml: html, wordCount, updatedAt: new Date().toISOString() })
+        const result = await chapterApi.save(currentChapter.id, html)
+        const frontendCount = countWordsFromHtml(html)
+        updateChapter(currentChapter.id, { contentHtml: html, wordCount: frontendCount, updatedAt: new Date().toISOString() })
+        updateBook(currentChapter.bookId, { wordCount: result.bookWordCount })
+        setWordCount({ chapter: frontendCount, total: result.bookWordCount })
         setLastSaved(new Date())
-        setWordCount((prev) => ({ ...prev, chapter: wordCount }))
       } catch (err) {
         console.error('保存失败', err)
       } finally {
         setIsSaving(false)
       }
     },
-    [currentChapter, updateChapter, setIsSaving, setLastSaved, setWordCount]
+    [currentChapter, updateChapter, updateBook, setWordCount, setIsSaving, setLastSaved]
   )
 
   // 防抖保存
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const debouncedSave = useCallback(debounce(saveContent as (...args: unknown[]) => unknown, AUTOSAVE_DEBOUNCE_MS), [saveContent])
+  const debouncedSaveRef = useRef(debouncedSave)
+  debouncedSaveRef.current = debouncedSave
 
   const editor = useEditor({
     extensions: [
@@ -87,8 +98,10 @@ export default function RichTextEditor() {
     onUpdate: ({ editor }) => {
       const html = editor.getHTML()
       const chars = countWordsFromHtml(html)
-      setWordCount((prev) => ({ ...prev, chapter: chars }))
-      debouncedSave(html)
+      const cur = currentChapterRef.current
+      const total = calcBookWordCount(chaptersRef.current, cur?.id, chars)
+      setWordCount({ chapter: chars, total })
+      debouncedSaveRef.current(html)
     },
     onFocus: () => setEditorFocus(true),
     onBlur: () => setEditorFocus(false),
@@ -108,13 +121,16 @@ export default function RichTextEditor() {
           if (current !== incoming) {
             editor.commands.setContent(incoming, false)
           }
+          const chapterCount = countWordsFromHtml(incoming)
+          const totalCount = calcBookWordCount(chaptersRef.current, currentChapter.id, chapterCount)
+          setWordCount({ chapter: chapterCount, total: totalCount })
         }
       } catch (err) {
         console.error('加载章节内容失败', err)
       }
     })()
     return () => { cancelled = true }
-  }, [editor, currentChapter?.id]) // 只在章节 id 变化时触发
+  }, [editor, currentChapter?.id, contentRefresh]) // 章节切换或外部刷新时触发
 
   // 定时自动保存（3 分钟）
   useEffect(() => {

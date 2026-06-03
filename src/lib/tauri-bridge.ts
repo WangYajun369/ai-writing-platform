@@ -73,8 +73,8 @@ export const chapterApi = {
     return invoke<Chapter>('create_chapter', { params })
   },
 
-  async save(chapterId: string, contentHtml: string): Promise<{ wordCount: number }> {
-    return invoke<{ wordCount: number }>('save_chapter', { chapterId, contentHtml })
+  async save(chapterId: string, contentHtml: string): Promise<{ wordCount: number; bookWordCount: number }> {
+    return invoke<{ wordCount: number; bookWordCount: number }>('save_chapter', { chapterId, contentHtml })
   },
 
   async updateStatus(chapterId: string, status: Chapter['status']): Promise<void> {

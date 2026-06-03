@@ -1,6 +1,6 @@
 import { useAtom } from 'jotai'
 import { wordCountAtom, isSavingAtom, lastSavedAtom } from '@/stores/uiAtoms.ts'
-import { useCurrentBook, useCurrentChapter } from '@/stores/appStore.ts'
+import { useCurrentChapter } from '@/stores/appStore.ts'
 import { formatWordCount } from '@/lib/utils.ts'
 import { format } from 'date-fns'
 
@@ -8,7 +8,6 @@ export default function StatusBar() {
   const [wordCount] = useAtom(wordCountAtom)
   const [isSaving] = useAtom(isSavingAtom)
   const [lastSaved] = useAtom(lastSavedAtom)
-  const currentBook = useCurrentBook()
   const currentChapter = useCurrentChapter()
 
   return (
@@ -22,9 +21,7 @@ export default function StatusBar() {
       )}
 
       {/* 全书字数 */}
-      {currentBook && (
-        <span>全书 {formatWordCount(currentBook.wordCount)}</span>
-      )}
+      <span>全书 {formatWordCount(wordCount.total)}</span>
 
       <div className="flex-1" />
 

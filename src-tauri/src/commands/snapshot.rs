@@ -13,11 +13,9 @@ fn count_words(html: &str) -> i64 {
     for c in html.chars() {
         if c == '<' { in_tag = true; continue; }
         if c == '>' { in_tag = false; continue; }
-        if !in_tag { clean.push(c); }
+        if !in_tag && !c.is_whitespace() { clean.push(c); }
     }
-    let chinese = clean.chars().filter(|c| *c >= '\u{4e00}' && *c <= '\u{9fa5}').count();
-    let english: usize = clean.split_whitespace().filter(|w| w.chars().all(|c| c.is_ascii_alphabetic())).count();
-    (chinese + english) as i64
+    clean.len() as i64
 }
 
 #[tauri::command]

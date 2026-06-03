@@ -136,7 +136,7 @@ pub async fn import_txt(
         let id = Uuid::new_v4().to_string();
         let ts = Utc::now().to_rfc3339();
         let html = format!("<p>{}</p>", body.replace('\n', "</p><p>"));
-        let wc = body.chars().filter(|c| *c >= '\u{4e00}' && *c <= '\u{9fa5}').count() as i64;
+        let wc = body.chars().filter(|c| !c.is_whitespace()).count() as i64;
         conn.execute(
             "INSERT INTO chapters (id,book_id,volume_id,title,content_html,word_count,status,sort_order,created_at,updated_at) VALUES (?1,?2,NULL,?3,?4,?5,'draft',?6,?7,?8)",
             params![id, book_id, title, html, wc, i as i64, ts, ts],

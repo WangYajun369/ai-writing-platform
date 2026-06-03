@@ -1,17 +1,15 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import type { Chapter } from '@/types'
 
 /** Tailwind 类名合并工具 */
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-/** 格式化字数（中文习惯：万字） */
+/** 格式化字数 */
 export function formatWordCount(count: number): string {
-  if (count >= 10000) {
-    return `${(count / 10000).toFixed(1)}万字`
-  }
-  return `${count}字`
+  return `${count.toLocaleString()}字`
 }
 
 /** 格式化相对时间 */
@@ -31,13 +29,22 @@ export function formatRelativeTime(isoDate: string): string {
   return date.toLocaleDateString('zh-CN')
 }
 
-/** 从 HTML 内容提取纯文本字数 */
+/** 从 HTML 内容提取纯文本字数（去标签和空白，统计可见字符） */
 export function countWordsFromHtml(html: string): number {
   const text = html.replace(/<[^>]*>/g, '')
-  // 中文字符 + 英文单词数
-  const chineseChars = (text.match(/[\u4e00-\u9fa5]/g) || []).length
-  const englishWords = (text.match(/\b[a-zA-Z]+\b/g) || []).length
-  return chineseChars + englishWords
+  return text.replace(/\s/g, '').length
+}
+
+/** 计算全书总字数，可覆盖指定章节的字数 */
+export function calcBookWordCount(
+  chapters: Chapter[],
+  overrideChapterId?: string,
+  overrideCount?: number,
+): number {
+  return chapters.reduce((sum, c) => {
+    if (c.id === overrideChapterId) return sum + (overrideCount ?? 0)
+    return sum + (c.wordCount || 0)
+  }, 0)
 }
 
 /** 深拷贝 */

@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAtom } from 'jotai'
 import { XIcon } from 'lucide-react'
-import { sidebarOpenAtom, zenModeAtom, aiPanelOpenAtom, worldPanelOpenAtom } from '@/stores/uiAtoms'
+import { sidebarOpenAtom, zenModeAtom, aiPanelOpenAtom, worldPanelOpenAtom, historyPanelOpenAtom } from '@/stores/uiAtoms'
 import { useAppStore } from '@/stores/appStore'
 import { chapterApi, volumeApi } from '@/lib/tauri-bridge'
 import { cn } from '@/lib/utils'
@@ -11,6 +11,7 @@ import OutlinePanel from '@/components/outline/OutlinePanel'
 import RichTextEditor from '@/components/editor/RichTextEditor'
 import WorldbuildingPanel from '@/components/worldbuilding/WorldbuildingPanel'
 import AiSidePanel from '@/components/ai/AiSidePanel'
+import SnapshotPanel from '@/components/editor/SnapshotPanel'
 import EditorToolbar from '@/components/editor/EditorToolbar'
 import StatusBar from '@/components/layout/StatusBar'
 
@@ -21,6 +22,7 @@ export default function EditorPage() {
   const [zenMode, setZenMode] = useAtom(zenModeAtom)
   const [aiPanelOpen] = useAtom(aiPanelOpenAtom)
   const [worldPanelOpen] = useAtom(worldPanelOpenAtom)
+  const [historyPanelOpen] = useAtom(historyPanelOpenAtom)
   const {
     setCurrentBookId,
     setVolumes,
@@ -114,7 +116,12 @@ export default function EditorPage() {
           </EditorLayout>
         </main>
 
-        {/* 右侧面板（世界观 / AI） */}
+        {/* 右侧面板（版本历史 / 世界观 / AI） */}
+        {historyPanelOpen && !zenMode && (
+          <aside className="w-80 border-l bg-card flex-shrink-0 overflow-hidden">
+            <SnapshotPanel />
+          </aside>
+        )}
         {worldPanelOpen && !zenMode && (
           <aside className="w-80 border-l bg-card flex-shrink-0 overflow-hidden">
             <WorldbuildingPanel bookId={bookId!} />

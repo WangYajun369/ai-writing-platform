@@ -42,3 +42,6 @@ export const wordCountAtom = atom<{ chapter: number; total: number }>({ chapter:
 
 /** 搜索面板 */
 export const searchOpenAtom = atom<boolean>(false)
+
+/** 章节内容外部刷新计数器（恢复快照等场景递增触发编辑器重载） */
+export const contentRefreshAtom = atom<number>(0)

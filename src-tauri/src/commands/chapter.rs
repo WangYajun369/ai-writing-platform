@@ -7,23 +7,16 @@ use crate::models::Chapter;
 
 fn now() -> String { Utc::now().to_rfc3339() }
 
-/// 从 HTML 中提取纯文本字数（中文字 + 英文单词）
+/// 从 HTML 中提取纯文本字数（去标签 + 去空白，统计所有可见字符）
 fn count_words(html: &str) -> i64 {
-    let text: String = html.chars().filter(|&c| c != '<').collect();
-    // 简单去除标签（生产中应使用 html 解析库）
     let mut in_tag = false;
     let mut clean = String::new();
     for c in html.chars() {
         if c == '<' { in_tag = true; continue; }
         if c == '>' { in_tag = false; continue; }
-        if !in_tag { clean.push(c); }
+        if !in_tag && !c.is_whitespace() { clean.push(c); }
     }
-    let _ = text; // suppress warning
-    let chinese = clean.chars().filter(|c| *c >= '\u{4e00}' && *c <= '\u{9fa5}').count();
-    let english: usize = clean.split_whitespace()
-        .filter(|w| w.chars().all(|c| c.is_ascii_alphabetic()))
-        .count();
-    (chinese + english) as i64
+    clean.len() as i64
 }
 
 #[tauri::command]
@@ -99,6 +92,8 @@ pub async fn create_chapter(db: State<'_, AppDb>, params: CreateChapterParams) -
 pub struct SaveChapterResult {
     #[serde(rename = "wordCount")]
     pub word_count: i64,
+    #[serde(rename = "bookWordCount")]
+    pub book_word_count: i64,
 }
 
 #[tauri::command]
@@ -121,7 +116,14 @@ pub async fn save_chapter(
         params![chapter_id, ts],
     ).map_err(|e| e.to_string())?;
 
-    Ok(SaveChapterResult { word_count: wc })
+    // 读取更新后的书籍总字数
+    let book_wc: i64 = conn.query_row(
+        "SELECT word_count FROM books WHERE id=(SELECT book_id FROM chapters WHERE id=?1)",
+        params![chapter_id],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+
+    Ok(SaveChapterResult { word_count: wc, book_word_count: book_wc })
 }
 
 #[tauri::command]
