@@ -1,0 +1,121 @@
+import { useState } from 'react'
+import { XIcon } from 'lucide-react'
+import { bookApi } from '@/lib/tauri-bridge'
+import { useAppStore } from '@/stores/appStore'
+import type { Book } from '@/types'
+
+interface NewBookDialogProps {
+  onClose: () => void
+  onCreated: (book: Book) => void
+}
+
+export default function NewBookDialog({ onClose, onCreated }: NewBookDialogProps) {
+  const [title, setTitle] = useState('')
+  const [author, setAuthor] = useState('')
+  const [description, setDescription] = useState('')
+  const [dailyTarget, setDailyTarget] = useState(1000)
+  const [submitting, setSubmitting] = useState(false)
+  const { addBook } = useAppStore()
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!title.trim()) return
+    setSubmitting(true)
+    try {
+      const book = await bookApi.create({
+        title: title.trim(),
+        author: author.trim() || '未署名',
+        description: description.trim(),
+        dailyTarget,
+        tags: [],
+        dbPath: '',
+      })
+      addBook(book)
+      onCreated(book)
+    } catch (err) {
+      console.error('创建书籍失败', err)
+      alert('创建失败，请重试')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <>
+      {/* 遮罩 */}
+      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+
+      {/* 弹窗 */}
+      <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-card border rounded-2xl shadow-xl p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-semibold">新建作品</h2>
+          <button onClick={onClose} className="p-1 rounded hover:bg-muted">
+            <XIcon className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1">
+            <label className="text-sm font-medium">书名 <span className="text-destructive">*</span></label>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full bg-muted rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+              placeholder="请输入书名"
+              autoFocus
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-sm font-medium">作者</label>
+            <input
+              value={author}
+              onChange={(e) => setAuthor(e.target.value)}
+              className="w-full bg-muted rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+              placeholder="笔名 / 作者"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-sm font-medium">简介</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className="w-full bg-muted rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring resize-none"
+              placeholder="一句话介绍你的故事…"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-sm font-medium">每日目标字数</label>
+            <input
+              type="number"
+              min={0}
+              value={dailyTarget}
+              onChange={(e) => setDailyTarget(parseInt(e.target.value) || 0)}
+              className="w-full bg-muted rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2 rounded-lg border text-sm hover:bg-muted transition-colors"
+            >
+              取消
+            </button>
+            <button
+              type="submit"
+              disabled={!title.trim() || submitting}
+              className="flex-1 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 hover:opacity-90 transition-opacity"
+            >
+              {submitting ? '创建中…' : '开始创作'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </>
+  )
+}
