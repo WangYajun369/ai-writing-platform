@@ -19,6 +19,7 @@ import {
   ZapIcon,
   KeyboardIcon,
   LayoutIcon,
+  TypeIcon,
 } from 'lucide-react'
 import {
     sidebarOpenAtom,
@@ -27,7 +28,7 @@ import {
     aiPanelOpenAtom,
     historyPanelOpenAtom, isSavingAtom, lastSavedAtom,
 } from '@/stores/uiAtoms.ts'
-import { useCurrentBook } from '@/stores/appStore.ts'
+import { useCurrentBook, useAppStore } from '@/stores/appStore.ts'
 import { cn } from '@/lib/utils.ts'
 
 export default function EditorToolbar() {
@@ -39,6 +40,7 @@ export default function EditorToolbar() {
   const [historyPanelOpen, setHistoryPanelOpen] = useAtom(historyPanelOpenAtom)
   const [worldWindowOpen, setWorldWindowOpen] = useState(false)
   const currentBook = useCurrentBook()
+  const { fontSize, setFontSize } = useAppStore()
 
   async function handleToggleWorldWindow() {
     if (worldWindowOpen) {
@@ -95,6 +97,24 @@ export default function EditorToolbar() {
       />
 
       <div className="flex-1" />
+
+      {/* 字体大小滑块 */}
+      <div className="flex items-center gap-1.5">
+        <TypeIcon className="w-3.5 h-3.5 text-muted-foreground" />
+        <input
+          type="range"
+          min={12}
+          max={24}
+          step={1}
+          value={fontSize}
+          onChange={(e) => setFontSize(parseInt(e.target.value, 10))}
+          className="w-20 h-1 accent-primary cursor-pointer"
+          title={`字体大小: ${fontSize}px`}
+        />
+        <span className="text-xs text-muted-foreground w-7 text-right tabular-nums">{fontSize}px</span>
+      </div>
+
+      <div className="w-px h-5 bg-border mx-1" />
 
       {/* 功能按钮组 */}
       <ToolbarBtn

@@ -16,7 +16,7 @@ type Tab = 'ai' | 'appearance' | 'storage' | 'version'
 
 export default function SettingsPage() {
   const navigate = useNavigate()
-  const { aiConfig, setAiConfig, theme, setTheme, eyeCareMode, setEyeCareMode, fontFamily, setFontFamily } = useAppStore()
+  const { aiConfig, setAiConfig, theme, setTheme, eyeCareMode, setEyeCareMode, fontFamily, setFontFamily, fontSize, setFontSize } = useAppStore()
   const [activeTab, setActiveTab] = useState<Tab>('ai')
 
   return (
@@ -64,9 +64,11 @@ export default function SettingsPage() {
               theme={theme}
               eyeCareMode={eyeCareMode}
               fontFamily={fontFamily}
+              fontSize={fontSize}
               onThemeChange={setTheme}
               onEyeCareChange={setEyeCareMode}
               onFontFamilyChange={setFontFamily}
+              onFontSizeChange={setFontSize}
             />
           )}
           {activeTab === 'storage' && (
@@ -179,16 +181,20 @@ function AppearanceSection({
   theme,
   eyeCareMode,
   fontFamily,
+  fontSize,
   onThemeChange,
   onEyeCareChange,
   onFontFamilyChange,
+  onFontSizeChange,
 }: {
   theme: string
   eyeCareMode: string
   fontFamily: string
+  fontSize: number
   onThemeChange: (t: 'light' | 'dark' | 'system') => void
   onEyeCareChange: (m: 'off' | 'warm' | 'green') => void
   onFontFamilyChange: (f: 'serif' | 'simhei' | 'simsun' | 'kaiti' | 'yahei') => void
+  onFontSizeChange: (s: number) => void
 }) {
   const fontOptions = [
     { value: 'serif', label: '默认衬线' },
@@ -271,6 +277,27 @@ function AppearanceSection({
               {label}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* 字体大小 */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">字体大小: {fontSize}px</label>
+        <p className="text-xs text-muted-foreground">
+          拖动滑块调整编辑器字体大小（12px - 24px）
+        </p>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted-foreground w-8">12px</span>
+          <input
+            type="range"
+            min={12}
+            max={24}
+            step={1}
+            value={fontSize}
+            onChange={(e) => onFontSizeChange(parseInt(e.target.value, 10))}
+            className="flex-1"
+          />
+          <span className="text-xs text-muted-foreground w-8">24px</span>
         </div>
       </div>
     </div>

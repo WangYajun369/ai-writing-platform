@@ -167,7 +167,7 @@
 
 .tiptap-editor {
   @apply prose prose-neutral dark:prose-invert max-w-none;
-  font-size: 16px;
+  font-size: var(--font-editor-size, 16px);
   line-height: 2;
   letter-spacing: 0.02em;
 }

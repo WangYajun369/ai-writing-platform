@@ -31,6 +31,9 @@ interface AppState {
   // 全局字体
   fontFamily: 'serif' | 'simhei' | 'simsun' | 'kaiti' | 'yahei'
 
+  // 全局字体大小（px）
+  fontSize: number
+
   // Actions
   setBooks: (books: Book[]) => void
   setCurrentBookId: (id: string | null) => void
@@ -47,6 +50,7 @@ interface AppState {
   setTheme: (theme: 'light' | 'dark' | 'system') => void
   setEyeCareMode: (mode: 'off' | 'warm' | 'green') => void
   setFontFamily: (font: AppState['fontFamily']) => void
+  setFontSize: (size: number) => void
   setDbStatus: (status: AppState['dbStatus']) => void
   setLoadingBooks: (v: boolean) => void
   setLoadingChapters: (v: boolean) => void
@@ -73,6 +77,7 @@ export const useAppStore = create<AppState>()(
     theme: 'system',
     eyeCareMode: 'off',
     fontFamily: 'serif',
+    fontSize: 16,
 
     setBooks: (books) => set({ books }),
     setCurrentBookId: (id) => set({ currentBookId: id }),
@@ -105,6 +110,7 @@ export const useAppStore = create<AppState>()(
     setTheme: (theme) => set({ theme }),
     setEyeCareMode: (eyeCareMode) => set({ eyeCareMode }),
     setFontFamily: (fontFamily) => set({ fontFamily }),
+    setFontSize: (fontSize) => set({ fontSize }),
     setDbStatus: (dbStatus) => set({ dbStatus }),
     setLoadingBooks: (v) => set({ isLoadingBooks: v }),
     setLoadingChapters: (v) => set({ isLoadingChapters: v }),

@@ -13,6 +13,7 @@ import WorldbuildingPanel from './components/worldbuilding/WorldbuildingPanel'
 const STORAGE_KEY_THEME = 'mirageink-theme'
 const STORAGE_KEY_EYECARE = 'mirageink-eyecare'
 const STORAGE_KEY_FONT = 'mirageink-font'
+const STORAGE_KEY_FONT_SIZE = 'mirageink-font-size'
 
 const FONT_FAMILY_MAP: Record<string, string> = {
   serif: "'Noto Serif SC', Georgia, serif",
@@ -29,7 +30,7 @@ const FONT_FAMILY_MAP: Record<string, string> = {
  * 若检测到 worldwin=1 查询参数，仅渲染世界观资料库面板（独立窗口模式）。
  */
 function AppInit() {
-  const { setTheme, theme, eyeCareMode, setEyeCareMode, fontFamily, setFontFamily } = useAppStore()
+  const { setTheme, theme, eyeCareMode, setEyeCareMode, fontFamily, setFontFamily, fontSize, setFontSize } = useAppStore()
 
   // 检测是否为世界观独立窗口
   const worldWindowInfo = useMemo(() => {
@@ -53,6 +54,13 @@ function AppInit() {
     const savedFont = localStorage.getItem(STORAGE_KEY_FONT)
     if (savedFont && savedFont in FONT_FAMILY_MAP) {
       setFontFamily(savedFont as 'serif' | 'simhei' | 'simsun' | 'kaiti' | 'yahei')
+    }
+    const savedFontSize = localStorage.getItem(STORAGE_KEY_FONT_SIZE)
+    if (savedFontSize) {
+      const size = parseInt(savedFontSize, 10)
+      if (size >= 12 && size <= 24) {
+        setFontSize(size)
+      }
     }
   }, [])
 
@@ -95,6 +103,12 @@ function AppInit() {
     document.documentElement.style.setProperty('--font-editor', FONT_FAMILY_MAP[fontFamily] ?? FONT_FAMILY_MAP.serif)
     localStorage.setItem(STORAGE_KEY_FONT, fontFamily)
   }, [fontFamily])
+
+  // 字体大小应用
+  useEffect(() => {
+    document.documentElement.style.setProperty('--font-editor-size', `${fontSize}px`)
+    localStorage.setItem(STORAGE_KEY_FONT_SIZE, String(fontSize))
+  }, [fontSize])
 
   // 世界观独立窗口模式
   if (worldWindowInfo.isWorld && worldWindowInfo.bookId) {
