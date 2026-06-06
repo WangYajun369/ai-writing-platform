@@ -68,6 +68,7 @@ pub fn run() {
             // AI
             commands::ai::rag_search,
             commands::ai::trigger_embedding,
+            commands::ai::stream_ai_chat,
             // 导入导出
             commands::io::export_book,
             commands::io::import_txt,

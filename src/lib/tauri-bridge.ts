@@ -149,6 +149,27 @@ export const worldCardApi = {
 
 // ==================== AI & 向量检索 ====================
 
+export interface ChatMessage {
+  role: string
+  content: string
+}
+
+export interface StreamChatArgs {
+  provider: string
+  endpoint: string
+  model: string
+  temperature: number
+  maxTokens?: number
+  apiKey?: string
+  messages: ChatMessage[]
+}
+
+export interface StreamEvent {
+  content: string
+  done: boolean
+  error?: string | null
+}
+
 export const aiApi = {
   async ragSearch(bookId: string, query: string, topN = 5) {
     return invoke<Array<{ snippet: string; sourceId: string; sourceTitle: string; distance: number }>>(
@@ -159,6 +180,11 @@ export const aiApi = {
 
   async triggerEmbedding(bookId: string): Promise<void> {
     return invoke<void>('trigger_embedding', { bookId })
+  },
+
+  /** 流式 AI 对话（Rust 侧处理 HTTP 流式请求，前端通过事件接收） */
+  async streamChat(args: StreamChatArgs): Promise<string> {
+    return invoke<string>('stream_ai_chat', { args })
   },
 }
 

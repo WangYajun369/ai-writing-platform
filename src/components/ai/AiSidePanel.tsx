@@ -3,15 +3,15 @@
  *
  * 支持多服务商流式对话（Ollama / OpenAI / 智谱 BigModel / 自定义），
  * 自动 RAG 检索当前书籍上下文。
- * 支持流式 Markdown 渲染、快捷提示词、对话清空。
+ * 流式调用由 Rust 侧通过 reqwest 处理，前端通过 Tauri 事件接收增量。
  */
 import { useState, useRef, useEffect } from 'react'
 import { SendIcon, BotIcon, XIcon, Loader2Icon } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { fetch } from '@tauri-apps/plugin-http'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useAppStore, useCurrentChapter } from '@/stores/appStore.ts'
-import { aiApi } from '@/lib/tauri-bridge.ts'
+import { aiApi, type StreamEvent } from '@/lib/tauri-bridge.ts'
 import { cn } from '@/lib/utils.ts'
 
 interface Message {
@@ -46,98 +46,6 @@ export default function AiSidePanel() {
     ]
   }
 
-  /** Ollama 协议流式调用 */
-  async function callOllama(assistantId: string, context: string) {
-    const response = await fetch(`${aiConfig.endpoint}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: aiConfig.model,
-        messages: buildMessages(context),
-        stream: true,
-        options: { temperature: aiConfig.temperature },
-      }),
-    })
-
-    if (!response.ok || !response.body) throw new Error('AI 服务不可用')
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let accumulated = ''
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      const chunk = decoder.decode(value, { stream: true })
-      const lines = chunk.split('\n').filter(Boolean)
-      for (const line of lines) {
-        try {
-          const data = JSON.parse(line)
-          if (data.message?.content) {
-            accumulated += data.message.content
-            updateAssistant(assistantId, accumulated)
-          }
-        } catch { /* 忽略解析错误 */ }
-      }
-    }
-  }
-
-  /** OpenAI 兼容协议流式调用（BigModel / OpenAI / Custom） */
-  async function callOpenAICompatible(assistantId: string, context: string) {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (aiConfig.apiKey) {
-      headers['Authorization'] = `Bearer ${aiConfig.apiKey}`
-    }
-
-    const response = await fetch(`${aiConfig.endpoint}/chat/completions`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model: aiConfig.model,
-        messages: buildMessages(context),
-        stream: true,
-        temperature: aiConfig.temperature,
-        max_tokens: aiConfig.maxTokens,
-      }),
-    })
-
-    if (!response.ok || !response.body) {
-      const errText = await response.text().catch(() => '')
-      throw new Error(`AI 服务不可用 (${response.status}): ${errText}`)
-    }
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let accumulated = ''
-    let buffer = ''
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-
-      // SSE 格式: "data: {...}\n\n"
-      const lines = buffer.split('\n')
-      // 最后一个行可能不完整，保留在 buffer
-      buffer = lines.pop() ?? ''
-
-      for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed || !trimmed.startsWith('data:')) continue
-        const jsonStr = trimmed.slice(5).trim()
-        if (jsonStr === '[DONE]') break
-        try {
-          const data = JSON.parse(jsonStr)
-          const delta = data.choices?.[0]?.delta?.content
-          if (delta) {
-            accumulated += delta
-            updateAssistant(assistantId, accumulated)
-          }
-        } catch { /* 忽略解析错误 */ }
-      }
-    }
-  }
-
   /** 更新助手消息内容 */
   function updateAssistant(assistantId: string, content: string) {
     setMessages((prev) =>
@@ -147,13 +55,24 @@ export default function AiSidePanel() {
 
   async function handleSend() {
     if (!input.trim() || streaming) return
+
+    // 非 Ollama 提供者必须提供 API Key
+    if (!isOllamaProvider && !aiConfig.apiKey) {
+      alert('请先在设置中配置 API Key')
+      return
+    }
+
     const userMsg: Message = { id: Date.now().toString(), role: 'user', content: input.trim() }
     const assistantId = (Date.now() + 1).toString()
     const assistantMsg: Message = { id: assistantId, role: 'assistant', content: '', loading: true }
 
     setMessages((prev) => [...prev, userMsg, assistantMsg])
+    const userInput = input.trim()
     setInput('')
     setStreaming(true)
+
+    // 注册事件监听，用于接收流式数据
+    let unlisten: UnlistenFn | null = null
 
     try {
       // RAG 检索上下文
@@ -161,7 +80,7 @@ export default function AiSidePanel() {
       if (currentChapter) {
         const results = await aiApi.ragSearch(
           currentChapter.bookId,
-          input.trim(),
+          userInput,
           3
         ).catch(() => [])
         if (results.length > 0) {
@@ -169,15 +88,45 @@ export default function AiSidePanel() {
         }
       }
 
-      if (isOllamaProvider) {
-        await callOllama(assistantId, context)
-      } else {
-        await callOpenAICompatible(assistantId, context)
-      }
+      // 注册流式事件监听（必须在 invoke 之前注册）
+      unlisten = await listen<StreamEvent>('ai-stream-chunk', (event) => {
+        const { content, done, error } = event.payload
+        if (error) {
+          updateAssistant(assistantId, `⚠️ AI 响应失败：${error}`)
+          setStreaming(false)
+          return
+        }
+        updateAssistant(assistantId, content)
+        if (done) {
+          setStreaming(false)
+        }
+      })
+
+      // 构建消息
+      const messages = buildMessages(context)
+      const provider = isOllamaProvider ? 'ollama' : 'openai_compatible'
+
+      // 调用 Rust 侧流式对话命令
+      await aiApi.streamChat({
+        provider,
+        endpoint: aiConfig.endpoint,
+        model: aiConfig.model,
+        temperature: aiConfig.temperature,
+        maxTokens: aiConfig.maxTokens,
+        apiKey: aiConfig.apiKey,
+        messages,
+      })
+
+      // 如果流正常结束但 done 事件未触发（兜底）
+      setStreaming(false)
     } catch (err) {
       updateAssistant(assistantId, `⚠️ AI 响应失败：${String(err)}`)
     } finally {
       setStreaming(false)
+      // 取消事件监听
+      if (unlisten) {
+        unlisten()
+      }
     }
   }
 
@@ -239,7 +188,7 @@ export default function AiSidePanel() {
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
-                handleSend()
+                void handleSend()
               }
             }}
             placeholder="向 AI 提问…（Shift+Enter 换行）"
