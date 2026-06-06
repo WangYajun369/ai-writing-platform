@@ -1,3 +1,9 @@
+/**
+ * AiSidePanel — AI 助手侧面板
+ *
+ * 集成 Ollama 流式对话，自动 RAG 检索当前书籍上下文。
+ * 支持流式 Markdown 渲染、快捷提示词、对话清空。
+ */
 import { useState, useRef, useEffect } from 'react'
 import { SendIcon, BotIcon, XIcon, Loader2Icon } from 'lucide-react'
 import { useAppStore, useCurrentChapter } from '@/stores/appStore.ts'
@@ -189,6 +195,11 @@ export default function AiSidePanel() {
   )
 }
 
+/**
+ * 对话气泡子组件
+ *
+ * 根据角色（用户/助手）切换对齐方向与气泡配色。
+ */
 function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === 'user'
   return (

@@ -1,3 +1,10 @@
+/**
+ * BookCard — 书籍卡片组件
+ *
+ * 支持网格（grid）与列表（list）两种视图模式。
+ * 网格模式展示封面、日更进度环及右键菜单；
+ * 列表模式展示缩略图、书名、作者、字数及操作菜单。
+ */
 import { useState, useRef } from 'react'
 import { MoreVerticalIcon, EditIcon, Trash2Icon, CalendarIcon } from 'lucide-react'
 import type { Book } from '@/types'
@@ -170,7 +177,12 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
   )
 }
 
-// 进度环
+/**
+ * 日更进度环 SVG 组件
+ *
+ * @param progress 完成百分比 0-100
+ * @param size     SVG 直径（默认 32px）
+ */
 function ProgressRing({ progress, size = 32 }: { progress: number; size?: number }) {
   const r = (size - 4) / 2
   const circumference = 2 * Math.PI * r

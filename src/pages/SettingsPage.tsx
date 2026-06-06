@@ -1,3 +1,11 @@
+/**
+ * SettingsPage — 设置页面
+ *
+ * 提供三个设置标签页：
+ * - AI 配置（服务商/API/模型/Temperature）
+ * - 外观（浅色/深色/跟随系统）
+ * - 存储（占位，后续版本推出统计功能）
+ */
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeftIcon, BotIcon, PaletteIcon, DatabaseIcon } from 'lucide-react'
@@ -61,7 +69,12 @@ export default function SettingsPage() {
   )
 }
 
-// ==================== AI 配置 ====================
+/**
+ * AI 配置区块
+ *
+ * 提供 Ollama/OpenAI/自定义三种服务商选择，
+ * 以及 API 地址、对话模型、Embedding 模型、Temperature 滑杆、API Key 配置。
+ */
 function AiConfigSection({
   config,
   onChange,
@@ -144,7 +157,11 @@ function AiConfigSection({
   )
 }
 
-// ==================== 外观 ====================
+/**
+ * 外观配置区块
+ *
+ * 主题切换：浅色 / 深色 / 跟随系统。
+ */
 function AppearanceSection({
   theme,
   onChange,
@@ -175,7 +192,11 @@ function AppearanceSection({
   )
 }
 
-// ==================== 存储 ====================
+/**
+ * 存储信息区块
+ *
+ * 说明数据库文件存储方式，占位等待统计功能。
+ */
 function StorageSection() {
   return (
     <div className="space-y-5">

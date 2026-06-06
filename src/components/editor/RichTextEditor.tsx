@@ -1,3 +1,12 @@
+/**
+ * RichTextEditor — TipTap 富文本编辑器
+ *
+ * 核心编辑器组件，集成：
+ * - TipTap StarterKit + Underline + Color + Image + Table
+ * - 双保险自动保存：300ms 防抖 + 3 分钟定时器
+ * - 章节标题内联编辑
+ * - 打字机模式与字数实时统计
+ */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'

@@ -1,3 +1,9 @@
+/**
+ * EditorPage — 章节编辑页面
+ *
+ * 编辑器主页面，组装三栏布局（目录树/编辑器/右侧面板）。
+ * 负责加载书籍的卷章树数据，管理专注模式 Esc 退出。
+ */
 import { useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAtom } from 'jotai'

@@ -1,3 +1,8 @@
+//! 版本快照 IPC 命令
+//!
+//! 提供快照的增删查、创建（自动/里程碑）与恢复操作。
+//! 恢复快照会将章节内容回退到快照状态并更新全书字数。
+
 use tauri::State;
 use rusqlite::params;
 use uuid::Uuid;
@@ -6,8 +11,10 @@ use crate::db::AppDb;
 use crate::models::Snapshot;
 use crate::commands::chapter::SaveChapterResult;
 
+/// 获取当前 UTC 时间
 fn now() -> String { Utc::now().to_rfc3339() }
 
+/// 列出指定章节的所有快照（不含 content_html），按创建时间降序
 #[tauri::command]
 pub async fn list_snapshots(db: State<'_, AppDb>, chapter_id: String) -> Result<Vec<Snapshot>, String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
@@ -28,6 +35,7 @@ pub async fn list_snapshots(db: State<'_, AppDb>, chapter_id: String) -> Result<
     items.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
+/// 创建章节快照（有 label 则为 milestone，否则为 auto）
 #[tauri::command]
 pub async fn create_snapshot(
     db: State<'_, AppDb>,
@@ -62,6 +70,7 @@ pub async fn create_snapshot(
     })
 }
 
+/// 获取快照的 content_html
 #[tauri::command]
 pub async fn get_snapshot_content(db: State<'_, AppDb>, snapshot_id: String) -> Result<String, String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
@@ -72,6 +81,7 @@ pub async fn get_snapshot_content(db: State<'_, AppDb>, snapshot_id: String) -> 
     ).map_err(|e| e.to_string())
 }
 
+/// 从快照恢复章节内容（覆盖 current content_html），同步更新全书字数
 #[tauri::command]
 pub async fn restore_snapshot(db: State<'_, AppDb>, snapshot_id: String) -> Result<SaveChapterResult, String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
@@ -103,6 +113,7 @@ pub async fn restore_snapshot(db: State<'_, AppDb>, snapshot_id: String) -> Resu
     Ok(SaveChapterResult { word_count: wc, book_word_count: book_wc })
 }
 
+/// 删除指定快照
 #[tauri::command]
 pub async fn delete_snapshot(db: State<'_, AppDb>, snapshot_id: String) -> Result<(), String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;

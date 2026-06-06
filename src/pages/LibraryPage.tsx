@@ -1,3 +1,12 @@
+/**
+ * LibraryPage — 书库管理页面
+ *
+ * 应用首页，提供：
+ * - 多作品网格/列表视图（虚拟化滚动）
+ * - 书名/作者搜索与排序
+ * - 新建作品弹窗入口
+ * - 底部状态栏（作品数、总字数）
+ */
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PlusIcon, SearchIcon, GridIcon, ListIcon, SettingsIcon, BookOpenIcon } from 'lucide-react'
@@ -248,6 +257,11 @@ export default function LibraryPage() {
   )
 }
 
+/**
+ * 空书库占位组件
+ *
+ * 当没有作品时展示引导创建按钮。
+ */
 function EmptyLibrary({ onNew }: { onNew: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center h-64 gap-4 text-center">

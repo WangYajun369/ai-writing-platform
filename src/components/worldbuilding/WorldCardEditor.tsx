@@ -1,3 +1,9 @@
+/**
+ * WorldCardEditor — 世界观卡片编辑弹窗
+ *
+ * 支持新建/编辑/删除世界观卡片。包含类型选择、
+ * 标题、内容、标签字段，保存后触发父组件刷新。
+ */
 import { useState } from 'react'
 import { XIcon } from 'lucide-react'
 import type { WorldCard, WorldCardType } from '@/types'

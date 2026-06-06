@@ -1,3 +1,12 @@
+/**
+ * WorldbuildingPanel — 世界观资料库面板
+ *
+ * 管理书籍的世界观卡片，支持：
+ * - 6 种卡片类型过滤（人物/地点/时间线/势力/物品/其他）
+ * - 关键词搜索
+ * - 虚拟化滚动列表（@tanstack/react-virtual）
+ * - 新建/编辑卡片弹窗
+ */
 import { useState, useEffect, useRef } from 'react'
 import { PlusIcon, SearchIcon, XIcon } from 'lucide-react'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -162,6 +171,11 @@ export default function WorldbuildingPanel({ bookId }: WorldbuildingPanelProps) 
   )
 }
 
+/**
+ * 类型过滤标签子组件
+ *
+ * 高亮当前激活的过滤类型。
+ */
 function FilterTag({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button

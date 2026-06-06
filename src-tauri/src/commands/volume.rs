@@ -1,3 +1,7 @@
+//! 卷管理 IPC 命令
+//!
+//! 提供书籍卷的增删改查与排序操作。
+
 use tauri::State;
 use rusqlite::params;
 use uuid::Uuid;
@@ -5,8 +9,10 @@ use chrono::Utc;
 use crate::db::AppDb;
 use crate::models::Volume;
 
+/// 获取当前 UTC 时间
 fn now() -> String { Utc::now().to_rfc3339() }
 
+/// 列出指定书籍的所有卷，按 sort_order 升序
 #[tauri::command]
 pub async fn list_volumes(db: State<'_, AppDb>, book_id: String) -> Result<Vec<Volume>, String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
@@ -25,6 +31,7 @@ pub async fn list_volumes(db: State<'_, AppDb>, book_id: String) -> Result<Vec<V
     items.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
+/// 创建新卷，生成 UUID
 #[tauri::command]
 pub async fn create_volume(
     db: State<'_, AppDb>,
@@ -42,6 +49,7 @@ pub async fn create_volume(
     Ok(Volume { id, book_id, title, sort_order, created_at: ts })
 }
 
+/// 更新卷标题
 #[tauri::command]
 pub async fn update_volume(db: State<'_, AppDb>, id: String, title: String) -> Result<(), String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
@@ -50,6 +58,7 @@ pub async fn update_volume(db: State<'_, AppDb>, id: String, title: String) -> R
     Ok(())
 }
 
+/// 删除卷（级联将下属章节 volume_id 置 NULL）
 #[tauri::command]
 pub async fn delete_volume(db: State<'_, AppDb>, id: String) -> Result<(), String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
@@ -58,6 +67,7 @@ pub async fn delete_volume(db: State<'_, AppDb>, id: String) -> Result<(), Strin
     Ok(())
 }
 
+/// 重新排序卷（按传入 ID 顺序更新 sort_order）
 #[tauri::command]
 pub async fn reorder_volumes(db: State<'_, AppDb>, ids: Vec<String>) -> Result<(), String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;

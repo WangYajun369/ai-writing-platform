@@ -1,31 +1,35 @@
+/* Tailwind CSS 基础指令：引入 base、components、utilities 三层样式 */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ==================== 主题色彩变量 ==================== */
 @layer base {
+  /* 亮色主题：定义 CSS 自定义属性，值采用 HSL 色彩空间（不含 hsl() 包裹，由 Tailwind 组合） */
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
+    --background: 0 0% 100%;           /* 页面背景色 */
+    --foreground: 222.2 84% 4.9%;     /* 主前景/正文色 */
+    --card: 0 0% 100%;                 /* 卡片背景色 */
+    --card-foreground: 222.2 84% 4.9%; /* 卡片前景色 */
+    --popover: 0 0% 100%;              /* 弹出层背景色 */
+    --popover-foreground: 222.2 84% 4.9%; /* 弹出层前景色 */
+    --primary: 222.2 47.4% 11.2%;      /* 主色调 */
+    --primary-foreground: 210 40% 98%; /* 主色调上的前景色 */
+    --secondary: 210 40% 96.1%;       /* 次要色调 */
+    --secondary-foreground: 222.2 47.4% 11.2%; /* 次要色调上的前景色 */
+    --muted: 210 40% 96.1%;            /* 柔和/弱化色 */
+    --muted-foreground: 215.4 16.3% 46.9%; /* 柔和前景色 */
+    --accent: 210 40% 96.1%;          /* 强调色 */
+    --accent-foreground: 222.2 47.4% 11.2%; /* 强调色上的前景色 */
+    --destructive: 0 84.2% 60.2%;     /* 危险/删除色 */
+    --destructive-foreground: 210 40% 98%; /* 危险色上的前景色 */
+    --border: 214.3 31.8% 91.4%;      /* 边框色 */
+    --input: 214.3 31.8% 91.4%;      /* 输入框边框色 */
+    --ring: 222.2 84% 4.9%;           /* 聚焦光环色 */
+    --radius: 0.5rem;                 /* 默认圆角半径 */
   }
 
+  /* 暗色主题：覆盖上述变量以适配深色背景 */
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
@@ -49,17 +53,21 @@
   }
 }
 
+/* ==================== 全局基础样式 ==================== */
 @layer base {
+  /* 统一所有元素的边框颜色为主题变量 */
   * {
     @apply border-border;
   }
+  /* 设置 body 背景色与文字颜色，并启用连字与上下文替代等 OpenType 特性 */
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
 
-/* TipTap 编辑器样式 */
+/* ==================== TipTap 富文本编辑器样式 ==================== */
+/* 编辑器容器：使用 prose 排版、衬线字体，适用于中文长文写作场景 */
 .tiptap-editor {
   @apply prose prose-neutral dark:prose-invert max-w-none;
   font-family: 'Noto Serif SC', Georgia, serif;
@@ -68,11 +76,13 @@
   letter-spacing: 0.02em;
 }
 
+/* 段落：首行缩进 2em，段间距紧凑 */
 .tiptap-editor p {
   text-indent: 2em;
   margin-bottom: 0.25em;
 }
 
+/* 编辑器占位提示文字：在内容为空时显示 data-placeholder 属性的文本 */
 .tiptap-editor p.is-editor-empty:first-child::before {
   @apply text-muted-foreground;
   content: attr(data-placeholder);
@@ -81,30 +91,36 @@
   pointer-events: none;
 }
 
-/* 专注模式 */
+/* ==================== 专注模式 ==================== */
+/* 开启专注模式后隐藏侧边栏、工具栏和标题栏，最大化写作区域 */
 .zen-mode .sidebar,
 .zen-mode .toolbar,
 .zen-mode .titlebar {
   @apply hidden;
 }
 
-/* 打字机模式 */
+/* ==================== 打字机模式 ==================== */
+/* 将可编辑区域上下各留 40% 视口高度，使当前行始终保持在屏幕中央 */
 .typewriter-mode .ProseMirror {
   padding-top: 40vh;
   padding-bottom: 40vh;
 }
 
-/* 自定义滚动条 */
+/* ==================== 自定义滚动条 ==================== */
+/* 滚动条整体：6px 宽/高，适用于纵向与横向滚动 */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
+/* 滚动条轨道：透明背景 */
 ::-webkit-scrollbar-track {
   @apply bg-transparent;
 }
+/* 滚动条滑块：半透明圆角 */
 ::-webkit-scrollbar-thumb {
   @apply bg-muted-foreground/30 rounded-full;
 }
+/* 滚动条滑块悬停：加深透明度 */
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-muted-foreground/50;
 }

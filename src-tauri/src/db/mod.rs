@@ -1,3 +1,8 @@
+//! MirageInk 数据库模块
+//!
+//! 基于 rusqlite + r2d2 连接池，WAL 模式 + 外键约束。
+//! 管理 5 张表：books / volumes / chapters / snapshots / world_cards。
+
 use r2d2::{Pool, ManageConnection};
 use rusqlite::{Connection, Result};
 use anyhow::Context as _;
@@ -30,6 +35,7 @@ pub struct AppDb {
 }
 
 impl AppDb {
+    /// 创建数据库实例并执行自动迁移（建表 + 索引）
     pub fn new(db_path: &str) -> anyhow::Result<Self> {
         let manager = SqliteConnectionManager { path: db_path.to_string() };
         let pool = Pool::builder()
@@ -42,6 +48,7 @@ impl AppDb {
         Ok(db)
     }
 
+    /// 执行数据库自动迁移：启用 WAL + 外键 + 创建 5 张表 + 索引
     fn migrate(&self) -> anyhow::Result<()> {
         let conn = self.pool
             .get()

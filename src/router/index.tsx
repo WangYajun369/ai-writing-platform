@@ -1,3 +1,9 @@
+/**
+ * 前端路由定义 — MirageInk（幻境水墨）
+ *
+ * 基于 React Router v7，使用 lazy 加载优化首屏性能。
+ * 路由表：/ → 书库，/editor/:bookId → 编辑器，/settings → 设置。
+ */
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { lazy, Suspense } from 'react'
 import LibraryPage from '../pages/LibraryPage'
@@ -5,6 +11,11 @@ import LibraryPage from '../pages/LibraryPage'
 const EditorPage = lazy(() => import('../pages/EditorPage'))
 const SettingsPage = lazy(() => import('../pages/SettingsPage'))
 
+/**
+ * 路由懒加载过渡组件
+ *
+ * 在页面代码按需下载时展示一个居中的加载动画。
+ */
 function LoadingFallback() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-white dark:bg-[#0a0a0a]">

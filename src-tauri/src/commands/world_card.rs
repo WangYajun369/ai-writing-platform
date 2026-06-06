@@ -1,3 +1,7 @@
+//! 世界观卡片 IPC 命令
+//!
+//! 提供世界观卡片的增删改查与 LIKE 关键词搜索。
+
 use tauri::State;
 use rusqlite::params;
 use uuid::Uuid;
@@ -6,8 +10,10 @@ use serde_json;
 use crate::db::AppDb;
 use crate::models::WorldCard;
 
+/// 获取当前 UTC 时间
 fn now() -> String { Utc::now().to_rfc3339() }
 
+/// 列出指定书籍的所有世界观卡片，按 updated_at 降序
 #[tauri::command]
 pub async fn list_world_cards(db: State<'_, AppDb>, book_id: String) -> Result<Vec<WorldCard>, String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
@@ -33,6 +39,7 @@ pub async fn list_world_cards(db: State<'_, AppDb>, book_id: String) -> Result<V
     items.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
+/// 创建世界观卡片参数
 #[derive(serde::Deserialize)]
 pub struct CreateWorldCardParams {
     #[serde(rename = "bookId")]
@@ -46,6 +53,7 @@ pub struct CreateWorldCardParams {
     pub tags: Vec<String>,
 }
 
+/// 创建世界观卡片，初始未向量化
 #[tauri::command]
 pub async fn create_world_card(db: State<'_, AppDb>, params: CreateWorldCardParams) -> Result<WorldCard, String> {
     let id = Uuid::new_v4().to_string();
@@ -70,6 +78,7 @@ pub async fn create_world_card(db: State<'_, AppDb>, params: CreateWorldCardPara
     })
 }
 
+/// 更新世界观卡片（部分字段），更新后重新查询返回完整数据
 #[tauri::command]
 pub async fn update_world_card(
     db: State<'_, AppDb>,
@@ -112,6 +121,7 @@ pub async fn update_world_card(
     ).map_err(|e| e.to_string())
 }
 
+/// 删除世界观卡片
 #[tauri::command]
 pub async fn delete_world_card(db: State<'_, AppDb>, id: String) -> Result<(), String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
@@ -120,6 +130,7 @@ pub async fn delete_world_card(db: State<'_, AppDb>, id: String) -> Result<(), S
     Ok(())
 }
 
+/// 按关键词搜索世界观卡片（LIKE 匹配 title/content，最多返回 20 条）
 #[tauri::command]
 pub async fn search_world_cards(
     db: State<'_, AppDb>,

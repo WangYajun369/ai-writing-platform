@@ -1,3 +1,12 @@
+/**
+ * SnapshotPanel — 版本快照面板
+ *
+ * 管理章节的版本历史，支持：
+ * - 自动快照与里程碑快照
+ * - 快照预览（弹窗展示 HTML 内容）
+ * - 快照恢复（回退章节到历史版本）
+ * - 快照删除
+ */
 import { useState, useEffect } from 'react'
 import { useAtom } from 'jotai'
 import {

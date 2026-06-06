@@ -1,3 +1,9 @@
+/**
+ * NewBookDialog — 新建作品弹窗
+ *
+ * 包含书名、作者、简介、每日目标字数等字段的表单弹窗。
+ * 创建成功后将书籍加入全局状态并触发回调。
+ */
 import { useState } from 'react'
 import { XIcon } from 'lucide-react'
 import { bookApi } from '@/lib/tauri-bridge'

@@ -1,3 +1,9 @@
+/**
+ * EditorToolbar — 编辑器顶部工具栏
+ *
+ * 提供返回书库、目录树折叠、打字机/专注模式切换、
+ * 版本历史/世界观/AI 面板开关等功能按钮。
+ */
 import { useAtom } from 'jotai'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -102,6 +108,11 @@ export default function EditorToolbar() {
   )
 }
 
+/**
+ * 工具栏按钮子组件
+ *
+ * 高亮当前激活状态，支持自定义图标与文字提示。
+ */
 function ToolbarBtn({
   active,
   onClick,
@@ -130,6 +141,11 @@ function ToolbarBtn({
   )
 }
 
+/**
+ * 保存状态指示器
+ *
+ * 显示当前是"保存中…"动画还是"已保存"状态。
+ */
 function SaveIndicator() {
   const [isSaving] = useAtom(isSavingAtom)
   const [lastSaved] = useAtom(lastSavedAtom)

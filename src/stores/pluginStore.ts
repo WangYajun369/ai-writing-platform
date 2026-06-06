@@ -5,8 +5,8 @@
  */
 
 import { create } from 'zustand'
-import { PluginManager } from '../plugins/PluginManager'
-import type { InstalledPlugin, PluginStatus } from '../plugins/types'
+import { PluginManager } from '@/plugins/PluginManager'
+import type { InstalledPlugin, PluginStatus } from '@/plugins/types'
 
 interface PluginState {
   /** 所有已注册的插件 */

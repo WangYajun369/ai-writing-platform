@@ -1,3 +1,8 @@
+//! 章节管理 IPC 命令
+//!
+//! 提供章节的增删改查、内容保存（含全书字数聚合）、
+//! 状态更新、重命名、排序及软删除操作。
+
 use tauri::State;
 use rusqlite::params;
 use uuid::Uuid;
@@ -5,8 +10,10 @@ use chrono::Utc;
 use crate::db::AppDb;
 use crate::models::Chapter;
 
+/// 获取当前 UTC 时间
 fn now() -> String { Utc::now().to_rfc3339() }
 
+/// 列出指定书籍的所有未删除章节（不含 content_html），按 sort_order 升序
 #[tauri::command]
 pub async fn list_chapters(db: State<'_, AppDb>, book_id: String) -> Result<Vec<Chapter>, String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
@@ -31,6 +38,7 @@ pub async fn list_chapters(db: State<'_, AppDb>, book_id: String) -> Result<Vec<
     items.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
+/// 获取章节的 content_html 内容
 #[tauri::command]
 pub async fn get_chapter_content(db: State<'_, AppDb>, chapter_id: String) -> Result<String, String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
@@ -41,6 +49,7 @@ pub async fn get_chapter_content(db: State<'_, AppDb>, chapter_id: String) -> Re
     ).map_err(|e| e.to_string())
 }
 
+/// 创建新章节参数
 #[derive(serde::Deserialize)]
 pub struct CreateChapterParams {
     #[serde(rename = "bookId")]
@@ -52,6 +61,7 @@ pub struct CreateChapterParams {
     pub sort_order: i64,
 }
 
+/// 创建新章节，生成 UUID，初始状态为 draft
 #[tauri::command]
 pub async fn create_chapter(db: State<'_, AppDb>, params: CreateChapterParams) -> Result<Chapter, String> {
     let id = Uuid::new_v4().to_string();
@@ -76,6 +86,7 @@ pub async fn create_chapter(db: State<'_, AppDb>, params: CreateChapterParams) -
     })
 }
 
+/// 保存章节返回结果（章节字数 + 更新后的全书字数）
 #[derive(serde::Serialize)]
 pub struct SaveChapterResult {
     #[serde(rename = "wordCount")]
@@ -84,6 +95,7 @@ pub struct SaveChapterResult {
     pub book_word_count: i64,
 }
 
+/// 保存章节内容（HTML），自动更新书籍总字数并返回
 #[tauri::command]
 pub async fn save_chapter(
     db: State<'_, AppDb>,
@@ -114,6 +126,7 @@ pub async fn save_chapter(
     Ok(SaveChapterResult { word_count, book_word_count: book_wc })
 }
 
+/// 更新章节写作状态（outline / draft / polishing / finished）
 #[tauri::command]
 pub async fn update_chapter_status(
     db: State<'_, AppDb>,
@@ -128,6 +141,7 @@ pub async fn update_chapter_status(
     Ok(())
 }
 
+/// 重命名章节标题
 #[tauri::command]
 pub async fn rename_chapter(db: State<'_, AppDb>, chapter_id: String, title: String) -> Result<(), String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
@@ -138,6 +152,7 @@ pub async fn rename_chapter(db: State<'_, AppDb>, chapter_id: String, title: Str
     Ok(())
 }
 
+/// 软删除章节（设置 deleted_at 时间戳），同步更新全书字数
 #[tauri::command]
 pub async fn delete_chapter(db: State<'_, AppDb>, chapter_id: String) -> Result<(), String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
@@ -156,6 +171,7 @@ pub async fn delete_chapter(db: State<'_, AppDb>, chapter_id: String) -> Result<
     Ok(())
 }
 
+/// 重新排序章节（按传入 ID 顺序更新 sort_order）
 #[tauri::command]
 pub async fn reorder_chapters(db: State<'_, AppDb>, chapter_ids: Vec<String>) -> Result<(), String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;

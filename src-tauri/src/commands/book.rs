@@ -1,3 +1,8 @@
+//! 书籍管理 IPC 命令
+//!
+//! 提供书籍的增删改查（CRUD）操作，通过 Tauri State 访问
+//! 应用级 SQLite 数据库（r2d2 连接池）。
+
 use tauri::State;
 use rusqlite::params;
 use uuid::Uuid;
@@ -6,10 +11,12 @@ use serde_json;
 use crate::db::AppDb;
 use crate::models::Book;
 
+/// 获取当前 UTC 时间的 RFC 3339 字符串表示
 fn now() -> String {
     Utc::now().to_rfc3339()
 }
 
+/// 列出所有书籍，按 updated_at 降序排列
 #[tauri::command]
 pub async fn list_books(db: State<'_, AppDb>) -> Result<Vec<Book>, String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
@@ -39,6 +46,7 @@ pub async fn list_books(db: State<'_, AppDb>) -> Result<Vec<Book>, String> {
     books.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
+/// 根据 ID 获取单本书籍详情
 #[tauri::command]
 pub async fn get_book(db: State<'_, AppDb>, id: String) -> Result<Book, String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
@@ -66,6 +74,7 @@ pub async fn get_book(db: State<'_, AppDb>, id: String) -> Result<Book, String> 
     ).map_err(|e| e.to_string())
 }
 
+/// 创建新书参数（由前端 JSON 反序列化）
 #[derive(serde::Deserialize)]
 pub struct CreateBookParams {
     pub title: String,
@@ -76,6 +85,7 @@ pub struct CreateBookParams {
     pub tags: Vec<String>,
 }
 
+/// 创建新书，生成 UUID，返回完整 Book 结构
 #[tauri::command]
 pub async fn create_book(db: State<'_, AppDb>, params: CreateBookParams) -> Result<Book, String> {
     let id = Uuid::new_v4().to_string();
@@ -104,6 +114,7 @@ pub async fn create_book(db: State<'_, AppDb>, params: CreateBookParams) -> Resu
     })
 }
 
+/// 更新书籍字段（部分更新，通过 serde_json::Value 按字段写入）
 #[tauri::command]
 pub async fn update_book(db: State<'_, AppDb>, id: String, params: serde_json::Value) -> Result<Book, String> {
     let ts = now();
@@ -117,6 +128,7 @@ pub async fn update_book(db: State<'_, AppDb>, id: String, params: serde_json::V
     get_book(db, id).await
 }
 
+/// 删除书籍（级联删除关联的卷、章节、快照）
 #[tauri::command]
 pub async fn delete_book(db: State<'_, AppDb>, id: String) -> Result<(), String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;

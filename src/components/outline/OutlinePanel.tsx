@@ -1,3 +1,12 @@
+/**
+ * OutlinePanel — 卷-章节目录树面板
+ *
+ * 展示书籍的卷-章节两级结构，支持：
+ * - 新建卷/章节（弹窗输入 + 后端创建）
+ * - 卷折叠/展开
+ * - 虚拟化滚动渲染（@tanstack/react-virtual）
+ * - 章节行内重命名与状态标签显示
+ */
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { PlusIcon, FolderIcon, FileTextIcon, ChevronRightIcon, ChevronDownIcon } from 'lucide-react'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -231,7 +240,12 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
   )
 }
 
-// ==================== 虚拟化友好的章节条目 ====================
+/**
+ * 虚拟化友好的章节条目子组件
+ *
+ * 双击进入行内编辑，点击选中章节，显示章节状态标签。
+ * 支持缩进展示（表示属于某个卷下）。
+ */
 function ChapterItemVirtual({
   chapter,
   isActive,

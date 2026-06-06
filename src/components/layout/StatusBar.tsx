@@ -1,3 +1,8 @@
+/**
+ * StatusBar — 编辑器底部状态栏
+ *
+ * 展示当前章节信息、全书字数、保存状态与最后保存时间。
+ */
 import { useAtom } from 'jotai'
 import { wordCountAtom, isSavingAtom, lastSavedAtom } from '@/stores/uiAtoms.ts'
 import { useCurrentChapter } from '@/stores/appStore.ts'
