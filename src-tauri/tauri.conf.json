@@ -54,6 +54,11 @@
         "https://github.com/ukcoder/mirage-ink/releases/latest/download/latest.json"
       ],
       "pubkey": ""
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": ["ukcoder"]
+      }
     }
   }
 }
