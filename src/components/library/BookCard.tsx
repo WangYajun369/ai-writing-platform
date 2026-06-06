@@ -4,13 +4,22 @@
  * 支持网格（grid）与列表（list）两种视图模式。
  * 网格模式展示封面、日更进度环及右键菜单；
  * 列表模式展示缩略图、书名、作者、字数及操作菜单。
+ * 支持修改封面（网格模式悬停显示编辑按钮）。
  */
-import { useState, useRef } from 'react'
-import { MoreVerticalIcon, EditIcon, Trash2Icon, CalendarIcon } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { MoreVerticalIcon, EditIcon, Trash2Icon, CalendarIcon, ImageIcon } from 'lucide-react'
+import { open } from '@tauri-apps/plugin-dialog'
+import { stat } from '@tauri-apps/plugin-fs'
 import type { Book } from '@/types'
 import { bookApi } from '@/lib/tauri-bridge.ts'
-import { cn, formatWordCount, formatRelativeTime } from '@/lib/utils'
+import { formatWordCount, formatRelativeTime } from '@/lib/utils'
 import { useAppStore } from '@/stores/appStore'
+import { resolveCoverSrc } from './CoverPicker'
+
+/** 允许的封面图片扩展名 */
+const ALLOWED_COVER_EXTS = ['jpg', 'jpeg', 'png', 'webp']
+/** 封面最大文件大小：5 MB */
+const MAX_COVER_SIZE = 5 * 1024 * 1024
 
 interface BookCardProps {
   book: Book
@@ -21,13 +30,79 @@ interface BookCardProps {
 
 export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [coverChanging, setCoverChanging] = useState(false)
+  const [coverSrc, setCoverSrc] = useState<string | undefined>(undefined)
+  const prevCoverSrcRef = useRef<string | undefined>(undefined)
   const menuRef = useRef<HTMLDivElement>(null)
-  const { removeBook } = useAppStore()
+  const { removeBook, updateBook } = useAppStore()
+
+  // 异步加载封面为 blob URL
+  useEffect(() => {
+    let cancelled = false
+    resolveCoverSrc(book.coverImage).then((src) => {
+      if (cancelled) return
+      // 释放前一个 blob URL
+      if (prevCoverSrcRef.current?.startsWith('blob:')) {
+        URL.revokeObjectURL(prevCoverSrcRef.current)
+      }
+      prevCoverSrcRef.current = src
+      setCoverSrc(src)
+    })
+    return () => { cancelled = true }
+  }, [book.coverImage])
+
+  // 组件卸载时释放 blob URL
+  useEffect(() => {
+    return () => {
+      if (prevCoverSrcRef.current?.startsWith('blob:')) {
+        URL.revokeObjectURL(prevCoverSrcRef.current)
+      }
+    }
+  }, [])
 
   // 日更进度百分比
   const dailyProgress = book.dailyTarget > 0
     ? Math.min((book.todayCount / book.dailyTarget) * 100, 100)
     : 0
+
+  /** 选择并上传封面 */
+  async function handleChangeCover() {
+    setMenuOpen(false)
+    setCoverChanging(true)
+    try {
+      const selected = await open({
+        title: '选择封面图片',
+        filters: [{ name: '图片文件', extensions: ALLOWED_COVER_EXTS }],
+        multiple: false,
+        directory: false,
+      })
+      if (!selected) return
+      const filePath = selected as string
+
+      // 校验扩展名
+      const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
+      if (!ALLOWED_COVER_EXTS.includes(ext)) {
+        alert(`不支持的图片格式 .${ext}，仅支持 jpg、png、webp`)
+        return
+      }
+
+      // 校验文件大小
+      const fileStat = await stat(filePath)
+      if (fileStat.size > MAX_COVER_SIZE) {
+        const sizeMB = (fileStat.size / (1024 * 1024)).toFixed(1)
+        alert(`图片过大（${sizeMB} MB），封面不能超过 5 MB`)
+        return
+      }
+
+      const updated = await bookApi.setCover(book.id, filePath)
+      updateBook(book.id, updated)
+    } catch (err) {
+      console.error('修改封面失败', err)
+      alert('修改封面失败，请重试')
+    } finally {
+      setCoverChanging(false)
+    }
+  }
 
   async function handleDelete() {
     if (!confirm(`确认删除《${book.title}》？此操作不可恢复。`)) return
@@ -43,12 +118,16 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
   if (viewMode === 'list') {
     return (
       <div
-        className="flex items-center gap-4 p-4 rounded-xl bg-card border hover:border-primary/40 transition-all cursor-pointer group"
+        className="flex items-center gap-4 p-4 rounded-xl bg-card border hover:border-primary/40 transition-all cursor-pointer group relative"
         onDoubleClick={() => onOpen(book)}
       >
         {/* 封面缩略图 */}
-        <div className="w-10 h-14 rounded bg-gradient-to-br from-primary/20 to-primary/5 flex-shrink-0 flex items-center justify-center text-xs text-primary font-bold">
-          {book.title.charAt(0)}
+        <div className="w-10 h-14 rounded flex-shrink-0 flex items-center justify-center overflow-hidden bg-gradient-to-br from-primary/20 to-primary/5">
+          {coverSrc ? (
+            <img src={coverSrc} alt={book.title} className="w-full h-full object-cover" />
+          ) : (
+            <span className="text-xs text-primary font-bold">{book.title.charAt(0)}</span>
+          )}
         </div>
 
         <div className="flex-1 min-w-0">
@@ -70,7 +149,7 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
         {menuOpen && (
           <div
             ref={menuRef}
-            className="absolute right-0 top-full mt-1 z-20 bg-popover border rounded-lg shadow-lg py-1 min-w-28"
+            className="absolute right-0 top-full mt-1 z-20 bg-popover border rounded-lg shadow-lg py-1 min-w-32"
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -78,6 +157,13 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
               onClick={() => { onOpen(book); setMenuOpen(false) }}
             >
               <EditIcon className="w-3 h-3" /> 打开编辑
+            </button>
+            <button
+              className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left"
+              onClick={handleChangeCover}
+              disabled={coverChanging}
+            >
+              <ImageIcon className="w-3 h-3" /> 修改封面
             </button>
             <button
               className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left text-destructive"
@@ -107,8 +193,8 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
     >
       {/* 封面区域 */}
       <div className="aspect-[3/4] bg-gradient-to-br from-primary/20 via-primary/10 to-accent flex items-end p-3 relative">
-        {book.coverImage ? (
-          <img src={book.coverImage} alt={book.title} className="absolute inset-0 w-full h-full object-cover" />
+        {coverSrc ? (
+          <img src={coverSrc} alt={book.title} className="absolute inset-0 w-full h-full object-cover" />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center">
             <span className="text-4xl font-bold text-primary/20">{book.title.charAt(0)}</span>
@@ -148,7 +234,7 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
       {menuOpen && (
         <div
           ref={menuRef}
-          className="absolute top-8 left-2 z-20 bg-popover border rounded-lg shadow-lg py-1 min-w-28"
+          className="absolute top-8 left-2 z-20 bg-popover border rounded-lg shadow-lg py-1 min-w-32"
           onClick={(e) => e.stopPropagation()}
         >
           <button
@@ -156,6 +242,13 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
             onClick={() => { onOpen(book); setMenuOpen(false) }}
           >
             <EditIcon className="w-3 h-3" /> 打开编辑
+          </button>
+          <button
+            className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left"
+            onClick={handleChangeCover}
+            disabled={coverChanging}
+          >
+            <ImageIcon className="w-3 h-3" /> 修改封面
           </button>
           <button
             className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left text-destructive"

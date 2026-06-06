@@ -1,13 +1,14 @@
 /**
  * NewBookDialog — 新建作品弹窗
  *
- * 包含书名、作者、简介、每日目标字数等字段的表单弹窗。
+ * 包含书名、作者、简介、每日目标字数、封面图片等字段的表单弹窗。
  * 创建成功后将书籍加入全局状态并触发回调。
  */
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { XIcon } from 'lucide-react'
 import { bookApi } from '@/lib/tauri-bridge'
 import { useAppStore } from '@/stores/appStore'
+import CoverPicker, { resolveCoverSrc } from './CoverPicker'
 import type { Book } from '@/types'
 
 interface NewBookDialogProps {
@@ -20,8 +21,19 @@ export default function NewBookDialog({ onClose, onCreated }: NewBookDialogProps
   const [author, setAuthor] = useState('')
   const [description, setDescription] = useState('')
   const [dailyTarget, setDailyTarget] = useState(1000)
+  const [coverPath, setCoverPath] = useState('') // 本地文件绝对路径
+  const [coverPreview, setCoverPreview] = useState<string | undefined>(undefined)
   const [submitting, setSubmitting] = useState(false)
   const { addBook } = useAppStore()
+
+  // 异步加载封面预览
+  useEffect(() => {
+    let cancelled = false
+    resolveCoverSrc(coverPath || null).then((src) => {
+      if (!cancelled) setCoverPreview(src)
+    })
+    return () => { cancelled = true }
+  }, [coverPath])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -36,8 +48,16 @@ export default function NewBookDialog({ onClose, onCreated }: NewBookDialogProps
         tags: [],
         dbPath: '',
       })
-      addBook(book)
-      onCreated(book)
+
+      // 如果选择了封面，创建后再设置封面
+      if (coverPath) {
+        const updated = await bookApi.setCover(book.id, coverPath)
+        addBook(updated)
+        onCreated(updated)
+      } else {
+        addBook(book)
+        onCreated(book)
+      }
     } catch (err) {
       console.error('创建书籍失败', err)
       alert('创建失败，请重试')
@@ -52,7 +72,7 @@ export default function NewBookDialog({ onClose, onCreated }: NewBookDialogProps
       <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
 
       {/* 弹窗 */}
-      <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-card border rounded-2xl shadow-xl p-6">
+      <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-card border rounded-2xl shadow-xl p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-semibold">新建作品</h2>
           <button onClick={onClose} className="p-1 rounded hover:bg-muted">
@@ -61,6 +81,15 @@ export default function NewBookDialog({ onClose, onCreated }: NewBookDialogProps
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* 封面选择（可选） */}
+          <div className="space-y-1">
+            <label className="text-sm font-medium">封面（可选）</label>
+            <CoverPicker
+              value={coverPreview}
+              onChange={setCoverPath}
+            />
+          </div>
+
           <div className="space-y-1">
             <label className="text-sm font-medium">书名 <span className="text-destructive">*</span></label>
             <input

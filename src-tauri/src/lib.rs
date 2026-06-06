@@ -33,6 +33,7 @@ pub fn run() {
             commands::book::get_book,
             commands::book::create_book,
             commands::book::update_book,
+            commands::book::set_book_cover,
             commands::book::delete_book,
             // 卷
             commands::volume::list_volumes,

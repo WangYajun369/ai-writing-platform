@@ -27,6 +27,11 @@ export const bookApi = {
   async getById(id: string): Promise<Book> {
     return invoke<Book>('get_book', { id })
   },
+
+  /** 设置书籍封面：传入本地文件路径，后端复制到应用数据目录并更新数据库 */
+  async setCover(id: string, sourcePath: string): Promise<Book> {
+    return invoke<Book>('set_book_cover', { id, sourcePath })
+  },
 }
 
 // ==================== 卷管理 ====================

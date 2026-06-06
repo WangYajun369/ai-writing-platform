@@ -4,12 +4,20 @@
 //! 应用级 SQLite 数据库（r2d2 连接池）。
 
 use tauri::State;
+use tauri::Manager;
 use rusqlite::params;
 use uuid::Uuid;
 use chrono::Utc;
 use serde_json;
 use crate::db::AppDb;
 use crate::models::Book;
+use tauri::AppHandle;
+use std::path::Path;
+
+/// 支持的封面图片扩展名
+const ALLOWED_COVER_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp"];
+/// 封面最大文件大小（字节）：5 MB
+const MAX_COVER_SIZE: u64 = 5 * 1024 * 1024;
 
 /// 获取当前 UTC 时间的 RFC 3339 字符串表示
 fn now() -> String {
@@ -120,11 +128,119 @@ pub async fn update_book(db: State<'_, AppDb>, id: String, params: serde_json::V
     let ts = now();
     {
         let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
-        if let Some(title) = params.get("title").and_then(|v| v.as_str()) {
-            conn.execute("UPDATE books SET title=?1, updated_at=?2 WHERE id=?3", params![title, ts, id])
+
+        // 收集可更新的字段，构建动态 SQL 以支持部分更新
+        let mut set_clauses: Vec<String> = Vec::new();
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        if let Some(v) = params.get("title").and_then(|v| v.as_str()) {
+            set_clauses.push(format!("title=?{}", set_clauses.len() + 1));
+            param_values.push(Box::new(v.to_string()));
+        }
+        if let Some(v) = params.get("author").and_then(|v| v.as_str()) {
+            set_clauses.push(format!("author=?{}", set_clauses.len() + 1));
+            param_values.push(Box::new(v.to_string()));
+        }
+        if let Some(v) = params.get("description").and_then(|v| v.as_str()) {
+            set_clauses.push(format!("description=?{}", set_clauses.len() + 1));
+            param_values.push(Box::new(v.to_string()));
+        }
+        if let Some(v) = params.get("coverImage").and_then(|v| v.as_str()) {
+            set_clauses.push(format!("cover_image=?{}", set_clauses.len() + 1));
+            param_values.push(Box::new(v.to_string()));
+        }
+        if let Some(v) = params.get("dailyTarget").and_then(|v| v.as_i64()) {
+            set_clauses.push(format!("daily_target=?{}", set_clauses.len() + 1));
+            param_values.push(Box::new(v));
+        }
+        if let Some(v) = params.get("tags").and_then(|v| v.as_array()) {
+            let tags_json = serde_json::to_string(v).unwrap_or_else(|_| "[]".to_string());
+            set_clauses.push(format!("tags=?{}", set_clauses.len() + 1));
+            param_values.push(Box::new(tags_json));
+        }
+
+        if !set_clauses.is_empty() {
+            // 追加 updated_at
+            let ts_idx = set_clauses.len() + 1;
+            set_clauses.push(format!("updated_at=?{}", ts_idx));
+            param_values.push(Box::new(ts.clone()));
+
+            let sql = format!(
+                "UPDATE books SET {} WHERE id=?{}",
+                set_clauses.join(", "),
+                ts_idx + 1
+            );
+            param_values.push(Box::new(id.clone()));
+
+            // 构建参数引用切片
+            let params_refs: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
+            conn.execute(&sql, params_refs.as_slice())
                 .map_err(|e| e.to_string())?;
         }
     }
+    get_book(db, id).await
+}
+
+/// 设置书籍封面：从源路径复制封面图片到应用数据目录，更新数据库
+///
+/// 会自动校验文件扩展名和大小，超出限制时返回错误信息。
+#[tauri::command]
+pub async fn set_book_cover(
+    app: AppHandle,
+    db: State<'_, AppDb>,
+    id: String,
+    source_path: String,
+) -> Result<Book, String> {
+    let src = Path::new(&source_path);
+
+    // 1. 校验扩展名
+    let ext = src
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .unwrap_or_default();
+    if !ALLOWED_COVER_EXTENSIONS.contains(&ext.as_str()) {
+        return Err(format!(
+            "不支持的封面格式：.{ext}。仅支持 jpg、jpeg、png、webp。"
+        ));
+    }
+
+    // 2. 校验文件大小
+    let metadata = std::fs::metadata(src).map_err(|e| format!("无法读取封面文件: {e}"))?;
+    if metadata.len() > MAX_COVER_SIZE {
+        let size_mb = metadata.len() as f64 / (1024.0 * 1024.0);
+        return Err(format!(
+            "封面文件过大（{:.1} MB），最大允许 5 MB。",
+            size_mb
+        ));
+    }
+
+    // 3. 确保 covers 目录存在
+    let app_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("无法获取应用数据目录: {e}"))?;
+    let covers_dir = app_dir.join("covers");
+    std::fs::create_dir_all(&covers_dir)
+        .map_err(|e| format!("无法创建封面目录: {e}"))?;
+
+    // 4. 复制文件（用 book_id + 扩展名作为文件名）
+    let dest_filename = format!("{}.{ext}", id);
+    let dest = covers_dir.join(&dest_filename);
+    std::fs::copy(src, &dest).map_err(|e| format!("封面复制失败: {e}"))?;
+
+    // 5. 更新数据库
+    let cover_path = dest.to_str().ok_or("封面路径无效")?.to_string();
+    let ts = now();
+    {
+        let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
+        conn.execute(
+            "UPDATE books SET cover_image=?1, updated_at=?2 WHERE id=?3",
+            params![cover_path, ts, id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
     get_book(db, id).await
 }
 
