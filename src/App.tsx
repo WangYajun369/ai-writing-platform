@@ -10,6 +10,15 @@ import { useAppStore } from './stores/appStore'
 
 const STORAGE_KEY_THEME = 'mirageink-theme'
 const STORAGE_KEY_EYECARE = 'mirageink-eyecare'
+const STORAGE_KEY_FONT = 'mirageink-font'
+
+const FONT_FAMILY_MAP: Record<string, string> = {
+  serif: "'Noto Serif SC', Georgia, serif",
+  simhei: "SimHei, 'Noto Sans SC', sans-serif",
+  simsun: "SimSun, 'Noto Serif SC', serif",
+  kaiti: "KaiTi, 'Noto Serif SC', serif",
+  yahei: "'Microsoft YaHei', 'Noto Sans SC', sans-serif",
+}
 
 /**
  * 应用初始化组件
@@ -17,7 +26,7 @@ const STORAGE_KEY_EYECARE = 'mirageink-eyecare'
  * 根据当前主题与护眼模式切换 dark / eyecare class，并持久化到 localStorage。
  */
 function AppInit() {
-  const { setTheme, theme, eyeCareMode, setEyeCareMode } = useAppStore()
+  const { setTheme, theme, eyeCareMode, setEyeCareMode, fontFamily, setFontFamily } = useAppStore()
 
   // 启动时从 localStorage 恢复偏好
   useEffect(() => {
@@ -28,6 +37,10 @@ function AppInit() {
     const savedEyeCare = localStorage.getItem(STORAGE_KEY_EYECARE)
     if (savedEyeCare === 'off' || savedEyeCare === 'warm' || savedEyeCare === 'green') {
       setEyeCareMode(savedEyeCare)
+    }
+    const savedFont = localStorage.getItem(STORAGE_KEY_FONT)
+    if (savedFont && savedFont in FONT_FAMILY_MAP) {
+      setFontFamily(savedFont as 'serif' | 'simhei' | 'simsun' | 'kaiti' | 'yahei')
     }
   }, [])
 
@@ -64,6 +77,12 @@ function AppInit() {
     localStorage.setItem(STORAGE_KEY_THEME, theme)
     localStorage.setItem(STORAGE_KEY_EYECARE, eyeCareMode)
   }, [theme, eyeCareMode])
+
+  // 字体应用
+  useEffect(() => {
+    document.documentElement.style.setProperty('--font-editor', FONT_FAMILY_MAP[fontFamily] ?? FONT_FAMILY_MAP.serif)
+    localStorage.setItem(STORAGE_KEY_FONT, fontFamily)
+  }, [fontFamily])
 
   return <AppRouter />
 }

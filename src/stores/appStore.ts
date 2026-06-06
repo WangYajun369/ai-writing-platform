@@ -28,6 +28,9 @@ interface AppState {
   // 护眼模式：关闭 / 暖黄色 / 豆沙绿
   eyeCareMode: 'off' | 'warm' | 'green'
 
+  // 全局字体
+  fontFamily: 'serif' | 'simhei' | 'simsun' | 'kaiti' | 'yahei'
+
   // Actions
   setBooks: (books: Book[]) => void
   setCurrentBookId: (id: string | null) => void
@@ -43,6 +46,7 @@ interface AppState {
   setAiConfig: (config: Partial<AiConfig>) => void
   setTheme: (theme: 'light' | 'dark' | 'system') => void
   setEyeCareMode: (mode: 'off' | 'warm' | 'green') => void
+  setFontFamily: (font: AppState['fontFamily']) => void
   setDbStatus: (status: AppState['dbStatus']) => void
   setLoadingBooks: (v: boolean) => void
   setLoadingChapters: (v: boolean) => void
@@ -68,6 +72,7 @@ export const useAppStore = create<AppState>()(
     },
     theme: 'system',
     eyeCareMode: 'off',
+    fontFamily: 'serif',
 
     setBooks: (books) => set({ books }),
     setCurrentBookId: (id) => set({ currentBookId: id }),
@@ -99,6 +104,7 @@ export const useAppStore = create<AppState>()(
 
     setTheme: (theme) => set({ theme }),
     setEyeCareMode: (eyeCareMode) => set({ eyeCareMode }),
+    setFontFamily: (fontFamily) => set({ fontFamily }),
     setDbStatus: (dbStatus) => set({ dbStatus }),
     setLoadingBooks: (v) => set({ isLoadingBooks: v }),
     setLoadingChapters: (v) => set({ isLoadingChapters: v }),

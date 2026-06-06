@@ -15,7 +15,7 @@ type Tab = 'ai' | 'appearance' | 'storage'
 
 export default function SettingsPage() {
   const navigate = useNavigate()
-  const { aiConfig, setAiConfig, theme, setTheme, eyeCareMode, setEyeCareMode } = useAppStore()
+  const { aiConfig, setAiConfig, theme, setTheme, eyeCareMode, setEyeCareMode, fontFamily, setFontFamily } = useAppStore()
   const [activeTab, setActiveTab] = useState<Tab>('ai')
 
   return (
@@ -61,8 +61,10 @@ export default function SettingsPage() {
             <AppearanceSection
               theme={theme}
               eyeCareMode={eyeCareMode}
+              fontFamily={fontFamily}
               onThemeChange={setTheme}
               onEyeCareChange={setEyeCareMode}
+              onFontFamilyChange={setFontFamily}
             />
           )}
           {activeTab === 'storage' && (
@@ -171,14 +173,25 @@ function AiConfigSection({
 function AppearanceSection({
   theme,
   eyeCareMode,
+  fontFamily,
   onThemeChange,
   onEyeCareChange,
+  onFontFamilyChange,
 }: {
   theme: string
   eyeCareMode: string
+  fontFamily: string
   onThemeChange: (t: 'light' | 'dark' | 'system') => void
   onEyeCareChange: (m: 'off' | 'warm' | 'green') => void
+  onFontFamilyChange: (f: 'serif' | 'simhei' | 'simsun' | 'kaiti' | 'yahei') => void
 }) {
+  const fontOptions = [
+    { value: 'serif', label: '默认衬线' },
+    { value: 'simhei', label: '黑体' },
+    { value: 'simsun', label: '宋体' },
+    { value: 'kaiti', label: '楷体' },
+    { value: 'yahei', label: '微软雅黑' },
+  ] as const
   return (
     <div className="space-y-6">
       <h2 className="text-base font-semibold">外观设置</h2>
@@ -212,7 +225,7 @@ function AppearanceSection({
             { value: 'off', label: '关闭' },
             { value: 'warm', label: '暖黄色', color: 'bg-[#f5efdb]' },
             { value: 'green', label: '豆沙绿', color: 'bg-[#d7e8d0]' },
-          ] as const).map(({ value, label, color }) => (
+          ] as const).map(({ value, label, ...rest }) => (
             <button
               key={value}
               onClick={() => onEyeCareChange(value)}
@@ -222,11 +235,34 @@ function AppearanceSection({
                   : 'bg-muted hover:bg-muted/80'
               }`}
             >
-              {color && (
+              {'color' in rest && rest.color && (
                 <span
-                  className={`inline-block w-4 h-4 rounded border border-border ${color}`}
+                  className={`inline-block w-4 h-4 rounded border border-border ${rest.color}`}
                 />
               )}
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 字体 */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">写作字体</label>
+        <p className="text-xs text-muted-foreground">
+          选择编辑器中使用的字体，营造不同的写作氛围
+        </p>
+        <div className="flex flex-wrap gap-3">
+          {fontOptions.map(({ value, label }) => (
+            <button
+              key={value}
+              onClick={() => onFontFamilyChange(value)}
+              className={`px-4 py-2 rounded-lg text-sm transition-colors ${
+                fontFamily === value
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted hover:bg-muted/80'
+              }`}
+            >
               {label}
             </button>
           ))}

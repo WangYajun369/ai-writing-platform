@@ -160,9 +160,13 @@
 
 /* ==================== TipTap 富文本编辑器样式 ==================== */
 /* 编辑器容器：使用 prose 排版、衬线字体，适用于中文长文写作场景 */
+/* 编辑器全局字体（目录、章节、编辑区统一） */
+.editor-font {
+  font-family: var(--font-editor, 'Noto Serif SC', Georgia, serif);
+}
+
 .tiptap-editor {
   @apply prose prose-neutral dark:prose-invert max-w-none;
-  font-family: 'Noto Serif SC', Georgia, serif;
   font-size: 16px;
   line-height: 2;
   letter-spacing: 0.02em;

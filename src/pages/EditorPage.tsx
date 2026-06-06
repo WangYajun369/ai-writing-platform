@@ -91,7 +91,7 @@ export default function EditorPage() {
   }, [zenMode, exitZenMode])
 
   return (
-    <div className={cn('h-screen flex flex-col overflow-hidden', zenMode && 'zen-mode')}>
+    <div className={cn('h-screen flex flex-col overflow-hidden editor-font', zenMode && 'zen-mode')}>
       {/* 顶部工具栏 */}
       {!zenMode && <EditorToolbar />}
 
