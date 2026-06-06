@@ -11,7 +11,7 @@ pub async fn export_book(
     format: String,
     output_path: String,
 ) -> Result<(), String> {
-    let conn = db.conn.lock().unwrap();
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
 
     // 获取书籍信息
     let (title, author): (String, String) = conn.query_row(
@@ -128,7 +128,7 @@ pub async fn import_txt(
     }
 
     let created_count = chapters.len();
-    let conn = db.conn.lock().unwrap();
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     use chrono::Utc;
     use uuid::Uuid;
 

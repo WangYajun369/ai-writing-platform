@@ -31,14 +31,34 @@ export default defineConfig(async () => ({
   // Env variables starting with the item of `envPrefix` will be exposed
   envPrefix: ['VITE_', 'TAURI_ENV_*'],
   build: {
-    // Tauri supports es2021
-    target:
-      process.env.TAURI_ENV_PLATFORM === 'windows'
-        ? 'chrome105'
-        : 'safari13',
+    // Tauri supports modern browsers
+    target: 'esnext',
     // Don't minify for debug builds
     minify: !process.env.TAURI_ENV_DEBUG ? 'esbuild' : false,
     // Produce sourcemaps for debug builds
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
+    // Code splitting: separate vendor chunks for better caching
+    rollupOptions: {
+      output: {
+        chunkFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash].[ext]',
+        manualChunks(id) {
+          // TipTap editor core (large, changes infrequently)
+          if (id.includes('@tiptap')) return 'tiptap'
+          // UI icons (large icon set)
+          if (id.includes('lucide-react')) return 'icons'
+          // State management
+          if (id.includes('zustand') || id.includes('jotai')) return 'state'
+          // Router
+          if (id.includes('react-router')) return 'router'
+          // Markdown / HTML processing
+          if (id.includes('markdown-it') || id.includes('highlight.js')) return 'markdown'
+          // Utilities
+          if (id.includes('lodash-es') || id.includes('date-fns') || id.includes('uuid')) return 'utils'
+          // Virtualization
+          if (id.includes('@tanstack/react-virtual')) return 'virtual'
+        },
+      },
+    },
   },
 }))

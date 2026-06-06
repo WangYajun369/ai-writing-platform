@@ -73,8 +73,8 @@ export const chapterApi = {
     return invoke<Chapter>('create_chapter', { params })
   },
 
-  async save(chapterId: string, contentHtml: string): Promise<{ wordCount: number; bookWordCount: number }> {
-    return invoke<{ wordCount: number; bookWordCount: number }>('save_chapter', { chapterId, contentHtml })
+  async save(chapterId: string, contentHtml: string, wordCount: number): Promise<{ wordCount: number; bookWordCount: number }> {
+    return invoke<{ wordCount: number; bookWordCount: number }>('save_chapter', { chapterId, contentHtml, wordCount })
   },
 
   async updateStatus(chapterId: string, status: Chapter['status']): Promise<void> {
@@ -109,8 +109,8 @@ export const snapshotApi = {
     return invoke<string>('get_snapshot_content', { snapshotId })
   },
 
-  async restore(snapshotId: string): Promise<void> {
-    return invoke<void>('restore_snapshot', { snapshotId })
+  async restore(snapshotId: string): Promise<{ wordCount: number; bookWordCount: number }> {
+    return invoke<{ wordCount: number; bookWordCount: number }>('restore_snapshot', { snapshotId })
   },
 
   async delete(snapshotId: string): Promise<void> {

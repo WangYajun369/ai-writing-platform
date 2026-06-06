@@ -21,7 +21,7 @@ pub async fn rag_search(
     top_n: usize,
 ) -> Result<Vec<RagResult>, String> {
     // Phase 1 降级：使用 LIKE 全文检索近似实现
-    let conn = db.conn.lock().unwrap();
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     let pattern = format!("%{}%", query.chars().take(20).collect::<String>());
     let mut stmt = conn.prepare(
         "SELECT id, title, content_html FROM chapters WHERE book_id=?1 AND content_html LIKE ?2 AND deleted_at IS NULL LIMIT ?3"

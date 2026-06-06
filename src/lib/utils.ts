@@ -29,9 +29,11 @@ export function formatRelativeTime(isoDate: string): string {
   return date.toLocaleDateString('zh-CN')
 }
 
-/** 从 HTML 内容提取纯文本字数（去标签和空白，统计可见字符） */
+/** 从 HTML 内容提取纯文本字数（去标签、解码实体、去空白，统计可见字符） */
 export function countWordsFromHtml(html: string): number {
-  const text = html.replace(/<[^>]*>/g, '')
+  // 使用 DOMParser 正确提取纯文本（自动解码所有 HTML 实体）
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  const text = doc.body.textContent ?? ''
   return text.replace(/\s/g, '').length
 }
 

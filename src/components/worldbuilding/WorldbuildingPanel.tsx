@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { PlusIcon, SearchIcon, XIcon } from 'lucide-react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { worldCardApi } from '@/lib/tauri-bridge'
 import type { WorldCard, WorldCardType } from '@/types'
 import { WORLD_CARD_TYPE_CONFIG, cn } from '@/lib/utils'
@@ -16,10 +17,31 @@ export default function WorldbuildingPanel({ bookId }: WorldbuildingPanelProps) 
   const [editingCard, setEditingCard] = useState<WorldCard | null>(null)
   const [showNewCard, setShowNewCard] = useState(false)
 
+  // 虚拟化滚动容器 ref
+  const parentRef = useRef<HTMLDivElement>(null)
+
+  const filtered = cards
+    .filter((c) => filterType === 'all' || c.type === filterType)
+    .filter((c) => c.title.includes(searchQuery) || c.content.includes(searchQuery))
+
+  // 虚拟化实例
+  const virtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 110,
+    overscan: 5,
+  })
+
   useEffect(() => {
     loadCards()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId])
+
+  // 过滤结果变化时重置滚动位置并重新测量
+  useEffect(() => {
+    virtualizer.scrollToOffset(0)
+    virtualizer.measure()
+  }, [filterType, searchQuery, virtualizer])
 
   async function loadCards() {
     try {
@@ -29,10 +51,6 @@ export default function WorldbuildingPanel({ bookId }: WorldbuildingPanelProps) 
       console.error('加载世界观卡片失败', err)
     }
   }
-
-  const filtered = cards
-    .filter((c) => filterType === 'all' || c.type === filterType)
-    .filter((c) => c.title.includes(searchQuery) || c.content.includes(searchQuery))
 
   return (
     <div className="flex flex-col h-full">
@@ -75,35 +93,59 @@ export default function WorldbuildingPanel({ bookId }: WorldbuildingPanelProps) 
         ))}
       </div>
 
-      {/* 卡片列表 */}
-      <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-2">
+      {/* 虚拟化卡片列表 */}
+      <div ref={parentRef} className="flex-1 overflow-y-auto px-3 pb-3">
         {filtered.length === 0 ? (
           <div className="text-xs text-muted-foreground text-center py-8">
             {searchQuery ? '无匹配结果' : '还没有设定，点击 + 新建'}
           </div>
         ) : (
-          filtered.map((card) => (
-            <div
-              key={card.id}
-              onClick={() => setEditingCard(card)}
-              className="p-3 rounded-lg border bg-card hover:border-primary/40 cursor-pointer transition-colors"
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm">{WORLD_CARD_TYPE_CONFIG[card.type].icon}</span>
-                <span className="text-sm font-medium truncate">{card.title}</span>
-              </div>
-              {card.content && (
-                <p className="text-xs text-muted-foreground line-clamp-2">{card.content}</p>
-              )}
-              {card.tags.length > 0 && (
-                <div className="flex gap-1 mt-2 flex-wrap">
-                  {card.tags.slice(0, 3).map((tag) => (
-                    <span key={tag} className="text-xs bg-muted px-1.5 py-0.5 rounded-full">{tag}</span>
-                  ))}
+          <div
+            style={{
+              height: `${virtualizer.getTotalSize()}px`,
+              width: '100%',
+              position: 'relative',
+            }}
+          >
+            {virtualizer.getVirtualItems().map((vItem) => {
+              const card = filtered[vItem.index]
+              return (
+                <div
+                  key={card.id}
+                  ref={virtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: `${vItem.size}px`,
+                    transform: `translateY(${vItem.start}px)`,
+                  }}
+                >
+                  <div
+                    onClick={() => setEditingCard(card)}
+                    className="p-3 rounded-lg border bg-card hover:border-primary/40 cursor-pointer transition-colors"
+                    style={{ marginBottom: '8px' }}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm">{WORLD_CARD_TYPE_CONFIG[card.type].icon}</span>
+                      <span className="text-sm font-medium truncate">{card.title}</span>
+                    </div>
+                    {card.content && (
+                      <p className="text-xs text-muted-foreground line-clamp-2">{card.content}</p>
+                    )}
+                    {card.tags.length > 0 && (
+                      <div className="flex gap-1 mt-2 flex-wrap">
+                        {card.tags.slice(0, 3).map((tag) => (
+                          <span key={tag} className="text-xs bg-muted px-1.5 py-0.5 rounded-full">{tag}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
-            </div>
-          ))
+              )
+            })}
+          </div>
         )}
       </div>
 

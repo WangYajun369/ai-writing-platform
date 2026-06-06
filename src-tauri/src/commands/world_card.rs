@@ -10,7 +10,7 @@ fn now() -> String { Utc::now().to_rfc3339() }
 
 #[tauri::command]
 pub async fn list_world_cards(db: State<'_, AppDb>, book_id: String) -> Result<Vec<WorldCard>, String> {
-    let conn = db.conn.lock().unwrap();
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     let mut stmt = conn.prepare(
         "SELECT id,book_id,type,title,content,content_html,tags,vectorized,created_at,updated_at FROM world_cards WHERE book_id=?1 ORDER BY updated_at DESC"
     ).map_err(|e| e.to_string())?;
@@ -51,7 +51,7 @@ pub async fn create_world_card(db: State<'_, AppDb>, params: CreateWorldCardPara
     let id = Uuid::new_v4().to_string();
     let ts = now();
     let tags_json = serde_json::to_string(&params.tags).unwrap_or("[]".to_string());
-    let conn = db.conn.lock().unwrap();
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     conn.execute(
         "INSERT INTO world_cards (id,book_id,type,title,content,content_html,tags,vectorized,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,0,?8,?9)",
         params![id, params.book_id, params.card_type, params.title, params.content, params.content_html, tags_json, ts, ts],
@@ -76,7 +76,7 @@ pub async fn update_world_card(
     id: String,
     params: serde_json::Value,
 ) -> Result<WorldCard, String> {
-    let conn = db.conn.lock().unwrap();
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     let ts = now();
     if let Some(title) = params.get("title").and_then(|v| v.as_str()) {
         conn.execute("UPDATE world_cards SET title=?1, updated_at=?2 WHERE id=?3", rusqlite::params![title, ts, id])
@@ -114,7 +114,7 @@ pub async fn update_world_card(
 
 #[tauri::command]
 pub async fn delete_world_card(db: State<'_, AppDb>, id: String) -> Result<(), String> {
-    let conn = db.conn.lock().unwrap();
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     conn.execute("DELETE FROM world_cards WHERE id=?1", params![id])
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -126,7 +126,7 @@ pub async fn search_world_cards(
     book_id: String,
     query: String,
 ) -> Result<Vec<WorldCard>, String> {
-    let conn = db.conn.lock().unwrap();
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     let pattern = format!("%{}%", query);
     let mut stmt = conn.prepare(
         "SELECT id,book_id,type,title,content,content_html,tags,vectorized,created_at,updated_at FROM world_cards WHERE book_id=?1 AND (title LIKE ?2 OR content LIKE ?2) ORDER BY updated_at DESC LIMIT 20"

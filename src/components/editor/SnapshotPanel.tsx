@@ -17,7 +17,7 @@ import type { Snapshot } from '@/types'
 
 export default function SnapshotPanel() {
   const currentChapter = useCurrentChapter()
-  const { updateChapter } = useAppStore()
+  const { updateChapter, updateBook } = useAppStore()
   const [, setContentRefresh] = useAtom(contentRefreshAtom)
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   const [loading, setLoading] = useState(false)
@@ -62,12 +62,13 @@ export default function SnapshotPanel() {
     if (!currentChapter) return
     setRestoring(snap.id)
     try {
-      await snapshotApi.restore(snap.id)
+      const result = await snapshotApi.restore(snap.id)
       updateChapter(currentChapter.id, {
         contentHtml: snap.contentHtml,
-        wordCount: snap.wordCount,
+        wordCount: result.wordCount,
         updatedAt: new Date().toISOString(),
       })
+      updateBook(currentChapter.bookId, { wordCount: result.bookWordCount })
       setContentRefresh((v) => v + 1)
     } catch (err) {
       console.error('恢复快照失败', err)

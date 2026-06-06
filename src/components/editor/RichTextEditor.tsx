@@ -21,7 +21,7 @@ import {
 } from '@/stores/uiAtoms.ts'
 import { useAppStore, useCurrentChapter } from '@/stores/appStore.ts'
 import { chapterApi } from '@/lib/tauri-bridge.ts'
-import { cn, debounce, countWordsFromHtml, calcBookWordCount } from '@/lib/utils.ts'
+import { cn, countWordsFromHtml, calcBookWordCount } from '@/lib/utils.ts'
 
 const AUTOSAVE_DEBOUNCE_MS = 300
 const AUTOSAVE_INTERVAL_MS = 3 * 60 * 1000 // 3 分钟
@@ -42,16 +42,20 @@ export default function RichTextEditor() {
   const currentChapterRef = useRef(currentChapter)
   currentChapterRef.current = currentChapter
 
+  // 防抖 timer ref（用于跨章节切换时清除旧 timer，避免旧章节数据覆盖新章节）
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout>>()
+
   // 保存函数（持久化 + 用后端返回的全书总字数校正 wordCountAtom.total）
   const saveContent = useCallback(
     async (html: string) => {
-      if (!currentChapter) return
+      const chapter = currentChapterRef.current
+      if (!chapter) return
       setIsSaving(true)
       try {
-        const result = await chapterApi.save(currentChapter.id, html)
         const frontendCount = countWordsFromHtml(html)
-        updateChapter(currentChapter.id, { contentHtml: html, wordCount: frontendCount, updatedAt: new Date().toISOString() })
-        updateBook(currentChapter.bookId, { wordCount: result.bookWordCount })
+        const result = await chapterApi.save(chapter.id, html, frontendCount)
+        updateChapter(chapter.id, { contentHtml: html, wordCount: frontendCount, updatedAt: new Date().toISOString() })
+        updateBook(chapter.bookId, { wordCount: result.bookWordCount })
         setWordCount({ chapter: frontendCount, total: result.bookWordCount })
         setLastSaved(new Date())
       } catch (err) {
@@ -60,14 +64,21 @@ export default function RichTextEditor() {
         setIsSaving(false)
       }
     },
-    [currentChapter, updateChapter, updateBook, setWordCount, setIsSaving, setLastSaved]
+    [updateChapter, updateBook, setWordCount, setIsSaving, setLastSaved]
   )
 
-  // 防抖保存
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const debouncedSave = useCallback(debounce(saveContent as (...args: unknown[]) => unknown, AUTOSAVE_DEBOUNCE_MS), [saveContent])
+  // 防抖保存（使用 ref 存 timer，切换章节时清除旧 timer 防止泄漏）
+  const debouncedSave = useCallback((html: string) => {
+    clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(() => saveContent(html), AUTOSAVE_DEBOUNCE_MS)
+  }, [saveContent])
   const debouncedSaveRef = useRef(debouncedSave)
   debouncedSaveRef.current = debouncedSave
+
+  // 章节切换时取消待处理的防抖保存
+  useEffect(() => {
+    return () => clearTimeout(saveTimerRef.current)
+  }, [currentChapter?.id])
 
   const editor = useEditor({
     extensions: [

@@ -12,7 +12,7 @@ fn now() -> String {
 
 #[tauri::command]
 pub async fn list_books(db: State<'_, AppDb>) -> Result<Vec<Book>, String> {
-    let conn = db.conn.lock().unwrap();
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     let mut stmt = conn.prepare(
         "SELECT id,title,author,description,cover_image,word_count,daily_target,today_count,db_path,tags,created_at,updated_at FROM books ORDER BY updated_at DESC"
     ).map_err(|e| e.to_string())?;
@@ -41,7 +41,7 @@ pub async fn list_books(db: State<'_, AppDb>) -> Result<Vec<Book>, String> {
 
 #[tauri::command]
 pub async fn get_book(db: State<'_, AppDb>, id: String) -> Result<Book, String> {
-    let conn = db.conn.lock().unwrap();
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     conn.query_row(
         "SELECT id,title,author,description,cover_image,word_count,daily_target,today_count,db_path,tags,created_at,updated_at FROM books WHERE id=?1",
         params![id],
@@ -82,7 +82,7 @@ pub async fn create_book(db: State<'_, AppDb>, params: CreateBookParams) -> Resu
     let ts = now();
     let tags_json = serde_json::to_string(&params.tags).unwrap_or("[]".to_string());
 
-    let conn = db.conn.lock().unwrap();
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     conn.execute(
         "INSERT INTO books (id,title,author,description,daily_target,tags,created_at,updated_at,word_count,today_count,db_path) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,0,0,'')",
         params![id, params.title, params.author, params.description, params.daily_target, tags_json, ts, ts],
@@ -108,7 +108,7 @@ pub async fn create_book(db: State<'_, AppDb>, params: CreateBookParams) -> Resu
 pub async fn update_book(db: State<'_, AppDb>, id: String, params: serde_json::Value) -> Result<Book, String> {
     let ts = now();
     {
-        let conn = db.conn.lock().unwrap();
+        let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
         if let Some(title) = params.get("title").and_then(|v| v.as_str()) {
             conn.execute("UPDATE books SET title=?1, updated_at=?2 WHERE id=?3", params![title, ts, id])
                 .map_err(|e| e.to_string())?;
@@ -119,7 +119,7 @@ pub async fn update_book(db: State<'_, AppDb>, id: String, params: serde_json::V
 
 #[tauri::command]
 pub async fn delete_book(db: State<'_, AppDb>, id: String) -> Result<(), String> {
-    let conn = db.conn.lock().unwrap();
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     conn.execute("DELETE FROM books WHERE id=?1", params![id])
         .map_err(|e| e.to_string())?;
     Ok(())

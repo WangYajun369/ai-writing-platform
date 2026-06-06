@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PlusIcon, SearchIcon, GridIcon, ListIcon, SettingsIcon, BookOpenIcon } from 'lucide-react'
 import { useAppStore } from '@/stores/appStore'
@@ -7,6 +7,7 @@ import { cn, formatWordCount, formatRelativeTime } from '@/lib/utils'
 import type { Book } from '@/types'
 import BookCard from '@/components/library/BookCard'
 import NewBookDialog from '@/components/library/NewBookDialog'
+import { useVirtualizer } from '@tanstack/react-virtual'
 
 type ViewMode = 'grid' | 'list'
 type SortBy = 'updatedAt' | 'createdAt' | 'title' | 'wordCount'
@@ -18,6 +19,29 @@ export default function LibraryPage() {
   const [sortBy, setSortBy] = useState<SortBy>('updatedAt')
   const [searchQuery, setSearchQuery] = useState('')
   const [showNewBookDialog, setShowNewBookDialog] = useState(false)
+
+  // 虚拟化滚动容器 ref
+  const parentRef = useRef<HTMLDivElement>(null)
+  // 网格列数（仅 grid 模式有效）
+  const [columnCount, setColumnCount] = useState(4)
+
+  // 监听容器宽度，计算网格列数
+  useEffect(() => {
+    const el = parentRef.current
+    if (!el) return
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const w = entry.contentRect.width
+        if (viewMode !== 'grid') return
+        if (w >= 1280) setColumnCount(5)
+        else if (w >= 1024) setColumnCount(4)
+        else if (w >= 768) setColumnCount(3)
+        else setColumnCount(2)
+      }
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [viewMode])
 
   // 加载书籍列表
   useEffect(() => {
@@ -51,6 +75,32 @@ export default function LibraryPage() {
       if (sortBy === 'createdAt') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     })
+
+  // 按行分组（grid 模式多列，list 模式单列）
+  const effectiveColumnCount = viewMode === 'list' ? 1 : columnCount
+  const rowCount = Math.ceil(filteredBooks.length / effectiveColumnCount)
+  const rows = useMemo(
+    () =>
+      Array.from({ length: rowCount }, (_, i) =>
+        filteredBooks.slice(i * effectiveColumnCount, (i + 1) * effectiveColumnCount),
+      ),
+    [filteredBooks, effectiveColumnCount, rowCount],
+  )
+
+  // 虚拟化实例
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => (viewMode === 'list' ? 72 : 340),
+    overscan: 5,
+  })
+
+  // 过滤结果或列数变化时重置滚动并重新测量
+  useEffect(() => {
+    virtualizer.scrollToOffset(0)
+    // 延迟一帧确保 DOM 更新后再测量
+    requestAnimationFrame(() => virtualizer.measure())
+  }, [filteredBooks.length, effectiveColumnCount, virtualizer])
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -120,8 +170,8 @@ export default function LibraryPage() {
         </button>
       </header>
 
-      {/* 主体内容 */}
-      <main className="flex-1 p-6">
+      {/* 主体内容（虚拟化滚动容器） */}
+      <main ref={parentRef} className="flex-1 overflow-y-auto p-6">
         {isLoadingBooks ? (
           <div className="flex items-center justify-center h-64">
             <div className="text-muted-foreground animate-pulse">加载中…</div>
@@ -129,22 +179,49 @@ export default function LibraryPage() {
         ) : filteredBooks.length === 0 ? (
           <EmptyLibrary onNew={() => setShowNewBookDialog(true)} />
         ) : (
-          <div
-            className={cn(
-              viewMode === 'grid'
-                ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
-                : 'flex flex-col gap-2'
-            )}
-          >
-            {filteredBooks.map((book) => (
-              <BookCard
-                key={book.id}
-                book={book}
-                viewMode={viewMode}
-                onOpen={handleOpenBook}
-                onRefresh={loadBooks}
-              />
-            ))}
+          <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
+            {virtualizer.getVirtualItems().map((vItem) => {
+              const rowBooks = rows[vItem.index]
+              if (!rowBooks) return null
+              return (
+                <div
+                  key={vItem.index}
+                  ref={virtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${vItem.start}px)`,
+                  }}
+                >
+                  <div
+                    className={cn(
+                      viewMode === 'grid'
+                        ? `grid gap-4`
+                        : 'flex flex-col gap-2',
+                    )}
+                    style={viewMode === 'grid' ? { gridTemplateColumns: `repeat(${effectiveColumnCount}, minmax(0, 1fr))` } : undefined}
+                  >
+                    {rowBooks.map((book) => (
+                      <BookCard
+                        key={book.id}
+                        book={book}
+                        viewMode={viewMode}
+                        onOpen={handleOpenBook}
+                        onRefresh={loadBooks}
+                      />
+                    ))}
+                    {/* 网格模式用空 div 补齐最后一行的列 */}
+                    {viewMode === 'grid' &&
+                      rowBooks.length < effectiveColumnCount &&
+                      [...Array(effectiveColumnCount - rowBooks.length)].map(function (_el, idx) {
+                        return <div key={`empty-${idx}`} />
+                      })}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )}
       </main>

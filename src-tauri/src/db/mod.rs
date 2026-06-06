@@ -1,24 +1,58 @@
+use r2d2::{Pool, ManageConnection};
 use rusqlite::{Connection, Result};
-use std::sync::Mutex;
+use anyhow::Context as _;
 
-/// 应用级数据库（存储书籍元数据）
+/// SQLite 连接管理器，实现 r2d2::ManageConnection
+pub struct SqliteConnectionManager {
+    path: String,
+}
+
+impl ManageConnection for SqliteConnectionManager {
+    type Connection = Connection;
+    type Error = rusqlite::Error;
+
+    fn connect(&self) -> Result<Self::Connection, Self::Error> {
+        Connection::open(&self.path)
+    }
+
+    fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
+        conn.execute_batch("SELECT 1").map(|_| ())
+    }
+
+    fn has_broken(&self, _conn: &mut Self::Connection) -> bool {
+        false
+    }
+}
+
+/// 应用级数据库（连接池版本）
 pub struct AppDb {
-    pub conn: Mutex<Connection>,
+    pub pool: Pool<SqliteConnectionManager>,
 }
 
 impl AppDb {
-    pub fn new(db_path: &str) -> Result<Self> {
-        let conn = Connection::open(db_path)?;
-        let db = AppDb { conn: Mutex::new(conn) };
+    pub fn new(db_path: &str) -> anyhow::Result<Self> {
+        let manager = SqliteConnectionManager { path: db_path.to_string() };
+        let pool = Pool::builder()
+            .max_size(10)
+            .build(manager)
+            .map_err(|e| anyhow::anyhow!("创建连接池失败: {}", e))?;
+
+        let db = AppDb { pool };
         db.migrate()?;
         Ok(db)
     }
 
-    fn migrate(&self) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
-        conn.execute_batch("PRAGMA foreign_keys=ON;")?;
+    fn migrate(&self) -> anyhow::Result<()> {
+        let conn = self.pool
+            .get()
+            .map_err(|e| anyhow::anyhow!("获取数据库连接失败: {}", e))?;
 
+        conn.execute_batch("PRAGMA journal_mode=WAL;")
+            .context("启用 WAL 模式失败")?;
+        conn.execute_batch("PRAGMA foreign_keys=ON;")
+            .context("启用外键约束失败")?;
+
+        // 创建表
         conn.execute_batch(r#"
             CREATE TABLE IF NOT EXISTS books (
                 id          TEXT PRIMARY KEY,
@@ -79,7 +113,18 @@ impl AppDb {
                 created_at   TEXT NOT NULL,
                 updated_at   TEXT NOT NULL
             );
-        "#)?;
+        "#).context("创建数据表失败")?;
+
+        // 关键字段索引（提升查询性能）
+        conn.execute_batch(r#"
+            CREATE INDEX IF NOT EXISTS idx_volumes_book_id ON volumes(book_id);
+            CREATE INDEX IF NOT EXISTS idx_chapters_book_id ON chapters(book_id);
+            CREATE INDEX IF NOT EXISTS idx_chapters_volume_id ON chapters(volume_id);
+            CREATE INDEX IF NOT EXISTS idx_chapters_deleted_at ON chapters(deleted_at);
+            CREATE INDEX IF NOT EXISTS idx_snapshots_chapter_id ON snapshots(chapter_id);
+            CREATE INDEX IF NOT EXISTS idx_world_cards_book_id ON world_cards(book_id);
+        "#).context("创建索引失败")?;
+
         Ok(())
     }
 }
