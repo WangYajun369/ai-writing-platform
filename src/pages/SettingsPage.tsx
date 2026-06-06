@@ -203,6 +203,22 @@ function AiConfigSection({
         />
       </div>
 
+      <div className="space-y-1">
+        <label className="text-sm font-medium">最大输出 Token 数</label>
+        <input
+          type="number"
+          min={1}
+          max={262144}
+          step={1024}
+          value={config.maxTokens}
+          onChange={(e) => onChange({ maxTokens: Math.max(1, parseInt(e.target.value) || 65536) })}
+          className="w-full bg-muted rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+        />
+        <p className="text-xs text-muted-foreground">
+          1 万汉字约需 15000 tokens。推理模型（GLM-5.1/DeepSeek-R1 等）的思考过程也计入此上限，建议设置 ≥ 131072。
+        </p>
+      </div>
+
       {/* 测试连接 */}
       <div className="space-y-2">
         <div className="flex items-center gap-3">

@@ -4,34 +4,43 @@
  * 支持多服务商流式对话（Ollama / OpenAI / 智谱 BigModel / 自定义），
  * 自动 RAG 检索当前书籍上下文。
  * 流式调用由 Rust 侧通过 reqwest 处理，前端通过 Tauri 事件接收增量。
+ *
+ * 对话记录以当前作品（bookId）为维度持久化到 localStorage，
+ * 切换作品时自动加载对应对话历史。
  */
 import { useState, useRef, useEffect } from 'react'
-import { SendIcon, BotIcon, XIcon, Loader2Icon, CircleCheckIcon, CircleAlertIcon, CircleIcon } from 'lucide-react'
+import { SendIcon, BotIcon, XIcon, Loader2Icon, CircleCheckIcon, CircleAlertIcon, CircleIcon, ChevronDownIcon } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { useAppStore, useCurrentChapter } from '@/stores/appStore.ts'
-import { aiApi, type StreamEvent } from '@/lib/tauri-bridge.ts'
+import { useAppStore, useCurrentChapter, useCurrentAiMessages } from '@/stores/appStore.ts'
+import { aiApi, type StreamEvent, type UsageInfo } from '@/lib/tauri-bridge.ts'
 import { cn } from '@/lib/utils.ts'
-
-interface Message {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  loading?: boolean
-}
+import type { AiMessage } from '@/types'
 
 export default function AiSidePanel() {
-  const [messages, setMessages] = useState<Message[]>([])
+  const messages = useCurrentAiMessages()
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const { aiConfig, aiConnectionStatus, aiConnectionDetail } = useAppStore()
+  const unlistenRef = useRef<UnlistenFn | null>(null)
+  const streamErrorRef = useRef(false) // 标记流是否遇到错误，防止最终更新覆盖错误信息
+  const { aiConfig, aiConnectionStatus, aiConnectionDetail, currentBookId, addAiMessage, updateAiMessage, clearAiConversation, persistAiConversation } = useAppStore()
   const currentChapter = useCurrentChapter()
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // 组件卸载时清理事件监听，防止内存泄漏
+  useEffect(() => {
+    return () => {
+      if (unlistenRef.current) {
+        unlistenRef.current()
+        unlistenRef.current = null
+      }
+    }
+  }, [])
 
   const isOllamaProvider = aiConfig.provider === 'ollama'
 
@@ -54,6 +63,8 @@ export default function AiSidePanel() {
   const statusColor = statusConfig[aiConnectionStatus].color
   const statusLabel = statusConfig[aiConnectionStatus].label
 
+  const bookId = currentBookId
+
   /** 根据 provider 组装 messages 数组 */
   function buildMessages(context: string) {
     const systemMsg = `你是一位专业的小说创作助手。请根据用户的需求提供创作建议、续写、润色等服务。${context}`
@@ -65,15 +76,25 @@ export default function AiSidePanel() {
     ]
   }
 
-  /** 更新助手消息内容 */
-  function updateAssistant(assistantId: string, content: string) {
-    setMessages((prev) =>
-      prev.map((m) => (m.id === assistantId ? { ...m, content, loading: false } : m))
-    )
+  /** 更新助手消息内容（含思考过程与阶段） */
+  function updateAssistant(assistantId: string, content: string, thinking?: string, phase?: string) {
+    if (!bookId) return
+    updateAiMessage(bookId, assistantId, {
+      content,
+      thinking: thinking ?? undefined,
+      phase: (phase ?? undefined) as AiMessage['phase'],
+      loading: phase === 'thinking' || (!content && !thinking),
+    })
+  }
+
+  /** 更新助手消息用量统计（仅 done 事件携带） */
+  function updateAssistantUsage(assistantId: string, usage: UsageInfo) {
+    if (!bookId) return
+    updateAiMessage(bookId, assistantId, { usage })
   }
 
   async function handleSend() {
-    if (!input.trim() || streaming) return
+    if (!input.trim() || streaming || !bookId) return
 
     // 非 Ollama 提供者必须提供 API Key
     if (!isOllamaProvider && !aiConfig.apiKey) {
@@ -81,17 +102,15 @@ export default function AiSidePanel() {
       return
     }
 
-    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: input.trim() }
+    const userMsg: AiMessage = { id: Date.now().toString(), role: 'user', content: input.trim(), thinking: '', phase: 'done' }
     const assistantId = (Date.now() + 1).toString()
-    const assistantMsg: Message = { id: assistantId, role: 'assistant', content: '', loading: true }
+    const assistantMsg: AiMessage = { id: assistantId, role: 'assistant', content: '', thinking: '', phase: 'thinking', loading: true }
 
-    setMessages((prev) => [...prev, userMsg, assistantMsg])
+    addAiMessage(bookId, userMsg)
+    addAiMessage(bookId, assistantMsg)
     const userInput = input.trim()
     setInput('')
     setStreaming(true)
-
-    // 注册事件监听，用于接收流式数据
-    let unlisten: UnlistenFn | null = null
 
     try {
       // RAG 检索上下文
@@ -108,24 +127,37 @@ export default function AiSidePanel() {
       }
 
       // 注册流式事件监听（必须在 invoke 之前注册）
-      unlisten = await listen<StreamEvent>('ai-stream-chunk', (event) => {
-        const { content, done, error } = event.payload
+      // 先取消之前的监听以防重复
+      if (unlistenRef.current) {
+        unlistenRef.current()
+        unlistenRef.current = null
+      }
+      streamErrorRef.current = false
+      unlistenRef.current = await listen<StreamEvent>('ai-stream-chunk', (event) => {
+        const { content, thinking, phase, done, error, usage } = event.payload
         if (error) {
-          updateAssistant(assistantId, `⚠️ AI 响应失败：${error}`)
+          streamErrorRef.current = true
+          updateAssistant(assistantId, `⚠️ AI 响应中断：${error}`, thinking, 'done')
           setStreaming(false)
+          persistAiConversation(bookId)
           return
         }
-        updateAssistant(assistantId, content)
+        updateAssistant(assistantId, content, thinking, phase)
+        if (usage) {
+          updateAssistantUsage(assistantId, usage)
+        }
         if (done) {
           setStreaming(false)
+          persistAiConversation(bookId)
         }
       })
 
       // 构建消息
-      const messages = buildMessages(context)
+      const chatMessages = buildMessages(context)
       const provider = isOllamaProvider ? 'ollama' : 'openai_compatible'
 
       // 调用 Rust 侧流式对话命令
+      // done 事件中已设置最终内容和用量，此处仅等待流结束，不做重复更新
       await aiApi.streamChat({
         provider,
         endpoint: aiConfig.endpoint,
@@ -133,30 +165,29 @@ export default function AiSidePanel() {
         temperature: aiConfig.temperature,
         maxTokens: aiConfig.maxTokens,
         apiKey: aiConfig.apiKey,
-        messages,
+        messages: chatMessages,
       })
-
-      // 如果流正常结束但 done 事件未触发（兜底）
-      setStreaming(false)
     } catch (err) {
       updateAssistant(assistantId, `⚠️ AI 响应失败：${String(err)}`)
+      if (bookId) persistAiConversation(bookId)
     } finally {
       setStreaming(false)
       // 取消事件监听
-      if (unlisten) {
-        unlisten()
+      if (unlistenRef.current) {
+        unlistenRef.current()
+        unlistenRef.current = null
       }
     }
   }
 
   function handleClear() {
-    if (messages.length > 0 && confirm('清空对话记录？')) {
-      setMessages([])
+    if (messages.length > 0 && bookId && confirm('清空当前作品的对话记录？')) {
+      clearAiConversation(bookId)
     }
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       {/* 头部 */}
       <div className="px-3 py-2 border-b flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2">
@@ -179,7 +210,7 @@ export default function AiSidePanel() {
       </div>
 
       {/* 消息列表 */}
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 space-y-3 min-w-0">
         {messages.length === 0 && (
           <div className="text-center py-12 text-muted-foreground">
             <BotIcon className="w-8 h-8 mx-auto mb-3 opacity-30" />
@@ -247,8 +278,25 @@ export default function AiSidePanel() {
  * 根据角色（用户/助手）切换对齐方向与气泡配色。
  * 助手消息使用 react-markdown 渲染，支持 GFM（表格/删除线等）。
  */
-function MessageBubble({ message }: { message: Message }) {
+function MessageBubble({ message }: { message: AiMessage }) {
   const isUser = message.role === 'user'
+  const [thinkingExpanded, setThinkingExpanded] = useState(false)
+
+  /** 兜底计算：若 Rust 侧 outputChars 为 0，用前端实际内容字符数替代 */
+  const contentCharCount = [...message.content].length
+  const effectiveUsage = message.usage
+    ? {
+        inputTokens: message.usage.inputTokens,
+        outputTokens: message.usage.outputTokens,
+        inputChars: message.usage.inputChars > 0 ? message.usage.inputChars : contentCharCount,
+        outputChars: message.usage.outputChars > 0 ? message.usage.outputChars : contentCharCount,
+      }
+    : null
+
+  const hasThinking = message.thinking.length > 0
+  const isThinkingPhase = message.phase === 'thinking'
+  const isLoading = message.loading && !message.content && !hasThinking
+
   return (
     <div className={cn('flex gap-2', isUser ? 'flex-row-reverse' : 'flex-row')}>
       <div
@@ -259,17 +307,76 @@ function MessageBubble({ message }: { message: Message }) {
             : 'bg-muted text-foreground rounded-bl-sm markdown-body'
         )}
       >
-        {message.loading ? (
+        {/* 初始加载状态（无思考内容、无正式输出） */}
+        {isLoading && (
           <span className="flex items-center gap-1 text-muted-foreground">
             <Loader2Icon className="w-3 h-3 animate-spin" />
             思考中…
           </span>
-        ) : isUser ? (
+        )}
+
+        {/* 深度思考过程（可折叠） */}
+        {!isUser && hasThinking && (
+          <div className="mb-2">
+            <button
+              onClick={() => setThinkingExpanded((v) => !v)}
+              className={cn(
+                'flex items-center gap-1.5 text-[11px] mb-1 transition-colors',
+                isThinkingPhase ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground/70'
+              )}
+            >
+              <ChevronDownIcon
+                className={cn('w-3 h-3 transition-transform', thinkingExpanded && 'rotate-180')}
+              />
+              {isThinkingPhase ? (
+                <span className="flex items-center gap-1">
+                  <Loader2Icon className="w-2.5 h-2.5 animate-spin" />
+                  深度思考中…
+                </span>
+              ) : (
+                '思考过程'
+              )}
+            </button>
+            {thinkingExpanded && (
+              <div className="text-[11px] text-muted-foreground/80 leading-relaxed whitespace-pre-wrap border-l-2 border-amber-300/40 pl-2.5 py-0.5 italic">
+                {message.thinking}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 正式输出 */}
+        {!isUser && hasThinking && message.content && (
+          <div className={cn(
+            'text-[10px] text-muted-foreground/50 mb-1 border-t border-border/30 pt-1',
+            message.phase === 'answering' && 'flex items-center gap-1'
+          )}>
+            {message.phase === 'answering' ? (
+              <>📝 正式输出中…</>
+            ) : (
+              '📝 正式输出'
+            )}
+          </div>
+        )}
+
+        {/* 用户消息纯文本 / 助手消息 Markdown */}
+        {isUser ? (
           message.content
-        ) : (
+        ) : message.content ? (
           <ReactMarkdown remarkPlugins={[remarkGfm]}>
             {message.content}
           </ReactMarkdown>
+        ) : null}
+
+        {/* 用量统计（仅助手消息完成时显示） */}
+        {!isUser && !message.loading && effectiveUsage && (
+          <div className="mt-2 pt-2 border-t border-border/50 flex items-center gap-3 text-[10px] text-muted-foreground/70">
+            <span title="输入 Token">↗ {effectiveUsage.inputTokens} token</span>
+            <span title="输出 Token">↘ {effectiveUsage.outputTokens} token</span>
+            <span className="text-border/30">|</span>
+            <span title="输入字数">↗ {effectiveUsage.inputChars} 字</span>
+            <span title="输出字数">↘ {effectiveUsage.outputChars} 字</span>
+          </div>
         )}
       </div>
     </div>

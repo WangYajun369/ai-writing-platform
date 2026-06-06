@@ -1,11 +1,15 @@
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
-import type { Book, Chapter, Volume, AiConfig } from '../types'
+import type { Book, Chapter, Volume, AiConfig, AiMessage } from '../types'
 
 // ==================== App Store（全局业务状态）====================
 
 /** localStorage 键名，用于持久化用户偏好设置 */
 const PREFERENCES_KEY = 'mirage-ink-preferences'
+/** localStorage 键名，用于持久化 AI 配置 */
+const AI_CONFIG_KEY = 'mirage-ink-ai-config'
+/** localStorage 键名，用于持久化 AI 对话记录（按 bookId 分组） */
+const AI_CONVERSATIONS_KEY = 'mirage-ink-ai-conversations'
 
 /** 从 localStorage 读取持久化的用户偏好 */
 function loadPreferences(): Partial<Pick<AppState, 'gridSize' | 'editorWidth'>> {
@@ -16,10 +20,42 @@ function loadPreferences(): Partial<Pick<AppState, 'gridSize' | 'editorWidth'>> 
   return {}
 }
 
+/** 从 localStorage 读取持久化的 AI 配置 */
+function loadAiConfig(): Partial<AiConfig> {
+  try {
+    const raw = localStorage.getItem(AI_CONFIG_KEY)
+    if (raw) return JSON.parse(raw)
+  } catch { /* ignore */ }
+  return {}
+}
+
+/** 从 localStorage 读取持久化的 AI 对话记录 */
+function loadAiConversations(): Record<string, AiMessage[]> {
+  try {
+    const raw = localStorage.getItem(AI_CONVERSATIONS_KEY)
+    if (raw) return JSON.parse(raw)
+  } catch { /* ignore */ }
+  return {}
+}
+
 /** 将用户偏好写入 localStorage */
 function savePreferences(prefs: Pick<AppState, 'gridSize' | 'editorWidth'>) {
   try {
     localStorage.setItem(PREFERENCES_KEY, JSON.stringify(prefs))
+  } catch { /* ignore */ }
+}
+
+/** 将 AI 配置写入 localStorage */
+function saveAiConfig(config: AiConfig) {
+  try {
+    localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(config))
+  } catch { /* ignore */ }
+}
+
+/** 将 AI 对话记录写入 localStorage */
+function saveAiConversations(conversations: Record<string, AiMessage[]>) {
+  try {
+    localStorage.setItem(AI_CONVERSATIONS_KEY, JSON.stringify(conversations))
   } catch { /* ignore */ }
 }
 
@@ -44,6 +80,9 @@ interface AppState {
 
   // AI 配置
   aiConfig: AiConfig
+
+  // AI 对话记录（按 bookId 分组）
+  aiConversations: Record<string, AiMessage[]>
 
   // 主题
   theme: 'light' | 'dark' | 'system'
@@ -76,6 +115,12 @@ interface AppState {
   addBook: (book: Book) => void
   removeBook: (id: string) => void
   setAiConfig: (config: Partial<AiConfig>) => void
+  // AI 对话管理
+  addAiMessage: (bookId: string, message: AiMessage) => void
+  updateAiMessage: (bookId: string, messageId: string, patch: Partial<AiMessage>) => void
+  setAiMessages: (bookId: string, messages: AiMessage[]) => void
+  clearAiConversation: (bookId: string) => void
+  persistAiConversation: (bookId: string) => void
   setTheme: (theme: 'light' | 'dark' | 'system') => void
   setEyeCareMode: (mode: 'off' | 'warm' | 'green') => void
   setFontFamily: (font: AppState['fontFamily']) => void
@@ -89,6 +134,8 @@ interface AppState {
 }
 
 const savedPrefs = loadPreferences()
+const savedAiConfig = loadAiConfig()
+const savedAiConversations = loadAiConversations()
 
 export const useAppStore = create<AppState>()(
   subscribeWithSelector((set) => ({
@@ -108,8 +155,10 @@ export const useAppStore = create<AppState>()(
       model: 'qwen2.5:7b',
       embeddingModel: 'bge-m3',
       temperature: 0.7,
-      maxTokens: 2048,
+      maxTokens: 131072,
+      ...savedAiConfig,
     },
+    aiConversations: savedAiConversations,
     theme: 'system',
     eyeCareMode: 'off',
     fontFamily: 'serif',
@@ -143,7 +192,63 @@ export const useAppStore = create<AppState>()(
     removeBook: (id) => set((s) => ({ books: s.books.filter((b) => b.id !== id) })),
 
     setAiConfig: (config) =>
-      set((s) => ({ aiConfig: { ...s.aiConfig, ...config } })),
+      set((s) => {
+        const merged = { ...s.aiConfig, ...config }
+        saveAiConfig(merged)
+        return { aiConfig: merged }
+      }),
+
+    // AI 对话管理
+    // 注意：updateAiMessage 在流式对话期间高频调用，不写 localStorage，
+    // 避免同步 I/O 阻塞主线程导致白屏。持久化仅在 add/clear/set 时触发。
+    addAiMessage: (bookId, message) =>
+      set((s) => {
+        const conversations = {
+          ...s.aiConversations,
+          [bookId]: [...(s.aiConversations[bookId] ?? []), message],
+        }
+        saveAiConversations(conversations)
+        return { aiConversations: conversations }
+      }),
+
+    updateAiMessage: (bookId, messageId, patch) =>
+      set((s) => {
+        const msgs = s.aiConversations[bookId]
+        if (!msgs) return s
+        // 过滤掉 patch 中值为 undefined 的 key，避免覆盖已有字段
+        const cleanPatch: Partial<AiMessage> = {}
+        for (const key of Object.keys(patch) as (keyof AiMessage)[]) {
+          if (patch[key] !== undefined) {
+            ;(cleanPatch as Record<string, unknown>)[key] = patch[key]
+          }
+        }
+        const conversations = {
+          ...s.aiConversations,
+          [bookId]: msgs.map((m) => (m.id === messageId ? { ...m, ...cleanPatch } : m)),
+        }
+        // 高频流式更新：仅更新内存，不写 localStorage
+        return { aiConversations: conversations }
+      }),
+
+    setAiMessages: (bookId, messages) =>
+      set((s) => {
+        const conversations = { ...s.aiConversations, [bookId]: messages }
+        saveAiConversations(conversations)
+        return { aiConversations: conversations }
+      }),
+
+    clearAiConversation: (bookId) =>
+      set((s) => {
+        const conversations = { ...s.aiConversations }
+        delete conversations[bookId]
+        saveAiConversations(conversations)
+        return { aiConversations: conversations }
+      }),
+
+    persistAiConversation: (_bookId) => {
+      const conversations = useAppStore.getState().aiConversations
+      saveAiConversations(conversations)
+    },
 
     setTheme: (theme) => set({ theme }),
     setEyeCareMode: (eyeCareMode) => set({ eyeCareMode }),
@@ -174,4 +279,12 @@ export const useCurrentBook = () => {
 export const useCurrentChapter = () => {
   const { chapters, currentChapterId } = useAppStore()
   return chapters.find((c) => c.id === currentChapterId) ?? null
+}
+
+/** 获取当前作品的 AI 对话记录（细粒度订阅，避免无关状态变更触发重渲染） */
+export const useCurrentAiMessages = () => {
+  const currentBookId = useAppStore((s) => s.currentBookId)
+  const aiConversations = useAppStore((s) => s.aiConversations)
+  if (!currentBookId) return []
+  return aiConversations[currentBookId] ?? []
 }

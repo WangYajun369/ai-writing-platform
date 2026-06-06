@@ -164,10 +164,22 @@ export interface StreamChatArgs {
   messages: ChatMessage[]
 }
 
+export interface UsageInfo {
+  inputTokens: number
+  outputTokens: number
+  inputChars: number
+  outputChars: number
+}
+
 export interface StreamEvent {
   content: string
+  /** 思考过程（智谱/DeepSeek 推理模型的 reasoning_content） */
+  thinking: string
+  /** 当前阶段："thinking" | "answering" | "done" */
+  phase: string
   done: boolean
   error?: string | null
+  usage?: UsageInfo | null
 }
 
 export interface ConnectionTestResult {

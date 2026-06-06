@@ -112,6 +112,24 @@ export interface WritingGoal {
   endDate?: string
 }
 
+/** AI 对话消息 */
+export interface AiMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  /** 深度思考过程（智谱/DeepSeek 推理模型） */
+  thinking: string
+  /** 当前生成阶段 */
+  phase: 'thinking' | 'answering' | 'done'
+  loading?: boolean
+  usage?: {
+    inputTokens: number
+    outputTokens: number
+    inputChars: number
+    outputChars: number
+  } | null
+}
+
 /** Diff 对比视图模式 */
 export type DiffViewMode = 'side-by-side' | 'inline'
 

@@ -351,6 +351,8 @@
 }
 .markdown-body table {
   @apply w-full mb-2 text-xs;
+  display: block;
+  overflow-x: auto;
   border-collapse: collapse;
 }
 .markdown-body th {
