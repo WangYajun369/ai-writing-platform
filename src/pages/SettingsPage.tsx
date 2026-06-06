@@ -15,7 +15,7 @@ type Tab = 'ai' | 'appearance' | 'storage'
 
 export default function SettingsPage() {
   const navigate = useNavigate()
-  const { aiConfig, setAiConfig, theme, setTheme } = useAppStore()
+  const { aiConfig, setAiConfig, theme, setTheme, eyeCareMode, setEyeCareMode } = useAppStore()
   const [activeTab, setActiveTab] = useState<Tab>('ai')
 
   return (
@@ -58,7 +58,12 @@ export default function SettingsPage() {
             <AiConfigSection config={aiConfig} onChange={setAiConfig} />
           )}
           {activeTab === 'appearance' && (
-            <AppearanceSection theme={theme} onChange={setTheme} />
+            <AppearanceSection
+              theme={theme}
+              eyeCareMode={eyeCareMode}
+              onThemeChange={setTheme}
+              onEyeCareChange={setEyeCareMode}
+            />
           )}
           {activeTab === 'storage' && (
             <StorageSection />
@@ -161,29 +166,68 @@ function AiConfigSection({
  * 外观配置区块
  *
  * 主题切换：浅色 / 深色 / 跟随系统。
+ * 护眼模式：关闭 / 暖黄色 / 豆沙绿。
  */
 function AppearanceSection({
   theme,
-  onChange,
+  eyeCareMode,
+  onThemeChange,
+  onEyeCareChange,
 }: {
   theme: string
-  onChange: (t: 'light' | 'dark' | 'system') => void
+  eyeCareMode: string
+  onThemeChange: (t: 'light' | 'dark' | 'system') => void
+  onEyeCareChange: (m: 'off' | 'warm' | 'green') => void
 }) {
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <h2 className="text-base font-semibold">外观设置</h2>
+
+      {/* 主题 */}
       <div className="space-y-2">
         <label className="text-sm font-medium">主题</label>
         <div className="flex gap-3">
           {(['light', 'dark', 'system'] as const).map((t) => (
             <button
               key={t}
-              onClick={() => onChange(t)}
+              onClick={() => onThemeChange(t)}
               className={`px-4 py-2 rounded-lg text-sm transition-colors ${
                 theme === t ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
               }`}
             >
               {{ light: '浅色', dark: '深色', system: '跟随系统' }[t]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 护眼模式 */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">护眼模式</label>
+        <p className="text-xs text-muted-foreground">
+          选择舒适的背景色，减轻长时间写作的视觉疲劳
+        </p>
+        <div className="flex gap-3">
+          {([
+            { value: 'off', label: '关闭' },
+            { value: 'warm', label: '暖黄色', color: 'bg-[#f5efdb]' },
+            { value: 'green', label: '豆沙绿', color: 'bg-[#d7e8d0]' },
+          ] as const).map(({ value, label, color }) => (
+            <button
+              key={value}
+              onClick={() => onEyeCareChange(value)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-colors ${
+                eyeCareMode === value
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted hover:bg-muted/80'
+              }`}
+            >
+              {color && (
+                <span
+                  className={`inline-block w-4 h-4 rounded border border-border ${color}`}
+                />
+              )}
+              {label}
             </button>
           ))}
         </div>

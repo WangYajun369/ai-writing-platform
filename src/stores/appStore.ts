@@ -25,6 +25,9 @@ interface AppState {
   // 主题
   theme: 'light' | 'dark' | 'system'
 
+  // 护眼模式：关闭 / 暖黄色 / 豆沙绿
+  eyeCareMode: 'off' | 'warm' | 'green'
+
   // Actions
   setBooks: (books: Book[]) => void
   setCurrentBookId: (id: string | null) => void
@@ -39,6 +42,7 @@ interface AppState {
   removeBook: (id: string) => void
   setAiConfig: (config: Partial<AiConfig>) => void
   setTheme: (theme: 'light' | 'dark' | 'system') => void
+  setEyeCareMode: (mode: 'off' | 'warm' | 'green') => void
   setDbStatus: (status: AppState['dbStatus']) => void
   setLoadingBooks: (v: boolean) => void
   setLoadingChapters: (v: boolean) => void
@@ -63,6 +67,7 @@ export const useAppStore = create<AppState>()(
       maxTokens: 2048,
     },
     theme: 'system',
+    eyeCareMode: 'off',
 
     setBooks: (books) => set({ books }),
     setCurrentBookId: (id) => set({ currentBookId: id }),
@@ -93,6 +98,7 @@ export const useAppStore = create<AppState>()(
       set((s) => ({ aiConfig: { ...s.aiConfig, ...config } })),
 
     setTheme: (theme) => set({ theme }),
+    setEyeCareMode: (eyeCareMode) => set({ eyeCareMode }),
     setDbStatus: (dbStatus) => set({ dbStatus }),
     setLoadingBooks: (v) => set({ isLoadingBooks: v }),
     setLoadingChapters: (v) => set({ isLoadingChapters: v }),

@@ -51,6 +51,98 @@
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
   }
+
+  /* ===== 护眼模式 —— 暖黄色 ===== */
+  .eyecare-warm {
+    --background: 45 35% 92%;
+    --foreground: 30 18% 22%;
+    --card: 45 30% 95%;
+    --card-foreground: 30 18% 22%;
+    --popover: 45 30% 95%;
+    --popover-foreground: 30 18% 22%;
+    --primary: 30 30% 25%;
+    --primary-foreground: 45 35% 92%;
+    --secondary: 42 25% 88%;
+    --secondary-foreground: 30 18% 22%;
+    --muted: 42 25% 88%;
+    --muted-foreground: 30 10% 40%;
+    --accent: 42 25% 88%;
+    --accent-foreground: 30 18% 22%;
+    --destructive: 0 60% 50%;
+    --destructive-foreground: 45 35% 92%;
+    --border: 40 18% 80%;
+    --input: 40 18% 80%;
+    --ring: 30 18% 22%;
+  }
+
+  /* ===== 护眼模式 —— 豆沙绿 ===== */
+  .eyecare-green {
+    --background: 100 22% 90%;
+    --foreground: 120 12% 20%;
+    --card: 100 20% 93%;
+    --card-foreground: 120 12% 20%;
+    --popover: 100 20% 93%;
+    --popover-foreground: 120 12% 20%;
+    --primary: 120 15% 25%;
+    --primary-foreground: 100 22% 90%;
+    --secondary: 100 15% 84%;
+    --secondary-foreground: 120 12% 20%;
+    --muted: 100 15% 84%;
+    --muted-foreground: 120 8% 40%;
+    --accent: 100 15% 84%;
+    --accent-foreground: 120 12% 20%;
+    --destructive: 0 55% 48%;
+    --destructive-foreground: 100 22% 90%;
+    --border: 100 12% 76%;
+    --input: 100 12% 76%;
+    --ring: 120 12% 20%;
+  }
+
+  /* ===== 暗色 + 护眼模式 —— 暖黄色暗色 ===== */
+  .dark.eyecare-warm {
+    --background: 30 12% 11%;
+    --foreground: 38 25% 80%;
+    --card: 30 12% 13%;
+    --card-foreground: 38 25% 80%;
+    --popover: 30 12% 13%;
+    --popover-foreground: 38 25% 80%;
+    --primary: 38 25% 80%;
+    --primary-foreground: 30 12% 11%;
+    --secondary: 30 10% 18%;
+    --secondary-foreground: 38 25% 80%;
+    --muted: 30 10% 18%;
+    --muted-foreground: 35 12% 55%;
+    --accent: 30 10% 18%;
+    --accent-foreground: 38 25% 80%;
+    --destructive: 0 50% 40%;
+    --destructive-foreground: 38 25% 80%;
+    --border: 30 10% 18%;
+    --input: 30 10% 18%;
+    --ring: 35 20% 70%;
+  }
+
+  /* ===== 暗色 + 护眼模式 —— 豆沙绿暗色 ===== */
+  .dark.eyecare-green {
+    --background: 130 12% 10%;
+    --foreground: 110 20% 80%;
+    --card: 130 12% 12%;
+    --card-foreground: 110 20% 80%;
+    --popover: 130 12% 12%;
+    --popover-foreground: 110 20% 80%;
+    --primary: 110 20% 80%;
+    --primary-foreground: 130 12% 10%;
+    --secondary: 130 10% 17%;
+    --secondary-foreground: 110 20% 80%;
+    --muted: 130 10% 17%;
+    --muted-foreground: 115 10% 55%;
+    --accent: 130 10% 17%;
+    --accent-foreground: 110 20% 80%;
+    --destructive: 0 45% 40%;
+    --destructive-foreground: 110 20% 80%;
+    --border: 130 10% 17%;
+    --input: 130 10% 17%;
+    --ring: 110 18% 65%;
+  }
 }
 
 /* ==================== 全局基础样式 ==================== */
@@ -89,6 +181,87 @@
   float: left;
   height: 0;
   pointer-events: none;
+}
+
+/* ===== 护眼模式：编辑器 prose 色彩覆盖 ===== */
+/* 暖黄色 — 亮色 */
+.eyecare-warm {
+  --tw-prose-body: hsl(30 18% 22%);
+  --tw-prose-headings: hsl(30 18% 20%);
+  --tw-prose-lead: hsl(30 18% 22%);
+  --tw-prose-links: hsl(25 40% 35%);
+  --tw-prose-bold: hsl(30 18% 22%);
+  --tw-prose-counters: hsl(30 10% 40%);
+  --tw-prose-bullets: hsl(40 15% 60%);
+  --tw-prose-hr: hsl(40 18% 75%);
+  --tw-prose-quotes: hsl(30 15% 30%);
+  --tw-prose-quote-borders: hsl(40 18% 70%);
+  --tw-prose-captions: hsl(30 10% 45%);
+  --tw-prose-code: hsl(30 18% 22%);
+  --tw-prose-pre-code: hsl(30 10% 90%);
+  --tw-prose-pre-bg: hsl(30 10% 15%);
+  --tw-prose-th-borders: hsl(40 15% 68%);
+  --tw-prose-td-borders: hsl(40 15% 78%);
+}
+
+/* 豆沙绿 — 亮色 */
+.eyecare-green {
+  --tw-prose-body: hsl(120 12% 20%);
+  --tw-prose-headings: hsl(120 12% 18%);
+  --tw-prose-lead: hsl(120 12% 20%);
+  --tw-prose-links: hsl(130 35% 30%);
+  --tw-prose-bold: hsl(120 12% 20%);
+  --tw-prose-counters: hsl(120 8% 40%);
+  --tw-prose-bullets: hsl(100 12% 56%);
+  --tw-prose-hr: hsl(100 12% 70%);
+  --tw-prose-quotes: hsl(120 10% 28%);
+  --tw-prose-quote-borders: hsl(100 12% 66%);
+  --tw-prose-captions: hsl(120 8% 42%);
+  --tw-prose-code: hsl(120 12% 20%);
+  --tw-prose-pre-code: hsl(100 15% 90%);
+  --tw-prose-pre-bg: hsl(120 10% 15%);
+  --tw-prose-th-borders: hsl(100 10% 64%);
+  --tw-prose-td-borders: hsl(100 10% 74%);
+}
+
+/* 暖黄色 — 暗色 */
+.dark.eyecare-warm {
+  --tw-prose-body: hsl(38 25% 80%);
+  --tw-prose-headings: hsl(38 25% 85%);
+  --tw-prose-lead: hsl(38 25% 80%);
+  --tw-prose-links: hsl(35 30% 60%);
+  --tw-prose-bold: hsl(38 25% 80%);
+  --tw-prose-counters: hsl(35 12% 55%);
+  --tw-prose-bullets: hsl(30 10% 35%);
+  --tw-prose-hr: hsl(30 10% 30%);
+  --tw-prose-quotes: hsl(35 15% 65%);
+  --tw-prose-quote-borders: hsl(30 10% 35%);
+  --tw-prose-captions: hsl(35 12% 55%);
+  --tw-prose-code: hsl(38 25% 80%);
+  --tw-prose-pre-code: hsl(30 15% 90%);
+  --tw-prose-pre-bg: hsl(30 8% 12%);
+  --tw-prose-th-borders: hsl(30 10% 30%);
+  --tw-prose-td-borders: hsl(30 10% 22%);
+}
+
+/* 豆沙绿 — 暗色 */
+.dark.eyecare-green {
+  --tw-prose-body: hsl(110 20% 80%);
+  --tw-prose-headings: hsl(110 20% 85%);
+  --tw-prose-lead: hsl(110 20% 80%);
+  --tw-prose-links: hsl(115 25% 55%);
+  --tw-prose-bold: hsl(110 20% 80%);
+  --tw-prose-counters: hsl(115 10% 55%);
+  --tw-prose-bullets: hsl(130 10% 33%);
+  --tw-prose-hr: hsl(130 10% 28%);
+  --tw-prose-quotes: hsl(115 15% 63%);
+  --tw-prose-quote-borders: hsl(130 10% 33%);
+  --tw-prose-captions: hsl(115 10% 55%);
+  --tw-prose-code: hsl(110 20% 80%);
+  --tw-prose-pre-code: hsl(100 15% 90%);
+  --tw-prose-pre-bg: hsl(130 8% 12%);
+  --tw-prose-th-borders: hsl(130 10% 28%);
+  --tw-prose-td-borders: hsl(130 10% 20%);
 }
 
 /* ==================== 专注模式 ==================== */
