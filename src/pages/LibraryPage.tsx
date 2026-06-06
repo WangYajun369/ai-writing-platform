@@ -21,9 +21,22 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 type ViewMode = 'grid' | 'list'
 type SortBy = 'updatedAt' | 'createdAt' | 'title' | 'wordCount'
 
+/** 不同网格大小对应的列数映射（对应不同容器宽度断点） */
+const GRID_COL_MAP = {
+  small: { 1280: 6, 1024: 5, 768: 4, 0: 3 },
+  medium: { 1280: 5, 1024: 4, 768: 3, 0: 2 },
+  large: { 1280: 4, 1024: 3, 768: 2, 0: 1 },
+} as const
+
+/** 不同网格大小对应的间距 */
+const GRID_GAP_MAP = { small: 'gap-2', medium: 'gap-4', large: 'gap-6' } as const
+
+/** 不同网格大小对应的虚拟化行高预估值 */
+const GRID_ROW_HEIGHT_MAP = { small: 260, medium: 340, large: 460 } as const
+
 export default function LibraryPage() {
   const navigate = useNavigate()
-  const { books, setBooks, setCurrentBookId, isLoadingBooks, setLoadingBooks } = useAppStore()
+  const { books, setBooks, setCurrentBookId, isLoadingBooks, setLoadingBooks, gridSize } = useAppStore()
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [sortBy, setSortBy] = useState<SortBy>('updatedAt')
   const [searchQuery, setSearchQuery] = useState('')
@@ -34,7 +47,7 @@ export default function LibraryPage() {
   // 网格列数（仅 grid 模式有效）
   const [columnCount, setColumnCount] = useState(4)
 
-  // 监听容器宽度，计算网格列数
+  // 监听容器宽度，根据 gridSize 计算网格列数
   useEffect(() => {
     const el = parentRef.current
     if (!el) return
@@ -42,21 +55,16 @@ export default function LibraryPage() {
       for (const entry of entries) {
         const w = entry.contentRect.width
         if (viewMode !== 'grid') return
-        if (w >= 1280) setColumnCount(5)
-        else if (w >= 1024) setColumnCount(4)
-        else if (w >= 768) setColumnCount(3)
-        else setColumnCount(2)
+        const thresholds = GRID_COL_MAP[gridSize]
+        if (w >= 1280) setColumnCount(thresholds[1280])
+        else if (w >= 1024) setColumnCount(thresholds[1024])
+        else if (w >= 768) setColumnCount(thresholds[768])
+        else setColumnCount(thresholds[0])
       }
     })
     observer.observe(el)
     return () => observer.disconnect()
-  }, [viewMode])
-
-  // 加载书籍列表
-  useEffect(() => {
-    loadBooks()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [viewMode, gridSize])
 
   async function loadBooks() {
     setLoadingBooks(true)
@@ -96,11 +104,17 @@ export default function LibraryPage() {
     [filteredBooks, effectiveColumnCount, rowCount],
   )
 
-  // 虚拟化实例
+  // 加载书籍列表
+  useEffect(() => {
+    loadBooks()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 虚拟化实例（行高随 gridSize 动态调整）
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => (viewMode === 'list' ? 72 : 340),
+    estimateSize: () => (viewMode === 'list' ? 72 : GRID_ROW_HEIGHT_MAP[gridSize]),
     overscan: 5,
   })
 
@@ -207,7 +221,7 @@ export default function LibraryPage() {
                   <div
                     className={cn(
                       viewMode === 'grid'
-                        ? `grid gap-4`
+                        ? `grid ${GRID_GAP_MAP[gridSize]}`
                         : 'flex flex-col gap-2',
                     )}
                     style={viewMode === 'grid' ? { gridTemplateColumns: `repeat(${effectiveColumnCount}, minmax(0, 1fr))` } : undefined}
@@ -281,4 +295,3 @@ function EmptyLibrary({ onNew }: { onNew: () => void }) {
   )
 }
 
-export { formatWordCount, formatRelativeTime }

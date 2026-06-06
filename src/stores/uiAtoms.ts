@@ -19,9 +19,6 @@ export const historyPanelOpenAtom = atom<boolean>(false)
 /** 专注模式 */
 export const zenModeAtom = atom<boolean>(false)
 
-/** 打字机模式 */
-export const typewriterModeAtom = atom<boolean>(false)
-
 /** 当前悬浮速览关键词 */
 export const hoverKeywordAtom = atom<string | null>(null)
 

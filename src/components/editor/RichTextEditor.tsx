@@ -5,7 +5,7 @@
  * - TipTap StarterKit + Underline + Color + Image + Table
  * - 双保险自动保存：300ms 防抖 + 3 分钟定时器
  * - 章节标题内联编辑
- * - 打字机模式与字数实时统计
+ * - 字数实时统计
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
@@ -25,24 +25,28 @@ import {
   isSavingAtom,
   lastSavedAtom,
   wordCountAtom,
-  typewriterModeAtom,
   contentRefreshAtom,
 } from '@/stores/uiAtoms.ts'
 import { useAppStore, useCurrentChapter } from '@/stores/appStore.ts'
 import { chapterApi } from '@/lib/tauri-bridge.ts'
-import { cn, countWordsFromHtml, calcBookWordCount } from '@/lib/utils.ts'
+import { countWordsFromHtml, calcBookWordCount } from '@/lib/utils.ts'
 
 const AUTOSAVE_DEBOUNCE_MS = 300
 const AUTOSAVE_INTERVAL_MS = 3 * 60 * 1000 // 3 分钟
 
+const EDITOR_WIDTH_CLASS: Record<string, string> = {
+  mobile: 'max-w-md',
+  standard: 'max-w-3xl',
+  wide: 'max-w-5xl',
+}
+
 export default function RichTextEditor() {
   const currentChapter = useCurrentChapter()
-  const { updateChapter, updateBook, chapters } = useAppStore()
+  const { updateChapter, updateBook, chapters, editorWidth } = useAppStore()
   const [, setEditorFocus] = useAtom(editorFocusAtom)
   const [, setIsSaving] = useAtom(isSavingAtom)
   const [, setLastSaved] = useAtom(lastSavedAtom)
   const [, setWordCount] = useAtom(wordCountAtom)
-  const [typewriterMode] = useAtom(typewriterModeAtom)
   const [contentRefresh] = useAtom(contentRefreshAtom)
   const autoSaveTimer = useRef<ReturnType<typeof setInterval>>(null)
   // 用 ref 保持最新引用，避免 useEditor onUpdate 闭包过期
@@ -108,10 +112,7 @@ export default function RichTextEditor() {
     content: currentChapter?.contentHtml ?? '<p></p>',
     editorProps: {
       attributes: {
-        class: cn(
-          'tiptap-editor min-h-[60vh] px-8 py-6 outline-none',
-          typewriterMode && 'typewriter-mode'
-        ),
+        class: 'tiptap-editor min-h-[60vh] px-8 py-6 outline-none',
         'data-placeholder': '开始你的故事…',
       },
     },
@@ -126,7 +127,6 @@ export default function RichTextEditor() {
     onFocus: () => setEditorFocus(true),
     onBlur: () => setEditorFocus(false),
   })
-
   // 当切换章节时加载并设置内容
   useEffect(() => {
     if (!editor || !currentChapter) return
@@ -157,7 +157,7 @@ export default function RichTextEditor() {
     if (!editor) return
     const timer = setInterval(() => {
       const html = editor.getHTML()
-      saveContent(html)
+      void saveContent(html)
     }, AUTOSAVE_INTERVAL_MS)
     // @ts-ignore
     autoSaveTimer.current = timer
@@ -191,14 +191,15 @@ export default function RichTextEditor() {
 
   return (
     <div className="flex-1 overflow-y-auto bg-background">
-      <div className="max-w-3xl mx-auto py-8">
+      <div className={`${EDITOR_WIDTH_CLASS[editorWidth] ?? 'max-w-3xl'} mx-auto py-8`}>
         {/* 章节标题（可直接编辑） */}
         <input
           value={titleValue}
           onChange={(e) => setTitleValue(e.target.value)}
           onBlur={handleTitleBlur}
           onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-          className="w-full text-2xl font-bold px-8 mb-1 bg-transparent outline-none border-b-2 border-transparent focus:border-primary/30 transition-colors text-foreground/80 placeholder:text-muted-foreground/40"
+          style={{ fontSize: 'calc(var(--font-editor-size, 16px) * 1.5)' }}
+          className="w-full font-bold px-8 mb-1 bg-transparent outline-none border-b-2 border-transparent focus:border-primary/30 transition-colors text-foreground/80 placeholder:text-muted-foreground/40"
           placeholder="输入章节标题…"
         />
         {/* 编辑器正文 */}

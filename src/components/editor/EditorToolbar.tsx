@@ -1,7 +1,7 @@
 /**
  * EditorToolbar — 编辑器顶部工具栏
  *
- * 提供返回书库、目录树折叠、打字机/专注模式切换、
+ * 提供返回书库、目录树折叠、专注模式切换、
  * 版本历史/世界观/AI 面板开关等功能按钮。
  * 世界观资料库打开为独立悬浮窗口。
  */
@@ -17,14 +17,14 @@ import {
   BookMarkedIcon,
   ClockIcon,
   ZapIcon,
-  KeyboardIcon,
   LayoutIcon,
   TypeIcon,
+  MinusIcon,
+  PlusIcon,
 } from 'lucide-react'
 import {
     sidebarOpenAtom,
     zenModeAtom,
-    typewriterModeAtom,
     aiPanelOpenAtom,
     historyPanelOpenAtom, isSavingAtom, lastSavedAtom,
 } from '@/stores/uiAtoms.ts'
@@ -35,7 +35,6 @@ export default function EditorToolbar() {
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useAtom(sidebarOpenAtom)
   const [zenMode, setZenMode] = useAtom(zenModeAtom)
-  const [typewriterMode, setTypewriterMode] = useAtom(typewriterModeAtom)
   const [aiPanelOpen, setAiPanelOpen] = useAtom(aiPanelOpenAtom)
   const [historyPanelOpen, setHistoryPanelOpen] = useAtom(historyPanelOpenAtom)
   const [worldWindowOpen, setWorldWindowOpen] = useState(false)
@@ -98,32 +97,31 @@ export default function EditorToolbar() {
 
       <div className="flex-1" />
 
-      {/* 字体大小滑块 */}
-      <div className="flex items-center gap-1.5">
+      {/* 字体大小 */}
+      <div className="flex items-center gap-1">
         <TypeIcon className="w-3.5 h-3.5 text-muted-foreground" />
-        <input
-          type="range"
-          min={12}
-          max={24}
-          step={1}
-          value={fontSize}
-          onChange={(e) => setFontSize(parseInt(e.target.value, 10))}
-          className="w-20 h-1 accent-primary cursor-pointer"
-          title={`字体大小: ${fontSize}px`}
-        />
-        <span className="text-xs text-muted-foreground w-7 text-right tabular-nums">{fontSize}px</span>
+        <button
+          onClick={() => setFontSize(Math.max(12, fontSize - 1))}
+          disabled={fontSize <= 12}
+          className="p-0.5 rounded hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          title="缩小字体"
+        >
+          <MinusIcon className="w-3.5 h-3.5" />
+        </button>
+        <span className="text-xs text-muted-foreground w-7 text-center tabular-nums">{fontSize}px</span>
+        <button
+          onClick={() => setFontSize(Math.min(24, fontSize + 1))}
+          disabled={fontSize >= 24}
+          className="p-0.5 rounded hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          title="放大字体"
+        >
+          <PlusIcon className="w-3.5 h-3.5" />
+        </button>
       </div>
 
       <div className="w-px h-5 bg-border mx-1" />
 
       {/* 功能按钮组 */}
-      <ToolbarBtn
-        active={typewriterMode}
-        onClick={() => setTypewriterMode((v) => !v)}
-        title="打字机模式"
-        icon={<KeyboardIcon className="w-4 h-4" />}
-      />
-
       <ToolbarBtn
         active={zenMode}
         onClick={() => setZenMode((v) => !v)}

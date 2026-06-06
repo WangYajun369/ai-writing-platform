@@ -1,22 +1,23 @@
 /**
  * SettingsPage — 设置页面
  *
- * 提供四个设置标签页：
+ * 提供五个设置标签页：
  * - AI 配置（服务商/API/模型/Temperature）
  * - 外观（浅色/深色/跟随系统）
+ * - 编辑（编辑器显示宽度）
  * - 存储（占位，后续版本推出统计功能）
  * - 版本（当前版本 / 检查更新）
  */
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeftIcon, BotIcon, PaletteIcon, DatabaseIcon, RefreshCwIcon, ArrowUpCircleIcon } from 'lucide-react'
+import { ArrowLeftIcon, BotIcon, PaletteIcon, DatabaseIcon, RefreshCwIcon, ArrowUpCircleIcon, MinusIcon, PlusIcon, PenLineIcon } from 'lucide-react'
 import { useAppStore } from '@/stores/appStore'
 
-type Tab = 'ai' | 'appearance' | 'storage' | 'version'
+type Tab = 'ai' | 'appearance' | 'editor' | 'storage' | 'version'
 
 export default function SettingsPage() {
   const navigate = useNavigate()
-  const { aiConfig, setAiConfig, theme, setTheme, eyeCareMode, setEyeCareMode, fontFamily, setFontFamily, fontSize, setFontSize } = useAppStore()
+  const { aiConfig, setAiConfig, theme, setTheme, eyeCareMode, setEyeCareMode, fontFamily, setFontFamily, fontSize, setFontSize, gridSize, setGridSize, editorWidth, setEditorWidth } = useAppStore()
   const [activeTab, setActiveTab] = useState<Tab>('ai')
 
   return (
@@ -38,6 +39,7 @@ export default function SettingsPage() {
           {([
             { id: 'ai', label: 'AI 配置', icon: BotIcon },
             { id: 'appearance', label: '外观', icon: PaletteIcon },
+            { id: 'editor', label: '编辑', icon: PenLineIcon },
             { id: 'storage', label: '存储', icon: DatabaseIcon },
             { id: 'version', label: '版本', icon: ArrowUpCircleIcon },
           ] as { id: Tab; label: string; icon: React.FC<{ className?: string }> }[]).map(({ id, label, icon: Icon }) => (
@@ -65,10 +67,18 @@ export default function SettingsPage() {
               eyeCareMode={eyeCareMode}
               fontFamily={fontFamily}
               fontSize={fontSize}
+              gridSize={gridSize}
               onThemeChange={setTheme}
               onEyeCareChange={setEyeCareMode}
               onFontFamilyChange={setFontFamily}
               onFontSizeChange={setFontSize}
+              onGridSizeChange={setGridSize}
+            />
+          )}
+          {activeTab === 'editor' && (
+            <EditorConfigSection
+              editorWidth={editorWidth}
+              onEditorWidthChange={setEditorWidth}
             />
           )}
           {activeTab === 'storage' && (
@@ -182,19 +192,23 @@ function AppearanceSection({
   eyeCareMode,
   fontFamily,
   fontSize,
+  gridSize,
   onThemeChange,
   onEyeCareChange,
   onFontFamilyChange,
   onFontSizeChange,
+  onGridSizeChange,
 }: {
   theme: string
   eyeCareMode: string
   fontFamily: string
   fontSize: number
+  gridSize: 'small' | 'medium' | 'large'
   onThemeChange: (t: 'light' | 'dark' | 'system') => void
   onEyeCareChange: (m: 'off' | 'warm' | 'green') => void
   onFontFamilyChange: (f: 'serif' | 'simhei' | 'simsun' | 'kaiti' | 'yahei') => void
   onFontSizeChange: (s: number) => void
+  onGridSizeChange: (s: 'small' | 'medium' | 'large') => void
 }) {
   const fontOptions = [
     { value: 'serif', label: '默认衬线' },
@@ -282,22 +296,104 @@ function AppearanceSection({
 
       {/* 字体大小 */}
       <div className="space-y-2">
-        <label className="text-sm font-medium">字体大小: {fontSize}px</label>
+        <label className="text-sm font-medium">字体大小</label>
         <p className="text-xs text-muted-foreground">
-          拖动滑块调整编辑器字体大小（12px - 24px）
+          调整编辑器字体大小（12px - 24px）
         </p>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground w-8">12px</span>
-          <input
-            type="range"
-            min={12}
-            max={24}
-            step={1}
-            value={fontSize}
-            onChange={(e) => onFontSizeChange(parseInt(e.target.value, 10))}
-            className="flex-1"
-          />
-          <span className="text-xs text-muted-foreground w-8">24px</span>
+          <button
+            onClick={() => onFontSizeChange(Math.max(12, fontSize - 1))}
+            disabled={fontSize <= 12}
+            className="w-8 h-8 flex items-center justify-center rounded-lg bg-muted hover:bg-muted/80 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <MinusIcon className="w-4 h-4" />
+          </button>
+          <span className="text-sm font-mono min-w-[3rem] text-center">{fontSize}px</span>
+          <button
+            onClick={() => onFontSizeChange(Math.min(24, fontSize + 1))}
+            disabled={fontSize >= 24}
+            className="w-8 h-8 flex items-center justify-center rounded-lg bg-muted hover:bg-muted/80 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <PlusIcon className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* 作品列表网格大小 */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">作品列表网格大小</label>
+        <p className="text-xs text-muted-foreground">
+          调整作品列表页网格视图的卡片大小和间距
+        </p>
+        <div className="flex gap-3">
+          {([
+            { value: 'small', label: '紧凑', desc: '更多列更密' },
+            { value: 'medium', label: '标准', desc: '默认大小' },
+            { value: 'large', label: '宽松', desc: '更大更敞' },
+          ] as const).map(({ value, label, desc }) => (
+            <button
+              key={value}
+              onClick={() => onGridSizeChange(value)}
+              className={`flex flex-col items-start gap-0.5 px-4 py-2 rounded-lg text-sm transition-colors ${
+                gridSize === value
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted hover:bg-muted/80'
+              }`}
+            >
+              <span className="font-medium">{label}</span>
+              <span className="text-xs opacity-70">{desc}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 编辑配置区块
+ *
+ * 编辑器显示宽度：手机宽度 / 标准宽度 / 宽幅宽度。
+ */
+function EditorConfigSection({
+  editorWidth,
+  onEditorWidthChange,
+}: {
+  editorWidth: string
+  onEditorWidthChange: (w: 'mobile' | 'standard' | 'wide') => void
+}) {
+  return (
+    <div className="space-y-6">
+      <h2 className="text-base font-semibold">编辑设置</h2>
+
+      {/* 编辑器显示宽度 */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">编辑器显示宽度</label>
+        <p className="text-xs text-muted-foreground">
+          调整编辑区域的最大显示宽度，适配不同屏幕和写作习惯
+        </p>
+        <div className="flex gap-3">
+          {([
+            { value: 'mobile', label: '手机宽度', desc: '约 448px', icon: '📱' },
+            { value: 'standard', label: '标准宽度', desc: '约 768px', icon: '💻' },
+            { value: 'wide', label: '宽幅宽度', desc: '约 1024px', icon: '🖥️' },
+          ] as const).map(({ value, label, desc, icon }) => (
+            <button
+              key={value}
+              onClick={() => onEditorWidthChange(value)}
+              className={`flex flex-col items-start gap-0.5 px-4 py-2 rounded-lg text-sm transition-colors ${
+                editorWidth === value
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted hover:bg-muted/80'
+              }`}
+            >
+              <span className="flex items-center gap-1.5 font-medium">
+                <span>{icon}</span>
+                {label}
+              </span>
+              <span className="text-xs opacity-70">{desc}</span>
+            </button>
+          ))}
         </div>
       </div>
     </div>
@@ -333,7 +429,6 @@ function VersionSection() {
   const [isChecking, setIsChecking] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'up-to-date' | 'error'>('idle')
   const [updateMessage, setUpdateMessage] = useState('')
-  const [latestVersion, setLatestVersion] = useState('')
   const [releaseUrl, setReleaseUrl] = useState('')
 
   const APP_VERSION = '0.1.0'
@@ -394,7 +489,6 @@ function VersionSection() {
 
       if (update) {
         setUpdateStatus('available')
-        setLatestVersion(update.version)
         setUpdateMessage(`发现新版本 ${update.version}，当前版本 ${update.currentVersion}。\n${update.body ?? ''}`)
         setIsChecking(false)
         return
@@ -407,7 +501,6 @@ function VersionSection() {
       try {
         const release = await checkViaGithub()
         if (release) {
-          setLatestVersion(release.version)
           setReleaseUrl(release.url)
           setUpdateStatus('available')
           setUpdateMessage(

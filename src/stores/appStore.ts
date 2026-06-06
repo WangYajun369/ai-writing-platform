@@ -4,6 +4,25 @@ import type { Book, Chapter, Volume, AiConfig } from '../types'
 
 // ==================== App Store（全局业务状态）====================
 
+/** localStorage 键名，用于持久化用户偏好设置 */
+const PREFERENCES_KEY = 'mirage-ink-preferences'
+
+/** 从 localStorage 读取持久化的用户偏好 */
+function loadPreferences(): Partial<Pick<AppState, 'gridSize' | 'editorWidth'>> {
+  try {
+    const raw = localStorage.getItem(PREFERENCES_KEY)
+    if (raw) return JSON.parse(raw)
+  } catch { /* ignore */ }
+  return {}
+}
+
+/** 将用户偏好写入 localStorage */
+function savePreferences(prefs: Pick<AppState, 'gridSize' | 'editorWidth'>) {
+  try {
+    localStorage.setItem(PREFERENCES_KEY, JSON.stringify(prefs))
+  } catch { /* ignore */ }
+}
+
 interface AppState {
   // 书籍列表
   books: Book[]
@@ -34,6 +53,12 @@ interface AppState {
   // 全局字体大小（px）
   fontSize: number
 
+  // 作品列表网格大小
+  gridSize: 'small' | 'medium' | 'large'
+
+  // 编辑器显示宽度
+  editorWidth: 'mobile' | 'standard' | 'wide'
+
   // Actions
   setBooks: (books: Book[]) => void
   setCurrentBookId: (id: string | null) => void
@@ -51,10 +76,14 @@ interface AppState {
   setEyeCareMode: (mode: 'off' | 'warm' | 'green') => void
   setFontFamily: (font: AppState['fontFamily']) => void
   setFontSize: (size: number) => void
+  setGridSize: (gridSize: AppState['gridSize']) => void
+  setEditorWidth: (editorWidth: AppState['editorWidth']) => void
   setDbStatus: (status: AppState['dbStatus']) => void
   setLoadingBooks: (v: boolean) => void
   setLoadingChapters: (v: boolean) => void
 }
+
+const savedPrefs = loadPreferences()
 
 export const useAppStore = create<AppState>()(
   subscribeWithSelector((set) => ({
@@ -78,6 +107,8 @@ export const useAppStore = create<AppState>()(
     eyeCareMode: 'off',
     fontFamily: 'serif',
     fontSize: 16,
+    gridSize: savedPrefs.gridSize ?? 'medium',
+    editorWidth: savedPrefs.editorWidth ?? 'standard',
 
     setBooks: (books) => set({ books }),
     setCurrentBookId: (id) => set({ currentBookId: id }),
@@ -111,6 +142,14 @@ export const useAppStore = create<AppState>()(
     setEyeCareMode: (eyeCareMode) => set({ eyeCareMode }),
     setFontFamily: (fontFamily) => set({ fontFamily }),
     setFontSize: (fontSize) => set({ fontSize }),
+    setGridSize: (gridSize) => {
+      savePreferences({ gridSize, editorWidth: useAppStore.getState().editorWidth })
+      set({ gridSize })
+    },
+    setEditorWidth: (editorWidth) => {
+      savePreferences({ gridSize: useAppStore.getState().gridSize, editorWidth })
+      set({ editorWidth })
+    },
     setDbStatus: (dbStatus) => set({ dbStatus }),
     setLoadingBooks: (v) => set({ isLoadingBooks: v }),
     setLoadingChapters: (v) => set({ isLoadingChapters: v }),
