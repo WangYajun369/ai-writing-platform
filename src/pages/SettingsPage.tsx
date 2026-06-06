@@ -10,14 +10,14 @@
  */
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeftIcon, BotIcon, PaletteIcon, DatabaseIcon, RefreshCwIcon, ArrowUpCircleIcon, MinusIcon, PlusIcon, PenLineIcon } from 'lucide-react'
+import { ArrowLeftIcon, BotIcon, PaletteIcon, DatabaseIcon, RefreshCwIcon, ArrowUpCircleIcon, MinusIcon, PlusIcon, PenLineIcon, ZapIcon, CircleCheckIcon, CircleAlertIcon } from 'lucide-react'
 import { useAppStore } from '@/stores/appStore'
 
 type Tab = 'ai' | 'appearance' | 'editor' | 'storage' | 'version'
 
 export default function SettingsPage() {
   const navigate = useNavigate()
-  const { aiConfig, setAiConfig, theme, setTheme, eyeCareMode, setEyeCareMode, fontFamily, setFontFamily, fontSize, setFontSize, gridSize, setGridSize, editorWidth, setEditorWidth } = useAppStore()
+  const { aiConfig, setAiConfig, aiConnectionStatus, aiConnectionDetail, setAiConnectionStatus, theme, setTheme, eyeCareMode, setEyeCareMode, fontFamily, setFontFamily, fontSize, setFontSize, gridSize, setGridSize, editorWidth, setEditorWidth } = useAppStore()
   const [activeTab, setActiveTab] = useState<Tab>('ai')
 
   return (
@@ -59,7 +59,26 @@ export default function SettingsPage() {
         {/* 内容区 */}
         <div className="flex-1 bg-card border rounded-xl p-6">
           {activeTab === 'ai' && (
-            <AiConfigSection config={aiConfig} onChange={setAiConfig} />
+            <AiConfigSection
+              config={aiConfig}
+              onChange={setAiConfig}
+              connectionStatus={aiConnectionStatus}
+              connectionDetail={aiConnectionDetail}
+              onTestConnection={async () => {
+                setAiConnectionStatus('testing')
+                try {
+                  const { aiApi } = await import('@/lib/tauri-bridge')
+                  const result = await aiApi.testConnection(
+                    aiConfig.provider,
+                    aiConfig.endpoint,
+                    aiConfig.apiKey,
+                  )
+                  setAiConnectionStatus(result.ok ? 'connected' : 'error', result.detail)
+                } catch (err) {
+                  setAiConnectionStatus('error', String(err))
+                }
+              }}
+            />
           )}
           {activeTab === 'appearance' && (
             <AppearanceSection
@@ -102,10 +121,16 @@ export default function SettingsPage() {
 function AiConfigSection({
   config,
   onChange,
+  connectionStatus,
+  connectionDetail,
+  onTestConnection,
 }: {
     // @ts-ignore
     config: ReturnType<typeof useAppStore>['aiConfig']
   onChange: (c: Partial<typeof config>) => void
+  connectionStatus: 'idle' | 'testing' | 'connected' | 'error'
+  connectionDetail: string
+  onTestConnection: () => Promise<void>
 }) {
   /** 切换服务商时自动填充默认 endpoint 和 model */
   const handleProviderChange = (provider: typeof config.provider) => {
@@ -176,6 +201,42 @@ function AiConfigSection({
           onChange={(e) => onChange({ temperature: parseFloat(e.target.value) })}
           className="w-full"
         />
+      </div>
+
+      {/* 测试连接 */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onTestConnection}
+            disabled={connectionStatus === 'testing'}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ZapIcon className={`w-4 h-4 ${connectionStatus === 'testing' ? 'animate-pulse' : ''}`} />
+            {connectionStatus === 'testing' ? '检测中…' : '测试连接'}
+          </button>
+        </div>
+
+        {/* 连接状态提示 */}
+        {connectionStatus !== 'idle' && (
+          <div
+            className={`flex items-start gap-2 p-3 rounded-lg text-sm ${
+              connectionStatus === 'connected'
+                ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
+                : connectionStatus === 'error'
+                  ? 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
+                  : 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400'
+            }`}
+          >
+            {connectionStatus === 'connected' ? (
+              <CircleCheckIcon className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            ) : connectionStatus === 'error' ? (
+              <CircleAlertIcon className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            ) : (
+              <RefreshCwIcon className="w-4 h-4 mt-0.5 flex-shrink-0 animate-spin" />
+            )}
+            <p className="whitespace-pre-wrap text-xs">{connectionDetail}</p>
+          </div>
+        )}
       </div>
 
       {config.provider !== 'ollama' && (

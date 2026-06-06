@@ -38,6 +38,10 @@ interface AppState {
   // 数据库连接状态
   dbStatus: 'idle' | 'connected' | 'error'
 
+  // AI 连接状态
+  aiConnectionStatus: 'idle' | 'testing' | 'connected' | 'error'
+  aiConnectionDetail: string
+
   // AI 配置
   aiConfig: AiConfig
 
@@ -78,6 +82,7 @@ interface AppState {
   setFontSize: (size: number) => void
   setGridSize: (gridSize: AppState['gridSize']) => void
   setEditorWidth: (editorWidth: AppState['editorWidth']) => void
+  setAiConnectionStatus: (status: AppState['aiConnectionStatus'], detail?: string) => void
   setDbStatus: (status: AppState['dbStatus']) => void
   setLoadingBooks: (v: boolean) => void
   setLoadingChapters: (v: boolean) => void
@@ -95,6 +100,8 @@ export const useAppStore = create<AppState>()(
     currentChapterId: null,
     isLoadingChapters: false,
     dbStatus: 'idle',
+    aiConnectionStatus: 'idle',
+    aiConnectionDetail: '',
     aiConfig: {
       provider: 'ollama',
       endpoint: 'http://127.0.0.1:11434',
@@ -150,6 +157,8 @@ export const useAppStore = create<AppState>()(
       savePreferences({ gridSize: useAppStore.getState().gridSize, editorWidth })
       set({ editorWidth })
     },
+    setAiConnectionStatus: (aiConnectionStatus, aiConnectionDetail = '') =>
+      set({ aiConnectionStatus, aiConnectionDetail }),
     setDbStatus: (dbStatus) => set({ dbStatus }),
     setLoadingBooks: (v) => set({ isLoadingBooks: v }),
     setLoadingChapters: (v) => set({ isLoadingChapters: v }),

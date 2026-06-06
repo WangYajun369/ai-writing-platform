@@ -170,6 +170,11 @@ export interface StreamEvent {
   error?: string | null
 }
 
+export interface ConnectionTestResult {
+  ok: boolean
+  detail: string
+}
+
 export const aiApi = {
   async ragSearch(bookId: string, query: string, topN = 5) {
     return invoke<Array<{ snippet: string; sourceId: string; sourceTitle: string; distance: number }>>(
@@ -185,6 +190,11 @@ export const aiApi = {
   /** 流式 AI 对话（Rust 侧处理 HTTP 流式请求，前端通过事件接收） */
   async streamChat(args: StreamChatArgs): Promise<string> {
     return invoke<string>('stream_ai_chat', { args })
+  },
+
+  /** 测试 AI 服务连接 */
+  async testConnection(provider: string, endpoint: string, apiKey?: string): Promise<ConnectionTestResult> {
+    return invoke<ConnectionTestResult>('test_ai_connection', { provider, endpoint, apiKey })
   },
 }
 

@@ -13,6 +13,150 @@ pub struct RagResult {
     pub distance: f64,
 }
 
+/// AI 连接测试结果
+#[derive(Debug, Serialize)]
+pub struct ConnectionTestResult {
+    /// 是否连接成功
+    pub ok: bool,
+    /// 成功时返回可用模型列表（Ollama），失败时返回错误信息
+    pub detail: String,
+}
+
+/// 测试 AI 服务连接
+///
+/// - Ollama: GET /api/tags 获取已拉取模型列表
+/// - OpenAI 兼容: GET /models，验证可达性和认证
+#[tauri::command]
+pub async fn test_ai_connection(
+    provider: String,
+    endpoint: String,
+    api_key: Option<String>,
+) -> Result<ConnectionTestResult, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .http1_only()
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+    let endpoint = endpoint.trim_end_matches('/');
+
+    match provider.as_str() {
+        "ollama" => test_ollama_connection(client, endpoint).await,
+        _ => test_openai_compatible_connection(client, endpoint, api_key).await,
+    }
+}
+
+/// Ollama 连接测试：GET /api/tags
+async fn test_ollama_connection(
+    client: reqwest::Client,
+    endpoint: &str,
+) -> Result<ConnectionTestResult, String> {
+    let url = format!("{}/api/tags", endpoint);
+
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("无法连接到 Ollama 服务: {}\n请确保 Ollama 正在运行", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Ok(ConnectionTestResult {
+            ok: false,
+            detail: format!("Ollama 服务返回错误 ({}): {}", status, text),
+        });
+    }
+
+    // 解析模型列表
+    match response.json::<serde_json::Value>().await {
+        Ok(data) => {
+            let models: Vec<String> = data["models"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|m| m["name"].as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let detail = if models.is_empty() {
+                "Ollama 已连接，暂无可用模型".to_string()
+            } else {
+                format!("Ollama 已连接，可用模型: {}", models.join(", "))
+            };
+            Ok(ConnectionTestResult { ok: true, detail })
+        }
+        Err(e) => Ok(ConnectionTestResult {
+            ok: true,
+            detail: format!("Ollama 已连接（解析模型列表失败: {}）", e),
+        }),
+    }
+}
+
+/// OpenAI 兼容连接测试：GET /models
+async fn test_openai_compatible_connection(
+    client: reqwest::Client,
+    endpoint: &str,
+    api_key: Option<String>,
+) -> Result<ConnectionTestResult, String> {
+    let url = format!("{}/models", endpoint);
+
+    let mut req = client.get(&url);
+    if let Some(ref key) = api_key {
+        req = req.header("Authorization", format!("Bearer {}", key));
+    }
+
+    let response = req
+        .send()
+        .await
+        .map_err(|e| format!("无法连接到 AI 服务: {}\n请检查 API 地址和网络连接", e))?;
+
+    let status = response.status();
+
+    if status.is_success() {
+        // 尝试解析模型列表
+        match response.json::<serde_json::Value>().await {
+            Ok(data) => {
+                let models: Vec<String> = data["data"]
+                    .as_array()
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|m| m["id"].as_str().map(String::from))
+                            .take(10) // 限制显示前10个
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                let detail = if models.is_empty() {
+                    "AI 服务已连接".to_string()
+                } else if models.len() >= 10 {
+                    format!("AI 服务已连接，可用模型: {}...", models.join(", "))
+                } else {
+                    format!("AI 服务已连接，可用模型: {}", models.join(", "))
+                };
+                Ok(ConnectionTestResult { ok: true, detail })
+            }
+            Err(_) => Ok(ConnectionTestResult {
+                ok: true,
+                detail: "AI 服务已连接（无法解析模型列表）".to_string(),
+            }),
+        }
+    } else if status == reqwest::StatusCode::UNAUTHORIZED {
+        Ok(ConnectionTestResult {
+            ok: false,
+            detail: "认证失败 (401): API Key 无效或未提供".to_string(),
+        })
+    } else {
+        let text = response.text().await.unwrap_or_default();
+        Ok(ConnectionTestResult {
+            ok: false,
+            detail: format!("AI 服务返回错误 ({}): {}", status, text),
+        })
+    }
+}
+
 /// RAG 语义检索（Phase 4 占位实现，待接入 sqlite-vec）
 #[tauri::command]
 pub async fn rag_search(

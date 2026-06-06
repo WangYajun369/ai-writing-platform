@@ -6,7 +6,7 @@
  * 流式调用由 Rust 侧通过 reqwest 处理，前端通过 Tauri 事件接收增量。
  */
 import { useState, useRef, useEffect } from 'react'
-import { SendIcon, BotIcon, XIcon, Loader2Icon } from 'lucide-react'
+import { SendIcon, BotIcon, XIcon, Loader2Icon, CircleCheckIcon, CircleAlertIcon, CircleIcon } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
@@ -26,7 +26,7 @@ export default function AiSidePanel() {
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const { aiConfig } = useAppStore()
+  const { aiConfig, aiConnectionStatus, aiConnectionDetail } = useAppStore()
   const currentChapter = useCurrentChapter()
 
   useEffect(() => {
@@ -34,6 +34,25 @@ export default function AiSidePanel() {
   }, [messages])
 
   const isOllamaProvider = aiConfig.provider === 'ollama'
+
+  /** 获取服务商显示名称 */
+  const providerLabel = {
+    ollama: 'Ollama',
+    openai: 'OpenAI',
+    bigmodel: '智谱',
+    custom: '自定义',
+  }[aiConfig.provider] ?? aiConfig.provider
+
+  /** 根据连接状态返回状态图标和颜色 */
+  const statusConfig = {
+    idle: { icon: CircleIcon, color: 'text-muted-foreground/50', label: '未检测' },
+    testing: { icon: Loader2Icon, color: 'text-blue-500 animate-spin', label: '检测中…' },
+    connected: { icon: CircleCheckIcon, color: 'text-green-500', label: '已连接' },
+    error: { icon: CircleAlertIcon, color: 'text-red-500', label: '连接失败' },
+  } as const
+  const StatusIcon = statusConfig[aiConnectionStatus].icon
+  const statusColor = statusConfig[aiConnectionStatus].color
+  const statusLabel = statusConfig[aiConnectionStatus].label
 
   /** 根据 provider 组装 messages 数组 */
   function buildMessages(context: string) {
@@ -143,6 +162,16 @@ export default function AiSidePanel() {
         <div className="flex items-center gap-2">
           <BotIcon className="w-4 h-4 text-primary" />
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">AI 助手</span>
+          {/* 连接状态指示器 */}
+          <div
+            className="flex items-center gap-1 cursor-help"
+            title={aiConnectionStatus === 'error' ? aiConnectionDetail || '连接失败' : `${providerLabel} · ${statusLabel}`}
+          >
+            <StatusIcon className={cn('w-3 h-3', statusColor)} />
+            <span className={`text-[10px] ${aiConnectionStatus === 'connected' ? 'text-green-600 dark:text-green-400' : aiConnectionStatus === 'error' ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground/70'}`}>
+              {providerLabel}
+            </span>
+          </div>
         </div>
         <button onClick={handleClear} title="清空对话" className="p-1 rounded hover:bg-muted text-muted-foreground">
           <XIcon className="w-3.5 h-3.5" />
