@@ -3,14 +3,96 @@ use serde::{Deserialize, Serialize};
 use futures_util::StreamExt;
 use crate::db::AppDb;
 
+// ---- RAG & Embedding 公共结构 ----
+
+/// Embedding 索引状态（用于检测是否需要重新生成）
+#[derive(Serialize)]
+pub struct EmbeddingStatus {
+    #[serde(rename = "totalChapters")]
+    pub total_chapters: usize,
+    #[serde(rename = "totalWorldCards")]
+    pub total_world_cards: usize,
+    #[serde(rename = "indexedChapters")]
+    pub indexed_chapters: usize,
+    #[serde(rename = "indexedWorldCards")]
+    pub indexed_world_cards: usize,
+    /// 是否有未索引的内容（新增/修改后需重新生成）
+    pub stale: bool,
+}
+
 #[derive(Serialize)]
 pub struct RagResult {
     pub snippet: String,
+    #[serde(rename = "sourceType")]
+    pub source_type: String,
     #[serde(rename = "sourceId")]
     pub source_id: String,
     #[serde(rename = "sourceTitle")]
     pub source_title: String,
     pub distance: f64,
+}
+
+/// Embedding 生成进度返回给前端
+#[derive(Serialize)]
+pub struct EmbeddingProgress {
+    #[serde(rename = "chaptersEmbedded")]
+    pub chapters_embedded: usize,
+    #[serde(rename = "worldCardsEmbedded")]
+    pub world_cards_embedded: usize,
+    #[serde(rename = "totalChapters")]
+    pub total_chapters: usize,
+    #[serde(rename = "totalWorldCards")]
+    pub total_world_cards: usize,
+    pub model: String,
+}
+
+// ---- 向量工具函数 ----
+
+/// f32 切片序列化为字节 BLOB
+fn floats_to_bytes(floats: &[f32]) -> Vec<u8> {
+    floats.iter().flat_map(|f| f.to_le_bytes()).collect()
+}
+
+/// 从字节 BLOB 反序列化为 f32 向量
+fn bytes_to_floats(bytes: &[u8]) -> Vec<f32> {
+    bytes
+        .chunks_exact(4)
+        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect()
+}
+
+/// 余弦相似度（返回 0.0 ~ 1.0）
+fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
+    let len = a.len().min(b.len());
+    let (dot, na, nb) = a[..len].iter().zip(b[..len].iter()).fold(
+        (0.0f64, 0.0f64, 0.0f64),
+        |(d, x, y), (&ai, &bi)| {
+            let af = ai as f64;
+            let bf = bi as f64;
+            (d + af * bf, x + af * af, y + bf * bf)
+        },
+    );
+    if na == 0.0 || nb == 0.0 {
+        0.0
+    } else {
+        dot / (na.sqrt() * nb.sqrt())
+    }
+}
+
+/// 简单 HTML 标签剥离
+fn strip_html(html: &str) -> String {
+    let re = regex_lite::Regex::new(r"<[^>]*>").unwrap();
+    re.replace_all(html, "").to_string()
+}
+
+/// 截取文本片段（前 N 个可见字符）
+fn snippet(text: &str, max_chars: usize) -> String {
+    let cleaned: String = text.chars().filter(|&c| c != '\n' && c != '\r').collect();
+    if cleaned.chars().count() <= max_chars {
+        cleaned
+    } else {
+        cleaned.chars().take(max_chars).chain(['…']).collect()
+    }
 }
 
 /// AI 连接测试结果
@@ -157,36 +239,415 @@ async fn test_openai_compatible_connection(
     }
 }
 
-/// RAG 语义检索（Phase 4 占位实现，待接入 sqlite-vec）
+// ---- RAG 语义检索与 Embedding ----
+
+/// 调用智谱/OpenAI 兼容的 Embedding API
+async fn call_embedding_api(
+    endpoint: &str,
+    api_key: &str,
+    model: &str,
+    texts: &[String],
+) -> Result<Vec<Vec<f32>>, String> {
+    if texts.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .http1_only()
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+    let url = format!("{}/embeddings", endpoint.trim_end_matches('/'));
+
+    let body = serde_json::json!({
+        "model": model,
+        "input": texts,
+    });
+
+    let resp = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Embedding API 请求失败: {}", e))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let err_text = resp.text().await.unwrap_or_default();
+        return Err(format!("Embedding API 返回错误 ({}): {}", status, err_text));
+    }
+
+    let data: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+
+    let items = data["data"]
+        .as_array()
+        .ok_or_else(|| format!("Embedding API 返回格式异常: 缺少 data 数组"))?;
+
+    // 按 index 排序确保输出顺序与输入一致
+    let mut indexed: Vec<(usize, Vec<f32>)> = Vec::new();
+    for item in items {
+        let idx = item["index"].as_u64().unwrap_or(0) as usize;
+        if let Some(vec) = item["embedding"].as_array() {
+            let floats: Vec<f32> = vec
+                .iter()
+                .filter_map(|v| v.as_f64().map(|f| f as f32))
+                .collect();
+            indexed.push((idx, floats));
+        }
+    }
+    indexed.sort_by_key(|(i, _)| *i);
+
+    Ok(indexed.into_iter().map(|(_, v)| v).collect())
+}
+
+/// RAG 语义检索（向量相似度搜索）
+///
+/// 当 embeddings 表有数据时使用向量搜索，否则降级为 SQL LIKE。
+/// 智谱 bigmodel 使用 OpenAI 兼容的 /embeddings 端点。
 #[tauri::command]
 pub async fn rag_search(
     db: State<'_, AppDb>,
     book_id: String,
     query: String,
     top_n: usize,
+    endpoint: Option<String>,
+    api_key: Option<String>,
+    embedding_model: Option<String>,
 ) -> Result<Vec<RagResult>, String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
-    let pattern = format!("%{}%", query.chars().take(20).collect::<String>());
-    let mut stmt = conn.prepare(
-        "SELECT id, title, content_html FROM chapters WHERE book_id=?1 AND content_html LIKE ?2 AND deleted_at IS NULL LIMIT ?3"
-    ).map_err(|e| e.to_string())?;
 
-    let results = stmt.query_map(rusqlite::params![book_id, pattern, top_n as i64], |row| {
-        let id: String = row.get(0)?;
-        let title: String = row.get(1)?;
-        let html: String = row.get(2)?;
-        let snippet: String = html.chars().filter(|&c| c != '<' && c != '>').take(200).collect();
-        Ok(RagResult { snippet, source_id: id, source_title: title, distance: 0.5 })
-    }).map_err(|e| e.to_string())?;
+    // 尝试向量检索
+    if let (Some(ref ep), Some(ref key), Some(ref model)) = (&endpoint, &api_key, &embedding_model) {
+        // 检查是否有已生成的 embedding
+        let emb_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM embeddings e
+                 INNER JOIN chapters c ON e.source_id = c.id AND e.source_type = 'chapter'
+                 WHERE c.book_id = ?1 AND c.deleted_at IS NULL",
+                rusqlite::params![book_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+
+        if emb_count > 0 {
+            // 使用向量搜索
+            match call_embedding_api(ep, key, model, &[query.clone()]).await {
+                Ok(query_embs) => {
+                    if let Some(query_vec) = query_embs.into_iter().next() {
+                        return vector_search(&conn, &book_id, &query_vec, top_n);
+                    }
+                }
+                Err(e) => eprintln!("Embedding API 调用失败，降级为关键词搜索: {}", e),
+            }
+        }
+    }
+
+    // 降级：SQL LIKE 关键词搜索
+    like_search(&conn, &book_id, &query, top_n)
+}
+
+/// 向量相似度搜索
+fn vector_search(
+    conn: &rusqlite::Connection,
+    book_id: &str,
+    query_vec: &[f32],
+    top_n: usize,
+) -> Result<Vec<RagResult>, String> {
+    // 查询该书籍所有章节的 embedding
+    let mut stmt = conn
+        .prepare(
+            "SELECT e.source_id, e.embedding, c.title, c.content_html
+             FROM embeddings e
+             INNER JOIN chapters c ON e.source_id = c.id AND e.source_type = 'chapter'
+             WHERE c.book_id = ?1 AND c.deleted_at IS NULL",
+        )
+        .map_err(|e| e.to_string())?;
+
+    struct EmbRow {
+        source_id: String,
+        embedding: Vec<u8>,
+        title: String,
+        content_html: String,
+    }
+
+    let rows: Vec<EmbRow> = stmt
+        .query_map(rusqlite::params![book_id], |row| {
+            Ok(EmbRow {
+                source_id: row.get(0)?,
+                embedding: row.get(1)?,
+                title: row.get(2)?,
+                content_html: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    // 计算余弦相似度并排序
+    let mut scored: Vec<(f64, String, String, String)> = Vec::new();
+    for row in &rows {
+        let emb_vec = bytes_to_floats(&row.embedding);
+        let sim = cosine_similarity(query_vec, &emb_vec);
+        let plain = strip_html(&row.content_html);
+        let snip = snippet(&plain, 200);
+        scored.push((sim, snip, row.source_id.clone(), row.title.clone()));
+    }
+
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    scored.truncate(top_n);
+
+    Ok(scored
+        .into_iter()
+        .map(|(dist, snip, sid, title)| RagResult {
+            snippet: snip,
+            source_type: "chapter".into(),
+            source_id: sid,
+            source_title: title,
+            distance: dist,
+        })
+        .collect())
+}
+
+/// 降级的 SQL LIKE 搜索
+fn like_search(
+    conn: &rusqlite::Connection,
+    book_id: &str,
+    query: &str,
+    top_n: usize,
+) -> Result<Vec<RagResult>, String> {
+    let pattern = format!("%{}%", query.chars().take(20).collect::<String>());
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, title, content_html FROM chapters
+             WHERE book_id=?1 AND content_html LIKE ?2 AND deleted_at IS NULL LIMIT ?3",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let results = stmt
+        .query_map(rusqlite::params![book_id, pattern, top_n as i64], |row| {
+            let id: String = row.get(0)?;
+            let title: String = row.get(1)?;
+            let html: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+            let snip = snippet(&strip_html(&html), 200);
+            Ok(RagResult {
+                snippet: snip,
+                source_type: "chapter".into(),
+                source_id: id,
+                source_title: title,
+                distance: 0.5,
+            })
+        })
+        .map_err(|e| e.to_string())?;
 
     results.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
-/// 触发 Embedding 生成（Phase 4 占位）
+/// 检查 Embedding 索引状态：对比章节/世界观卡片数量与已索引数量
+///
+/// 返回是否过期（stale），前端可根据此提示用户重新生成索引。
 #[tauri::command]
-pub async fn trigger_embedding(_db: State<'_, AppDb>, book_id: String) -> Result<(), String> {
-    println!("触发 Embedding 生成：book_id={}", book_id);
-    Ok(())
+pub fn check_embedding_status(
+    db: State<'_, AppDb>,
+    book_id: String,
+) -> Result<EmbeddingStatus, String> {
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
+
+    let total_chapters: usize = conn
+        .query_row(
+            "SELECT COUNT(*) FROM chapters WHERE book_id = ?1 AND deleted_at IS NULL AND content_html != ''",
+            rusqlite::params![&book_id],
+            |row| row.get::<_, i64>(0).map(|v| v as usize),
+        )
+        .unwrap_or(0);
+
+    let total_world_cards: usize = conn
+        .query_row(
+            "SELECT COUNT(*) FROM world_cards WHERE book_id = ?1 AND content_html != ''",
+            rusqlite::params![&book_id],
+            |row| row.get::<_, i64>(0).map(|v| v as usize),
+        )
+        .unwrap_or(0);
+
+    let indexed_chapters: usize = conn
+        .query_row(
+            "SELECT COUNT(*) FROM embeddings e
+             INNER JOIN chapters c ON e.source_id = c.id AND e.source_type = 'chapter'
+             WHERE c.book_id = ?1 AND c.deleted_at IS NULL",
+            rusqlite::params![&book_id],
+            |row| row.get::<_, i64>(0).map(|v| v as usize),
+        )
+        .unwrap_or(0);
+
+    let indexed_world_cards: usize = conn
+        .query_row(
+            "SELECT COUNT(*) FROM embeddings e
+             INNER JOIN world_cards w ON e.source_id = w.id AND e.source_type = 'world_card'
+             WHERE w.book_id = ?1",
+            rusqlite::params![&book_id],
+            |row| row.get::<_, i64>(0).map(|v| v as usize),
+        )
+        .unwrap_or(0);
+
+    let stale = total_chapters + total_world_cards > 0
+        && (indexed_chapters < total_chapters || indexed_world_cards < total_world_cards);
+
+    Ok(EmbeddingStatus {
+        total_chapters,
+        total_world_cards,
+        indexed_chapters,
+        indexed_world_cards,
+        stale,
+    })
+}
+
+/// 触发 Embedding 生成：为指定书籍的所有章节和世界观卡片生成向量
+///
+/// 调用智谱/OpenAI 兼容的 /embeddings API，批量生成后写入 embeddings 表。
+#[tauri::command]
+pub async fn trigger_embedding(
+    db: State<'_, AppDb>,
+    book_id: String,
+    endpoint: String,
+    api_key: String,
+    embedding_model: String,
+) -> Result<EmbeddingProgress, String> {
+    /// 待嵌入的数据项
+    struct SourceItem {
+        source_type: String,
+        source_id: String,
+        plain_text: String,
+    }
+
+    // 在块内收集所有数据，确保 statement 在 await 前释放
+    let (items, total_chapters, total_world_cards) = {
+        let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
+
+        // 收集章节
+        let mut chap_stmt = conn
+            .prepare(
+                "SELECT id, content_html FROM chapters
+                 WHERE book_id = ?1 AND deleted_at IS NULL AND content_html != ''",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let chapters: Vec<SourceItem> = chap_stmt
+            .query_map(rusqlite::params![&book_id], |row| {
+                let id: String = row.get(0)?;
+                let html: String = row.get::<_, Option<String>>(1)?.unwrap_or_default();
+                Ok(SourceItem {
+                    source_type: "chapter".into(),
+                    source_id: id,
+                    plain_text: strip_html(&html),
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let tc = chapters.len();
+
+        // 收集世界观卡片
+        let mut card_stmt = conn
+            .prepare(
+                "SELECT id, content_html FROM world_cards WHERE book_id = ?1 AND content_html != ''",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let cards: Vec<SourceItem> = card_stmt
+            .query_map(rusqlite::params![&book_id], |row| {
+                let id: String = row.get(0)?;
+                let html: String = row.get::<_, Option<String>>(1)?.unwrap_or_default();
+                Ok(SourceItem {
+                    source_type: "world_card".into(),
+                    source_id: id,
+                    plain_text: strip_html(&html),
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let twc = cards.len();
+
+        let mut all: Vec<SourceItem> = chapters;
+        all.extend(cards);
+        // 过滤空文本
+        all.retain(|item| !item.plain_text.trim().is_empty());
+
+        (all, tc, twc)
+    }; // conn + statements 在此释放
+
+    if items.is_empty() {
+        return Ok(EmbeddingProgress {
+            chapters_embedded: 0,
+            world_cards_embedded: 0,
+            total_chapters,
+            total_world_cards,
+            model: embedding_model,
+        });
+    }
+
+    // 批量调用 Embedding API（每次最多 20 条）
+    const BATCH_SIZE: usize = 20;
+    let mut chapters_embedded = 0usize;
+    let mut world_cards_embedded = 0usize;
+
+    // 预分配结果容器，避免每次获取新连接
+    let mut results: Vec<(String, String, Vec<u8>)> = Vec::with_capacity(items.len());
+
+    for batch in items.chunks(BATCH_SIZE) {
+        let texts: Vec<String> = batch.iter().map(|item| item.plain_text.clone()).collect();
+        let embeddings = call_embedding_api(&endpoint, &api_key, &embedding_model, &texts).await?;
+
+        if embeddings.len() != batch.len() {
+            return Err(format!(
+                "Embedding API 返回数量不匹配: 期望 {} 条，实际 {} 条",
+                batch.len(),
+                embeddings.len()
+            ));
+        }
+
+        for (item, emb) in batch.iter().zip(embeddings.iter()) {
+            let blob = floats_to_bytes(emb);
+            match item.source_type.as_str() {
+                "chapter" => chapters_embedded += 1,
+                "world_card" => world_cards_embedded += 1,
+                _ => {}
+            }
+            results.push((item.source_type.clone(), item.source_id.clone(), blob));
+        }
+    }
+
+    // 批量写入数据库
+    {
+        let conn = db.pool.get().map_err(|e| format!("获取写入连接失败: {}", e))?;
+        for (stype, sid, blob) in &results {
+            conn.execute(
+                "INSERT OR REPLACE INTO embeddings (source_type, source_id, embedding, model)
+                 VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![stype, sid, blob, embedding_model],
+            )
+            .map_err(|e| format!("写入 embedding 失败: {}", e))?;
+
+            if stype == "world_card" {
+                let _ = conn.execute(
+                    "UPDATE world_cards SET vectorized = 1 WHERE id = ?1",
+                    rusqlite::params![sid],
+                );
+            }
+        }
+    }
+
+    Ok(EmbeddingProgress {
+        chapters_embedded,
+        world_cards_embedded,
+        total_chapters,
+        total_world_cards,
+        model: embedding_model,
+    })
 }
 
 // ---- AI 流式对话 ----

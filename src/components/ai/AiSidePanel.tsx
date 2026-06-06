@@ -8,13 +8,13 @@
  * 对话记录以当前作品（bookId）为维度持久化到 localStorage，
  * 切换作品时自动加载对应对话历史。
  */
-import { useState, useRef, useEffect } from 'react'
-import { SendIcon, BotIcon, XIcon, Loader2Icon, CircleCheckIcon, CircleAlertIcon, CircleIcon, ChevronDownIcon } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { SendIcon, BotIcon, XIcon, Loader2Icon, CircleCheckIcon, CircleAlertIcon, CircleIcon, ChevronDownIcon, DatabaseZapIcon, RefreshCwIcon } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useAppStore, useCurrentChapter, useCurrentAiMessages } from '@/stores/appStore.ts'
-import { aiApi, type StreamEvent, type UsageInfo } from '@/lib/tauri-bridge.ts'
+import { aiApi, type StreamEvent, type UsageInfo, type EmbeddingStatus } from '@/lib/tauri-bridge.ts'
 import { cn } from '@/lib/utils.ts'
 import type { AiMessage } from '@/types'
 
@@ -27,6 +27,10 @@ export default function AiSidePanel() {
   const streamErrorRef = useRef(false) // 标记流是否遇到错误，防止最终更新覆盖错误信息
   const { aiConfig, aiConnectionStatus, aiConnectionDetail, currentBookId, addAiMessage, updateAiMessage, clearAiConversation, persistAiConversation } = useAppStore()
   const currentChapter = useCurrentChapter()
+  // Embedding 生成状态
+  const [embeddingGenerating, setEmbeddingGenerating] = useState(false)
+  const [embeddingStatus, setEmbeddingStatus] = useState<EmbeddingStatus | null>(null)
+  const [embeddingStatusLoading, setEmbeddingStatusLoading] = useState(false)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -64,6 +68,29 @@ export default function AiSidePanel() {
   const statusLabel = statusConfig[aiConnectionStatus].label
 
   const bookId = currentBookId
+
+  /** 检查当前书籍的 Embedding 索引状态 */
+  const refreshEmbeddingStatus = useCallback(async () => {
+    if (!bookId) return
+    setEmbeddingStatusLoading(true)
+    try {
+      const status = await aiApi.checkEmbeddingStatus(bookId)
+      setEmbeddingStatus(status)
+    } catch {
+      // 静默忽略，旧版后端可能未实现此命令
+    } finally {
+      setEmbeddingStatusLoading(false)
+    }
+  }, [bookId])
+
+  // 切换作品或加载时自动检测索引状态
+  useEffect(() => {
+    if (bookId && !isOllamaProvider) {
+      refreshEmbeddingStatus()
+    } else {
+      setEmbeddingStatus(null)
+    }
+  }, [bookId, isOllamaProvider, refreshEmbeddingStatus])
 
   /** 根据 provider 组装 messages 数组 */
   function buildMessages(context: string) {
@@ -119,7 +146,10 @@ export default function AiSidePanel() {
         const results = await aiApi.ragSearch(
           currentChapter.bookId,
           userInput,
-          3
+          3,
+          aiConfig.endpoint,
+          aiConfig.apiKey,
+          aiConfig.embeddingModel,
         ).catch(() => [])
         if (results.length > 0) {
           context = '\n\n相关背景：\n' + results.map((r) => r.snippet).join('\n---\n')
@@ -183,6 +213,31 @@ export default function AiSidePanel() {
   function handleClear() {
     if (messages.length > 0 && bookId && confirm('清空当前作品的对话记录？')) {
       clearAiConversation(bookId)
+    }
+  }
+
+  /** 触发 Embedding 生成 */
+  async function handleGenerateEmbeddings() {
+    if (!bookId) return
+    if (!aiConfig.endpoint || !aiConfig.apiKey || !aiConfig.embeddingModel) {
+      alert('请先在设置中配置 AI 服务（Endpoint、API Key、Embedding 模型）')
+      return
+    }
+    setEmbeddingGenerating(true)
+    setEmbeddingStatus(null)
+    try {
+      await aiApi.triggerEmbedding(
+        bookId,
+        aiConfig.endpoint,
+        aiConfig.apiKey,
+        aiConfig.embeddingModel,
+      )
+      // 刷新索引状态
+      await refreshEmbeddingStatus()
+    } catch (err) {
+      alert(`Embedding 生成失败: ${String(err)}`)
+    } finally {
+      setEmbeddingGenerating(false)
     }
   }
 
@@ -264,8 +319,55 @@ export default function AiSidePanel() {
             {streaming ? <Loader2Icon className="w-4 h-4 animate-spin" /> : <SendIcon className="w-4 h-4" />}
           </button>
         </div>
-        <p className="text-xs text-muted-foreground mt-1">
+        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
           模型：{aiConfig.model}
+          {/* Embedding 状态 */}
+          {!isOllamaProvider && bookId && (
+            <span className="inline-flex items-center gap-1">
+              <span className="text-border/30">|</span>
+              {embeddingGenerating ? (
+                <span className="text-blue-500 flex items-center gap-0.5">
+                  <Loader2Icon className="w-3 h-3 animate-spin" />
+                  生成中…
+                </span>
+              ) : embeddingStatusLoading ? (
+                <span className="text-muted-foreground/50">
+                  <Loader2Icon className="w-3 h-3 animate-spin" />
+                </span>
+              ) : embeddingStatus?.stale ? (
+                <button
+                  onClick={handleGenerateEmbeddings}
+                  className="text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300 flex items-center gap-0.5 transition-colors"
+                  title={`索引已过期：${embeddingStatus.totalChapters} 章节/${embeddingStatus.totalWorldCards} 卡片，仅索引了 ${embeddingStatus.indexedChapters} 章节/${embeddingStatus.indexedWorldCards} 卡片`}
+                >
+                  <CircleAlertIcon className="w-3 h-3" />
+                  <RefreshCwIcon className="w-3 h-3" />
+                  索引已过期
+                </button>
+              ) : embeddingStatus && (embeddingStatus.indexedChapters > 0 || embeddingStatus.indexedWorldCards > 0) ? (
+                <span className="text-green-600 dark:text-green-400 flex items-center gap-0.5 cursor-help" title={`${embeddingStatus.indexedChapters} 章节 + ${embeddingStatus.indexedWorldCards} 卡片已索引 / 共 ${embeddingStatus.totalChapters} 章节 + ${embeddingStatus.totalWorldCards} 卡片`}>
+                  <CircleCheckIcon className="w-3 h-3" />
+                  {embeddingStatus.indexedChapters + embeddingStatus.indexedWorldCards} 项已索引
+                  <button
+                    onClick={handleGenerateEmbeddings}
+                    className="text-primary/60 hover:text-primary ml-0.5"
+                    title="重新生成索引"
+                  >
+                    <RefreshCwIcon className="w-3 h-3" />
+                  </button>
+                </span>
+              ) : (
+                <button
+                  onClick={handleGenerateEmbeddings}
+                  className="text-primary/80 hover:text-primary flex items-center gap-0.5 transition-colors"
+                  title="为当前书籍生成语义索引，提升 RAG 检索精度"
+                >
+                  <DatabaseZapIcon className="w-3 h-3" />
+                  生成索引
+                </button>
+              )}
+            </span>
+          )}
         </p>
       </div>
     </div>

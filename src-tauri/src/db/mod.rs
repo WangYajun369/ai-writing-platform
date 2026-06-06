@@ -1,7 +1,7 @@
 //! MirageInk 数据库模块
 //!
 //! 基于 rusqlite + r2d2 连接池，WAL 模式 + 外键约束。
-//! 管理 5 张表：books / volumes / chapters / snapshots / world_cards。
+//! 管理 6 张表：books / volumes / chapters / snapshots / world_cards / embeddings。
 
 use r2d2::{Pool, ManageConnection};
 use rusqlite::{Connection, Result};
@@ -48,7 +48,7 @@ impl AppDb {
         Ok(db)
     }
 
-    /// 执行数据库自动迁移：启用 WAL + 外键 + 创建 5 张表 + 索引
+    /// 执行数据库自动迁移：启用 WAL + 外键 + 创建 6 张表 + 索引
     fn migrate(&self) -> anyhow::Result<()> {
         let conn = self.pool
             .get()
@@ -120,6 +120,16 @@ impl AppDb {
                 created_at   TEXT NOT NULL,
                 updated_at   TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS embeddings (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_type  TEXT NOT NULL,
+                source_id    TEXT NOT NULL,
+                embedding    BLOB NOT NULL,
+                model        TEXT NOT NULL DEFAULT '',
+                created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(source_type, source_id)
+            );
         "#).context("创建数据表失败")?;
 
         // 关键字段索引（提升查询性能）
@@ -130,6 +140,7 @@ impl AppDb {
             CREATE INDEX IF NOT EXISTS idx_chapters_deleted_at ON chapters(deleted_at);
             CREATE INDEX IF NOT EXISTS idx_snapshots_chapter_id ON snapshots(chapter_id);
             CREATE INDEX IF NOT EXISTS idx_world_cards_book_id ON world_cards(book_id);
+            CREATE INDEX IF NOT EXISTS idx_embeddings_source ON embeddings(source_type, source_id);
         "#).context("创建索引失败")?;
 
         Ok(())

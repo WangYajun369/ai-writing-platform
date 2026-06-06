@@ -187,16 +187,54 @@ export interface ConnectionTestResult {
   detail: string
 }
 
+export interface EmbeddingProgress {
+  chaptersEmbedded: number
+  worldCardsEmbedded: number
+  totalChapters: number
+  totalWorldCards: number
+  model: string
+}
+
+export interface EmbeddingStatus {
+  totalChapters: number
+  totalWorldCards: number
+  indexedChapters: number
+  indexedWorldCards: number
+  stale: boolean
+}
+
+export interface RagResultItem {
+  snippet: string
+  sourceType: string
+  sourceId: string
+  sourceTitle: string
+  distance: number
+}
+
 export const aiApi = {
-  async ragSearch(bookId: string, query: string, topN = 5) {
-    return invoke<Array<{ snippet: string; sourceId: string; sourceTitle: string; distance: number }>>(
+  /** RAG 语义检索：优先使用向量搜索，无 embedding 时降级为关键词搜索 */
+  async ragSearch(
+    bookId: string,
+    query: string,
+    topN = 5,
+    endpoint?: string,
+    apiKey?: string,
+    embeddingModel?: string,
+  ) {
+    return invoke<RagResultItem[]>(
       'rag_search',
-      { bookId, query, topN }
+      { bookId, query, topN, endpoint: endpoint ?? null, apiKey: apiKey ?? null, embeddingModel: embeddingModel ?? null }
     )
   },
 
-  async triggerEmbedding(bookId: string): Promise<void> {
-    return invoke<void>('trigger_embedding', { bookId })
+  /** 检查指定书籍的 Embedding 索引状态（是否过期） */
+  async checkEmbeddingStatus(bookId: string): Promise<EmbeddingStatus> {
+    return invoke<EmbeddingStatus>('check_embedding_status', { bookId })
+  },
+
+  /** 为指定书籍的所有章节和世界观卡片生成 Embedding 向量 */
+  async triggerEmbedding(bookId: string, endpoint: string, apiKey: string, embeddingModel: string): Promise<EmbeddingProgress> {
+    return invoke<EmbeddingProgress>('trigger_embedding', { bookId, endpoint, apiKey, embeddingModel })
   },
 
   /** 流式 AI 对话（Rust 侧处理 HTTP 流式请求，前端通过事件接收） */

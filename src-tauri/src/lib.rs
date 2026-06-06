@@ -68,6 +68,7 @@ pub fn run() {
             // AI
             commands::ai::rag_search,
             commands::ai::trigger_embedding,
+            commands::ai::check_embedding_status,
             commands::ai::stream_ai_chat,
             commands::ai::test_ai_connection,
             // 导入导出
