@@ -85,7 +85,7 @@ export interface WorldCard {
 
 /** AI 配置 */
 export interface AiConfig {
-  provider: 'ollama' | 'openai' | 'custom'
+  provider: 'ollama' | 'openai' | 'bigmodel' | 'custom'
   endpoint: string
   model: string
   embeddingModel: string

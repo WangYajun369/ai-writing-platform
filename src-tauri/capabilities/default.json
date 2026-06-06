@@ -22,6 +22,14 @@
     "fs:allow-write-text-file",
     "fs:allow-read-dir",
     "fs:allow-stat",
-    "deep-link:default"
+    "deep-link:default",
+    "http:default",
+    {
+      "identifier": "http:allow-fetch",
+      "allow": [
+        { "url": "http://**" },
+        { "url": "https://**" }
+      ]
+    }
   ]
 }

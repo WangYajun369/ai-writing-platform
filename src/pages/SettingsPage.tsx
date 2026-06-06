@@ -96,7 +96,7 @@ export default function SettingsPage() {
 /**
  * AI 配置区块
  *
- * 提供 Ollama/OpenAI/自定义三种服务商选择，
+ * 提供 Ollama/OpenAI/智谱BigModel/自定义四种服务商选择，
  * 以及 API 地址、对话模型、Embedding 模型、Temperature 滑杆、API Key 配置。
  */
 function AiConfigSection({
@@ -107,6 +107,18 @@ function AiConfigSection({
     config: ReturnType<typeof useAppStore>['aiConfig']
   onChange: (c: Partial<typeof config>) => void
 }) {
+  /** 切换服务商时自动填充默认 endpoint 和 model */
+  const handleProviderChange = (provider: typeof config.provider) => {
+    const defaults: Record<string, { endpoint: string; model: string; embeddingModel: string }> = {
+      ollama: { endpoint: 'http://127.0.0.1:11434', model: 'qwen2.5:7b', embeddingModel: 'bge-m3' },
+      openai: { endpoint: 'https://api.openai.com/v1', model: 'gpt-4o', embeddingModel: 'text-embedding-3-small' },
+      bigmodel: { endpoint: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.6v', embeddingModel: 'embedding-3' },
+      custom: { endpoint: '', model: '', embeddingModel: '' },
+    }
+    const d = defaults[provider]
+    onChange({ provider, endpoint: d.endpoint, model: d.model, embeddingModel: d.embeddingModel })
+  }
+
   return (
     <div className="space-y-5">
       <h2 className="text-base font-semibold">AI 服务配置</h2>
@@ -115,11 +127,12 @@ function AiConfigSection({
         <label className="text-sm font-medium">服务商</label>
         <select
           value={config.provider}
-          onChange={(e) => onChange({ provider: e.target.value as typeof config.provider })}
+          onChange={(e) => handleProviderChange(e.target.value as typeof config.provider)}
           className="w-full bg-muted rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
         >
           <option value="ollama">Ollama（本地）</option>
           <option value="openai">OpenAI</option>
+          <option value="bigmodel">智谱 BigModel</option>
           <option value="custom">自定义</option>
         </select>
       </div>
@@ -130,7 +143,7 @@ function AiConfigSection({
           value={config.endpoint}
           onChange={(e) => onChange({ endpoint: e.target.value })}
           className="w-full bg-muted rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-          placeholder="http://127.0.0.1:11434"
+          placeholder={config.provider === 'ollama' ? 'http://127.0.0.1:11434' : 'https://open.bigmodel.cn/api/paas/v4'}
         />
       </div>
 
@@ -140,7 +153,7 @@ function AiConfigSection({
           value={config.model}
           onChange={(e) => onChange({ model: e.target.value })}
           className="w-full bg-muted rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-          placeholder="qwen2.5:7b"
+          placeholder={config.provider === 'bigmodel' ? 'glm-4-flash' : 'qwen2.5:7b'}
         />
       </div>
 
@@ -173,7 +186,7 @@ function AiConfigSection({
             value={config.apiKey ?? ''}
             onChange={(e) => onChange({ apiKey: e.target.value })}
             className="w-full bg-muted rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-            placeholder="sk-..."
+            placeholder={config.provider === 'bigmodel' ? '填写智谱 API Key' : 'sk-...'}
           />
         </div>
       )}
