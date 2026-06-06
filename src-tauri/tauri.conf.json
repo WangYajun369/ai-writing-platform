@@ -48,6 +48,12 @@
       "open": true
     },
     "dialog": null,
-    "fs": null
+    "fs": null,
+    "updater": {
+      "endpoints": [
+        "https://github.com/ukcoder/mirage-ink/releases/latest/download/latest.json"
+      ],
+      "pubkey": ""
+    }
   }
 }
