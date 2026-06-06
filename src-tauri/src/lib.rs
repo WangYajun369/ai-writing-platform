@@ -68,6 +68,9 @@ pub fn run() {
             // 导入导出
             commands::io::export_book,
             commands::io::import_txt,
+            // 窗口管理
+            commands::window::open_world_window,
+            commands::window::close_world_window,
         ])
         .run(tauri::generate_context!())
         .expect("启动 Tauri 应用失败");

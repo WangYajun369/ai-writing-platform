@@ -3,9 +3,13 @@
  *
  * 提供返回书库、目录树折叠、打字机/专注模式切换、
  * 版本历史/世界观/AI 面板开关等功能按钮。
+ * 世界观资料库打开为独立悬浮窗口。
  */
 import { useAtom } from 'jotai'
 import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import {
   ArrowLeftIcon,
   SidebarIcon,
@@ -21,7 +25,6 @@ import {
     zenModeAtom,
     typewriterModeAtom,
     aiPanelOpenAtom,
-    worldPanelOpenAtom,
     historyPanelOpenAtom, isSavingAtom, lastSavedAtom,
 } from '@/stores/uiAtoms.ts'
 import { useCurrentBook } from '@/stores/appStore.ts'
@@ -33,9 +36,39 @@ export default function EditorToolbar() {
   const [zenMode, setZenMode] = useAtom(zenModeAtom)
   const [typewriterMode, setTypewriterMode] = useAtom(typewriterModeAtom)
   const [aiPanelOpen, setAiPanelOpen] = useAtom(aiPanelOpenAtom)
-  const [worldPanelOpen, setWorldPanelOpen] = useAtom(worldPanelOpenAtom)
   const [historyPanelOpen, setHistoryPanelOpen] = useAtom(historyPanelOpenAtom)
+  const [worldWindowOpen, setWorldWindowOpen] = useState(false)
   const currentBook = useCurrentBook()
+
+  async function handleToggleWorldWindow() {
+    if (worldWindowOpen) {
+      try {
+        await invoke('close_world_window')
+      } catch (e) {
+        console.error('关闭世界观窗口失败', e)
+      }
+      setWorldWindowOpen(false)
+    } else {
+      if (!currentBook?.id) return
+      try {
+        await invoke('open_world_window', { bookId: currentBook.id })
+      } catch (e) {
+        console.error('打开世界观窗口失败', e)
+        return
+      }
+      setWorldWindowOpen(true)
+    }
+  }
+
+  // 监听 world 窗口被用户主动关闭（点 X），同步按钮状态
+  useEffect(() => {
+    const unlisten = listen('world-window-closed', () => {
+      setWorldWindowOpen(false)
+    })
+    return () => {
+      unlisten.then((fn) => fn())
+    }
+  }, [])
 
   return (
     <header className="toolbar border-b bg-card px-4 py-2 flex items-center gap-2 flex-shrink-0 h-12">
@@ -88,8 +121,8 @@ export default function EditorToolbar() {
       />
 
       <ToolbarBtn
-        active={worldPanelOpen}
-        onClick={() => setWorldPanelOpen((v) => !v)}
+        active={worldWindowOpen}
+        onClick={handleToggleWorldWindow}
         title="世界观资料库"
         icon={<BookMarkedIcon className="w-4 h-4" />}
       />

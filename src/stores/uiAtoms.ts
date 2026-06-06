@@ -10,9 +10,6 @@ export const diffViewModeAtom = atom<DiffViewMode>('side-by-side')
 /** 侧边栏是否展开 */
 export const sidebarOpenAtom = atom<boolean>(true)
 
-/** 世界观面板是否展开 */
-export const worldPanelOpenAtom = atom<boolean>(false)
-
 /** AI 对话面板是否展开 */
 export const aiPanelOpenAtom = atom<boolean>(false)
 

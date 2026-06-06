@@ -1,7 +1,7 @@
 {
   "identifier": "default",
   "description": "Default capability for MirageInk",
-  "windows": ["main"],
+  "windows": ["main", "world"],
   "permissions": [
     "core:default",
     "shell:allow-open",

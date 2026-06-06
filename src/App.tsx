@@ -2,11 +2,13 @@
  * App 根组件 — MirageInk（幻境水墨）
  *
  * 包裹 Jotai Provider 提供全局 UI 状态管理，承担主题与护眼模式初始化逻辑。
+ * 同时检测是否为世界观资料库独立窗口（?worldwin=1），若是则仅渲染世界观面板。
  */
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Provider as JotaiProvider } from 'jotai'
 import AppRouter from './router'
 import { useAppStore } from './stores/appStore'
+import WorldbuildingPanel from './components/worldbuilding/WorldbuildingPanel'
 
 const STORAGE_KEY_THEME = 'mirageink-theme'
 const STORAGE_KEY_EYECARE = 'mirageink-eyecare'
@@ -24,9 +26,19 @@ const FONT_FAMILY_MAP: Record<string, string> = {
  * 应用初始化组件
  *
  * 根据当前主题与护眼模式切换 dark / eyecare class，并持久化到 localStorage。
+ * 若检测到 worldwin=1 查询参数，仅渲染世界观资料库面板（独立窗口模式）。
  */
 function AppInit() {
   const { setTheme, theme, eyeCareMode, setEyeCareMode, fontFamily, setFontFamily } = useAppStore()
+
+  // 检测是否为世界观独立窗口
+  const worldWindowInfo = useMemo(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('worldwin') === '1') {
+      return { isWorld: true, bookId: params.get('bookId') }
+    }
+    return { isWorld: false, bookId: null }
+  }, [])
 
   // 启动时从 localStorage 恢复偏好
   useEffect(() => {
@@ -83,6 +95,15 @@ function AppInit() {
     document.documentElement.style.setProperty('--font-editor', FONT_FAMILY_MAP[fontFamily] ?? FONT_FAMILY_MAP.serif)
     localStorage.setItem(STORAGE_KEY_FONT, fontFamily)
   }, [fontFamily])
+
+  // 世界观独立窗口模式
+  if (worldWindowInfo.isWorld && worldWindowInfo.bookId) {
+    return (
+      <div className="h-screen flex flex-col overflow-hidden bg-background">
+        <WorldbuildingPanel bookId={worldWindowInfo.bookId} />
+      </div>
+    )
+  }
 
   return <AppRouter />
 }
