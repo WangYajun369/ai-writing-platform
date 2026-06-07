@@ -16,7 +16,7 @@
 | **路由** | React Router v7（懒加载 Editor/Settings 页面） |
 | **后端** | Rust 2021 + SQLite（WAL 模式）+ rusqlite（bundled）+ r2d2 连接池 |
 | **包管理** | pnpm >= 9，Node >= 20 |
-| **深度链接** | ukcoder 协议（`ukcoder://`），支持外部应用唤起与参数传递 |
+| **深度链接** | com.ukcoder.timewrite 协议（`com.ukcoder.timewrite://`），支持外部应用唤起与参数传递 |
 
 ## 功能特性
 
@@ -66,10 +66,10 @@
 - PluginManager 单例驱动，启用/禁用/卸载
 - 内置字符统计示例插件
 
-### ukcoder 协议（深度链接）
-- 注册 `ukcoder://` 自定义 URL Scheme，支持从外部应用（浏览器/其他桌面应用）唤起 TimeWrite
-- 支持参数传递（如 `ukcoder://open?bookId=xxx`），实现快速跳转到指定作品/章节
-- 基于 Tauri v2 deep-link 插件，自动处理 mac OS 和 Windows 平台注册
+### com.ukcoder.timewrite 协议（深度链接）
+- 注册 `com.ukcoder.timewrite://` 自定义 URL Scheme，支持从外部应用（浏览器/其他桌面应用）唤起 TimeWrite
+- 支持参数传递（如 `com.ukcoder.timewrite://open?bookId=xxx`），实现快速跳转到指定作品/章节
+- 基于 Tauri v2 deep-link 插件，自动处理 macOS 和 Windows 平台注册
 
 ### 其他
 - 完整性自动检测脚本
@@ -212,11 +212,11 @@ TimeWrite/
 | 项目 | 值 |
 |------|------|
 | 应用名称 | TimeWrite |
-| 应用标识 | `com.timewrite.app` |
+| 应用标识 | `com.ukcoder.timewrite` |
 | 版本 | 0.2.2 |
 | 窗口默认尺寸 | 1280 × 800 |
 | 窗口最小尺寸 | 800 × 600 |
-| 深度链接协议 | `ukcoder://` |
+| 深度链接协议 | `com.ukcoder.timewrite://` |
 
 ## 许可证
 

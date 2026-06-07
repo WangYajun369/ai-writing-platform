@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "TimeWrite",
   "version": "0.2.2",
-  "identifier": "com.timewrite.app",
+  "identifier": "com.ukcoder.timewrite",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -46,7 +46,13 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "signingIdentity": null
+    },
+    "windows": {
+      "signingIdentity": null
+    }
   },
   "plugins": {
     "shell": {
@@ -63,7 +69,7 @@
     "deep-link": {
       "desktop": {
         "schemes": [
-          "ukcoder"
+          "com.ukcoder.timewrite"
         ]
       }
     }

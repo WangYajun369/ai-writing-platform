@@ -17,7 +17,7 @@
 | 后端语言 | Rust 2021 Edition |
 | 数据库 | SQLite（WAL 模式）+ rusqlite（bundled）+ r2d2 连接池 |
 | 包管理 | pnpm >= 9，Node >= 20 |
-| 深度链接 | ukcoder 协议（`ukcoder://`），支持外部应用唤起 |
+| 深度链接 | com.ukcoder.timewrite 协议（`com.ukcoder.timewrite://`），支持外部应用唤起 |
 
 ---
 
@@ -97,7 +97,7 @@ TimeWrite/
 │
 └── src-tauri/                  # Rust 后端
     ├── Cargo.toml              #   Rust 项目配置（13 个 crate 依赖，含 deep-link）
-    ├── tauri.conf.json         #   Tauri 应用配置（窗口 1280x800、CSP、DMG+NSIS 打包、更新器、插件、ukcoder 协议）
+    ├── tauri.conf.json         #   Tauri 应用配置（窗口 1280x800、CSP、DMG+NSIS 打包、更新器、插件、com.ukcoder.timewrite 协议）
     ├── build.rs                #   Tauri 构建脚本
     ├── capabilities/
     │   └── default.json        #     Tauri v2 权限配置（含 deep-link:default）
@@ -150,7 +150,7 @@ TimeWrite/
 - **多窗口支持**：世界观资料库可独立为悬浮窗口（always_on_top），通过 Tauri 事件通信
 - **插件系统**：6 个扩展点（editor/menu/toolbar/settings/ai/search），PluginManager 单例驱动
 - **四套主题**：亮色 + 暗色 + 暖黄护眼 + 豆沙绿护眼（亮/暗模式各一套独立 CSS 变量）
-- **深度链接**：`ukcoder://` 自定义 URL Scheme，基于 `tauri-plugin-deep-link`，支持外部应用唤起与参数传递
+- **深度链接**：`com.ukcoder.timewrite://` 自定义 URL Scheme，基于 `tauri-plugin-deep-link`，支持外部应用唤起与参数传递
 
 ---
 
