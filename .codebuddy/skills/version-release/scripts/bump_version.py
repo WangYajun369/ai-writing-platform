@@ -33,12 +33,6 @@ FILES = {
         "type": "json",
         "key": "version",
     },
-    "SettingsPage.tsx": {
-        "path": PROJECT_ROOT / "src" / "pages" / "SettingsPage.tsx",
-        "type": "regex",
-        "pattern": r"(const APP_VERSION\s*=\s*)'[^']*'",
-        "replacement": r"\1'{version}'",
-    },
     "README.md": {
         "path": PROJECT_ROOT / "README.md",
         "type": "regex",

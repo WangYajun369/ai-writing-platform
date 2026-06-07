@@ -1,7 +1,7 @@
 /**
  * AiSidePanel — AI 助手侧面板
  *
- * 支持多服务商流式对话（Ollama / OpenAI / 智谱 BigModel / 自定义），
+ * 支持多服务商流式对话（智谱 BigModel / 自定义），
  * 自动 RAG 检索当前书籍上下文。
  * 流式调用由 Rust 侧通过 reqwest 处理，前端通过 Tauri 事件接收增量。
  *
@@ -46,12 +46,8 @@ export default function AiSidePanel() {
     }
   }, [])
 
-  const isOllamaProvider = aiConfig.provider === 'ollama'
-
   /** 获取服务商显示名称 */
   const providerLabel = {
-    ollama: 'Ollama',
-    openai: 'OpenAI',
     bigmodel: '智谱',
     custom: '自定义',
   }[aiConfig.provider] ?? aiConfig.provider
@@ -85,12 +81,12 @@ export default function AiSidePanel() {
 
   // 切换作品或加载时自动检测索引状态
   useEffect(() => {
-    if (bookId && !isOllamaProvider) {
+    if (bookId) {
       refreshEmbeddingStatus()
     } else {
       setEmbeddingStatus(null)
     }
-  }, [bookId, isOllamaProvider, refreshEmbeddingStatus])
+  }, [bookId, refreshEmbeddingStatus])
 
   /** 根据 provider 组装 messages 数组 */
   function buildMessages(context: string) {
@@ -123,8 +119,8 @@ export default function AiSidePanel() {
   async function handleSend() {
     if (!input.trim() || streaming || !bookId) return
 
-    // 非 Ollama 提供者必须提供 API Key
-    if (!isOllamaProvider && !aiConfig.apiKey) {
+    // 必须提供 API Key
+    if (!aiConfig.apiKey) {
       alert('请先在设置中配置 API Key')
       return
     }
@@ -184,12 +180,11 @@ export default function AiSidePanel() {
 
       // 构建消息
       const chatMessages = buildMessages(context)
-      const provider = isOllamaProvider ? 'ollama' : 'openai_compatible'
 
       // 调用 Rust 侧流式对话命令
       // done 事件中已设置最终内容和用量，此处仅等待流结束，不做重复更新
       await aiApi.streamChat({
-        provider,
+        provider: 'sse',
         endpoint: aiConfig.endpoint,
         model: aiConfig.model,
         temperature: aiConfig.temperature,
@@ -322,7 +317,7 @@ export default function AiSidePanel() {
         <p className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
           模型：{aiConfig.model}
           {/* Embedding 状态 */}
-          {!isOllamaProvider && bookId && (
+          {bookId && (
             <span className="inline-flex items-center gap-1">
               <span className="text-border/30">|</span>
               {embeddingGenerating ? (

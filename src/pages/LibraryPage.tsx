@@ -36,7 +36,7 @@ const GRID_ROW_HEIGHT_MAP = { small: 260, medium: 340, large: 460 } as const
 
 export default function LibraryPage() {
   const navigate = useNavigate()
-  const { books, setBooks, setCurrentBookId, isLoadingBooks, setLoadingBooks, gridSize } = useAppStore()
+  const { books, setBooks, setCurrentBookId, isLoadingBooks, setLoadingBooks, gridSize, appVersion } = useAppStore()
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [sortBy, setSortBy] = useState<SortBy>('updatedAt')
   const [searchQuery, setSearchQuery] = useState('')
@@ -254,7 +254,7 @@ export default function LibraryPage() {
         <span>{books.length} 部作品</span>
         <span>总字数 {formatWordCount(books.reduce((s, b) => s + b.wordCount, 0))}</span>
         <div className="flex-1" />
-        <span>智写时光 TimeWrite v0.2.1</span>
+        <span>智写时光 TimeWrite v{appVersion}</span>
       </footer>
 
       {/* 新建书籍弹窗 */}

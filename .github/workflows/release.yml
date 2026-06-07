@@ -39,10 +39,50 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Import Apple Certificate
+        if: ${{ env.APPLE_CERTIFICATE_BASE64 != '' }}
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+
       - name: Build (macOS ARM64)
         run: pnpm tauri build --target aarch64-apple-darwin
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+
+      - name: Notarize macOS app
+        if: ${{ env.APPLE_ID != '' }}
+        run: |
+          set -euo pipefail
+          APP_PATH=$(find src-tauri/target/aarch64-apple-darwin/release/bundle/macos -name "*.app" | head -1)
+          DMG_PATH=$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -name "*.dmg" | head -1)
+
+          if [ -z "$APP_PATH" ]; then
+            echo "❌ 找不到 .app 文件"
+            exit 1
+          fi
+
+          echo "📦 正在公证 $APP_PATH ..."
+
+          # 提交公证请求
+          xcrun notarytool submit "$DMG_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+
+          # 装订公证票据
+          xcrun stapler staple "$DMG_PATH"
+
+          echo "✅ 公证完成"
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
@@ -187,7 +227,7 @@ jobs:
 
             ### 安装说明
 
-            **macOS**: 下载 `.dmg` 文件，双击打开后将 `TimeWrite.app` 拖入 `Applications` 文件夹。
+            **macOS**: 下载 `.dmg` 文件，双击打开后将 `TimeWrite.app` 拖入 `Applications` 文件夹。如果提示"已损坏"，请在终端执行：`xattr -cr /Applications/TimeWrite.app`
             **Windows**: 下载 `.exe` 安装包，双击运行安装向导。
           files: |
             artifacts/**/*

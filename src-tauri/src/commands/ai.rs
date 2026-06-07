@@ -100,17 +100,14 @@ fn snippet(text: &str, max_chars: usize) -> String {
 pub struct ConnectionTestResult {
     /// 是否连接成功
     pub ok: bool,
-    /// 成功时返回可用模型列表（Ollama），失败时返回错误信息
+    /// 成功时返回可用模型列表，失败时返回错误信息
     pub detail: String,
 }
 
-/// 测试 AI 服务连接
-///
-/// - Ollama: GET /api/tags 获取已拉取模型列表
-/// - OpenAI 兼容: GET /models，验证可达性和认证
+/// 测试 AI 服务连接：GET /models，验证可达性和认证
 #[tauri::command]
 pub async fn test_ai_connection(
-    provider: String,
+    _provider: String,
     endpoint: String,
     api_key: Option<String>,
 ) -> Result<ConnectionTestResult, String> {
@@ -121,69 +118,7 @@ pub async fn test_ai_connection(
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
 
-    let endpoint = endpoint.trim_end_matches('/');
-
-    match provider.as_str() {
-        "ollama" => test_ollama_connection(client, endpoint).await,
-        _ => test_openai_compatible_connection(client, endpoint, api_key).await,
-    }
-}
-
-/// Ollama 连接测试：GET /api/tags
-async fn test_ollama_connection(
-    client: reqwest::Client,
-    endpoint: &str,
-) -> Result<ConnectionTestResult, String> {
-    let url = format!("{}/api/tags", endpoint);
-
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("无法连接到 Ollama 服务: {}\n请确保 Ollama 正在运行", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Ok(ConnectionTestResult {
-            ok: false,
-            detail: format!("Ollama 服务返回错误 ({}): {}", status, text),
-        });
-    }
-
-    // 解析模型列表
-    match response.json::<serde_json::Value>().await {
-        Ok(data) => {
-            let models: Vec<String> = data["models"]
-                .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|m| m["name"].as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_default();
-
-            let detail = if models.is_empty() {
-                "Ollama 已连接，暂无可用模型".to_string()
-            } else {
-                format!("Ollama 已连接，可用模型: {}", models.join(", "))
-            };
-            Ok(ConnectionTestResult { ok: true, detail })
-        }
-        Err(e) => Ok(ConnectionTestResult {
-            ok: true,
-            detail: format!("Ollama 已连接（解析模型列表失败: {}）", e),
-        }),
-    }
-}
-
-/// OpenAI 兼容连接测试：GET /models
-async fn test_openai_compatible_connection(
-    client: reqwest::Client,
-    endpoint: &str,
-    api_key: Option<String>,
-) -> Result<ConnectionTestResult, String> {
-    let url = format!("{}/models", endpoint);
+    let url = format!("{}/models", endpoint.trim_end_matches('/'));
 
     let mut req = client.get(&url);
     if let Some(ref key) = api_key {
@@ -198,7 +133,6 @@ async fn test_openai_compatible_connection(
     let status = response.status();
 
     if status.is_success() {
-        // 尝试解析模型列表
         match response.json::<serde_json::Value>().await {
             Ok(data) => {
                 let models: Vec<String> = data["data"]
@@ -206,7 +140,7 @@ async fn test_openai_compatible_connection(
                     .map(|arr| {
                         arr.iter()
                             .filter_map(|m| m["id"].as_str().map(String::from))
-                            .take(10) // 限制显示前10个
+                            .take(10)
                             .collect()
                     })
                     .unwrap_or_default();
@@ -241,7 +175,7 @@ async fn test_openai_compatible_connection(
 
 // ---- RAG 语义检索与 Embedding ----
 
-/// 调用智谱/OpenAI 兼容的 Embedding API
+/// 调用 SSE 兼容的 Embedding API（智谱等）
 async fn call_embedding_api(
     endpoint: &str,
     api_key: &str,
@@ -306,7 +240,6 @@ async fn call_embedding_api(
 /// RAG 语义检索（向量相似度搜索）
 ///
 /// 当 embeddings 表有数据时使用向量搜索，否则降级为 SQL LIKE。
-/// 智谱 bigmodel 使用 OpenAI 兼容的 /embeddings 端点。
 #[tauri::command]
 pub async fn rag_search(
     db: State<'_, AppDb>,
@@ -505,7 +438,7 @@ pub fn check_embedding_status(
 
 /// 触发 Embedding 生成：为指定书籍的所有章节和世界观卡片生成向量
 ///
-/// 调用智谱/OpenAI 兼容的 /embeddings API，批量生成后写入 embeddings 表。
+/// 调用 /embeddings API，批量生成后写入 embeddings 表。
 #[tauri::command]
 pub async fn trigger_embedding(
     db: State<'_, AppDb>,
@@ -663,17 +596,17 @@ pub struct ChatMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StreamChatArgs {
-    /// "ollama" | "openai_compatible"
+    /// 服务商标识（如 "sse" 等，前端传入，后端不再做提供者路由）
     pub provider: String,
-    /// API 端点 URL（不含路径，如 http://localhost:11434）
+    /// API 端点 URL（不含路径）
     pub endpoint: String,
     /// 模型名
     pub model: String,
     /// 温度
     pub temperature: f64,
-    /// max_tokens（仅 openai_compatible 使用）
+    /// max_tokens
     pub max_tokens: Option<u32>,
-    /// API Key（仅 openai_compatible 使用）
+    /// API Key
     pub api_key: Option<String>,
     /// 消息列表（system + history + user）
     pub messages: Vec<ChatMessage>,
@@ -709,7 +642,7 @@ pub struct StreamEvent {
     pub usage: Option<UsageInfo>,
 }
 
-/// AI 流式对话命令
+/// AI 流式对话命令（SSE 流式协议，兼容智谱等 API）
 ///
 /// 通过 reqwest 发起流式 HTTP 请求，将增量文本通过 Tauri 事件
 /// `ai-stream-chunk` 实时推送到前端。返回最终的完整文本。
@@ -720,159 +653,66 @@ pub async fn stream_ai_chat(
 ) -> Result<String, String> {
     // 流式对话不设 total/read timeout，允许 AI 长时间思考与生成
     // 仅保留 connect_timeout 防止无法连上服务
+    // 禁用自动解压：AI 流式响应的每个 chunk 通常为纯文本 JSON，
+    // 服务端一般不压缩 SSE 流，若开启 gzip/brotli 自动解压，
+    // 流中断时会导致 "error decoding response body" 无法恢复部分内容
+    // TCP keepalive 120s：防止 GLM-5.1 等推理模型长思考期间被中间代理断连
     let client = reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(30))
         .http1_only()
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .tcp_keepalive(std::time::Duration::from_secs(120))
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
 
-    match args.provider.as_str() {
-        "ollama" => stream_ollama(app, client, args).await,
-        _ => stream_openai_compatible(app, client, args).await,
+    stream_sse(app, client, args).await
+}
+
+/// 刷新 SSE buffer 中的残留数据（流中断或正常结束时调用）
+/// 尝试提取最后不完整的 SSE 行中的 content/reasoning_content/usage
+fn flush_sse_buffer(
+    accumulated: &mut String,
+    accumulated_thinking: &mut String,
+    buffer: &mut String,
+    sse_usage: &mut Option<(u32, u32)>,
+    app: &AppHandle,
+) {
+    let remaining = buffer.trim().to_string();
+    buffer.clear();
+    if remaining.is_empty() || !remaining.starts_with("data:") {
+        return;
+    }
+    let json_str = remaining[5..].trim();
+    if json_str == "[DONE]" {
+        return;
+    }
+    if let Ok(data) = serde_json::from_str::<serde_json::Value>(json_str) {
+        if let Some(u) = data["usage"].as_object() {
+            let prompt_tokens = u.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            let completion_tokens = u.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            *sse_usage = Some((prompt_tokens, completion_tokens));
+        }
+        if let Some(reasoning) = data["choices"][0]["delta"]["reasoning_content"].as_str() {
+            accumulated_thinking.push_str(reasoning);
+        }
+        if let Some(delta) = data["choices"][0]["delta"]["content"].as_str() {
+            accumulated.push_str(delta);
+            let _ = app.emit("ai-stream-chunk", StreamEvent {
+                content: accumulated.clone(),
+                thinking: accumulated_thinking.clone(),
+                phase: "answering".into(),
+                done: false,
+                error: None,
+                usage: None,
+            });
+        }
     }
 }
 
-/// Ollama 协议流式调用（NDJSON 格式）
-async fn stream_ollama(
-    app: AppHandle,
-    client: reqwest::Client,
-    args: StreamChatArgs,
-) -> Result<String, String> {
-    let url = format!("{}/api/chat", args.endpoint.trim_end_matches('/'));
-
-    let mut body = serde_json::json!({
-        "model": args.model,
-        "messages": args.messages,
-        "stream": true,
-        "options": { "temperature": args.temperature },
-    });
-
-    // Ollama 默认 num_predict=128，必须显式设置才能支持长文输出
-    // -1 表示不限制，正数表示最大生成 token 数
-    if let Some(max_tokens) = args.max_tokens {
-        body["options"]["num_predict"] = serde_json::json!(max_tokens);
-    } else {
-        body["options"]["num_predict"] = serde_json::json!(-1);
-    }
-
-    let response = client
-        .post(&url)
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("请求失败: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Err(format!("AI 服务返回错误 ({}): {}", status, text));
-    }
-
-    let mut stream = response.bytes_stream();
-    let mut accumulated = String::new();
-    let mut buffer = String::new();
-    let mut ollama_usage: Option<(u32, u32)> = None; // (prompt_eval_count, eval_count)
-
-    loop {
-        let chunk = match stream.next().await {
-            Some(Ok(c)) => c,
-            Some(Err(e)) => {
-                if !accumulated.is_empty() {
-                    eprintln!("流读取意外中断: {}", e);
-                    let _ = app.emit("ai-stream-chunk", StreamEvent {
-                        content: accumulated.clone(),
-                        thinking: String::new(),
-                        phase: "done".into(),
-                        done: true,
-                        error: Some(format!("流读取意外中断（已接收部分内容）: {}", e)),
-                        usage: None,
-                    });
-                    return Ok(accumulated);
-                }
-                return Err(format!("读取响应流失败: {}", e));
-            }
-            None => break,
-        };
-
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
-
-        // NDJSON 按行处理，保留跨 chunk 的未完成行
-        while let Some(pos) = buffer.find('\n') {
-            let line = buffer[..pos].trim().to_string();
-            buffer = buffer[pos + 1..].to_string();
-
-            if line.is_empty() {
-                continue;
-            }
-            if let Ok(data) = serde_json::from_str::<serde_json::Value>(&line) {
-                // 检测 Ollama 流结束事件（done: true），提取 token 计数
-                if data["done"].as_bool() == Some(true) {
-                    let input_tokens = data["prompt_eval_count"].as_u64().unwrap_or(0) as u32;
-                    let output_tokens = data["eval_count"].as_u64().unwrap_or(0) as u32;
-                    ollama_usage = Some((input_tokens, output_tokens));
-                    // done 事件中可能还有最后一点 content
-                    if let Some(content) = data["message"]["content"].as_str() {
-                        if !content.is_empty() {
-                            accumulated.push_str(content);
-                        }
-                    }
-                    continue; // 跳过本条，不发送增量事件
-                }
-
-                if let Some(content) = data["message"]["content"].as_str() {
-                    accumulated.push_str(content);
-                    let _ = app.emit("ai-stream-chunk", StreamEvent {
-                        content: accumulated.clone(),
-                        thinking: String::new(),
-                        phase: "answering".into(),
-                        done: false,
-                        error: None,
-                        usage: None,
-                    });
-                }
-            }
-        }
-
-        // 收到 done 事件后退出主循环
-        if ollama_usage.is_some() {
-            break;
-        }
-    }
-
-    // 处理流结束后 buffer 中残留的未完成行（不以 \n 结尾的最后一行）
-    // 仅当尚未收到 done 事件时处理
-    if ollama_usage.is_none() {
-        let remaining = buffer.trim().to_string();
-        if !remaining.is_empty() {
-            if let Ok(data) = serde_json::from_str::<serde_json::Value>(&remaining) {
-                if let Some(content) = data["message"]["content"].as_str() {
-                    accumulated.push_str(content);
-                }
-            }
-        }
-    }
-
-    // 计算字数
-    let input_chars: usize = args.messages.iter().map(|m| m.content.chars().count()).sum();
-    let output_chars = accumulated.chars().count();
-    let (input_tokens, output_tokens) = ollama_usage.unwrap_or((0, 0));
-
-    // 发送结束事件（带用量统计）
-    let _ = app.emit("ai-stream-chunk", StreamEvent {
-        content: accumulated.clone(),
-        thinking: String::new(),
-        phase: "done".into(),
-        done: true,
-        error: None,
-        usage: Some(UsageInfo { input_tokens, output_tokens, input_chars, output_chars }),
-    });
-
-    Ok(accumulated)
-}
-
-/// OpenAI 兼容协议流式调用（SSE 格式）
-async fn stream_openai_compatible(
+/// SSE 流式调用（智谱等兼容 API）
+async fn stream_sse(
     app: AppHandle,
     client: reqwest::Client,
     args: StreamChatArgs,
@@ -884,7 +724,8 @@ async fn stream_openai_compatible(
 
     let mut req = client
         .post(&url)
-        .header("Content-Type", "application/json");
+        .header("Content-Type", "application/json")
+        .header("Accept", "text/event-stream");  // SSE 流式规范（智谱等需要此头）
 
     if let Some(ref key) = args.api_key {
         req = req.header("Authorization", format!("Bearer {}", key));
@@ -917,13 +758,15 @@ async fn stream_openai_compatible(
     let mut accumulated = String::new();
     let mut accumulated_thinking = String::new();
     let mut buffer = String::new();
-    let mut openai_usage: Option<(u32, u32)> = None; // (prompt_tokens, completion_tokens)
+    let mut sse_usage: Option<(u32, u32)> = None; // (prompt_tokens, completion_tokens)
     let mut phase: &str = "thinking"; // 初始阶段为 thinking，收到第一个 content 后切换为 answering
 
     loop {
         let chunk = match stream.next().await {
             Some(Ok(c)) => c,
             Some(Err(e)) => {
+                // 先尝试刷出 buffer 中残留的半行 SSE 数据
+                flush_sse_buffer(&mut accumulated, &mut accumulated_thinking, &mut buffer, &mut sse_usage, &app);
                 let has_content = !accumulated.is_empty() || !accumulated_thinking.is_empty();
                 if has_content {
                     eprintln!("流读取意外中断: {}", e);
@@ -932,12 +775,12 @@ async fn stream_openai_compatible(
                         thinking: accumulated_thinking.clone(),
                         phase: "done".into(),
                         done: true,
-                        error: Some(format!("流读取意外中断（已接收部分内容）: {}", e)),
+                        error: Some(format!("AI 服务连接中断，已保留部分生成内容（可检查网络或切换更稳定的 API）")),
                         usage: None,
                     });
                     return Ok(accumulated);
                 }
-                return Err(format!("读取响应流失败: {}", e));
+                return Err(format!("无法连接 AI 服务流式响应: {}. 请检查网络或 API 地址后重试", e));
             }
             None => break,
         };
@@ -963,7 +806,7 @@ async fn stream_openai_compatible(
                 // 计算字数并发送带用量的结束事件
                 let input_chars: usize = args.messages.iter().map(|m| m.content.chars().count()).sum();
                 let output_chars = accumulated.chars().count();
-                let (input_tokens, output_tokens) = openai_usage.unwrap_or((0, 0));
+                let (input_tokens, output_tokens) = sse_usage.unwrap_or((0, 0));
                 let _ = app.emit("ai-stream-chunk", StreamEvent {
                     content: accumulated.clone(),
                     thinking: accumulated_thinking.clone(),
@@ -981,7 +824,7 @@ async fn stream_openai_compatible(
                     if let Some(u) = data["usage"].as_object() {
                         let prompt_tokens = u.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
                         let completion_tokens = u.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                        openai_usage = Some((prompt_tokens, completion_tokens));
+                        sse_usage = Some((prompt_tokens, completion_tokens));
                     }
 
                     // 检测 reasoning_content（智谱/DeepSeek 推理模型的思考过程）
@@ -1021,32 +864,12 @@ async fn stream_openai_compatible(
         }
     }
 
-    // 流正常结束（服务端关闭连接但未发送 [DONE]）
-    let remaining = buffer.trim().to_string();
-    if !remaining.is_empty() && remaining.starts_with("data:") {
-        let json_str = remaining[5..].trim();
-        if json_str != "[DONE]" {
-            if let Ok(data) = serde_json::from_str::<serde_json::Value>(json_str) {
-                // 检查残留行是否有 usage
-                if let Some(u) = data["usage"].as_object() {
-                    let prompt_tokens = u.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                    let completion_tokens = u.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                    openai_usage = Some((prompt_tokens, completion_tokens));
-                }
-                // 残留行中也可能有 reasoning_content
-                if let Some(reasoning) = data["choices"][0]["delta"]["reasoning_content"].as_str() {
-                    accumulated_thinking.push_str(reasoning);
-                }
-                if let Some(delta) = data["choices"][0]["delta"]["content"].as_str() {
-                    accumulated.push_str(delta);
-                }
-            }
-        }
-    }
+    // 流正常结束（服务端关闭连接但未发送 [DONE]），刷出 buffer 残留
+    flush_sse_buffer(&mut accumulated, &mut accumulated_thinking, &mut buffer, &mut sse_usage, &app);
 
     let input_chars: usize = args.messages.iter().map(|m| m.content.chars().count()).sum();
     let output_chars = accumulated.chars().count();
-    let (input_tokens, output_tokens) = openai_usage.unwrap_or((0, 0));
+    let (input_tokens, output_tokens) = sse_usage.unwrap_or((0, 0));
 
     let _ = app.emit("ai-stream-chunk", StreamEvent {
         content: accumulated.clone(),

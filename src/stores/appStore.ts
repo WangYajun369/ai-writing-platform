@@ -102,6 +102,9 @@ interface AppState {
   // 编辑器显示宽度
   editorWidth: 'mobile' | 'standard' | 'wide'
 
+  // 应用版本号（从 tauri.conf.json 运行时获取，前端统一使用此值）
+  appVersion: string
+
   // Actions
   setBooks: (books: Book[]) => void
   setCurrentBookId: (id: string | null) => void
@@ -131,6 +134,7 @@ interface AppState {
   setDbStatus: (status: AppState['dbStatus']) => void
   setLoadingBooks: (v: boolean) => void
   setLoadingChapters: (v: boolean) => void
+  setAppVersion: (v: string) => void
 }
 
 const savedPrefs = loadPreferences()
@@ -150,10 +154,10 @@ export const useAppStore = create<AppState>()(
     aiConnectionStatus: 'idle',
     aiConnectionDetail: '',
     aiConfig: {
-      provider: 'ollama',
-      endpoint: 'http://127.0.0.1:11434',
-      model: 'qwen2.5:7b',
-      embeddingModel: 'bge-m3',
+      provider: 'bigmodel',
+      endpoint: 'https://open.bigmodel.cn/api/paas/v4',
+      model: 'glm-4.6v',
+      embeddingModel: 'embedding-3',
       temperature: 0.7,
       maxTokens: 131072,
       ...savedAiConfig,
@@ -165,6 +169,7 @@ export const useAppStore = create<AppState>()(
     fontSize: 16,
     gridSize: savedPrefs.gridSize ?? 'medium',
     editorWidth: savedPrefs.editorWidth ?? 'standard',
+    appVersion: '',
 
     setBooks: (books) => set({ books }),
     setCurrentBookId: (id) => set({ currentBookId: id }),
@@ -267,6 +272,7 @@ export const useAppStore = create<AppState>()(
     setDbStatus: (dbStatus) => set({ dbStatus }),
     setLoadingBooks: (v) => set({ isLoadingBooks: v }),
     setLoadingChapters: (v) => set({ isLoadingChapters: v }),
+    setAppVersion: (appVersion) => set({ appVersion }),
   }))
 )
 

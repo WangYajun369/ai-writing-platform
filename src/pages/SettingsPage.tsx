@@ -115,7 +115,7 @@ export default function SettingsPage() {
 /**
  * AI 配置区块
  *
- * 提供 Ollama/OpenAI/智谱BigModel/自定义四种服务商选择，
+ * 提供智谱 BigModel / 自定义两种服务商选择，
  * 以及 API 地址、对话模型、Embedding 模型、Temperature 滑杆、API Key 配置。
  */
 function AiConfigSection({
@@ -135,9 +135,7 @@ function AiConfigSection({
   /** 切换服务商时自动填充默认 endpoint 和 model */
   const handleProviderChange = (provider: typeof config.provider) => {
     const defaults: Record<string, { endpoint: string; model: string; embeddingModel: string }> = {
-      ollama: { endpoint: 'http://127.0.0.1:11434', model: 'qwen2.5:7b', embeddingModel: 'bge-m3' },
-      openai: { endpoint: 'https://api.openai.com/v1', model: 'gpt-4o', embeddingModel: 'text-embedding-3-small' },
-      bigmodel: { endpoint: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.6v', embeddingModel: 'embedding-3' },
+      bigmodel: { endpoint: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-5.1', embeddingModel: 'embedding-3' },
       custom: { endpoint: '', model: '', embeddingModel: '' },
     }
     const d = defaults[provider]
@@ -155,8 +153,6 @@ function AiConfigSection({
           onChange={(e) => handleProviderChange(e.target.value as typeof config.provider)}
           className="w-full bg-muted rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
         >
-          <option value="ollama">Ollama（本地）</option>
-          <option value="openai">OpenAI</option>
           <option value="bigmodel">智谱 BigModel</option>
           <option value="custom">自定义</option>
         </select>
@@ -168,7 +164,7 @@ function AiConfigSection({
           value={config.endpoint}
           onChange={(e) => onChange({ endpoint: e.target.value })}
           className="w-full bg-muted rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-          placeholder={config.provider === 'ollama' ? 'http://127.0.0.1:11434' : 'https://open.bigmodel.cn/api/paas/v4'}
+          placeholder="https://open.bigmodel.cn/api/paas/v4"
         />
       </div>
 
@@ -178,7 +174,7 @@ function AiConfigSection({
           value={config.model}
           onChange={(e) => onChange({ model: e.target.value })}
           className="w-full bg-muted rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-          placeholder={config.provider === 'bigmodel' ? 'glm-4-flash' : 'qwen2.5:7b'}
+          placeholder="glm-4-flash"
         />
       </div>
 
@@ -255,18 +251,16 @@ function AiConfigSection({
         )}
       </div>
 
-      {config.provider !== 'ollama' && (
-        <div className="space-y-1">
-          <label className="text-sm font-medium">API Key</label>
-          <input
-            type="password"
-            value={config.apiKey ?? ''}
-            onChange={(e) => onChange({ apiKey: e.target.value })}
-            className="w-full bg-muted rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-            placeholder={config.provider === 'bigmodel' ? '填写智谱 API Key' : 'sk-...'}
-          />
-        </div>
-      )}
+      <div className="space-y-1">
+        <label className="text-sm font-medium">API Key</label>
+        <input
+          type="password"
+          value={config.apiKey ?? ''}
+          onChange={(e) => onChange({ apiKey: e.target.value })}
+          className="w-full bg-muted rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+          placeholder={config.provider === 'bigmodel' ? '填写智谱 API Key' : 'sk-...'}
+        />
+      </div>
     </div>
   )
 }
@@ -521,7 +515,7 @@ function VersionSection() {
   const [updateMessage, setUpdateMessage] = useState('')
   const [releaseUrl, setReleaseUrl] = useState('')
 
-  const APP_VERSION = '0.2.2'
+  const APP_VERSION = useAppStore((s) => s.appVersion)
   const GITHUB_REPO = 'WangYajun369/ai-writing-platform'
 
   /** 比较两个 semver 版本号，返回 1 表示 v1 > v2 */

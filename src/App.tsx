@@ -30,7 +30,19 @@ const FONT_FAMILY_MAP: Record<string, string> = {
  * 若检测到 worldwin=1 查询参数，仅渲染世界观资料库面板（独立窗口模式）。
  */
 function AppInit() {
-  const { setTheme, theme, eyeCareMode, setEyeCareMode, fontFamily, setFontFamily, fontSize, setFontSize } = useAppStore()
+  const { setTheme, theme, eyeCareMode, setEyeCareMode, fontFamily, setFontFamily, fontSize, setFontSize, setAppVersion } = useAppStore()
+
+  // 启动时从 Tauri 获取应用版本号（来自 tauri.conf.json）
+  useEffect(() => {
+    import('@tauri-apps/api/app').then(({ getVersion }) => {
+      getVersion().then((v) => setAppVersion(v)).catch(() => {
+        // 非 Tauri 环境（如浏览器开发模式）回退
+        setAppVersion('0.0.0-dev')
+      })
+    }).catch(() => {
+      setAppVersion('0.0.0-dev')
+    })
+  }, [])
 
   // 检测是否为世界观独立窗口
   const worldWindowInfo = useMemo(() => {
