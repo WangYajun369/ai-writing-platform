@@ -51,12 +51,15 @@ jobs:
 
       - name: Build (macOS ARM64)
         run: |
-          SIGN_ID="${{ secrets.APPLE_SIGNING_IDENTITY }}"
-          if [ -n "$SIGN_ID" ]; then
-            export APPLE_SIGNING_IDENTITY="$SIGN_ID"
-            echo "🔐 使用 Apple 签名证书: $APPLE_SIGNING_IDENTITY"
+          # 检查 keychain 中是否存在 Developer ID 证书（上一步已导入）
+          if security find-identity -v -p codesigning 2>/dev/null | grep -q "Developer ID Application"; then
+            SIGN_ID="${{ secrets.APPLE_SIGNING_IDENTITY }}"
+            if [ -n "$SIGN_ID" ]; then
+              export APPLE_SIGNING_IDENTITY="$SIGN_ID"
+              echo "🔐 使用 Apple 签名证书"
+            fi
           else
-            echo "⚠️ 未配置 Apple 签名证书，跳过代码签名（构建未签名版本）"
+            echo "⚠️ 未导入 Apple 签名证书，跳过代码签名（构建未签名版本）"
           fi
           pnpm tauri build --target aarch64-apple-darwin
         env:
