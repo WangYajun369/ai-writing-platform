@@ -131,7 +131,7 @@ export default function LibraryPage() {
       <header className="border-b bg-card px-6 py-4 flex items-center gap-4 sticky top-0 z-10">
         <div className="flex items-center gap-2">
           <BookOpenIcon className="w-6 h-6 text-primary" />
-          <h1 className="text-xl font-bold tracking-tight">幻境水墨</h1>
+          <h1 className="text-xl font-bold tracking-tight">智写时光</h1>
         </div>
 
         {/* 搜索框 */}
@@ -254,7 +254,7 @@ export default function LibraryPage() {
         <span>{books.length} 部作品</span>
         <span>总字数 {formatWordCount(books.reduce((s, b) => s + b.wordCount, 0))}</span>
         <div className="flex-1" />
-        <span>幻境水墨 v0.1.0</span>
+        <span>智写时光 TimeWrite v0.2.1</span>
       </footer>
 
       {/* 新建书籍弹窗 */}

@@ -1,4 +1,4 @@
-//! MirageInk（幻境水墨）Tauri 应用主逻辑
+//! TimeWrite（智写时光）Tauri 应用主逻辑
 //!
 //! 负责：Tauri Builder 配置、插件注册、数据库初始化、31 个 IPC 命令注册。
 
@@ -25,7 +25,7 @@ pub fn run() {
                 .app_data_dir()
                 .expect("无法获取 AppData 目录");
             std::fs::create_dir_all(&app_dir)?;
-            let db_path = app_dir.join("mirage_ink.db");
+            let db_path = app_dir.join("time_write.db");
             let db = AppDb::new(db_path.to_str().unwrap()).expect("数据库初始化失败");
             app.manage(db);
             Ok(())

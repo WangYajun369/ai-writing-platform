@@ -1,5 +1,5 @@
 /**
- * MirageInk Plugin System
+ * TimeWrite Plugin System
  *
  * 模块入口，统一导出插件系统相关类型和管理器。
  */
@@ -17,7 +17,7 @@ export type {
 } from './types'
 
 /**
- * 创建一个 MirageInk 插件的辅助函数
+ * 创建一个 TimeWrite 插件的辅助函数
  *
  * @example
  * ```ts

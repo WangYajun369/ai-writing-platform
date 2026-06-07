@@ -1,4 +1,4 @@
-# MirageInk（幻境水墨）— 项目目录说明
+# TimeWrite（智写时光）— 项目目录说明
 
 > 跨平台桌面端小说写作软件 | Tauri v2 + React + Rust + SQLite
 
@@ -24,7 +24,7 @@
 ## 目录结构
 
 ```
-MirageInk/
+TimeWrite/
 ├── index.html                  # SPA 入口 HTML
 ├── package.json                # 项目配置（22 dependencies + 13 devDependencies）
 ├── pnpm-lock.yaml              # pnpm 锁文件

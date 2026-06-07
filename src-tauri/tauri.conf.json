@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "MirageInk",
+  "productName": "TimeWrite",
   "version": "0.2.1",
-  "identifier": "com.ukcoder.mirageink",
+  "identifier": "com.timewrite.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "幻境水墨 MirageInk",
+        "title": "智写时光 TimeWrite",
         "width": 1280,
         "height": 800,
         "minWidth": 800,

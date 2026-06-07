@@ -5,11 +5,11 @@ import type { Book, Chapter, Volume, AiConfig, AiMessage } from '../types'
 // ==================== App Store（全局业务状态）====================
 
 /** localStorage 键名，用于持久化用户偏好设置 */
-const PREFERENCES_KEY = 'mirage-ink-preferences'
+const PREFERENCES_KEY = 'time-write-preferences'
 /** localStorage 键名，用于持久化 AI 配置 */
-const AI_CONFIG_KEY = 'mirage-ink-ai-config'
+const AI_CONFIG_KEY = 'time-write-ai-config'
 /** localStorage 键名，用于持久化 AI 对话记录（按 bookId 分组） */
-const AI_CONVERSATIONS_KEY = 'mirage-ink-ai-conversations'
+const AI_CONVERSATIONS_KEY = 'time-write-ai-conversations'
 
 /** 从 localStorage 读取持久化的用户偏好 */
 function loadPreferences(): Partial<Pick<AppState, 'gridSize' | 'editorWidth'>> {

@@ -1,4 +1,4 @@
-# MirageInk（幻境水墨）
+# TimeWrite（智写时光）
 
 跨平台桌面端小说写作软件 —— Tauri v2 + React 18 + TipTap
 
@@ -67,7 +67,7 @@
 - 内置字符统计示例插件
 
 ### ukcoder 协议（深度链接）
-- 注册 `ukcoder://` 自定义 URL Scheme，支持从外部应用（浏览器/其他桌面应用）唤起 MirageInk
+- 注册 `ukcoder://` 自定义 URL Scheme，支持从外部应用（浏览器/其他桌面应用）唤起 TimeWrite
 - 支持参数传递（如 `ukcoder://open?bookId=xxx`），实现快速跳转到指定作品/章节
 - 基于 Tauri v2 deep-link 插件，自动处理 mac OS 和 Windows 平台注册
 
@@ -103,7 +103,7 @@ pnpm tauri build
 ## 项目结构
 
 ```
-MirageInk/
+TimeWrite/
 ├── src/                         # React 前端
 │   ├── components/
 │   │   ├── library/             # 书库：BookCard / NewBookDialog / CoverPicker
@@ -204,8 +204,8 @@ MirageInk/
 
 | 项目 | 值 |
 |------|------|
-| 应用名称 | MirageInk |
-| 应用标识 | `com.ukcoder.mirageink` |
+| 应用名称 | TimeWrite |
+| 应用标识 | `com.timewrite.app` |
 | 版本 | 0.2.1 |
 | 窗口默认尺寸 | 1280 × 800 |
 | 窗口最小尺寸 | 800 × 600 |

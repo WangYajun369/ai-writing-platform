@@ -1,5 +1,5 @@
 /**
- * MirageInk Plugin Manager
+ * TimeWrite Plugin Manager
  *
  * 管理插件的注册、初始化、执行和销毁。
  * 单例模式，通过 usePluginStore 交互。

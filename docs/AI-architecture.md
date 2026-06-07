@@ -1,7 +1,7 @@
-# MirageInk AI 模块全面技术文档
+# TimeWrite AI 模块全面技术文档
 
 > 生成日期：2026-06-06  
-> 项目：幻境水墨 MirageInk — 跨平台小说创作工具  
+> 项目：智写时光 TimeWrite — 跨平台小说创作工具  
 > 涵盖 AI 对话、RAG 检索、流式响应、连接测试等功能
 
 ---
@@ -700,7 +700,7 @@ export interface RagResult {
 
 ```typescript
 // localStorage 键
-const AI_CONFIG_KEY = 'mirage-ink-ai-config'
+const AI_CONFIG_KEY = 'time-write-ai-config'
 
 // 状态字段
 interface AppState {

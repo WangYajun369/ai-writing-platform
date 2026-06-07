@@ -1,4 +1,4 @@
-//! MirageInk 数据库模块
+//! TimeWrite 数据库模块
 //!
 //! 基于 rusqlite + r2d2 连接池，WAL 模式 + 外键约束。
 //! 管理 6 张表：books / volumes / chapters / snapshots / world_cards / embeddings。

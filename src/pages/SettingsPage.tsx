@@ -522,7 +522,7 @@ function VersionSection() {
   const [releaseUrl, setReleaseUrl] = useState('')
 
   const APP_VERSION = '0.2.1'
-  const GITHUB_REPO = 'ukcoder/mirage-ink'
+  const GITHUB_REPO = 'WangYajun369/ai-writing-platform'
 
   /** 比较两个 semver 版本号，返回 1 表示 v1 > v2 */
   const compareVersions = (v1: string, v2: string): number => {
@@ -652,7 +652,7 @@ function VersionSection() {
       <div className="p-4 bg-muted rounded-lg">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium">幻境水墨 MirageInk</p>
+            <p className="text-sm font-medium">智写时光 TimeWrite</p>
             <p className="text-xs text-muted-foreground mt-0.5">
               跨平台小说创作工具
             </p>

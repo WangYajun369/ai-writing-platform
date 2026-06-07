@@ -1,13 +1,13 @@
 ---
 name: version-release
-description: MirageInk 项目版本发布技能。当用户需要发布 GitHub Releases、更新版本号、bump 版本、提交代码到仓库、推送代码到远程仓库、或对项目进行发版时使用。触发词包括：发布大版本、发布新功能版本、发布优化版本、发布补丁版本、重置当前版本、提交代码到仓库、推送到远程仓库、发版、bump version、release、tag、commit、push 等。
+description: TimeWrite 项目版本发布技能。当用户需要发布 GitHub Releases、更新版本号、bump 版本、提交代码到仓库、推送代码到远程仓库、或对项目进行发版时使用。触发词包括：发布大版本、发布新功能版本、发布优化版本、发布补丁版本、重置当前版本、提交代码到仓库、推送到远程仓库、发版、bump version、release、tag、commit、push 等。
 ---
 
-# MirageInk 版本发布
+# TimeWrite 版本发布
 
 ## Overview
 
-该技能负责 MirageInk（Tauri v2 + React + TypeScript）项目的版本号管理和 GitHub Releases 发布流程。版本号在项目中分布于 6 个文件，必须全部同步更新。
+该技能负责 TimeWrite（Tauri v2 + React + TypeScript）项目的版本号管理和 GitHub Releases 发布流程。版本号在项目中分布于 6 个文件，必须全部同步更新。
 
 ## 触发场景
 
@@ -139,7 +139,7 @@ git push origin main --tags
 若 `src-tauri/tauri.conf.json` 中 `plugins.updater.pubkey` 为空：
 
 ```bash
-pnpm tauri signer generate -w ~/.tauri/mirageink.key
+pnpm tauri signer generate -w ~/.tauri/timewrite.key
 ```
 
 将输出的**公钥**填入 `tauri.conf.json` 的 `pubkey` 字段，**私钥**配置到 GitHub Secrets（`TAURI_PRIVATE_KEY`），并在 workflow 的构建步骤中加入 `--sign` 参数。
@@ -161,7 +161,7 @@ git --no-pager log --oneline -5
 git remote -v
 ```
 
-> 默认远端为 `origin`（GitHub: `github.com:WangYajun369/ai-writing-platform.git`）。
+> 默认远端为 `origin`（GitHub: `github.com:WangYajun369/ai-writing-platform.git`），TimeWrite 项目。
 
 3. **执行推送**：
 

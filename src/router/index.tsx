@@ -1,5 +1,5 @@
 /**
- * 前端路由定义 — MirageInk（幻境水墨）
+ * 前端路由定义 — TimeWrite（智写时光）
  *
  * 基于 React Router v7，使用 lazy 加载优化首屏性能。
  * 路由表：/ → 书库，/editor/:bookId → 编辑器，/settings → 设置。

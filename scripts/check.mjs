@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * MirageInk 项目完整性自动检测脚本
+ * TimeWrite 项目完整性自动检测脚本
  * 检查所有必需文件是否存在、关键导入是否一致
  */
 
@@ -40,7 +40,7 @@ function fileContains(relPath, ...patterns) {
 }
 
 // ============================================================
-console.log('\n🔍  MirageInk 项目完整性检测\n')
+console.log('\n🔍  TimeWrite 项目完整性检测\n')
 console.log('='.repeat(50))
 
 // ── 1. 根目录配置文件 ──────────────────────────────────────
@@ -172,7 +172,7 @@ if (warnings.length > 0) {
 if (failed === 0) {
   console.log('🎉  所有必需检查通过！项目基础代码完整。\n')
   console.log('📋  后续步骤：')
-  console.log('   1. cd MirageInk && npm install')
+  console.log('   1. cd TimeWrite && npm install')
   console.log('   2. npm run tauri dev   （需先安装 Rust + Tauri CLI）')
   console.log('   3. 确保 Ollama 运行（AI 功能）: ollama serve')
   console.log()

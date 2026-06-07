@@ -1,5 +1,5 @@
 /**
- * App 根组件 — MirageInk（幻境水墨）
+ * App 根组件 — TimeWrite（智写时光）
  *
  * 包裹 Jotai Provider 提供全局 UI 状态管理，承担主题与护眼模式初始化逻辑。
  * 同时检测是否为世界观资料库独立窗口（?worldwin=1），若是则仅渲染世界观面板。
@@ -10,10 +10,10 @@ import AppRouter from './router'
 import { useAppStore } from './stores/appStore'
 import WorldbuildingPanel from './components/worldbuilding/WorldbuildingPanel'
 
-const STORAGE_KEY_THEME = 'mirageink-theme'
-const STORAGE_KEY_EYECARE = 'mirageink-eyecare'
-const STORAGE_KEY_FONT = 'mirageink-font'
-const STORAGE_KEY_FONT_SIZE = 'mirageink-font-size'
+const STORAGE_KEY_THEME = 'timewrite-theme'
+const STORAGE_KEY_EYECARE = 'timewrite-eyecare'
+const STORAGE_KEY_FONT = 'timewrite-font'
+const STORAGE_KEY_FONT_SIZE = 'timewrite-font-size'
 
 const FONT_FAMILY_MAP: Record<string, string> = {
   serif: "'Noto Serif SC', Georgia, serif",

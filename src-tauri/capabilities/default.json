@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "Default capability for MirageInk",
+  "description": "Default capability for TimeWrite",
   "windows": ["main", "world"],
   "permissions": [
     "core:default",

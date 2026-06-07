@@ -1,5 +1,5 @@
 /**
- * MirageInk Plugin System - Type Definitions
+ * TimeWrite Plugin System - Type Definitions
  *
  * 插件系统核心类型定义，所有插件必须遵循此接口规范。
  */

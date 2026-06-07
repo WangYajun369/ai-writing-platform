@@ -1,4 +1,4 @@
-//! MirageInk 数据模型定义
+//! TimeWrite 数据模型定义
 //!
 //! 与前端 TypeScript 类型保持一致，使用 serde 序列化/反序列化，
 //! 字段名通过 `#[serde(rename)]` 映射为 camelCase。

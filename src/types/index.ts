@@ -1,4 +1,4 @@
-// 核心类型定义 —— 幻境水墨 MirageInk
+// 核心类型定义 —— 智写时光 TimeWrite
 
 /** 章节状态枚举 */
 export type ChapterStatus = 'outline' | 'draft' | 'polishing' | 'finished'
