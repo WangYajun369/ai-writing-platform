@@ -521,7 +521,7 @@ function VersionSection() {
   const [updateMessage, setUpdateMessage] = useState('')
   const [releaseUrl, setReleaseUrl] = useState('')
 
-  const APP_VERSION = '0.2.1'
+  const APP_VERSION = '0.2.2'
   const GITHUB_REPO = 'WangYajun369/ai-writing-platform'
 
   /** 比较两个 semver 版本号，返回 1 表示 v1 > v2 */
