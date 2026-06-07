@@ -2,10 +2,10 @@
 """
 MirageInk 版本号自动化更新脚本
 用法:
-  python scripts/bump_version.py major     # 大版本 0.1.0 → 1.0.0
-  python scripts/bump_version.py minor     # 新功能 0.1.0 → 0.2.0
-  python scripts/bump_version.py patch     # 优化   0.1.0 → 0.1.1
-  python scripts/bump_version.py set 0.5.0 # 重置为指定版本
+  python3 .codebuddy/skills/version-release/scripts/bump_version.py major     # 大版本 0.1.0 → 1.0.0
+  python3 .codebuddy/skills/version-release/scripts/bump_version.py minor     # 新功能 0.1.0 → 0.2.0
+  python3 .codebuddy/skills/version-release/scripts/bump_version.py patch     # 优化   0.1.0 → 0.1.1
+  python3 .codebuddy/skills/version-release/scripts/bump_version.py set 0.5.0 # 重置为指定版本
 """
 
 import json

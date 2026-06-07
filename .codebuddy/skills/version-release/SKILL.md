@@ -1,6 +1,6 @@
 ---
 name: version-release
-description: MirageInk 项目版本发布技能。当用户需要发布 GitHub Releases、更新版本号、bump 版本、或对项目进行发版时使用。触发词包括：发布大版本、发布新功能版本、发布优化版本、发布补丁版本、重置当前版本、发版、bump version、release、tag 等。
+description: MirageInk 项目版本发布技能。当用户需要发布 GitHub Releases、更新版本号、bump 版本、提交代码到仓库、推送代码到远程仓库、或对项目进行发版时使用。触发词包括：发布大版本、发布新功能版本、发布优化版本、发布补丁版本、重置当前版本、提交代码到仓库、推送到远程仓库、发版、bump version、release、tag、commit、push 等。
 ---
 
 # MirageInk 版本发布
@@ -17,6 +17,8 @@ description: MirageInk 项目版本发布技能。当用户需要发布 GitHub R
 | 发布新功能版本 | minor bump | 0.1.0 → 0.2.0 |
 | 发布优化版本 / 发布补丁版本 | patch bump | 0.1.0 → 0.1.1 |
 | 重置当前版本 | set 指定版本 | 重置为 0.1.0 |
+| 提交代码到仓库 | git add + commit（仅本地） | 暂存并提交，不推送远端 |
+| 推送到远程仓库 | git push | 推送提交到 origin/main |
 
 ## 工作流程
 
@@ -81,7 +83,7 @@ git log <上一个Tag>..HEAD --format="%h %s"
 ### Step 3：检测完整性（可选但建议）
 
 ```bash
-npm run check
+pnpm check
 ```
 
 ### Step 4：生成详细 Commit 并推送至 GitHub
@@ -141,6 +143,122 @@ pnpm tauri signer generate -w ~/.tauri/mirageink.key
 ```
 
 将输出的**公钥**填入 `tauri.conf.json` 的 `pubkey` 字段，**私钥**配置到 GitHub Secrets（`TAURI_PRIVATE_KEY`），并在 workflow 的构建步骤中加入 `--sign` 参数。
+
+### Step 6：推送到远程仓库（独立推送）
+
+适用于无需版本发布、仅推送本地提交到远程仓库的场景。
+
+1. **检查当前分支状态**：
+
+```bash
+git status
+git --no-pager log --oneline -5
+```
+
+2. **确认远端配置**：
+
+```bash
+git remote -v
+```
+
+> 默认远端为 `origin`（GitHub: `github.com:WangYajun369/ai-writing-platform.git`）。
+
+3. **执行推送**：
+
+```bash
+# 推送当前分支到远端
+git push origin main
+
+# 若需同时推送 Tag
+git push origin main --tags
+```
+
+> **注意**：确保本地提交已就绪，推送后不可撤销。如果远端有新提交，先执行 `git pull --rebase origin main`。
+
+4. **推送后确认**：
+
+```bash
+# 确认本地与远端同步
+git --no-pager log --oneline origin/main -5
+```
+
+### Step 7：提交代码到仓库（仅本地提交）
+
+适用于仅将代码变更提交到本地仓库、**不推送远端**的场景。后续可单独执行 Step 6 推送。
+
+1. **查看当前变更**：
+
+```bash
+git status
+git --no-pager diff --stat
+```
+
+2. **暂存所有变更**：
+
+```bash
+git add -A
+```
+
+> 如需选择性暂存，使用 `git add <文件路径>` 逐个添加。
+
+3. **分析代码变更**（核心步骤）：
+
+> 此步骤是生成优质 commit message 的关键，必须深入分析实际 diff 内容，而非仅看文件名。
+
+```bash
+# 查看变更文件列表
+git --no-pager diff --stat
+
+# 查看具体代码变更（关注函数/方法的增删改）
+git --no-pager diff -- '*.rs' '*.tsx' '*.ts' '*.css'
+```
+
+基于 diff 输出，逐一分析每个文件的改动意图：
+- 新增了什么功能/组件/模块？
+- 修复了什么 Bug/问题？
+- 重构/优化了哪部分逻辑？
+
+4. **生成 Commit Message 并提交**：
+
+**禁止使用泛化 commit message**（如 `chore: update`、`fix: bug`），必须基于第 3 步的 diff 分析结果撰写。
+
+Commit Message 结构（Conventional Commits）：
+
+```bash
+git commit -m "<type>: <简要标题>" -m "<详细正文>"
+```
+
+| 前缀 | 适用场景 |
+|------|---------|
+| `feat:` | 新增功能/组件/页面 |
+| `fix:` | 修复 Bug |
+| `chore:` | 配置/依赖/构建等杂项 |
+| `refactor:` | 重构代码（不改变功能） |
+| `perf:` | 性能优化 |
+| `style:` | 代码格式调整（不影响逻辑） |
+
+**标题**（subject）规范：
+- 不超过 72 字符
+- type 后紧跟中文冒号，空一格后写描述
+- 示例：`feat: 新增文章导出 PDF 功能`
+
+**正文**（body）规范：
+- 逐条列出本次改动涉及的文件和具体变更内容
+- 格式：`- <文件名>: <具体改动说明>`
+- 示例：
+  ```
+  - src/components/ExportButton.tsx: 新增 handleExportPDF 方法，调用 Tauri 后端导出
+  - src-tauri/src/export.rs: 实现 generate_pdf 命令，基于 printpdf 生成 PDF
+  - src/App.css: 新增 .export-btn 样式
+  ```
+
+5. **提交后确认**：
+
+```bash
+git --no-pager log --oneline -3
+```
+
+> ⚠️ **仅执行 `git commit`，不执行 `git push`**。如需推送远端，使用「推送到远程仓库」命令。
 
 ## 重要规则
 

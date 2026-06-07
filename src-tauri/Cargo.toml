@@ -1,6 +1,6 @@
 [package]
 name = "mirage-ink"
-version = "0.2.0"
+version = "0.2.1"
 description = "幻境水墨 MirageInk —— 跨平台小说创作工具"
 authors = ["MirageInk Team"]
 edition = "2021"

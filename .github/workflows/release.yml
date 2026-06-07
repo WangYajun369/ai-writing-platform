@@ -9,7 +9,7 @@ on:
       version:
         description: '发布版本号 (e.g. 0.1.0)'
         required: true
-        default: '0.2.0'
+        default: '0.2.1'
 
 jobs:
   # ===========================
@@ -38,6 +38,8 @@ jobs:
 
       - name: Build (macOS ARM64)
         run: pnpm tauri build --target aarch64-apple-darwin
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
@@ -69,6 +71,8 @@ jobs:
 
       - name: Build (Windows)
         run: pnpm tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
 
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
@@ -87,6 +91,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install dependencies (for Tauri CLI)
+        run: pnpm install --frozen-lockfile
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -94,6 +109,62 @@ jobs:
 
       - name: List artifacts
         run: find artifacts -type f
+
+      - name: Generate latest.json
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ github.ref_name }}"
+          VERSION_NUM="${VERSION#v}"
+          REPO="${{ github.repository }}"
+
+          DMG=$(find artifacts/macos-dmg -name "*.dmg" | head -1)
+          EXE=$(find artifacts/windows-exe -name "*.exe" | head -1)
+
+          if [ -z "$DMG" ] || [ -z "$EXE" ]; then
+            echo "❌ 找不到 DMG 或 EXE 文件"
+            exit 1
+          fi
+
+          DMG_NAME=$(basename "$DMG")
+          EXE_NAME=$(basename "$EXE")
+
+          echo "DMG: $DMG_NAME"
+          echo "EXE: $EXE_NAME"
+
+          # 使用 Tauri CLI 对安装包签名，获取签名
+          DMG_SIGNATURE=$(npx tauri signer sign -f "$DMG" 2>/dev/null | jq -r '.signature' || echo "")
+          EXE_SIGNATURE=$(npx tauri signer sign -f "$EXE" 2>/dev/null | jq -r '.signature' || echo "")
+
+          if [ -z "$DMG_SIGNATURE" ] || [ -z "$EXE_SIGNATURE" ]; then
+            echo "⚠️  签名生成失败，请检查 TAURI_PRIVATE_KEY 是否正确配置"
+            echo "将以无签名模式生成 latest.json（更新器将使用 pubkey 为空时的行为）"
+          fi
+
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          cat > latest.json << JSONEOF
+          {
+            "version": "${VERSION_NUM}",
+            "notes": "See release notes at https://github.com/${REPO}/releases/tag/${VERSION}",
+            "pub_date": "${PUB_DATE}",
+            "platforms": {
+              "darwin-aarch64": {
+                "signature": "${DMG_SIGNATURE}",
+                "url": "https://github.com/${REPO}/releases/download/${VERSION}/${DMG_NAME}"
+              },
+              "windows-x86_64": {
+                "signature": "${EXE_SIGNATURE}",
+                "url": "https://github.com/${REPO}/releases/download/${VERSION}/${EXE_NAME}"
+              }
+            }
+          }
+          JSONEOF
+
+          echo "✅ latest.json 已生成:"
+          cat latest.json
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -115,7 +186,9 @@ jobs:
 
             **macOS**: 下载 `.dmg` 文件，双击打开后将 `MirageInk.app` 拖入 `Applications` 文件夹。
             **Windows**: 下载 `.exe` 安装包，双击运行安装向导。
-          files: artifacts/**/*
+          files: |
+            artifacts/**/*
+            latest.json
           draft: false
           prerelease: false
         env:
