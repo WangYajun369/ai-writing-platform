@@ -9,7 +9,7 @@ on:
       version:
         description: '发布版本号 (e.g. 0.1.0)'
         required: true
-        default: '0.2.3'
+        default: '0.2.4'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -40,33 +40,37 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Import Apple Certificate
-        if: ${{ env.APPLE_CERTIFICATE_BASE64 != '' }}
+        if: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
         uses: apple-actions/import-codesign-certs@v3
         with:
           p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        env:
-          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
 
       - name: Build (macOS ARM64)
-        run: pnpm tauri build --target aarch64-apple-darwin
+        run: |
+          SIGN_ID="${{ secrets.APPLE_SIGNING_IDENTITY }}"
+          if [ -n "$SIGN_ID" ]; then
+            export APPLE_SIGNING_IDENTITY="$SIGN_ID"
+            echo "🔐 使用 Apple 签名证书: $APPLE_SIGNING_IDENTITY"
+          else
+            echo "⚠️ 未配置 Apple 签名证书，跳过代码签名（构建未签名版本）"
+          fi
+          pnpm tauri build --target aarch64-apple-darwin
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
 
       - name: Notarize macOS app
-        if: ${{ env.APPLE_ID != '' }}
+        if: ${{ secrets.APPLE_ID != '' }}
         run: |
           set -euo pipefail
-          APP_PATH=$(find src-tauri/target/aarch64-apple-darwin/release/bundle/macos -name "*.app" | head -1)
           DMG_PATH=$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -name "*.dmg" | head -1)
 
-          if [ -z "$APP_PATH" ]; then
-            echo "❌ 找不到 .app 文件"
+          if [ -z "$DMG_PATH" ]; then
+            echo "❌ 找不到 .dmg 文件"
             exit 1
           fi
 
-          echo "📦 正在公证 $APP_PATH ..."
+          echo "📦 正在公证 $DMG_PATH ..."
 
           # 提交公证请求
           xcrun notarytool submit "$DMG_PATH" \
