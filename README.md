@@ -41,9 +41,9 @@
 - 独立悬浮窗口模式（always_on_top，420x650）
 
 ### AI 助手
-- 集成 Ollama 流式对话，支持 RAG 上下文检索
+- 集成智谱 BigModel 流式对话 + 自定义 OpenAI 兼容端点，支持 RAG 上下文检索
 - 快捷提示词：续写/润色/剧情推演/角色分析
-- 默认模型：`qwen2.5:7b`，Embedding：`bge-m3`
+- 默认模型：`glm-4.6v`，Embedding：`embedding-3`
 
 ### 版本管理
 - 章节 HTML 内容快照（auto/milestone 类型）
@@ -152,6 +152,14 @@ TimeWrite/
 
 ## 更新日志
 
+### v0.2.3 (2026-06-07)
+
+#### 优化
+- 精简 AI 服务商为智谱 BigModel + 自定义，移除 Ollama/OpenAI 支持，统一使用 OpenAI 兼容协议
+- SSE 流处理代码重构：提取 `flush_sse_buffer` 公共函数，消除重复的 buffer 残留处理逻辑
+- 应用版本号改为运行时从 Tauri 动态获取，不再硬编码在 SettingsPage 中
+- 默认 AI 配置改为智谱 BigModel（`glm-4.6v` / `embedding-3`）
+
 ### v0.2.2 (2026-06-07)
 
 #### 优化
@@ -213,7 +221,7 @@ TimeWrite/
 |------|------|
 | 应用名称 | TimeWrite |
 | 应用标识 | `com.ukcoder.timewrite` |
-| 版本 | 0.2.2 |
+| 版本 | 0.2.3 |
 | 窗口默认尺寸 | 1280 × 800 |
 | 窗口最小尺寸 | 800 × 600 |
 | 深度链接协议 | `com.ukcoder.timewrite://` |
