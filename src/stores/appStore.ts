@@ -11,8 +11,8 @@ const AI_CONFIG_KEY = 'time-write-ai-config'
 /** localStorage 键名，用于持久化 AI 对话记录（按 bookId 分组） */
 const AI_CONVERSATIONS_KEY = 'time-write-ai-conversations'
 
-/** 从 localStorage 读取持久化的用户偏好 */
-function loadPreferences(): Partial<Pick<AppState, 'gridSize' | 'editorWidth'>> {
+/** 从 localStorage 读取持久化的用户偏好（含外观设置） */
+function loadPreferences(): Partial<Pick<AppState, 'theme' | 'eyeCareMode' | 'fontFamily' | 'fontSize' | 'gridSize' | 'editorWidth'>> {
   try {
     const raw = localStorage.getItem(PREFERENCES_KEY)
     if (raw) return JSON.parse(raw)
@@ -123,10 +123,13 @@ function loadAiConversations(): Record<string, AiMessage[]> {
   return {}
 }
 
-/** 将用户偏好写入 localStorage */
-function savePreferences(prefs: Pick<AppState, 'gridSize' | 'editorWidth'>) {
+/** 将用户偏好写入 localStorage（含外观设置） */
+function savePreferences(prefs: Partial<Pick<AppState, 'theme' | 'eyeCareMode' | 'fontFamily' | 'fontSize' | 'gridSize' | 'editorWidth'>>) {
   try {
-    localStorage.setItem(PREFERENCES_KEY, JSON.stringify(prefs))
+    // 合并已有偏好，避免覆盖未传入的字段
+    const existing = loadPreferences()
+    const merged = { ...existing, ...prefs }
+    localStorage.setItem(PREFERENCES_KEY, JSON.stringify(merged))
   } catch { /* ignore */ }
 }
 
@@ -256,10 +259,10 @@ export const useAppStore = create<AppState>()(
       ...savedAiConfig,
     },
     aiConversations: savedAiConversations,
-    theme: 'system',
-    eyeCareMode: 'off',
-    fontFamily: 'yahei',
-    fontSize: 16,
+    theme: savedPrefs.theme ?? 'system',
+    eyeCareMode: savedPrefs.eyeCareMode ?? 'off',
+    fontFamily: savedPrefs.fontFamily ?? 'yahei',
+    fontSize: savedPrefs.fontSize ?? 16,
     gridSize: savedPrefs.gridSize ?? 'medium',
     editorWidth: savedPrefs.editorWidth ?? 'standard',
     appVersion: '',
@@ -352,16 +355,28 @@ export const useAppStore = create<AppState>()(
       saveAiConversations(conversations)
     },
 
-    setTheme: (theme) => set({ theme }),
-    setEyeCareMode: (eyeCareMode) => set({ eyeCareMode }),
-    setFontFamily: (fontFamily) => set({ fontFamily }),
-    setFontSize: (fontSize) => set({ fontSize }),
+    setTheme: (theme) => {
+      savePreferences({ theme })
+      set({ theme })
+    },
+    setEyeCareMode: (eyeCareMode) => {
+      savePreferences({ eyeCareMode })
+      set({ eyeCareMode })
+    },
+    setFontFamily: (fontFamily) => {
+      savePreferences({ fontFamily })
+      set({ fontFamily })
+    },
+    setFontSize: (fontSize) => {
+      savePreferences({ fontSize })
+      set({ fontSize })
+    },
     setGridSize: (gridSize) => {
-      savePreferences({ gridSize, editorWidth: useAppStore.getState().editorWidth })
+      savePreferences({ gridSize })
       set({ gridSize })
     },
     setEditorWidth: (editorWidth) => {
-      savePreferences({ gridSize: useAppStore.getState().gridSize, editorWidth })
+      savePreferences({ editorWidth })
       set({ editorWidth })
     },
     setAiConnectionStatus: (aiConnectionStatus, aiConnectionDetail = '') =>

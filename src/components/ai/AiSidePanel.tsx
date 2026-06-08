@@ -9,7 +9,7 @@
  * 切换作品时自动加载对应对话历史。
  */
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { SendIcon, BotIcon, XIcon, Loader2Icon, CircleCheckIcon, CircleAlertIcon, CircleIcon, ChevronDownIcon, DatabaseZapIcon, RefreshCwIcon } from 'lucide-react'
+import { SendIcon, BotIcon, Trash2Icon, Loader2Icon, CircleCheckIcon, CircleAlertIcon, CircleIcon, ChevronDownIcon, DatabaseZapIcon, RefreshCwIcon } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
@@ -258,8 +258,13 @@ export default function AiSidePanel() {
             </span>
           </div>
         </div>
-        <button onClick={handleClear} title="清空对话" className="p-1 rounded hover:bg-muted text-muted-foreground">
-          <XIcon className="w-3.5 h-3.5" />
+        <button
+          onClick={handleClear}
+          title="清空AI聊天记录"
+          className="flex items-center gap-1 px-2 py-1 rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground text-xs transition-colors"
+        >
+          <Trash2Icon className="w-3 h-3" />
+          <span>清空聊天</span>
         </button>
       </div>
 

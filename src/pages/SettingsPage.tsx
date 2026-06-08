@@ -181,7 +181,7 @@ function ChatConfigSection({
   const handleProviderChange = (provider: typeof config.provider) => {
     const defaults: Record<string, { endpoint: string; model: string }> = {
       bigmodel: { endpoint: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-5.1' },
-      deepseek: { endpoint: 'https://api.deepseek.com/v1', model: 'deepseek-v4-flash' },
+      deepseek: { endpoint: 'https://api.deepseek.com', model: 'deepseek-v4-flash' },
     }
     const d = defaults[provider]
     onChange({ provider, endpoint: d.endpoint, model: d.model })
@@ -238,7 +238,7 @@ function ChatConfigSection({
           placeholder={
             config.provider === 'bigmodel'
               ? 'https://open.bigmodel.cn/api/paas/v4'
-              : 'https://api.deepseek.com/v1'
+              : 'https://api.deepseek.com'
           }
         />
       </div>
