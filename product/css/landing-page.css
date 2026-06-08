@@ -785,8 +785,15 @@ body {
   text-align: center;
 }
 
+.contact-cards {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
 .contact-card {
-  display: inline-flex;
+  display: flex;
   flex-direction: column;
   align-items: center;
   gap: 14px;
@@ -809,11 +816,11 @@ body {
 }
 
 .contact-qr {
-  width: 180px;
-  height: 180px;
+  width: 200px;
+  height: auto;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  object-fit: cover;
+  object-fit: contain;
 }
 
 /* ── Share Section ───────────────────────────── */
@@ -1105,6 +1112,16 @@ body {
   }
   .cta-section {
     padding: 40px 16px;
+  }
+  .contact-cards {
+    flex-direction: column;
+    align-items: center;
+  }
+  .contact-card {
+    padding: 24px 28px;
+  }
+  .contact-qr {
+    width: 160px;
   }
   .footer {
     padding: 22px 16px;

@@ -4,6 +4,8 @@
 
 欢迎来到 TimeWrite 的官方文档！TimeWrite 是一款面向网络小说作者和文学创作者的桌面写作工具，提供从书库管理、章节编辑到 AI 辅助创作的完整写作工作流。
 
+> 🚀 [**查看项目介绍**](https://wangyajun369.github.io/ai-writing-platform/) 
+
 ## 快速导航
 
 | 板块 | 说明 |
@@ -35,3 +37,19 @@
 | 当前版本 | 0.3.0 |
 | 许可证 | MIT |
 | 仓库地址 | [github.com/WangYajun369/ai-writing-platform](https://github.com/WangYajun369/ai-writing-platform) |
+
+---
+
+## ❤️ 赞助支持
+
+如果 TimeWrite 对你的创作有帮助，欢迎赞助支持，让智写时光越做越好！
+
+![微信赞助](https://wangyajun369.github.io/ai-writing-platform/wx-pay.jpg)
+
+---
+
+## 💬 扫码添加微信
+
+有任何问题或建议，欢迎添加微信沟通，期待与每一位创作者交流 👋
+
+![微信联系](https://wangyajun369.github.io/ai-writing-platform/wx-wyj.jpg)

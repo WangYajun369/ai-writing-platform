@@ -4,7 +4,7 @@
 
 面向网络小说作者和文学创作者，提供从书库管理、章节编辑到 AI 辅助创作的完整写作工作流。
 
-🌐 **项目详情**：[https://wangyajun369.github.io/ai-writing-platform/](https://wangyajun369.github.io/ai-writing-platform/)
+🌐 **项目介绍**：[https://wangyajun369.github.io/ai-writing-platform/](https://wangyajun369.github.io/ai-writing-platform/)
 
 ## 技术栈
 
@@ -78,83 +78,22 @@
 - 更新器插件集成（GitHub Releases）
 - 代码分割优化（TipTap、Lucide、状态库等独立 chunk）
 
-## 快速开始
+## 📖 文档
 
-```bash
-# 安装依赖
-pnpm install
-
-# 启动开发模式（首次会编译 Rust，需要数分钟）
-pnpm tauri dev
-
-# 仅启动前端 Vite 预览
-pnpm dev
-
-# 运行完整性检测
-pnpm check
-```
-
-## 构建发布
-
-```bash
-pnpm tauri build
-```
-
-打包目标：macOS（DMG） + Windows（NSIS 安装包）
-
-## 项目结构
-
-```
-TimeWrite/
-├── src/                         # React 前端
-│   ├── components/
-│   │   ├── library/             # 书库：BookCard / NewBookDialog / CoverPicker
-│   │   ├── editor/              # 编辑器：RichTextEditor / EditorToolbar / SnapshotPanel
-│   │   ├── outline/             # 目录树面板 OutlinePanel
-│   │   ├── worldbuilding/       # 世界观资料库：WorldbuildingPanel / WorldCardEditor
-│   │   ├── ai/                  # AI 助手侧面板 AiSidePanel
-│   │   ├── layout/              # 布局容器 EditorLayout + 底部状态栏 StatusBar
-│   │   ├── diff/                # （预留）版本对比视图
-│   │   └── ui/                  # （预留）通用 UI 组件
-│   ├── pages/                   # 页面：Library / Editor / Settings
-│   ├── stores/                  # Zustand（appStore + pluginStore）+ Jotai（uiAtoms）
-│   ├── plugins/                 # 插件系统：PluginManager / 类型定义 / 示例插件
-│   ├── lib/                     # 工具函数 + Tauri IPC 桥接（7 个 API 模块）
-│   ├── types/                   # TypeScript 类型定义（15 个核心类型）
-│   ├── router/                  # React Router v7 路由
-│   ├── styles/                  # 全局样式（四套主题 CSS 变量）
-│   └── hooks/                   # （预留）自定义 Hooks
-├── src-tauri/                   # Rust 后端
-│   └── src/
-│       ├── commands/            # IPC 命令（book/volume/chapter/snapshot/world_card/ai/io/window）
-│       ├── db/                  # SQLite 连接池 + 5 张表 DDL + 6 个索引
-│       └── models/              # Serde 数据模型
-└── scripts/check.mjs            # 完整性检测脚本
-```
-
-## 数据库设计
-
-| 表名 | 说明 |
-|------|------|
-| books | 书籍元信息（标题、作者、描述、封面路径、字数、日更目标、标签等） |
-| volumes | 卷信息（书名、排序） |
-| chapters | 章节内容（HTML、字数、状态、软删除） |
-| snapshots | 版本快照（auto/milestone 类型） |
-| world_cards | 世界观卡片（6 种类型、标签、向量化标记） |
-
-## Roadmap
-
-| Phase | 状态 | 内容 |
-|-------|------|------|
-| Phase 1 | ✅ 完成 | 工程骨架、书库管理、TipTap 编辑、SQLite CRUD |
-| Phase 2 | ✅ 完成 | 自动保存、专注模式、导入导出、图片/表格、世界观资料库、AI 助手、版本快照、多窗口/护眼模式/字体系统/插件系统框架 |
-| Phase 3 | 🔜 规划 | react-diff-viewer 版本对比视图、EPUB/PDF 导出 |
-| Phase 4 | 🔜 规划 | sqlite-vec 向量语义检索 + Ollama RAG |
-| Phase 5 | 🔜 规划 | 跨平台打包发布（macOS DMG + Windows NSIS） |
+完整项目文档请访问 [TimeWrite Wiki](https://github.com/WangYajun369/ai-writing-platform/wiki)，包括快速开始、构建发布、项目结构、数据库设计、Roadmap 等。
 
 ## 更新日志
 
 详细版本更新记录请参见 [docs/CHANGELOG.md](./docs/CHANGELOG.md)。
+
+## 联系与赞助
+
+如果这个项目对你有帮助，欢迎赞助支持 ❤️
+
+<div align="center">
+  <img src="product/wx-pay.jpg" width="200" alt="微信赞助">&nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="product/wx-wyj.jpg" width="200" alt="微信联系">
+</div>
 
 ## 应用信息
 
