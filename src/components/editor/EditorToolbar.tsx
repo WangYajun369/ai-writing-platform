@@ -7,7 +7,7 @@
  */
 import { useAtom, useAtomValue } from 'jotai'
 import { useNavigate } from 'react-router-dom'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, forwardRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
@@ -31,6 +31,8 @@ import {
   Heading2Icon,
   Heading3Icon,
   Code2Icon,
+  BoldIcon,
+  PaletteIcon,
 } from 'lucide-react'
 import {
     sidebarOpenAtom,
@@ -42,6 +44,13 @@ import {
 import { useCurrentBook, useAppStore } from '@/stores/appStore.ts'
 import { cn } from '@/lib/utils.ts'
 
+/** 预设字体颜色 */
+const PRESET_COLORS = [
+  '#1a1a1a', '#4a4a4a', '#8c8c8c', '#bfbfbf',
+  '#e03131', '#e8590c', '#f08c00', '#2f9e44',
+  '#1971c2', '#7048e8', '#9c36b5', '#c2255c',
+]
+
 export default function EditorToolbar() {
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useAtom(sidebarOpenAtom)
@@ -52,6 +61,31 @@ export default function EditorToolbar() {
   const currentBook = useCurrentBook()
   const { fontSize, setFontSize } = useAppStore()
   const editor = useAtomValue(editorInstanceAtom)
+  const [colorPickerOpen, setColorPickerOpen] = useState(false)
+  const colorPickerRef = useRef<HTMLDivElement>(null)
+  // 保存打开颜色选择器前的编辑器选区，防止选区丢失导致无法应用颜色
+  const savedColorTargetRef = useRef<{ from: number; to: number } | null>(null)
+
+  /** 打开/关闭颜色选择器，保存当前选区 */
+  function handleToggleColorPicker() {
+    if (editor && !colorPickerOpen) {
+      const { from, to } = editor.state.selection
+      savedColorTargetRef.current = { from, to }
+    }
+    setColorPickerOpen((v) => !v)
+  }
+
+  // 点击外部关闭颜色选择器
+  useEffect(() => {
+    if (!colorPickerOpen) return
+    function handleClick(e: MouseEvent) {
+      if (colorPickerRef.current && !colorPickerRef.current.contains(e.target as Node)) {
+        setColorPickerOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [colorPickerOpen])
 
   /** 从文件扩展名推断 MIME 类型 */
   const guessMimeType = useCallback((path: string): string => {
@@ -202,6 +236,48 @@ export default function EditorToolbar() {
 
       <div className="w-px h-5 bg-border mx-1" />
 
+      {/* 加粗 */}
+      <ToolbarBtn
+        active={editor?.isActive('bold') ?? false}
+        onClick={() => editor?.chain().focus().toggleBold().run()}
+        title="加粗"
+        icon={<BoldIcon className="w-4 h-4" />}
+      />
+
+      {/* 字体颜色 */}
+      <div className="relative">
+        <ToolbarBtn
+          active={colorPickerOpen}
+          onClick={handleToggleColorPicker}
+          title="字体颜色"
+          icon={<PaletteIcon className="w-4 h-4" />}
+        />
+        {colorPickerOpen && (
+          <ColorPickerPopover
+            ref={colorPickerRef}
+            currentColor={editor?.getAttributes('textStyle').color ?? null}
+            onSelectColor={(color) => {
+              if (editor) {
+                // 恢复打开选择器前保存的选区
+                const target = savedColorTargetRef.current
+                if (target && target.from !== target.to) {
+                  editor.commands.setTextSelection({ from: target.from, to: target.to })
+                }
+                savedColorTargetRef.current = null
+                if (color) {
+                  editor.chain().focus().setColor(color).run()
+                } else {
+                  editor.chain().focus().unsetColor().run()
+                }
+              }
+              setColorPickerOpen(false)
+            }}
+          />
+        )}
+      </div>
+
+      <div className="w-px h-5 bg-border mx-1" />
+
       {/* 标题 */}
       <ToolbarBtn
         active={editor?.isActive('heading', { level: 1 }) ?? false}
@@ -343,3 +419,85 @@ function SaveIndicator() {
   }
   return null
 }
+
+/**
+ * 字体颜色选择器弹窗
+ *
+ * 展示预设色块网格 + 自定义颜色输入 + 清除颜色按钮。
+ */
+const ColorPickerPopover = forwardRef<
+  HTMLDivElement,
+  {
+    currentColor: string | null
+    onSelectColor: (color: string | null) => void
+  }
+>(function ColorPickerPopover({ currentColor, onSelectColor }, ref) {
+  const [customColor, setCustomColor] = useState('#000000')
+
+  return (
+    <div
+      ref={ref}
+      className="absolute top-full right-0 mt-1 z-30 bg-popover border rounded-lg shadow-lg p-3 min-w-52"
+    >
+      {/* 标题栏 */}
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-medium text-muted-foreground">字体颜色</span>
+        <button
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => onSelectColor(null)}
+          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+          title="清除颜色"
+        >
+          还原默认
+        </button>
+      </div>
+
+      {/* 当前颜色指示 */}
+      {currentColor && (
+        <div className="flex items-center gap-1.5 mb-2 text-xs text-muted-foreground">
+          <span>当前：</span>
+          <span
+            className="inline-block w-4 h-4 rounded border border-border"
+            style={{ backgroundColor: currentColor }}
+          />
+          <span className="font-mono">{currentColor}</span>
+        </div>
+      )}
+
+      {/* 预设颜色网格 */}
+      <div className="grid grid-cols-6 gap-1.5 mb-2">
+        {PRESET_COLORS.map((color) => (
+          <button
+            key={color}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onSelectColor(color)}
+            className="w-7 h-7 rounded border border-border hover:scale-110 transition-transform"
+            style={{ backgroundColor: color }}
+            title={color}
+          />
+        ))}
+      </div>
+
+      {/* 分隔线 */}
+      <div className="h-px bg-border mb-2" />
+
+      {/* 自定义颜色 */}
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          value={customColor}
+          onChange={(e) => setCustomColor(e.target.value)}
+          className="w-8 h-8 rounded border border-border cursor-pointer p-0 bg-transparent"
+        />
+        <span className="text-xs text-muted-foreground font-mono flex-1">{customColor}</span>
+        <button
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => onSelectColor(customColor)}
+          className="px-2 py-1 text-xs rounded bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
+        >
+          应用
+        </button>
+      </div>
+    </div>
+  )
+})

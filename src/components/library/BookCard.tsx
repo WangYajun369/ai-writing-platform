@@ -7,7 +7,7 @@
  * 支持修改封面（网格模式悬停显示编辑按钮）。
  */
 import { useState, useRef, useEffect } from 'react'
-import { MoreVerticalIcon, EditIcon, Trash2Icon, CalendarIcon, ImageIcon } from 'lucide-react'
+import { MoreVerticalIcon, EditIcon, Trash2Icon, CalendarIcon, ImageIcon, PencilIcon } from 'lucide-react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { stat } from '@tauri-apps/plugin-fs'
 import type { Book } from '@/types'
@@ -15,6 +15,7 @@ import { bookApi } from '@/lib/tauri-bridge.ts'
 import { formatWordCount, formatRelativeTime } from '@/lib/utils'
 import { useAppStore } from '@/stores/appStore'
 import { resolveCoverSrc } from './CoverPicker'
+import EditBookDialog from './EditBookDialog'
 
 /** 允许的封面图片扩展名 */
 const ALLOWED_COVER_EXTS = ['jpg', 'jpeg', 'png', 'webp']
@@ -32,6 +33,7 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
   const [menuOpen, setMenuOpen] = useState(false)
   const [coverChanging, setCoverChanging] = useState(false)
   const [coverSrc, setCoverSrc] = useState<string | undefined>(undefined)
+  const [showEditDialog, setShowEditDialog] = useState(false)
   const prevCoverSrcRef = useRef<string | undefined>(undefined)
   const menuRef = useRef<HTMLDivElement>(null)
   const { removeBook, updateBook } = useAppStore()
@@ -152,38 +154,56 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
             className="absolute right-0 top-full mt-1 z-20 bg-popover border rounded-lg shadow-lg py-1 min-w-32"
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left"
-              onClick={() => { onOpen(book); setMenuOpen(false) }}
-            >
-              <EditIcon className="w-3 h-3" /> 打开编辑
-            </button>
-            <button
-              className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left"
-              onClick={handleChangeCover}
-              disabled={coverChanging}
-            >
-              <ImageIcon className="w-3 h-3" /> 修改封面
-            </button>
-            <button
-              className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left text-destructive"
-              onClick={handleDelete}
-            >
-              <Trash2Icon className="w-3 h-3" /> 删除
-            </button>
-          </div>
-        )}
+          <button
+            className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left"
+            onClick={() => { onOpen(book); setMenuOpen(false) }}
+          >
+            <EditIcon className="w-3 h-3" /> 打开编辑
+          </button>
+          <button
+            className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left"
+            onClick={() => { setMenuOpen(false); setShowEditDialog(true) }}
+          >
+            <PencilIcon className="w-3 h-3" /> 编辑信息
+          </button>
+          <button
+            className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left"
+            onClick={handleChangeCover}
+            disabled={coverChanging}
+          >
+            <ImageIcon className="w-3 h-3" /> 修改封面
+          </button>
+          <button
+            className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left text-destructive"
+            onClick={handleDelete}
+          >
+            <Trash2Icon className="w-3 h-3" /> 删除
+          </button>
+        </div>
+      )}
 
-        {/* 遮盖层关闭菜单 */}
-        {menuOpen && (
-          <div
-            className="fixed inset-0 z-10"
-            onClick={() => setMenuOpen(false)}
-          />
-        )}
-      </div>
-    )
-  }
+      {/* 遮盖层关闭菜单 */}
+      {menuOpen && (
+        <div
+          className="fixed inset-0 z-10"
+          onClick={() => setMenuOpen(false)}
+        />
+      )}
+
+      {/* 编辑信息弹窗 */}
+      {showEditDialog && (
+        <EditBookDialog
+          book={book}
+          onClose={() => setShowEditDialog(false)}
+          onSaved={(updated) => {
+            setShowEditDialog(false)
+            onRefresh()
+          }}
+        />
+      )}
+    </div>
+  )
+}
 
   // Grid 卡片
   return (
@@ -245,6 +265,12 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
           </button>
           <button
             className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left"
+            onClick={() => { setMenuOpen(false); setShowEditDialog(true) }}
+          >
+            <PencilIcon className="w-3 h-3" /> 编辑信息
+          </button>
+          <button
+            className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left"
             onClick={handleChangeCover}
             disabled={coverChanging}
           >
@@ -264,6 +290,18 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
         <div
           className="fixed inset-0 z-10"
           onClick={() => setMenuOpen(false)}
+        />
+      )}
+
+      {/* 编辑信息弹窗 */}
+      {showEditDialog && (
+        <EditBookDialog
+          book={book}
+          onClose={() => setShowEditDialog(false)}
+          onSaved={(updated) => {
+            setShowEditDialog(false)
+            onRefresh()
+          }}
         />
       )}
     </div>

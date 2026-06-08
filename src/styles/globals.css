@@ -289,6 +289,25 @@
   opacity: 0.5;
 }
 
+/* ===== 修复：prose 插件对 strong/em 等元素的直接 color 规则会覆盖父 span 的继承颜色 ===== */
+.tiptap-editor [style*="color:"] strong,
+.tiptap-editor [style*="color:"] em,
+.tiptap-editor [style*="color:"] u,
+.tiptap-editor [style*="color:"] s,
+.tiptap-editor [style*="color:"] code,
+.tiptap-editor [style*="color:"] a {
+  color: inherit;
+}
+/* 在暗色模式下也生效 */
+.dark .tiptap-editor [style*="color:"] strong,
+.dark .tiptap-editor [style*="color:"] em,
+.dark .tiptap-editor [style*="color:"] u,
+.dark .tiptap-editor [style*="color:"] s,
+.dark .tiptap-editor [style*="color:"] code,
+.dark .tiptap-editor [style*="color:"] a {
+  color: inherit;
+}
+
 /* 编辑器内的图片 — NodeView 包裹层 */
 .tiptap-editor .image-node-wrapper {
   display: block;
