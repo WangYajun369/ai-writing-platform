@@ -816,6 +816,137 @@ body {
   object-fit: cover;
 }
 
+/* ── Share Section ───────────────────────────── */
+.share-section {
+  margin-top: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.share-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.share-buttons {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 22px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
+  transition: all 0.25s;
+}
+
+.share-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-card-hover);
+  transform: translateY(-1px);
+}
+
+.share-btn.copied {
+  border-color: var(--accent2);
+  color: var(--accent2);
+  background: rgba(78, 205, 196, 0.1);
+}
+
+/* ── WeChat Share Guide Overlay ──────────────── */
+.wx-guide-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.82);
+  z-index: 9999;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+}
+
+.wx-guide-overlay.show {
+  display: flex;
+}
+
+.wx-guide-content {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 36px 28px 24px;
+  text-align: center;
+  max-width: 320px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.wx-guide-arrow {
+  font-size: 40px;
+  margin-bottom: 16px;
+  animation: wxArrowBounce 1.5s ease-in-out infinite;
+}
+
+@keyframes wxArrowBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+.wx-guide-content p {
+  font-size: 15px;
+  color: var(--text);
+  line-height: 2;
+  margin: 0;
+}
+
+.wx-guide-content strong {
+  color: var(--accent);
+}
+
+.wx-guide-content .btn {
+  margin-top: 18px;
+}
+
+/* ── Toast ───────────────────────────────────── */
+.toast {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  background: var(--bg-card);
+  border: 1px solid var(--accent2);
+  color: var(--accent2);
+  padding: 12px 28px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 600;
+  z-index: 10000;
+  opacity: 0;
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
 /* ── Footer ──────────────────────────────────── */
 .footer {
   border-top: 1px solid var(--border);
@@ -836,6 +967,28 @@ body {
 }
 
 .footer a:hover {
+  text-decoration: underline;
+}
+
+.footer-compliance {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.footer-compliance p {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.8;
+  opacity: 0.7;
+}
+
+.footer-compliance a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.footer-compliance a:hover {
   text-decoration: underline;
 }
 
