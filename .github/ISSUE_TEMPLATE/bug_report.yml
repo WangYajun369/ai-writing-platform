@@ -1,0 +1,71 @@
+name: 🐛 Bug 报告
+description: 报告一个 bug，帮助我们改进应用
+title: "[Bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你花时间提交 Bug 报告！请尽可能提供详细信息，以便我们能快速定位和修复问题。
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 请清晰描述你遇到的问题是什么
+      placeholder: "例如：点击导出按钮后，应用无响应并闪退"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 按顺序说明如何复现该问题
+      placeholder: |
+        1. 打开应用
+        2. 点击「...」
+        3. 输入「...」
+        4. 看到错误
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+      description: 你期望发生什么？
+      placeholder: "例如：应该正常导出为 Markdown 文件"
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图或录屏
+      description: 如果有截图或录屏，请拖拽到此处上传
+
+  - type: input
+    id: version
+    attributes:
+      label: 应用版本
+      description: 你正在使用的 MirageInk 版本号
+      placeholder: "例如 0.1.0"
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: 操作系统
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志
+      description: 如果有控制台输出或错误日志，请粘贴在此处
+      render: shell

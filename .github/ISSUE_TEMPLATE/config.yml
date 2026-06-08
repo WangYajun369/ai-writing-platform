@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 📖 查看文档
+    url: https://github.com/WangYajun369/ai-writing-platform/wiki
+    about: 使用问题请先查阅 Wiki 文档，可能已有答案
