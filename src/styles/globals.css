@@ -162,7 +162,7 @@
 /* 编辑器容器：使用 prose 排版、衬线字体，适用于中文长文写作场景 */
 /* 编辑器全局字体（目录、章节、编辑区统一） */
 .editor-font {
-  font-family: var(--font-editor, 'Noto Serif SC', Georgia, serif);
+  font-family: var(--font-editor, 'Microsoft YaHei', 'Noto Sans SC', sans-serif);
 }
 
 .tiptap-editor {

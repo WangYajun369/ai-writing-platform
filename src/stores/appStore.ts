@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
-import type { Book, Chapter, Volume, AiConfig, AiMessage } from '../types'
+import type { Book, Chapter, Volume, AiConfig, AiMessage, AiChatConfig } from '../types'
 
 // ==================== App Store（全局业务状态）====================
 
@@ -20,11 +20,96 @@ function loadPreferences(): Partial<Pick<AppState, 'gridSize' | 'editorWidth'>> 
   return {}
 }
 
-/** 从 localStorage 读取持久化的 AI 配置 */
+/** 检测旧版扁平 AiConfig 格式（无 .chat/.rag 嵌套），转为新格式 */
+function isLegacyAiConfig(raw: Record<string, unknown>): boolean {
+  // chat 或 rag 为假值（undefined/null/非对象）视为旧格式
+  return raw.chat == null || typeof raw.chat !== 'object'
+    || raw.rag == null || typeof raw.rag !== 'object'
+}
+
+/** 将旧版扁平 AiConfig 迁移为 chat + rag 解耦结构 */
+function migrateLegacyAiConfig(raw: Record<string, unknown>): AiConfig {
+  const oldProvider = (raw.provider as string) || 'bigmodel'
+  const oldApiKey = raw.apiKey as string | undefined
+  return {
+    chat: {
+      provider: (oldProvider as AiChatConfig['provider']),
+      endpoint: (raw.endpoint as string) || 'https://open.bigmodel.cn/api/paas/v4',
+      model: (raw.model as string) || 'glm-5.1',
+      temperature: (raw.temperature as number) ?? 0.7,
+      maxTokens: (raw.maxTokens as number) || 131072,
+      // 旧格式的 apiKey 同时赋给两个 provider，用户后续可独立修改
+      bigmodelApiKey: oldApiKey,
+      deepseekApiKey: oldApiKey,
+      thinkingEnabled: false,
+    },
+    rag: {
+      enabled: true,
+      provider: 'bigmodel',
+      endpoint: (raw.endpoint as string) || 'https://open.bigmodel.cn/api/paas/v4',
+      embeddingModel: (raw.embeddingModel as string) || 'embedding-3',
+      bigmodelApiKey: oldApiKey,
+    },
+  }
+}
+
+/** 检测 chat 子对象是否还使用旧版 apiKey 字段（未拆分为 bigmodelApiKey/deepseekApiKey） */
+function isLegacyChatApiKey(chat: Record<string, unknown>): boolean {
+  return chat.apiKey !== undefined && chat.bigmodelApiKey === undefined && chat.deepseekApiKey === undefined
+}
+
+/** 将 chat 中的旧 apiKey 迁移到 bigmodelApiKey + deepseekApiKey */
+function migrateChatApiKey(chat: Record<string, unknown>): Record<string, unknown> {
+  const oldKey = chat.apiKey as string | undefined
+  const { apiKey: _, ...rest } = chat
+  return { ...rest, bigmodelApiKey: oldKey, deepseekApiKey: oldKey }
+}
+
+/** 检测 rag 子对象是否还使用旧版 apiKey 字段或缺少 provider */
+function isLegacyRagConfig(rag: Record<string, unknown>): boolean {
+  return rag.apiKey !== undefined || rag.provider === undefined
+}
+
+/** 将 rag 中的旧 apiKey 迁移到 bigmodelApiKey，补充 provider，并移除不支持的 deepseek 配置 */
+function migrateRagConfig(rag: Record<string, unknown>): Record<string, unknown> {
+  const oldKey = rag.apiKey as string | undefined
+  const { apiKey: _, deepseekApiKey: __, ...rest } = rag
+  // 如果旧的 provider 是 deepseek（不提供 Embeddings API），重置为 bigmodel 默认值
+  const provider = (rag.provider as string) === 'deepseek' ? 'bigmodel' : (rag.provider as string) || 'bigmodel'
+  const endpoint = rag.endpoint as string || 'https://open.bigmodel.cn/api/paas/v4'
+  const embeddingModel = rag.embeddingModel as string || 'embedding-3'
+  return { provider, endpoint, embeddingModel, bigmodelApiKey: oldKey || (rag.bigmodelApiKey as string), ...rest }
+}
+
+/** 从 localStorage 读取持久化的 AI 配置，自动兼容旧格式 */
 function loadAiConfig(): Partial<AiConfig> {
   try {
     const raw = localStorage.getItem(AI_CONFIG_KEY)
-    if (raw) return JSON.parse(raw)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    if (isLegacyAiConfig(parsed)) {
+      const migrated = migrateLegacyAiConfig(parsed)
+      saveAiConfig(migrated)
+      return migrated
+    }
+    // 兼容 chat 子对象中仍使用旧 apiKey 字段的情况
+    const result = parsed as unknown as AiConfig
+    let needsSave = false
+    const chatObj = parsed.chat as Record<string, unknown> | undefined
+    if (chatObj && isLegacyChatApiKey(chatObj)) {
+      const migratedChat = migrateChatApiKey(chatObj) as unknown as AiChatConfig;
+      (result as unknown as Record<string, unknown>).chat = migratedChat
+      needsSave = true
+    }
+    // 兼容 rag 子对象中仍使用旧 apiKey 字段或缺少 provider
+    const ragObj = parsed.rag as Record<string, unknown> | undefined
+    if (ragObj && isLegacyRagConfig(ragObj)) {
+      const migratedRag = migrateRagConfig(ragObj);
+      (result as unknown as Record<string, unknown>).rag = migratedRag
+      needsSave = true
+    }
+    if (needsSave) saveAiConfig(result)
+    return result
   } catch { /* ignore */ }
   return {}
 }
@@ -91,7 +176,7 @@ interface AppState {
   eyeCareMode: 'off' | 'warm' | 'green'
 
   // 全局字体
-  fontFamily: 'serif' | 'simhei' | 'simsun' | 'kaiti' | 'yahei'
+  fontFamily: 'simhei' | 'simsun' | 'kaiti' | 'yahei'
 
   // 全局字体大小（px）
   fontSize: number
@@ -154,18 +239,26 @@ export const useAppStore = create<AppState>()(
     aiConnectionStatus: 'idle',
     aiConnectionDetail: '',
     aiConfig: {
-      provider: 'bigmodel',
-      endpoint: 'https://open.bigmodel.cn/api/paas/v4',
-      model: 'glm-4.6v',
-      embeddingModel: 'embedding-3',
-      temperature: 0.7,
-      maxTokens: 131072,
+      chat: {
+        provider: 'bigmodel',
+        endpoint: 'https://open.bigmodel.cn/api/paas/v4',
+        model: 'glm-5.1',
+        temperature: 0.7,
+        maxTokens: 131072,
+        thinkingEnabled: true,
+      },
+      rag: {
+        enabled: true,
+        provider: 'bigmodel',
+        endpoint: 'https://open.bigmodel.cn/api/paas/v4',
+        embeddingModel: 'embedding-3',
+      },
       ...savedAiConfig,
     },
     aiConversations: savedAiConversations,
     theme: 'system',
     eyeCareMode: 'off',
-    fontFamily: 'serif',
+    fontFamily: 'yahei',
     fontSize: 16,
     gridSize: savedPrefs.gridSize ?? 'medium',
     editorWidth: savedPrefs.editorWidth ?? 'standard',
@@ -198,7 +291,11 @@ export const useAppStore = create<AppState>()(
 
     setAiConfig: (config) =>
       set((s) => {
-        const merged = { ...s.aiConfig, ...config }
+        // 防御：仅合并实际传入的子配置，避免 undefined 覆盖现有值
+        const merged: AiConfig = {
+          chat: config.chat ? { ...s.aiConfig.chat, ...config.chat } : s.aiConfig.chat,
+          rag: config.rag ? { ...s.aiConfig.rag, ...config.rag } : s.aiConfig.rag,
+        }
         saveAiConfig(merged)
         return { aiConfig: merged }
       }),

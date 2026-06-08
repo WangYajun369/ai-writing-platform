@@ -175,6 +175,28 @@ pub async fn test_ai_connection(
 
 // ---- RAG 语义检索与 Embedding ----
 
+/// 测试 RAG Embedding API 是否可用：发送一条简单文本调用 /embeddings 接口验证连通性
+#[tauri::command]
+pub async fn test_rag_connection(
+    endpoint: String,
+    api_key: String,
+    embedding_model: String,
+) -> Result<ConnectionTestResult, String> {
+    match call_embedding_api(&endpoint, &api_key, &embedding_model, &["测试连通性".into()]).await {
+        Ok(results) => {
+            let dim = results.first().map(|v| v.len()).unwrap_or(0);
+            Ok(ConnectionTestResult {
+                ok: true,
+                detail: format!("RAG Embedding 服务已连接，{} 模型返回向量维度: {}", embedding_model, dim),
+            })
+        }
+        Err(e) => Ok(ConnectionTestResult {
+            ok: false,
+            detail: format!("RAG Embedding 连接失败: {}", e),
+        }),
+    }
+}
+
 /// 调用 SSE 兼容的 Embedding API（智谱等）
 async fn call_embedding_api(
     endpoint: &str,
@@ -610,6 +632,8 @@ pub struct StreamChatArgs {
     pub api_key: Option<String>,
     /// 消息列表（system + history + user）
     pub messages: Vec<ChatMessage>,
+    /// DeepSeek 思考模式开关
+    pub thinking_enabled: Option<bool>,
 }
 
 /// Token/字数用量统计
@@ -740,6 +764,11 @@ async fn stream_sse(
 
     if let Some(max_tokens) = args.max_tokens {
         body["max_tokens"] = serde_json::json!(max_tokens);
+    }
+
+    // DeepSeek 思考模式：注入 thinking 参数
+    if args.thinking_enabled.unwrap_or(false) {
+        body["thinking"] = serde_json::json!({"type": "enabled"});
     }
 
     let response = req

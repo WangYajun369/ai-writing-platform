@@ -162,6 +162,8 @@ export interface StreamChatArgs {
   maxTokens?: number
   apiKey?: string
   messages: ChatMessage[]
+  /** DeepSeek 思考模式开关，为 true 时注入 thinking: { type: "enabled" } */
+  thinkingEnabled?: boolean
 }
 
 export interface UsageInfo {
@@ -245,6 +247,11 @@ export const aiApi = {
   /** 测试 AI 服务连接 */
   async testConnection(provider: string, endpoint: string, apiKey?: string): Promise<ConnectionTestResult> {
     return invoke<ConnectionTestResult>('test_ai_connection', { provider, endpoint, apiKey })
+  },
+
+  /** 测试 RAG Embedding 服务连接 */
+  async testRagConnection(endpoint: string, apiKey: string, embeddingModel: string): Promise<ConnectionTestResult> {
+    return invoke<ConnectionTestResult>('test_rag_connection', { endpoint, apiKey, embeddingModel })
   },
 }
 

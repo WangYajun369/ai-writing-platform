@@ -71,6 +71,7 @@ pub fn run() {
             commands::ai::check_embedding_status,
             commands::ai::stream_ai_chat,
             commands::ai::test_ai_connection,
+            commands::ai::test_rag_connection,
             // 导入导出
             commands::io::export_book,
             commands::io::import_txt,

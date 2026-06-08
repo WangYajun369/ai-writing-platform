@@ -83,15 +83,48 @@ export interface WorldCard {
   updatedAt: string
 }
 
-/** AI 配置 */
-export interface AiConfig {
-  provider: 'bigmodel' | 'custom'
+/** AI 对话配置 */
+export interface AiChatConfig {
+  provider: 'bigmodel' | 'deepseek'
   endpoint: string
   model: string
-  embeddingModel: string
   temperature: number
   maxTokens: number
-  apiKey?: string
+  /** 智谱 API Key */
+  bigmodelApiKey?: string
+  /** DeepSeek API Key */
+  deepseekApiKey?: string
+  /** DeepSeek 思考模式开关 */
+  thinkingEnabled: boolean
+}
+
+/** 获取当前选中服务商的 API Key */
+export function getChatApiKey(config: AiChatConfig): string | undefined {
+  return config.provider === 'bigmodel' ? config.bigmodelApiKey : config.deepseekApiKey
+}
+
+/** RAG / Embedding 检索服务商（目前仅支持智谱，DeepSeek 不提供 Embeddings API） */
+export type RagProvider = 'bigmodel'
+
+/** RAG / Embedding 检索配置 */
+export interface RagConfig {
+  enabled: boolean
+  provider: RagProvider
+  endpoint: string
+  embeddingModel: string
+  /** 智谱 API Key */
+  bigmodelApiKey?: string
+}
+
+/** 获取当前 RAG 服务商的 API Key */
+export function getRagApiKey(config: RagConfig): string | undefined {
+  return config.bigmodelApiKey
+}
+
+/** AI 总配置（对话与 RAG 解耦） */
+export interface AiConfig {
+  chat: AiChatConfig
+  rag: RagConfig
 }
 
 /** RAG 检索结果 */

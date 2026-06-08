@@ -17,6 +17,7 @@ import { useAppStore, useCurrentChapter, useCurrentAiMessages } from '@/stores/a
 import { aiApi, type StreamEvent, type UsageInfo, type EmbeddingStatus } from '@/lib/tauri-bridge.ts'
 import { cn } from '@/lib/utils.ts'
 import type { AiMessage } from '@/types'
+import { getChatApiKey, getRagApiKey } from '@/types'
 
 export default function AiSidePanel() {
   const messages = useCurrentAiMessages()
@@ -49,8 +50,8 @@ export default function AiSidePanel() {
   /** 获取服务商显示名称 */
   const providerLabel = {
     bigmodel: '智谱',
-    custom: '自定义',
-  }[aiConfig.provider] ?? aiConfig.provider
+    deepseek: 'DeepSeek',
+  }[aiConfig.chat.provider] ?? aiConfig.chat.provider
 
   /** 根据连接状态返回状态图标和颜色 */
   const statusConfig = {
@@ -120,7 +121,8 @@ export default function AiSidePanel() {
     if (!input.trim() || streaming || !bookId) return
 
     // 必须提供 API Key
-    if (!aiConfig.apiKey) {
+    const chatApiKey = getChatApiKey(aiConfig.chat)
+    if (!chatApiKey) {
       alert('请先在设置中配置 API Key')
       return
     }
@@ -136,16 +138,16 @@ export default function AiSidePanel() {
     setStreaming(true)
 
     try {
-      // RAG 检索上下文
+      // RAG 检索上下文（仅启用时）
       let context = ''
-      if (currentChapter) {
+      if (currentChapter && aiConfig.rag.enabled) {
         const results = await aiApi.ragSearch(
           currentChapter.bookId,
           userInput,
           3,
-          aiConfig.endpoint,
-          aiConfig.apiKey,
-          aiConfig.embeddingModel,
+          aiConfig.rag.endpoint,
+          getRagApiKey(aiConfig.rag) || chatApiKey,
+          aiConfig.rag.embeddingModel,
         ).catch(() => [])
         if (results.length > 0) {
           context = '\n\n相关背景：\n' + results.map((r) => r.snippet).join('\n---\n')
@@ -185,11 +187,12 @@ export default function AiSidePanel() {
       // done 事件中已设置最终内容和用量，此处仅等待流结束，不做重复更新
       await aiApi.streamChat({
         provider: 'sse',
-        endpoint: aiConfig.endpoint,
-        model: aiConfig.model,
-        temperature: aiConfig.temperature,
-        maxTokens: aiConfig.maxTokens,
-        apiKey: aiConfig.apiKey,
+        endpoint: aiConfig.chat.endpoint,
+        model: aiConfig.chat.model,
+        temperature: aiConfig.chat.temperature,
+        maxTokens: aiConfig.chat.maxTokens,
+        apiKey: chatApiKey,
+        thinkingEnabled: aiConfig.chat.thinkingEnabled,
         messages: chatMessages,
       })
     } catch (err) {
@@ -214,8 +217,9 @@ export default function AiSidePanel() {
   /** 触发 Embedding 生成 */
   async function handleGenerateEmbeddings() {
     if (!bookId) return
-    if (!aiConfig.endpoint || !aiConfig.apiKey || !aiConfig.embeddingModel) {
-      alert('请先在设置中配置 AI 服务（Endpoint、API Key、Embedding 模型）')
+    const ragApiKey = getRagApiKey(aiConfig.rag) || getChatApiKey(aiConfig.chat)
+    if (!aiConfig.rag.endpoint || !ragApiKey || !aiConfig.rag.embeddingModel) {
+      alert('请先在设置中配置 RAG 检索（Endpoint、API Key、Embedding 模型）')
       return
     }
     setEmbeddingGenerating(true)
@@ -223,9 +227,9 @@ export default function AiSidePanel() {
     try {
       await aiApi.triggerEmbedding(
         bookId,
-        aiConfig.endpoint,
-        aiConfig.apiKey,
-        aiConfig.embeddingModel,
+        aiConfig.rag.endpoint,
+        ragApiKey,
+        aiConfig.rag.embeddingModel,
       )
       // 刷新索引状态
       await refreshEmbeddingStatus()
@@ -315,9 +319,9 @@ export default function AiSidePanel() {
           </button>
         </div>
         <p className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
-          模型：{aiConfig.model}
-          {/* Embedding 状态 */}
-          {bookId && (
+          模型：{aiConfig.chat.model}
+          {/* Embedding 状态（仅 RAG 启用时显示） */}
+          {bookId && aiConfig.rag.enabled && (
             <span className="inline-flex items-center gap-1">
               <span className="text-border/30">|</span>
               {embeddingGenerating ? (

@@ -16,11 +16,10 @@ const STORAGE_KEY_FONT = 'timewrite-font'
 const STORAGE_KEY_FONT_SIZE = 'timewrite-font-size'
 
 const FONT_FAMILY_MAP: Record<string, string> = {
-  serif: "'Noto Serif SC', Georgia, serif",
+  yahei: "'Microsoft YaHei', 'Noto Sans SC', sans-serif",
   simhei: "SimHei, 'Noto Sans SC', sans-serif",
   simsun: "SimSun, 'Noto Serif SC', serif",
   kaiti: "KaiTi, 'Noto Serif SC', serif",
-  yahei: "'Microsoft YaHei', 'Noto Sans SC', sans-serif",
 }
 
 /**
@@ -65,7 +64,7 @@ function AppInit() {
     }
     const savedFont = localStorage.getItem(STORAGE_KEY_FONT)
     if (savedFont && savedFont in FONT_FAMILY_MAP) {
-      setFontFamily(savedFont as 'serif' | 'simhei' | 'simsun' | 'kaiti' | 'yahei')
+      setFontFamily(savedFont as 'simhei' | 'simsun' | 'kaiti' | 'yahei')
     }
     const savedFontSize = localStorage.getItem(STORAGE_KEY_FONT_SIZE)
     if (savedFontSize) {
@@ -112,7 +111,7 @@ function AppInit() {
 
   // 字体应用
   useEffect(() => {
-    document.documentElement.style.setProperty('--font-editor', FONT_FAMILY_MAP[fontFamily] ?? FONT_FAMILY_MAP.serif)
+    document.documentElement.style.setProperty('--font-editor', FONT_FAMILY_MAP[fontFamily] ?? FONT_FAMILY_MAP.yahei)
     localStorage.setItem(STORAGE_KEY_FONT, fontFamily)
   }, [fontFamily])
 
