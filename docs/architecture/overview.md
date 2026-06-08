@@ -12,7 +12,7 @@
 │       └───────────────┼──────────────────┘               │
 │                       │                                  │
 │              lib/tauri-bridge.ts                         │
-│              (7 个 API 模块，类型安全封装)                  │
+│              (8 个 API 模块，类型安全封装)                  │
 │                       │                                  │
 ├───────────────────────┼──────────────────────────────────┤
 │                  Tauri IPC 边界                           │
@@ -25,7 +25,8 @@
 │              db/mod.rs (r2d2 连接池)                      │
 │                       │                                  │
 │              SQLite (WAL 模式)                            │
-│  books | volumes | chapters | snapshots | world_cards    │
+│  books | volumes | chapters | snapshots |                │
+│  world_cards | embeddings                                │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -56,8 +57,9 @@ Rust 命令 → app.emit('ai-stream-chunk') → 前端 listen() → 更新 UI
 | `chapters` | 章节内容 | book_id (FK), content_html, word_count, deleted_at |
 | `snapshots` | 版本快照 | chapter_id (FK), content_html, type |
 | `world_cards` | 世界观卡片 | book_id (FK), type, title, content_html, vectorized |
+| `embeddings` | 向量索引 | source_type, source_id, embedding (BLOB), model |
 
-- 6 个索引优化查询性能
+- 7 个索引优化查询性能
 - WAL 模式支持并发读写
 - 外键级联删除保障数据完整性
 - 章节软删除（`deleted_at`）
@@ -73,6 +75,7 @@ Rust 命令 → app.emit('ai-stream-chunk') → 前端 listen() → 更新 UI
 | `worldCardApi` | `commands/world_card.rs` | 世界观卡片 |
 | `aiApi` | `commands/ai.rs` | AI 对话 + RAG 检索 |
 | `importExportApi` | `commands/io.rs` | 导入导出 |
+| `windowApi` | `commands/window.rs` | 世界观独立窗口 |
 
 ## Tauri 插件
 

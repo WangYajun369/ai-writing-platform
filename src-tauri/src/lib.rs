@@ -1,6 +1,6 @@
 //! TimeWrite（智写时光）Tauri 应用主逻辑
 //!
-//! 负责：Tauri Builder 配置、插件注册、数据库初始化、31 个 IPC 命令注册。
+//! 负责：Tauri Builder 配置、插件注册、数据库初始化、38 个 IPC 命令注册。
 
 mod commands;
 mod db;

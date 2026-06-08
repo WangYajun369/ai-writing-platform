@@ -53,9 +53,9 @@ TimeWrite（智写时光）为小说作者提供完整的写作工作流。
 - ✅ 编辑器显示宽度（移动端/标准/宽屏）
 
 ## 插件系统
-- ✅ 6 个扩展点（editor/menu/toolbar/settings/ai/search）
+- ✅ 6 个扩展点（`editor-toolbar` / `editor-sidebar` / `library-card` / `export-format` / `ai-prompt` / `command-palette`）
 - ✅ PluginManager 单例驱动
-- ✅ 启用/禁用/卸载生命周期管理
+- ✅ 插件安装/启用/禁用/卸载生命周期管理
 - ✅ 内置字符统计示例插件
 
 ## 深度链接
@@ -76,6 +76,6 @@ TimeWrite（智写时光）为小说作者提供完整的写作工作流。
 |-------|------|------|
 | Phase 1 | ✅ 完成 | 工程骨架、书库管理、TipTap 编辑、SQLite CRUD |
 | Phase 2 | ✅ 完成 | 自动保存、专注模式、导入导出、世界观、AI 助手、版本快照、主题系统、插件框架 |
-| Phase 3 | 🔜 规划 | react-diff-viewer 版本对比、EPUB/PDF 导出 |
+| Phase 3 | 🔜 规划 | react-diff-viewer 版本对比（依赖已就绪）、EPUB/PDF 导出 |
 | Phase 4 | 🔜 规划 | sqlite-vec 向量语义检索 + Ollama RAG |
 | Phase 5 | 🔜 规划 | 跨平台打包发布 |

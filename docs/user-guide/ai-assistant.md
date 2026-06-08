@@ -7,6 +7,8 @@ TimeWrite 内置 AI 写作助手，支持流式对话和 RAG 上下文检索。
 | 服务商 | 模型 | 说明 |
 |--------|------|------|
 | 智谱 BigModel | `glm-4.6v` | 默认服务商，国产大模型 |
+| OpenAI | `gpt-4o` 等 | 需要 API Key |
+| Ollama | `qwen2.5:7b` 等 | 本地部署，无需 API Key |
 | 自定义 OpenAI 兼容 | 任意 | 支持任何 OpenAI 兼容 API |
 
 ## 配置 AI 服务

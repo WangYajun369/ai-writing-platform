@@ -96,8 +96,8 @@ export default defineConfig(async () => ({
           if (id.includes('zustand') || id.includes('jotai')) return 'state'
           // React Router 路由库
           if (id.includes('react-router')) return 'router'
-          // Markdown 渲染与代码高亮
-          if (id.includes('markdown-it') || id.includes('highlight.js')) return 'markdown'
+          // Markdown 渲染（react-markdown + remark-gfm）
+          if (id.includes('react-markdown') || id.includes('remark-gfm')) return 'markdown'
           // 工具函数库（Lodash / date-fns / uuid）
           if (id.includes('lodash-es') || id.includes('date-fns') || id.includes('uuid')) return 'utils'
           // 虚拟滚动库（TanStack Virtual）

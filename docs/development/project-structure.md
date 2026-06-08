@@ -31,8 +31,8 @@ TimeWrite/
 │   │   ├── worldbuilding/      #     世界观：WorldbuildingPanel / WorldCardEditor
 │   │   ├── ai/                 #     AI 助手：AiSidePanel
 │   │   ├── layout/             #     布局：EditorLayout / StatusBar
-│   │   ├── diff/               #     预留：版本对比视图
-│   │   └── ui/                 #     预留：通用 UI 组件
+│   │   ├── diff/               #     版本对比视图（react-diff-viewer）
+│   │   └── ui/                 #     通用 UI 组件
 │   ├── stores/                 #   状态管理
 │   │   ├── appStore.ts         #     Zustand 业务状态
 │   │   ├── pluginStore.ts      #     Zustand 插件状态
@@ -55,7 +55,7 @@ TimeWrite/
     ├── src/
     │   ├── main.rs             #     入口
     │   ├── lib.rs              #     主逻辑（插件初始化/数据库/IPC 注册）
-    │   ├── db/mod.rs           #     数据库层（5 张表/6 个索引）
+    │   ├── db/mod.rs           #     数据库层（6 张表/7 个索引）
     │   ├── models/mod.rs       #     Serde 数据模型
     │   └── commands/           #     IPC 命令（8 个模块）
     │       ├── book.rs         #       书籍管理
@@ -76,12 +76,12 @@ TimeWrite/
 前端 (React/TypeScript)
     │ invoke() IPC 调用
     ▼
-tauri-bridge.ts (类型安全封装，7 个 API 模块)
+tauri-bridge.ts (类型安全封装，8 个 API 模块)
     │
 Tauri IPC 边界
     │
 Rust 命令处理器 (commands/)
     │ r2d2 连接池
     ▼
-SQLite (WAL 模式，5 张表 + 6 个索引)
+SQLite (WAL 模式，6 张表 + 7 个索引)
 ```
