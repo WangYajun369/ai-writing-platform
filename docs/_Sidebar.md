@@ -16,6 +16,7 @@
   - [技术栈](development/tech-stack)
   - [状态管理](development/state-management)
   - [插件系统](development/plugin-system)
+  - [GitHub 集成](development/github-integration)
   - [贡献指南](development/contributing)
 - 🏗️ 架构说明
   - [架构总览](architecture/overview)
