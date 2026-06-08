@@ -1,0 +1,24 @@
+- [🏠 首页](Home)
+- 📖 用户指南
+  - [快速开始](user-guide/quick-start)
+  - [书库管理](user-guide/library-management)
+  - [章节编辑](user-guide/chapter-editing)
+  - [专注模式](user-guide/focus-mode)
+  - [世界观资料库](user-guide/worldbuilding)
+  - [AI 助手](user-guide/ai-assistant)
+  - [版本管理](user-guide/version-management)
+  - [导入导出](user-guide/import-export)
+  - [个性化设置](user-guide/personalization)
+- ✨ 功能特性
+  - [功能清单](features/feature-list)
+- 🔧 开发文档
+  - [项目结构](development/project-structure)
+  - [技术栈](development/tech-stack)
+  - [状态管理](development/state-management)
+  - [插件系统](development/plugin-system)
+  - [贡献指南](development/contributing)
+- 🏗️ 架构说明
+  - [架构总览](architecture/overview)
+  - [AI 模块架构](architecture/AI-architecture)
+- [❓ 常见问题](FAQ)
+- [📋 更新日志](CHANGELOG)

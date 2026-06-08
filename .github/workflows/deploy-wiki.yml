@@ -1,0 +1,82 @@
+name: Deploy Docs to GitHub Wiki
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/deploy-wiki.yml'
+  # 允许手动触发
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy-wiki:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Clone Wiki repository
+        env:
+          WIKI_DEPLOY_TOKEN: ${{ secrets.WIKI_DEPLOY_TOKEN }}
+        run: |
+          REPO_OWNER=$(echo "${{ github.repository }}" | cut -d'/' -f1)
+          REPO_NAME=$(echo "${{ github.repository }}" | cut -d'/' -f2)
+
+          if [ -n "$WIKI_DEPLOY_TOKEN" ]; then
+            WIKI_URL="https://${WIKI_DEPLOY_TOKEN}@github.com/${REPO_OWNER}/${REPO_NAME}.wiki.git"
+          else
+            echo "::error::WIKI_DEPLOY_TOKEN secret is not set. Please add a Personal Access Token with repo scope."
+            exit 1
+          fi
+
+          git clone "$WIKI_URL" wiki-repo
+          echo "✅ Wiki repository cloned"
+
+      - name: Sync docs to Wiki
+        run: |
+          cd wiki-repo
+
+          # 保留 .git 目录，清空其他内容
+          find . -mindepth 1 -not -name '.git' -not -path './.git/*' -delete
+
+          # 确保子目录存在
+          mkdir -p user-guide features development architecture
+
+          # 复制所有 docs 内容到 wiki 根目录
+          cp -r ../docs/* ./
+
+          # 确保 Home.md 存在（Wiki 首页）
+          if [ ! -f "Home.md" ]; then
+            echo "# TimeWrite Wiki" > Home.md
+          fi
+
+          echo "📋 Files to be published:"
+          find . -name "*.md" -not -path './.git/*' | sort
+          echo "---"
+          echo "📊 Total: $(find . -name '*.md' -not -path './.git/*' | wc -l) markdown files"
+
+      - name: Commit and push to Wiki
+        run: |
+          cd wiki-repo
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No changes to Wiki, skipping push."
+          else
+            COMMIT_MSG="docs: sync wiki from main branch (${{ github.sha }})
+            Source: ${{ github.repository }}@${{ github.ref_name }}
+            Triggered by: ${{ github.event.head_commit.message }}"
+
+            git commit -m "$COMMIT_MSG"
+            git push
+            echo "✅ Wiki published successfully!"
+            echo "🔗 View at: https://github.com/${{ github.repository }}/wiki"
+          fi

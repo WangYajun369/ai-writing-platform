@@ -152,7 +152,7 @@ TimeWrite/
 
 ## 更新日志
 
-详细版本更新记录请参见 [CHANGELOG.md](./CHANGELOG.md)。
+详细版本更新记录请参见 [docs/CHANGELOG.md](./docs/CHANGELOG.md)。
 
 ## 应用信息
 
