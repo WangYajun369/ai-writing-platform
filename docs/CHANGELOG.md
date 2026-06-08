@@ -1,5 +1,27 @@
 # 更新日志
 
+## v0.4.0 (2026-06-08)
+
+### 新增
+- DeepSeek 对话支持：新增 DeepSeek 服务商选项，支持思考模式（thinking），对话 API Key 按服务商独立管理
+- AI 配置解耦：对话（AiChatConfig）与 RAG/Embedding（RagConfig）配置完全分离，各自独立管理 API Key 和模型
+- 编辑器字体颜色选择：工具栏新增字体颜色按钮，支持预设色板和自定义颜色
+- 作品信息编辑：新增 EditBookDialog 组件，支持编辑书名、封面、简介等作品元信息
+- 产品宣传页：新增 product/ 目录宣传页面，含微信分享合规信息，支持 GitHub Pages 自动部署
+- README 重构为 Wiki 导航，新增赞助与联系方式
+
+### 修复
+- 修复外观设置持久化缺失：gridSize/editorWidth 分别独立保存，避免覆盖丢失
+- 修复 DeepSeek API 路径拼接：自动补全 /chat/completions 后缀
+- 修复 GitHub Wiki 子目录展平问题，增强部署流程稳健性
+
+### 优化
+- SettingsPage 重构：新增 RAG 独立配置区，支持连通性测试（test_rag_connection 命令）
+- AI 架构重构：新增 RagConfig/AiChatConfig 分离类型，getChatApiKey/getRagApiKey 工具函数
+- 文档结构重组为 GitHub Wiki，配置 CI 自动部署
+- 添加 GitHub Issue 模板（Bug 报告 & 功能请求）及集成总览文档
+- Vite 构建优化：dependabot 依赖分组，chunk 名称更新（react-markdown/remark-gfm）
+
 ## v0.3.0 (2026-06-08)
 
 ### 新增
