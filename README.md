@@ -4,6 +4,8 @@
 
 面向网络小说作者和文学创作者，提供从书库管理、章节编辑到 AI 辅助创作的完整写作工作流。
 
+🌐 **项目详情**：[https://wangyajun369.github.io/ai-writing-platform/](https://wangyajun369.github.io/ai-writing-platform/)
+
 ## 技术栈
 
 | 层级 | 技术 |
