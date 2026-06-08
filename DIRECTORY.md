@@ -34,6 +34,7 @@ TimeWrite/
 ├── tailwind.config.ts          # TailwindCSS 配置（暗黑主题、HSL 色彩系统、自定义字体）
 ├── postcss.config.js           # PostCSS 配置（tailwindcss + autoprefixer）
 ├── .gitignore                  # Git 忽略配置
+├── LICENSE                     # MIT License，版权所有 © 2026 WangYaJun
 │
 ├── scripts/                    # 脚本工具
 │   └── check.mjs               #   完整性自动检测脚本

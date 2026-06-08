@@ -33,7 +33,7 @@ FILES = {
         "type": "json",
         "key": "version",
     },
-    "README.md": {
+    "README.md（应用信息表格版本）": {
         "path": PROJECT_ROOT / "README.md",
         "type": "regex",
         "pattern": r"\| 版本 \| (\d+\.\d+\.\d+) \|",
