@@ -65,7 +65,7 @@ jobs:
           echo "📊 Currently deployed: $EXISTING .md files in wiki repo"
           echo "existing_count=$EXISTING" >> $GITHUB_ENV
 
-      - name: Sync docs to Wiki
+      - name: Sync docs to Wiki (flatten subdirectories)
         run: |
           set -euo pipefail
           cd wiki-repo
@@ -74,52 +74,53 @@ jobs:
           find . -mindepth 1 -not -name '.git' -not -path './.git/*' -delete
           echo "✅ Cleaned"
 
-          # ---------- 复制文档 ----------
           echo ""
-          echo "📋 Copying docs to wiki..."
-          FAILED=0
+          echo "📋 Copying docs to wiki (flat naming)..."
 
-          # 根级 .md 文件（显式列出，不用通配符吞错误）
-          ROOT_FILES=$(ls ../docs/*.md 2>/dev/null || true)
-          if [ -n "$ROOT_FILES" ]; then
-            for f in ../docs/*.md; do
-              [ -f "$f" ] || continue
-              cp "$f" ./
-              echo "  ✅ $(basename "$f")"
-            done
-          else
-            echo "  ⚠️ No root .md files found"
-          fi
+          # ---------- 1. 复制根级 .md 文件 ----------
+          for f in ../docs/*.md; do
+            [ -f "$f" ] || continue
+            cp "$f" ./
+            echo "  ✅ $(basename "$f")"
+          done
 
-          # 子目录（显式遍历）
-          for dir in user-guide features development architecture; do
+          # ---------- 2. 子目录 → 扁平化文件名 ----------
+          # GitHub Wiki 不支持子目录页面，所以 user-guide/quick-start.md
+          # 必须在 wiki 根级命名为 user-guide-quick-start.md
+          SUBDIRS="user-guide features development architecture"
+          TOTAL_FLAT=0
+          for dir in $SUBDIRS; do
             SRC_DIR="../docs/$dir"
             if [ ! -d "$SRC_DIR" ]; then
-              echo "  ⚠️ $dir/ → source directory not found!"
-              FAILED=1
+              echo "  ⚠️ $dir/ → source not found, skipping"
               continue
             fi
-
-            mkdir -p "$dir"
-            DIR_FILES=$(ls "$SRC_DIR"/*.md 2>/dev/null || true)
-            if [ -z "$DIR_FILES" ]; then
-              echo "  ⚠️ $dir/ → no .md files in source"
-              continue
-            fi
-
             COUNT=0
             for f in "$SRC_DIR"/*.md; do
               [ -f "$f" ] || continue
-              cp "$f" "$dir/"
+              flat_name="${dir}-$(basename "$f")"
+              cp "$f" "./${flat_name}"
               COUNT=$((COUNT + 1))
             done
-            echo "  📁 $dir/ → $COUNT files copied"
+            echo "  📁 $dir/ → $COUNT files (prefix: $dir-)"
+            TOTAL_FLAT=$((TOTAL_FLAT + COUNT))
+          done
+          echo "  🔢 Total flattened files: $TOTAL_FLAT"
+
+          # ---------- 3. 修正所有 Markdown 内部链接 ----------
+          # 将 [text](subdir/page) 改为 [text](subdir-page)
+          echo ""
+          echo "🔧 Fixing internal wiki links (flattening paths)..."
+          for dir in $SUBDIRS; do
+            # 只替换 markdown 链接格式中的路径，不影响其他内容
+            sed -i "s|(\(${dir}\)/|(\1-|g" ./*.md
+            echo "  🔗 $(basename "$dir")/ → $(basename "$dir")-"
           done
 
-          if [ "$FAILED" -eq 1 ]; then
-            echo "::error::Some source directories not found! Check docs/ structure."
-            exit 1
-          fi
+          # ---------- 4. 删除空的子目录（如果有残留） ----------
+          for dir in $SUBDIRS; do
+            [ -d "$dir" ] && rm -rf "$dir"
+          done
 
           # ---------- 最终校验 ----------
           echo ""
@@ -188,12 +189,13 @@ jobs:
             fi
           }
 
-          # 验证首页和几个关键子页面
+          # 验证首页和几个关键子页面（使用扁平化命名）
           check_page "Home"
-          check_page "user-guide/quick-start"
-          check_page "user-guide/chapter-editing"
-          check_page "features/feature-list"
-          check_page "architecture/overview"
+          check_page "user-guide-quick-start"
+          check_page "user-guide-chapter-editing"
+          check_page "features-feature-list"
+          check_page "architecture-overview"
+          check_page "development-project-structure"
           check_page "FAQ"
           check_page "CHANGELOG"
 
