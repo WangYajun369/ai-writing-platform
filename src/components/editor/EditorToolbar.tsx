@@ -5,11 +5,13 @@
  * 版本历史/世界观/AI 面板开关等功能按钮。
  * 世界观资料库打开为独立悬浮窗口。
  */
-import { useAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 import { useNavigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { open } from '@tauri-apps/plugin-dialog'
+import { readFile } from '@tauri-apps/plugin-fs'
 import {
   ArrowLeftIcon,
   SidebarIcon,
@@ -21,12 +23,21 @@ import {
   TypeIcon,
   MinusIcon,
   PlusIcon,
+  ImageIcon,
+  ListIcon,
+  ListOrderedIcon,
+  ListTodoIcon,
+  Heading1Icon,
+  Heading2Icon,
+  Heading3Icon,
+  Code2Icon,
 } from 'lucide-react'
 import {
     sidebarOpenAtom,
     zenModeAtom,
     aiPanelOpenAtom,
     historyPanelOpenAtom, isSavingAtom, lastSavedAtom,
+    editorInstanceAtom,
 } from '@/stores/uiAtoms.ts'
 import { useCurrentBook, useAppStore } from '@/stores/appStore.ts'
 import { cn } from '@/lib/utils.ts'
@@ -40,6 +51,58 @@ export default function EditorToolbar() {
   const [worldWindowOpen, setWorldWindowOpen] = useState(false)
   const currentBook = useCurrentBook()
   const { fontSize, setFontSize } = useAppStore()
+  const editor = useAtomValue(editorInstanceAtom)
+
+  /** 从文件扩展名推断 MIME 类型 */
+  const guessMimeType = useCallback((path: string): string => {
+    const ext = path.split('.').pop()?.toLowerCase() ?? ''
+    const mimeMap: Record<string, string> = {
+      png: 'image/png',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      gif: 'image/gif',
+      webp: 'image/webp',
+      svg: 'image/svg+xml',
+      bmp: 'image/bmp',
+    }
+    return mimeMap[ext] ?? 'image/png'
+  }, [])
+
+  /** 将 Uint8Array 转为 base64 字符串 */
+  const uint8ToBase64 = useCallback((bytes: Uint8Array): string => {
+    let binary = ''
+    const len = bytes.length
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]!)
+    }
+    return btoa(binary)
+  }, [])
+
+  /** 插入图片 */
+  const handleInsertImage = useCallback(async () => {
+    if (!editor) return
+    try {
+      const selected = await open({
+        title: '选择图片',
+        multiple: false,
+        filters: [{
+          name: '图片文件',
+          extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'],
+        }],
+      })
+      if (!selected) return // 用户取消
+
+      const filePath = selected as string
+      const fileBytes = await readFile(filePath)
+      const base64 = uint8ToBase64(fileBytes)
+      const mime = guessMimeType(filePath)
+      const dataUrl = `data:${mime};base64,${base64}`
+
+      editor.chain().focus().setImage({ src: dataUrl }).run()
+    } catch (err) {
+      console.error('插入图片失败', err)
+    }
+  }, [editor, guessMimeType, uint8ToBase64])
 
   async function handleToggleWorldWindow() {
     if (worldWindowOpen) {
@@ -118,6 +181,68 @@ export default function EditorToolbar() {
           <PlusIcon className="w-3.5 h-3.5" />
         </button>
       </div>
+
+      <div className="w-px h-5 bg-border mx-1" />
+
+      {/* 插入图片 */}
+      <ToolbarBtn
+        active={false}
+        onClick={handleInsertImage}
+        title="插入图片"
+        icon={<ImageIcon className="w-4 h-4" />}
+      />
+
+      {/* 代码块 */}
+      <ToolbarBtn
+        active={editor?.isActive('codeBlock') ?? false}
+        onClick={() => editor?.chain().focus().toggleCodeBlock().run()}
+        title="代码块"
+        icon={<Code2Icon className="w-4 h-4" />}
+      />
+
+      <div className="w-px h-5 bg-border mx-1" />
+
+      {/* 标题 */}
+      <ToolbarBtn
+        active={editor?.isActive('heading', { level: 1 }) ?? false}
+        onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()}
+        title="一级标题"
+        icon={<Heading1Icon className="w-4 h-4" />}
+      />
+      <ToolbarBtn
+        active={editor?.isActive('heading', { level: 2 }) ?? false}
+        onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}
+        title="二级标题"
+        icon={<Heading2Icon className="w-4 h-4" />}
+      />
+      <ToolbarBtn
+        active={editor?.isActive('heading', { level: 3 }) ?? false}
+        onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()}
+        title="三级标题"
+        icon={<Heading3Icon className="w-4 h-4" />}
+      />
+
+      <div className="w-px h-5 bg-border mx-1" />
+
+      {/* 列表 */}
+      <ToolbarBtn
+        active={editor?.isActive('bulletList') ?? false}
+        onClick={() => editor?.chain().focus().toggleBulletList().run()}
+        title="无序列表"
+        icon={<ListIcon className="w-4 h-4" />}
+      />
+      <ToolbarBtn
+        active={editor?.isActive('orderedList') ?? false}
+        onClick={() => editor?.chain().focus().toggleOrderedList().run()}
+        title="有序列表"
+        icon={<ListOrderedIcon className="w-4 h-4" />}
+      />
+      <ToolbarBtn
+        active={editor?.isActive('taskList') ?? false}
+        onClick={() => editor?.chain().focus().toggleTaskList().run()}
+        title="待办事项"
+        icon={<ListTodoIcon className="w-4 h-4" />}
+      />
 
       <div className="w-px h-5 bg-border mx-1" />
 

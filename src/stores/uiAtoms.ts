@@ -1,8 +1,12 @@
 import { atom } from 'jotai'
+import type { Editor } from '@tiptap/react'
 import type { DiffViewMode } from '../types'
 
 /** 编辑器是否聚焦 */
 export const editorFocusAtom = atom<boolean>(false)
+
+/** TipTap 编辑器实例（供工具栏等外部组件使用） */
+export const editorInstanceAtom = atom<Editor | null>(null)
 
 /** Diff 对比视图模式 */
 export const diffViewModeAtom = atom<DiffViewMode>('side-by-side')

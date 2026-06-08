@@ -10,10 +10,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import { CodeBlock } from '@tiptap/extension-code-block'
 import Underline from '@tiptap/extension-underline'
 import TextStyle from '@tiptap/extension-text-style'
 import Color from '@tiptap/extension-color'
-import Image from '@tiptap/extension-image'
+import TaskList from '@tiptap/extension-task-list'
+import TaskItem from '@tiptap/extension-task-item'
+import { ResizableImage } from './ResizableImageExtension'
 import Table from '@tiptap/extension-table'
 import TableRow from '@tiptap/extension-table-row'
 import TableHeader from '@tiptap/extension-table-header'
@@ -22,12 +25,13 @@ import CharacterCount from '@tiptap/extension-character-count'
 import { useAtom } from 'jotai'
 import {
   editorFocusAtom,
+  editorInstanceAtom,
   isSavingAtom,
   lastSavedAtom,
   wordCountAtom,
   contentRefreshAtom,
 } from '@/stores/uiAtoms.ts'
-import { useAppStore, useCurrentChapter } from '@/stores/appStore.ts'
+import { useAppStore,  useCurrentChapter } from '@/stores/appStore.ts'
 import { chapterApi } from '@/lib/tauri-bridge.ts'
 import { countWordsFromHtml, calcBookWordCount } from '@/lib/utils.ts'
 
@@ -44,6 +48,7 @@ export default function RichTextEditor() {
   const currentChapter = useCurrentChapter()
   const { updateChapter, updateBook, chapters, editorWidth } = useAppStore()
   const [, setEditorFocus] = useAtom(editorFocusAtom)
+  const [, setEditorInstance] = useAtom(editorInstanceAtom)
   const [, setIsSaving] = useAtom(isSavingAtom)
   const [, setLastSaved] = useAtom(lastSavedAtom)
   const [, setWordCount] = useAtom(wordCountAtom)
@@ -97,12 +102,14 @@ export default function RichTextEditor() {
     extensions: [
       StarterKit.configure({
         heading: { levels: [1, 2, 3] },
-        codeBlock: false,
       }),
+      CodeBlock,
       Underline,
       TextStyle,
       Color,
-      Image.configure({ inline: false, allowBase64: true }),
+      ResizableImage.configure({ inline: false, allowBase64: true }),
+      TaskList,
+      TaskItem,
       Table.configure({ resizable: true }),
       TableRow,
       TableHeader,
@@ -127,6 +134,11 @@ export default function RichTextEditor() {
     onFocus: () => setEditorFocus(true),
     onBlur: () => setEditorFocus(false),
   })
+  // 同步 editor 实例到 atom，供工具栏等外部组件使用
+  useEffect(() => {
+    setEditorInstance(editor)
+    return () => setEditorInstance(null)
+  }, [editor, setEditorInstance])
   // 当切换章节时加载并设置内容
   useEffect(() => {
     if (!editor || !currentChapter) return
