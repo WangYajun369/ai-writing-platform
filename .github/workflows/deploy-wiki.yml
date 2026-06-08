@@ -18,16 +18,24 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Verify docs directory
+      - name: Verify source docs directory
         run: |
-          echo "📂 Checking docs/ directory..."
+          echo "📂 Scanning docs/ source directory..."
+          echo ""
           echo "=== Root-level .md files ==="
           find docs -maxdepth 1 -name "*.md" | sort
           echo ""
           echo "=== All .md files (recursive) ==="
           find docs -name "*.md" | sort
           echo ""
-          echo "📊 Total markdown files: $(find docs -name '*.md' | wc -l)"
+          SOURCE_COUNT=$(find docs -name '*.md' | wc -l)
+          echo "📊 Total: $SOURCE_COUNT markdown files in source"
+          echo "source_count=$SOURCE_COUNT" >> $GITHUB_ENV
+
+          if [ "$SOURCE_COUNT" -lt 10 ]; then
+            echo "::error::Source docs/ has only $SOURCE_COUNT .md files, expected 22+"
+            exit 1
+          fi
 
       - name: Clone Wiki repository
         env:
@@ -37,91 +45,162 @@ jobs:
           REPO_NAME=$(echo "${{ github.repository }}" | cut -d'/' -f2)
 
           if [ -z "$WIKI_DEPLOY_TOKEN" ]; then
-            echo "::error::WIKI_DEPLOY_TOKEN secret is not set. Please add a Personal Access Token (classic) with 'repo' scope."
+            echo "::error::WIKI_DEPLOY_TOKEN secret is not set."
             echo "::notice::Go to Settings > Secrets and variables > Actions > New repository secret"
-            echo "::notice::Name: WIKI_DEPLOY_TOKEN, Value: ghp_xxx (classic PAT with repo scope)"
+            echo "::notice::Create a Personal Access Token (classic) with 'repo' scope"
             exit 1
           fi
 
           WIKI_URL="https://${WIKI_DEPLOY_TOKEN}@github.com/${REPO_OWNER}/${REPO_NAME}.wiki.git"
-          echo "Cloning wiki from: ${REPO_OWNER}/${REPO_NAME}.wiki.git"
+          echo "Cloning wiki repo..."
           git clone "$WIKI_URL" wiki-repo
-          echo "✅ Wiki repository cloned"
+          echo "✅ Wiki cloned"
+
+          echo ""
+          echo "=== Current Wiki state (what's already deployed) ==="
+          cd wiki-repo
+          git ls-files | sort
+          EXISTING=$(git ls-files '*.md' | wc -l)
+          echo "---"
+          echo "📊 Currently deployed: $EXISTING .md files in wiki repo"
+          echo "existing_count=$EXISTING" >> $GITHUB_ENV
 
       - name: Sync docs to Wiki
         run: |
-          set -e  # 任何命令失败立即退出
+          set -euo pipefail
           cd wiki-repo
 
-          echo "=== Before cleanup ==="
-          find . -mindepth 1 -not -name '.git' -not -path './.git/*' | sort || true
-
-          # 保留 .git 目录，清空其他内容
+          echo "=== Cleaning wiki repo (preserving .git) ==="
           find . -mindepth 1 -not -name '.git' -not -path './.git/*' -delete
-          echo "✅ Wiki repo cleaned"
+          echo "✅ Cleaned"
 
-          # 使用 rsync 风格的显式复制，更可靠
-          echo "📋 Copying docs/ to wiki-repo..."
-          
-          # 复制根级 .md 文件
-          cp ../docs/*.md ./ 2>/dev/null || echo "⚠️ No root .md files to copy"
-          
-          # 复制各子目录（逐一复制，便于排查问题）
+          # ---------- 复制文档 ----------
+          echo ""
+          echo "📋 Copying docs to wiki..."
+          FAILED=0
+
+          # 根级 .md 文件（显式列出，不用通配符吞错误）
+          ROOT_FILES=$(ls ../docs/*.md 2>/dev/null || true)
+          if [ -n "$ROOT_FILES" ]; then
+            for f in ../docs/*.md; do
+              [ -f "$f" ] || continue
+              cp "$f" ./
+              echo "  ✅ $(basename "$f")"
+            done
+          else
+            echo "  ⚠️ No root .md files found"
+          fi
+
+          # 子目录（显式遍历）
           for dir in user-guide features development architecture; do
-            if [ -d "../docs/$dir" ]; then
-              mkdir -p "$dir"
-              cp ../docs/$dir/*.md "$dir/" 2>/dev/null || echo "⚠️ No .md files in $dir/"
-              echo "  📁 $dir/ → $(ls "$dir"/*.md 2>/dev/null | wc -l) files"
-            else
-              echo "  ⚠️ ../docs/$dir not found in source"
+            SRC_DIR="../docs/$dir"
+            if [ ! -d "$SRC_DIR" ]; then
+              echo "  ⚠️ $dir/ → source directory not found!"
+              FAILED=1
+              continue
             fi
+
+            mkdir -p "$dir"
+            DIR_FILES=$(ls "$SRC_DIR"/*.md 2>/dev/null || true)
+            if [ -z "$DIR_FILES" ]; then
+              echo "  ⚠️ $dir/ → no .md files in source"
+              continue
+            fi
+
+            COUNT=0
+            for f in "$SRC_DIR"/*.md; do
+              [ -f "$f" ] || continue
+              cp "$f" "$dir/"
+              COUNT=$((COUNT + 1))
+            done
+            echo "  📁 $dir/ → $COUNT files copied"
           done
 
-          # 确保 Home.md 存在（Wiki 首页）
-          if [ ! -f "Home.md" ]; then
-            echo "# TimeWrite Wiki" > Home.md
-            echo "⚠️ Home.md was missing, created placeholder"
+          if [ "$FAILED" -eq 1 ]; then
+            echo "::error::Some source directories not found! Check docs/ structure."
+            exit 1
           fi
 
-          # 确保 _Sidebar.md 存在
-          if [ ! -f "_Sidebar.md" ]; then
-            echo "⚠️ _Sidebar.md not found, sidebar won't render"
-          fi
-
+          # ---------- 最终校验 ----------
           echo ""
-          echo "=== Files to be published ==="
+          echo "=== Files staged for deployment ==="
           find . -name "*.md" -not -path './.git/*' | sort
+          FINAL_COUNT=$(find . -name '*.md' -not -path './.git/*' | wc -l)
           echo "---"
-          TOTAL=$(find . -name '*.md' -not -path './.git/*' | wc -l)
-          echo "📊 Total: $TOTAL markdown files"
-          
-          if [ "$TOTAL" -lt 5 ]; then
-            echo "::warning::Only $TOTAL .md files found, expected 22+. Possible copy failure!"
+          echo "📊 Final: $FINAL_COUNT .md files (source had ${{ env.source_count }})"
+          echo "final_count=$FINAL_COUNT" >> $GITHUB_ENV
+
+          if [ "$FINAL_COUNT" -lt 10 ]; then
+            echo "::error::Only $FINAL_COUNT files after copy, expected 22+!"
+            exit 1
           fi
 
       - name: Commit and push to Wiki
         run: |
-          set -e
+          set -euo pipefail
           cd wiki-repo
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          # 总是添加所有文件
           git add -A
 
-          echo "=== Changes to commit ==="
-          git diff --cached --stat || true
-
+          echo ""
+          echo "=== Changed files ==="
           if git diff --cached --quiet; then
-            echo "ℹ️ No changes to Wiki, skipping push."
+            echo "ℹ️ Working tree matches HEAD — force-pushing anyway to ensure consistency"
+            git commit --allow-empty -m "docs: force sync wiki from main (${{ github.sha }})"
           else
-            COMMIT_MSG="docs: sync wiki from main branch (${{ github.sha }})
+            git diff --cached --stat
+            COMMIT_MSG="docs: sync wiki from main (${{ github.sha }})
 
           Source: ${{ github.repository }}@${{ github.ref_name }}
           Triggered by: ${{ github.event.head_commit.message }}"
-
             git commit -m "$COMMIT_MSG"
-            git push
-            echo "✅ Wiki published successfully!"
-            echo "🔗 View at: https://github.com/${{ github.repository }}/wiki"
+          fi
+
+          # 强制推送确保 wiki 与 docs 一致
+          git push origin HEAD:master
+          echo "✅ Wiki pushed successfully!"
+          echo "🔗 View at: https://github.com/${{ github.repository }}/wiki"
+
+      - name: Verify deployed pages
+        run: |
+          echo "⏳ Waiting 10s for GitHub to process the wiki push..."
+          sleep 10
+
+          WIKI_BASE="https://github.com/${{ github.repository }}/wiki"
+          FAILED_PAGES=0
+
+          echo ""
+          echo "🔍 Verifying wiki pages..."
+
+          check_page() {
+            local page="$1"
+            local url="${WIKI_BASE}/${page}"
+            local status=$(curl -s -o /dev/null -w "%{http_code}" -L "$url" || echo "000")
+            if [ "$status" = "200" ]; then
+              echo "  ✅ $page"
+            else
+              echo "  ❌ $page → HTTP $status"
+              FAILED_PAGES=$((FAILED_PAGES + 1))
+            fi
+          }
+
+          # 验证首页和几个关键子页面
+          check_page "Home"
+          check_page "user-guide/quick-start"
+          check_page "user-guide/chapter-editing"
+          check_page "features/feature-list"
+          check_page "architecture/overview"
+          check_page "FAQ"
+          check_page "CHANGELOG"
+
+          if [ "$FAILED_PAGES" -gt 0 ]; then
+            echo ""
+            echo "::warning::$FAILED_PAGES wiki pages returned non-200. Check if GitHub is still processing (may need 1-2 min)."
+          else
+            echo ""
+            echo "🎉 All wiki pages are accessible!"
           fi
