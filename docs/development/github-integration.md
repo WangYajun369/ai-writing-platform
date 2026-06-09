@@ -1,6 +1,6 @@
 # GitHub 集成总览
 
-> 本文档汇总了 MirageInk 项目当前使用的全部 GitHub 功能及配置说明。
+> 本文档汇总了 TimeWrite 项目当前使用的全部 GitHub 功能及配置说明。
 
 ---
 

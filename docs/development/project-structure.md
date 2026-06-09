@@ -13,7 +13,9 @@ TimeWrite/
 ├── postcss.config.js           # PostCSS 配置
 │
 ├── scripts/                    # 脚本工具
-│   └── check.mjs               #   完整性检测脚本
+│   ├── check.mjs               #   完整性检测脚本
+│   ├── check-versions.ts       #   版本检测脚本
+│   └── check-rust-versions.ts  #   Rust 版本检测脚本
 │
 ├── src/                        # React 前端源码
 │   ├── main.tsx                #   应用入口
@@ -31,23 +33,20 @@ TimeWrite/
 │   │   ├── worldbuilding/      #     世界观：WorldbuildingPanel / WorldCardEditor
 │   │   ├── ai/                 #     AI 助手：AiSidePanel
 │   │   ├── layout/             #     布局：EditorLayout / StatusBar
-│   │   ├── diff/               #     版本对比视图（react-diff-viewer）
 │   │   └── ui/                 #     通用 UI 组件
 │   ├── stores/                 #   状态管理
-│   │   ├── appStore.ts         #     Zustand 业务状态
-│   │   ├── pluginStore.ts      #     Zustand 插件状态
-│   │   └── uiAtoms.ts          #     Jotai UI 原子（13 个）
+│   │   ├── appStore.ts         #     Zustand 业务状态（书籍/章节/AI 配置/主题/对话）
+│   │   └── uiAtoms.ts          #     Jotai UI 原子（15 个）
 │   ├── plugins/                #   插件系统
 │   │   ├── types.ts            #     类型定义
-│   │   ├── PluginManager.ts    #     插件管理器
-│   │   └── examples/           #     示例插件
+│   │   └── PluginManager.ts    #     插件管理器（单例）
 │   ├── lib/                    #   工具库
-│   │   ├── tauri-bridge.ts     #     Tauri IPC 桥接层
+│   │   ├── tauri-bridge.ts     #     Tauri IPC 桥接层（8 个 API 模块）
 │   │   └── utils.ts            #     工具函数
 │   ├── types/                  #   类型定义
-│   │   └── index.ts            #     15 个核心类型
+│   │   └── index.ts            #     核心类型（Book/Chapter/Volume/AiConfig 等）
 │   └── styles/                 #   样式
-│       └── globals.css         #     全局样式（四套主题）
+│       └── globals.css         #     全局样式（HSL CSS 变量 + 主题/护眼模式）
 │
 └── src-tauri/                  # Rust 后端
     ├── Cargo.toml              #   Rust 项目配置

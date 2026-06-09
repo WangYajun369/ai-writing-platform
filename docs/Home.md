@@ -23,7 +23,7 @@
 |------|------|
 | 桌面框架 | Tauri v2 |
 | 前端 | React 18 + TypeScript 5 + Vite 8 |
-| 样式 | TailwindCSS 3 + HSL CSS 变量（四套主题） |
+| 样式 | TailwindCSS 3 + HSL CSS 变量（六套主题组合） |
 | 富文本 | TipTap |
 | 状态管理 | Zustand + Jotai |
 | 后端 | Rust 2021 + SQLite（WAL 模式） |
@@ -34,7 +34,7 @@
 |------|-----|
 | 应用名称 | TimeWrite（智写时光） |
 | 应用标识 | `com.ukcoder.timewrite` |
-| 当前版本 | 0.3.0 |
+| 当前版本 | 0.4.0 |
 | 许可证 | MIT |
 | 仓库地址 | [github.com/WangYajun369/ai-writing-platform](https://github.com/WangYajun369/ai-writing-platform) |
 

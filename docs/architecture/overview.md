@@ -73,7 +73,7 @@ Rust 命令 → app.emit('ai-stream-chunk') → 前端 listen() → 更新 UI
 | `chapterApi` | `commands/chapter.rs` | 章节 CRUD + 自动保存 |
 | `snapshotApi` | `commands/snapshot.rs` | 版本快照 |
 | `worldCardApi` | `commands/world_card.rs` | 世界观卡片 |
-| `aiApi` | `commands/ai.rs` | AI 对话 + RAG 检索 |
+| `aiApi` | `commands/ai.rs` | AI 对话（智谱/DeepSeek）+ RAG 检索 + Embedding 索引 |
 | `importExportApi` | `commands/io.rs` | 导入导出 |
 | `windowApi` | `commands/window.rs` | 世界观独立窗口 |
 
@@ -90,8 +90,7 @@ Rust 命令 → app.emit('ai-stream-chunk') → 前端 listen() → 更新 UI
 
 ## 主题系统
 
-基于 HSL CSS 变量实现 4 套主题：
-- 亮色 + 护眼暖黄
-- 亮色 + 护眼豆沙绿
-- 暗色 + 护眼暖黄
-- 暗色 + 护眼豆沙绿
+基于 HSL CSS 变量实现多套主题组合：
+- 3 种基础主题：亮色 / 暗色 / 跟随系统
+- 2 种护眼模式：暖黄色 / 豆沙绿
+- 亮色和暗色可与护眼模式自由组合，共 6 种视觉组合

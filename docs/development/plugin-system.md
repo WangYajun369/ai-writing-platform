@@ -76,12 +76,12 @@ const myPlugin = definePlugin({
   name: 'My Plugin',
   version: '1.0.0',
   description: '一个自定义插件',
-  extensionPoints: ['toolbar'],
+  extensionPoints: ['editor-toolbar'],
   commands: [
     {
       id: 'my-action',
       label: '执行操作',
-      extensionPoint: 'toolbar',
+      extensionPoint: 'editor-toolbar',
       execute: async (ctx) => {
         // 插件逻辑
       }

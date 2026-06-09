@@ -37,7 +37,10 @@
 |------|------|
 | `@tiptap/react` | 编辑器核心 |
 | `@tiptap/starter-kit` | 基础扩展包 |
-| `@tiptap/extension-*` | 表格/图片/颜色/下划线/任务列表等扩展 |
+| `@tiptap/extension-*` | 表格/图片/颜色/下划线/任务列表/字符计数等扩展 |
+| `@tiptap/extension-code-block-lowlight` | 代码块语法高亮 |
+| `lowlight` | 代码语法高亮引擎（34 种语言） |
+| `katex` | LaTeX 数学公式渲染 |
 
 ### UI 工具
 | 依赖 | 说明 |
@@ -46,7 +49,9 @@
 | `class-variance-authority` | 组件变体 |
 | `lucide-react` | 图标库 |
 | `react-markdown` + `remark-gfm` | Markdown 渲染 |
+| `react-diff-viewer-continued` | 版本对比视图（diff） |
 | `@tanstack/react-virtual` | 虚拟化滚动 |
+| `@dnd-kit/core` + `@dnd-kit/utilities` | 拖拽排序 |
 
 ### 工具函数
 | 依赖 | 说明 |
@@ -54,6 +59,7 @@
 | `date-fns` | 日期处理 |
 | `lodash-es` | 通用工具 |
 | `uuid` | ID 生成 |
+| `katex` | LaTeX 公式渲染 |
 
 ## Tauri 插件
 

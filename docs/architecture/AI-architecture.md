@@ -1,6 +1,6 @@
 # TimeWrite AI 模块全面技术文档
 
-> 生成日期：2026-06-08  
+> 生成日期：2026-06-09  
 > 项目：智写时光 TimeWrite — 跨平台小说创作工具  
 > 涵盖 AI 对话、RAG 向量检索、流式响应、Embedding 索引、连接测试等功能
 
@@ -29,47 +29,51 @@
 │                    前端 (React/TypeScript)                 │
 ├──────────────────────────────────────────────────────────┤
 │  AiSidePanel.tsx        SettingsPage.tsx                  │
-│  (流式对话UI + RAG)      (AI服务商/模型/温度/Key配置)       │
+│  (流式对话UI + RAG)      (对话配置 + RAG独立配置)           │
 │       │                       │                          │
 │       └───────┬───────────────┘                          │
 │               │                                          │
-│  appStore.ts (AiConfig 持久化到 localStorage)              │
+│  appStore.ts (AiChatConfig + RagConfig 分离持久化)         │
 │  uiAtoms.ts  (aiPanelOpenAtom)                           │
-│  types/index.ts (AiConfig, RagResult)                    │
-│  tauri-bridge.ts (aiApi: 5个IPC方法)                      │
+│  types/index.ts (AiChatConfig, RagConfig, AiMessage)     │
+│  tauri-bridge.ts (aiApi: 6个IPC方法)                      │
 │               │                                          │
 ├───────────────┼──────────────────────────────────────────┤
 │            Tauri IPC 边界                                 │
 ├───────────────┼──────────────────────────────────────────┤
 │               │                                          │
-│  lib.rs ── 注册5个AI命令 ──► commands/ai.rs               │
+│  lib.rs ── 注册6个AI命令 ──► commands/ai.rs               │
 │                                    │                     │
 │                    ┌───────────────┼───────────────┐     │
 │                    │               │               │     │
-│            test_ai_connection  rag_search   stream_ai_chat│
-│            (连接测试)          (RAG检索)    (流式对话)     │
+│       test_ai_connection  rag_search   stream_ai_chat    │
+│       test_rag_connection           trigger_embedding    │
+│       (对话+ RAG独立连接测试)        check_embedding_status│
 │                    │               │               │     │
 │            ┌───────┴───────┐      SQLite      ┌────┴────┐│
 │            │ Ollama│OpenAI │   (LIKE降级)     │Ollama   ││
-│            │ /api/tags     │                   │NDJSON   ││
-│            │ /models       │                   │/api/chat││
+│            │ DeepSeek│智谱 │                   │NDJSON   ││
 │            └───────────────┘                   │OpenAI   ││
 │                                                 │SSE      ││
 │                                                 │/chat/   ││
 │                                                 │completions│
 │                                                 └─────────┘│
 │                                                             │
-│  事件推送: ai-stream-chunk → 前端 listen<StreamEvent>       │
+│  事件推送: ai-stream-chunk → 前端 listen<StreamEvent>        │
+│  三阶段: thinking → answering → done                        │
 └──────────────────────────────────────────────────────────┘
 ```
 
 **关键设计决策：**
 
 1. 流式请求完全在 Rust 端通过 `reqwest` 处理，前端只通过 Tauri 事件接收增量文本，避免了浏览器 CORS/流式解析问题
-2. 支持 Ollama 原生协议和 OpenAI 兼容协议两种路径，可接入智谱 BigModel、OpenAI、Ollama 及任何兼容 API
-3. RAG 采用**向量检索优先 + SQL LIKE 降级**双策略：有 embedding 时使用余弦相似度向量搜索，否则降级为关键词搜索
-4. AI 配置通过 localStorage 持久化，支持 4 种服务商预设（智谱/OpenAI/Ollama/自定义）
-5. 插件系统预留了 `ai-prompt` 扩展点，可扩展 AI 提示词模板
+2. 支持 Ollama 原生协议和 OpenAI 兼容协议两种路径，可接入智谱 BigModel、DeepSeek（含推理思考模式）、OpenAI、Ollama 及任何兼容 API
+3. v0.4.0 起对话配置（AiChatConfig）与 RAG/Embedding 配置（RagConfig）完全解耦，各自独立管理 API Key、端点、模型
+4. RAG 采用**向量检索优先 + SQL LIKE 降级**双策略：有 embedding 时使用余弦相似度向量搜索，否则降级为关键词搜索
+5. 各服务商 API Key 独立存储：`bigmodelApiKey` 和 `deepseekApiKey`，支持不同服务商使用不同密钥
+6. AI 配置通过 localStorage 持久化，自动兼容旧版扁平格式迁移
+7. 插件系统预留了 `ai-prompt` 扩展点，可扩展 AI 提示词模板
+8. 流式事件支持三阶段通知：`thinking`（推理思考）→ `answering`（正式回答）→ `done`（完成 + 用量统计）
 
 ---
 
@@ -113,9 +117,10 @@ pub struct StreamChatArgs {
     pub endpoint: String,        // API 端点 URL
     pub model: String,           // 模型名
     pub temperature: f64,        // 温度参数
-    pub max_tokens: Option<u32>, // 最大输出 token（仅 openai_compatible）
-    pub api_key: Option<String>, // API Key（仅 openai_compatible）
+    pub max_tokens: Option<u32>, // 最大输出 token
+    pub api_key: Option<String>, // API Key
     pub messages: Vec<ChatMessage>, // 消息列表
+    pub thinking_enabled: bool,  // 是否启用思考模式（v0.4.0 新增）
 }
 
 /// 流式事件负载（推送到前端的实时增量）
@@ -134,13 +139,14 @@ pub struct StreamEvent {
 
 | 命令 | 参数 | 返回 | 功能 |
 |------|------|------|------|
-| `test_ai_connection` | provider, endpoint, api_key? | `ConnectionTestResult` | 测试 AI 服务连接 |
+| `test_ai_connection` | provider, endpoint, api_key? | `ConnectionTestResult` | 测试 AI 对话服务连接 |
+| `test_rag_connection` | provider, endpoint, api_key? | `ConnectionTestResult` | 测试 RAG/Embedding 服务连接（v0.4.0 新增） |
 | `rag_search` | book_id, query, top_n, endpoint?, api_key?, embedding_model? | `Vec<RagResult>` | RAG 语义检索（向量优先） |
 | `check_embedding_status` | book_id | `EmbeddingStatus` | 检查 Embedding 索引状态 |
 | `trigger_embedding` | book_id, endpoint, api_key, embedding_model | `EmbeddingProgress` | 批量生成 Embedding 向量 |
 | `stream_ai_chat` | args: StreamChatArgs | `String` | AI 流式对话 |
 
-### 2.3 `test_ai_connection` — 连接测试
+### 2.3 `test_ai_connection` — 对话连接测试
 
 ```rust
 #[tauri::command]
@@ -171,40 +177,17 @@ pub async fn test_ai_connection(
 - **成功：** 解析 `models[].name`，返回模型列表
 - **超时：** 请求 15s，连接 10s
 
-```rust
-async fn test_ollama_connection(
-    client: reqwest::Client,
-    endpoint: &str,
-) -> Result<ConnectionTestResult, String> {
-    let url = format!("{}/api/tags", endpoint);
-    let response = client.get(&url).send().await
-        .map_err(|e| format!("无法连接到 Ollama 服务: {}\n请确保 Ollama 正在运行", e))?;
-    // 解析并返回模型列表 ...
-}
-```
-
-#### OpenAI 兼容连接测试
+#### OpenAI 兼容连接测试（含智谱/DeepSeek/OpenAI）
 
 - **请求：** `GET {endpoint}/models`，附带 `Authorization: Bearer {api_key}`
 - **401：** 返回 "认证失败"
 - **成功：** 解析 `data[].id`，限制显示前 10 个
 
-```rust
-async fn test_openai_compatible_connection(
-    client: reqwest::Client,
-    endpoint: &str,
-    api_key: Option<String>,
-) -> Result<ConnectionTestResult, String> {
-    let url = format!("{}/models", endpoint);
-    let mut req = client.get(&url);
-    if let Some(ref key) = api_key {
-        req = req.header("Authorization", format!("Bearer {}", key));
-    }
-    // 处理 200/401/其他状态码 ...
-}
-```
+### 2.4 `test_rag_connection` — RAG 连接测试（v0.4.0 新增）
 
-### 2.4 `rag_search` — RAG 检索（向量优先 + LIKE 降级）
+与 `test_ai_connection` 实现类似，但通过独立的 endpoint 和 api_key 测试 Embedding 服务连通性。用于验证 RAG 配置是否正确。
+
+### 2.5 `rag_search` — RAG 检索（向量优先 + LIKE 降级）
 
 采用**向量检索优先**的双策略实现：
 
@@ -219,19 +202,18 @@ pub async fn rag_search(
     book_id: String,
     query: String,
     top_n: usize,
+    endpoint: Option<String>,
+    api_key: Option<String>,
+    embedding_model: Option<String>,
 ) -> Result<Vec<RagResult>, String> {
-    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
-    let pattern = format!("%{}%", query.chars().take(20).collect::<String>());
-    let mut stmt = conn.prepare(
-        "SELECT id, title, content_html FROM chapters WHERE book_id=?1 AND content_html LIKE ?2 AND deleted_at IS NULL LIMIT ?3"
-    ).map_err(|e| e.to_string())?;
-    // 构造 RagResult，snippet 取 content_html 前 200 个非标签字符，distance 固定 0.5
+    // 向量检索路径...
+    // LIKE 降级路径...
 }
 ```
 
 > **技术细节**：向量检索使用点积 + 归一化实现余弦相似度；LIKE 降级时取 query 前 20 个字符构造搜索模式。
 
-### 2.5 `check_embedding_status` — Embedding 状态检查
+### 2.6 `check_embedding_status` — Embedding 状态检查
 
 ```rust
 #[tauri::command]
@@ -249,7 +231,7 @@ pub fn check_embedding_status(
 
 前端据此判断是否需要触发 Embedding 生成。
 
-### 2.6 `trigger_embedding` — 批量 Embedding 生成
+### 2.7 `trigger_embedding` — 批量 Embedding 生成
 
 ```rust
 #[tauri::command]
@@ -269,9 +251,9 @@ pub async fn trigger_embedding(
 
 > 关键细节：先收集所有数据（释放 statement 锁），再执行异步 API 调用（每批 20 条，避免请求过大）。
 
-### 2.7 `stream_ai_chat` — AI 流式对话（核心功能）
+### 2.8 `stream_ai_chat` — AI 流式对话（核心功能）
 
-**入口函数：** 根据 `provider` 分发到 Ollama 或 OpenAI 兼容协议
+**入口函数：** 根据 `provider` 分发到 Ollama 或 OpenAI 兼容协议（智谱/DeepSeek/OpenAI 均走此路径）
 
 ```rust
 #[tauri::command]
@@ -280,7 +262,7 @@ pub async fn stream_ai_chat(
     args: StreamChatArgs,
 ) -> Result<String, String> {
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))  // 长文生成需要较长时间
+        .timeout(std::time::Duration::from_secs(120))  // 长文生成
         .connect_timeout(std::time::Duration::from_secs(30))
         .http1_only()
         .build()
@@ -299,158 +281,19 @@ pub async fn stream_ai_chat(
 - **格式：** NDJSON（每行一个 JSON 对象）
 - **关键参数：** `num_predict` 默认设 `-1`（不限制），避免 Ollama 默认 128 token 限制
 
-```rust
-async fn stream_ollama(
-    app: AppHandle,
-    client: reqwest::Client,
-    args: StreamChatArgs,
-) -> Result<String, String> {
-    let url = format!("{}/api/chat", args.endpoint.trim_end_matches('/'));
-
-    let mut body = serde_json::json!({
-        "model": args.model,
-        "messages": args.messages,
-        "stream": true,
-        "options": { "temperature": args.temperature },
-    });
-
-    // Ollama 默认 num_predict=128，必须显式设置才能支持长文输出
-    if let Some(max_tokens) = args.max_tokens {
-        body["options"]["num_predict"] = serde_json::json!(max_tokens);
-    } else {
-        body["options"]["num_predict"] = serde_json::json!(-1); // -1 不限制
-    }
-
-    let response = client.post(&url).json(&body).send().await?;
-
-    let mut stream = response.bytes_stream();
-    let mut accumulated = String::new();
-    let mut buffer = String::new();
-
-    loop {
-        let chunk = match stream.next().await {
-            Some(Ok(c)) => c,
-            Some(Err(e)) => {
-                if !accumulated.is_empty() { break; } // 非关键错误
-                return Err(format!("读取响应流失败: {}", e));
-            }
-            None => break,
-        };
-
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
-
-        // NDJSON 按行处理
-        while let Some(pos) = buffer.find('\n') {
-            let line = buffer[..pos].trim().to_string();
-            buffer = buffer[pos + 1..].to_string();
-
-            if line.is_empty() { continue; }
-            if let Ok(data) = serde_json::from_str::<serde_json::Value>(&line) {
-                if let Some(content) = data["message"]["content"].as_str() {
-                    accumulated.push_str(content);
-                    // 实时推送增量到前端
-                    let _ = app.emit("ai-stream-chunk", StreamEvent {
-                        content: accumulated.clone(), done: false, error: None,
-                    });
-                }
-            }
-        }
-    }
-
-    // 处理缓冲区中残留的最后一行
-    // ...
-
-    // 发送结束事件
-    let _ = app.emit("ai-stream-chunk", StreamEvent {
-        content: accumulated.clone(), done: true, error: None,
-    });
-
-    Ok(accumulated)
-}
-```
-
 #### OpenAI 兼容流式协议（SSE 格式）
 
 - **端点：** `POST {endpoint}/chat/completions`
 - **格式：** SSE（Server-Sent Events），`data: {...}`
 - **结束信号：** `data: [DONE]` 或服务端关闭连接
+- **支持智谱/DeepSeek/OpenAI** 及任何 OpenAI 兼容 API
 
-```rust
-async fn stream_openai_compatible(
-    app: AppHandle,
-    client: reqwest::Client,
-    args: StreamChatArgs,
-) -> Result<String, String> {
-    let url = format!("{}/chat/completions", args.endpoint.trim_end_matches('/'));
+#### 思考模式（v0.4.0 新增）
 
-    let mut req = client.post(&url).header("Content-Type", "application/json");
-    if let Some(ref key) = args.api_key {
-        req = req.header("Authorization", format!("Bearer {}", key));
-    }
-
-    let mut body = serde_json::json!({
-        "model": args.model,
-        "messages": args.messages,
-        "stream": true,
-        "temperature": args.temperature,
-    });
-    if let Some(max_tokens) = args.max_tokens {
-        body["max_tokens"] = serde_json::json!(max_tokens);
-    }
-
-    let response = req.json(&body).send().await?;
-
-    let mut stream = response.bytes_stream();
-    let mut accumulated = String::new();
-    let mut buffer = String::new();
-
-    loop {
-        let chunk = match stream.next().await {
-            Some(Ok(c)) => c,
-            Some(Err(e)) => {
-                if !accumulated.is_empty() { break; }
-                return Err(format!("读取响应流失败: {}", e));
-            }
-            None => break,
-        };
-
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
-
-        // 处理完整的 SSE 行
-        while let Some(pos) = buffer.find('\n') {
-            let line = buffer[..pos].trim().to_string();
-            buffer = buffer[pos + 1..].to_string();
-
-            if line.is_empty() || !line.starts_with("data:") { continue; }
-
-            let json_str = line[5..].trim();
-            if json_str == "[DONE]" {
-                let _ = app.emit("ai-stream-chunk", StreamEvent {
-                    content: accumulated.clone(), done: true, error: None,
-                });
-                return Ok(accumulated);
-            }
-
-            if let Ok(data) = serde_json::from_str::<serde_json::Value>(json_str) {
-                if let Some(delta) = data["choices"][0]["delta"]["content"].as_str() {
-                    accumulated.push_str(delta);
-                    let _ = app.emit("ai-stream-chunk", StreamEvent {
-                        content: accumulated.clone(), done: false, error: None,
-                    });
-                }
-            }
-        }
-    }
-
-    // 处理 [DONE] 未出现但流已结束的情况
-    // ...
-
-    let _ = app.emit("ai-stream-chunk", StreamEvent {
-        content: accumulated.clone(), done: true, error: None,
-    });
-    Ok(accumulated)
-}
-```
+当 `thinking_enabled` 为 `true` 时（DeepSeek R1 等推理模型）：
+- 解析 SSE 流中的 `reasoning_content` 字段作为思考过程
+- 通过 `phase: "thinking"` 推送思考内容
+- 正式回答通过 `phase: "answering"` 推送 `delta.content`
 
 #### 两种协议对比
 
@@ -458,12 +301,13 @@ async fn stream_openai_compatible(
 |------|------------------|---------------------|
 | 端点 | `/api/chat` | `/chat/completions` |
 | 增量提取 | `message.content` | `choices[0].delta.content` |
+| 思考过程 | 不支持 | `choices[0].delta.reasoning_content`（智谱/DeepSeek） |
 | 结束信号 | 流关闭 + 最终事件 | `[DONE]` 或流关闭 |
 | Token 限制 | `num_predict`（默认 -1 不限制） | `max_tokens` |
 | 认证 | 无需 | `Authorization: Bearer {key}` |
-| 超时 | 120s 请求 / 30s 连接 | 同上 |
+| 三阶段推送 | content 增量 | thinking → answering → done |
 
-### 2.8 模块注册
+### 2.9 模块注册
 
 **`lib.rs`（第 68–73 行）：**
 
@@ -474,6 +318,7 @@ commands::ai::trigger_embedding,
 commands::ai::check_embedding_status,
 commands::ai::stream_ai_chat,
 commands::ai::test_ai_connection,
+commands::ai::test_rag_connection,
 ```
 
 **`commands/mod.rs`：**
@@ -486,7 +331,7 @@ pub mod ai;
 
 ## 3. 前端——AI 助手 UI
 
-**文件：** `src/components/ai/AiSidePanel.tsx`（292 行）
+**文件：** `src/components/ai/AiSidePanel.tsx`
 
 ### 3.1 组件概述
 
@@ -494,17 +339,7 @@ pub mod ai;
 
 ### 3.2 消息管理
 
-```typescript
-interface Message {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  loading?: boolean
-}
-```
-
-- `messages` 状态管理对话历史
-- 用户消息和助手消息分别左右对齐
+使用 `AiMessage` 类型（详见 5.1 节），包含 `role`、`content`、`thinking`、`phase`、`usage` 等字段。消息通过 `useAppStore` 按 `bookId` 分组管理。
 
 ### 3.3 系统提示词
 
@@ -523,7 +358,7 @@ ${context}
 
 ```typescript
 async function handleSend() {
-    // 1. 非 Ollama 提供者验证 API Key
+    // 1. 非 Ollama 提供者验证 API Key（按服务商独立获取）
     // 2. 创建用户和助手消息（助手消息标记 loading）
     // 3. RAG 检索上下文（带 endpoint/api_key/embedding_model 参数）
     // 4. 注册 'ai-stream-chunk' 事件监听，处理三阶段：
@@ -532,6 +367,7 @@ async function handleSend() {
     //    - phase="done": 输出完成，附带 usage 用量统计
     // 5. 组装 messages，调用 Rust 侧 stream_ai_chat
     // 6. 兜底：用返回值更新，防止 done 事件因时序问题丢失
+    // 7. 对话按 bookId 持久化到 localStorage
 }
 ```
 
@@ -571,11 +407,19 @@ const providerLabel = {
   ollama: 'Ollama',
   openai: 'OpenAI',
   bigmodel: '智谱',
+  deepseek: 'DeepSeek',
   custom: '自定义',
 }
 ```
 
-### 3.9 快捷提示词
+### 3.9 Embedding 索引管理
+
+面板集成了 Embedding 索引生成功能：
+- 调用 `checkEmbeddingStatus()` 查看当前索引状态（已索引/总计）
+- 一键触发 `triggerEmbedding()` 批量生成向量索引
+- 自动轮询直到全部完成
+
+### 3.10 快捷提示词
 
 在消息为空时显示 4 个快捷提示按钮：
 
@@ -583,71 +427,28 @@ const providerLabel = {
 ['帮我续写下一段', '优化这段对话', '推演剧情走向', '分析人物性格']
 ```
 
-### 3.10 消息气泡渲染
+### 3.11 消息气泡渲染
 
-助手消息使用 `react-markdown` + `remarkGfm` 渲染，支持 GFM 语法（表格、删除线等）：
-
-```tsx
-function MessageBubble({ message }: { message: Message }) {
-  return (
-    <div className={cn('flex gap-2', isUser ? 'flex-row-reverse' : 'flex-row')}>
-      <div className={cn(
-        'max-w-[85%] rounded-2xl px-3 py-2 text-sm break-words',
-        isUser ? 'bg-primary text-primary-foreground rounded-br-sm'
-               : 'bg-muted text-foreground rounded-bl-sm markdown-body'
-      )}>
-        {message.loading ? (
-          <span>思考中…</span>
-        ) : isUser ? (
-          message.content
-        ) : (
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {message.content}
-          </ReactMarkdown>
-        )}
-      </div>
-    </div>
-  )
-}
-```
-
-### 3.11 生命周期管理
-
-```typescript
-// 组件卸载时清理事件监听，防止内存泄漏
-useEffect(() => {
-  return () => {
-    if (unlistenRef.current) {
-      unlistenRef.current()
-      unlistenRef.current = null
-    }
-  }
-}, [])
-
-// 自动滚动到底部
-useEffect(() => {
-  bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-}, [messages])
-```
+助手消息使用 `react-markdown` + `remarkGfm` 渲染，支持 GFM 语法（表格、删除线等）。用户消息使用纯文本展示。
 
 ---
 
 ## 4. 前端——设置页面
 
-**文件：** `src/pages/SettingsPage.tsx`（第 121–270 行）
+**文件：** `src/pages/SettingsPage.tsx`
 
-### 4.1 `AiConfigSection` 组件
+### 4.1 对话配置区（AiChatConfig）
 
 #### 服务商选择
 
 切换服务商时自动填充默认 endpoint 和 model：
 
 ```typescript
-const defaults: Record<string, { endpoint; model; embeddingModel }> = {
-  ollama:   { endpoint: 'http://127.0.0.1:11434',               model: 'qwen2.5:7b',  embeddingModel: 'bge-m3' },
-  openai:   { endpoint: 'https://api.openai.com/v1',             model: 'gpt-4o',       embeddingModel: 'text-embedding-3-small' },
-  bigmodel: { endpoint: 'https://open.bigmodel.cn/api/paas/v4',  model: 'glm-4.6v',     embeddingModel: 'embedding-3' },
-  custom:   { endpoint: '',                                      model: '',             embeddingModel: '' },
+const defaults: Record<string, { endpoint; model }> = {
+  bigmodel: { endpoint: 'https://open.bigmodel.cn/api/paas/v4',  model: 'glm-5.1' },
+  deepseek: { endpoint: 'https://api.deepseek.com/v1',           model: 'deepseek-chat' },
+  ollama:   { endpoint: 'http://127.0.0.1:11434',               model: 'qwen2.5:7b' },
+  custom:   { endpoint: '',                                      model: '' },
 }
 ```
 
@@ -655,33 +456,30 @@ const defaults: Record<string, { endpoint; model; embeddingModel }> = {
 
 | 配置项 | 控件 | 范围/说明 |
 |--------|------|-----------|
-| 服务商 | `<select>` | Ollama / OpenAI / 智谱 BigModel / 自定义 |
+| 服务商 | `<select>` | 智谱 BigModel / DeepSeek / Ollama / 自定义 |
 | API 地址 | `<input>` | 根据服务商自动填充默认值 |
 | 对话模型 | `<input>` | 可自定义模型名称 |
-| Embedding 模型 | `<input>` | 可自定义 Embedding 模型名称 |
 | Temperature | `<input type="range">` | 0–1，步长 0.1 |
-| 最大输出 Token | `<input type="number">` | 1–131072，步长 1024，默认 65536 |
-| API Key | `<input type="password">` | 仅非 Ollama 时显示 |
+| 最大输出 Token | `<input type="number">` | 1–131072，步长 1024，默认 131072 |
+| 智谱 API Key | `<input type="password">` | 智谱服务专用 |
+| DeepSeek API Key | `<input type="password">` | DeepSeek 服务专用 |
+| 思考模式 | `<input type="checkbox">` | 仅 DeepSeek/智谱推理模型 |
 | 测试连接 | `<button>` | 调用 `aiApi.testConnection()` |
 
-#### 连接测试
+### 4.2 RAG/Embedding 配置区（RagConfig）
 
-```typescript
-onTestConnection={async () => {
-  setAiConnectionStatus('testing')
-  try {
-    const { aiApi } = await import('@/lib/tauri-bridge')
-    const result = await aiApi.testConnection(
-      aiConfig.provider, aiConfig.endpoint, aiConfig.apiKey,
-    )
-    setAiConnectionStatus(result.ok ? 'connected' : 'error', result.detail)
-  } catch (err) {
-    setAiConnectionStatus('error', String(err))
-  }
-}}
-```
+v0.4.0 起独立于对话配置：
 
-连接状态展示：
+| 配置项 | 控件 | 说明 |
+|--------|------|------|
+| 启用 RAG | `<input type="checkbox">` | 开关 |
+| 服务商 | `<select>` | 当前仅支持智谱 BigModel（Embeddings API） |
+| API 地址 | `<input>` | 自动填充默认值 |
+| Embedding 模型 | `<input>` | 如 `embedding-3` |
+| API Key | `<input type="password">` | 独立于对话配置的 API Key |
+| 测试连接 | `<button>` | 调用 `aiApi.testRagConnection()` |
+
+### 4.3 连接状态展示
 
 - `idle` — 无显示
 - `testing` — 蓝色提示 + 旋转动画 "检测中…"
@@ -692,29 +490,52 @@ onTestConnection={async () => {
 
 ## 5. 状态管理与类型定义
 
-### 5.1 AI 类型定义
+### 5.1 AI 类型定义（v0.4.0 重构）
 
-**文件：** `src/types/index.ts`（第 86–104 行）
+**文件：** `src/types/index.ts`
 
 ```typescript
-/** AI 配置 */
-export interface AiConfig {
-  provider: 'ollama' | 'openai' | 'bigmodel' | 'custom'
+/** AI 对话配置（与 RAG 解耦） */
+export interface AiChatConfig {
+  provider: 'bigmodel' | 'deepseek'
   endpoint: string
   model: string
-  embeddingModel: string
   temperature: number
   maxTokens: number
-  apiKey?: string
+  bigmodelApiKey?: string    // 智谱 API Key
+  deepseekApiKey?: string    // DeepSeek API Key
+  thinkingEnabled: boolean   // DeepSeek/智谱推理思考模式
 }
 
-/** RAG 检索结果 */
-export interface RagResult {
-  snippet: string
-  sourceType: 'chapter' | 'world_card'
-  sourceId: string
-  sourceTitle: string
-  distance: number
+/** RAG / Embedding 检索配置 */
+export interface RagConfig {
+  enabled: boolean
+  provider: 'bigmodel'       // 当前仅智谱提供 Embeddings API
+  endpoint: string
+  embeddingModel: string
+  bigmodelApiKey?: string
+}
+
+/** AI 总配置（对话与 RAG 解耦） */
+export interface AiConfig {
+  chat: AiChatConfig
+  rag: RagConfig
+}
+
+/** AI 对话消息 */
+export interface AiMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  thinking: string           // 深度思考过程
+  phase: 'thinking' | 'answering' | 'done'  // 当前生成阶段
+  loading?: boolean
+  usage?: {
+    inputTokens: number
+    outputTokens: number
+    inputChars: number
+    outputChars: number
+  } | null
 }
 ```
 
@@ -725,37 +546,39 @@ export interface RagResult {
 ```typescript
 // localStorage 键
 const AI_CONFIG_KEY = 'time-write-ai-config'
-
-// 状态字段
-interface AppState {
-  aiConnectionStatus: 'idle' | 'testing' | 'connected' | 'error'
-  aiConnectionDetail: string
-  aiConfig: AiConfig
-  // ...
-}
+const AI_CONVERSATIONS_KEY = 'time-write-ai-conversations'
 
 // 默认配置
 aiConfig: {
-  provider: 'ollama',
-  endpoint: 'http://127.0.0.1:11434',
-  model: 'qwen2.5:7b',
-  embeddingModel: 'bge-m3',
-  temperature: 0.7,
-  maxTokens: 65536,
-  ...savedAiConfig, // 从 localStorage 合并
+  chat: {
+    provider: 'bigmodel',
+    endpoint: 'https://open.bigmodel.cn/api/paas/v4',
+    model: 'glm-5.1',
+    temperature: 0.7,
+    maxTokens: 131072,
+    thinkingEnabled: true,
+  },
+  rag: {
+    enabled: true,
+    provider: 'bigmodel',
+    endpoint: 'https://open.bigmodel.cn/api/paas/v4',
+    embeddingModel: 'embedding-3',
+  },
+  ...savedAiConfig, // 从 localStorage 合并，自动兼容旧版
 },
 
-// 更新 AI 配置并持久化
+// AI 配置更新（智能合并 chat 和 rag 子配置）
 setAiConfig: (config) =>
   set((s) => {
-    const merged = { ...s.aiConfig, ...config }
-    saveAiConfig(merged)  // → localStorage.setItem(...)
+    const merged: AiConfig = {
+      chat: config.chat ? { ...s.aiConfig.chat, ...config.chat } : s.aiConfig.chat,
+      rag: config.rag ? { ...s.aiConfig.rag, ...config.rag } : s.aiConfig.rag,
+    }
+    saveAiConfig(merged)
     return { aiConfig: merged }
   }),
 
-// 更新连接状态
-setAiConnectionStatus: (aiConnectionStatus, aiConnectionDetail = '') =>
-  set({ aiConnectionStatus, aiConnectionDetail }),
+// 旧版配置自动迁移：检测旧版扁平格式，自动转换为 chat+rag 分离结构
 ```
 
 ### 5.3 UI Atoms
@@ -811,7 +634,7 @@ import { BotIcon } from 'lucide-react'
 
 ## 7. API 桥接层
 
-**文件：** `src/lib/tauri-bridge.ts`（第 150–199 行）
+**文件：** `src/lib/tauri-bridge.ts`
 
 ```typescript
 export interface ChatMessage {
@@ -827,12 +650,21 @@ export interface StreamChatArgs {
   maxTokens?: number
   apiKey?: string
   messages: ChatMessage[]
+  thinkingEnabled: boolean     // v0.4.0 新增
 }
 
 export interface StreamEvent {
-  content: string
+  content: string              // 正式输出文本
+  thinking: string             // 思考过程（v0.4.0 新增）
+  phase: string                // 阶段："thinking"|"answering"|"done"（v0.4.0 新增）
   done: boolean
   error?: string | null
+  usage?: {
+    inputTokens: number
+    outputTokens: number
+    inputChars: number
+    outputChars: number
+  } | null                     // v0.4.0 新增
 }
 
 export interface ConnectionTestResult {
@@ -842,15 +674,27 @@ export interface ConnectionTestResult {
 
 export const aiApi = {
   /** RAG 语义检索 */
-  async ragSearch(bookId: string, query: string, topN = 5) {
-    return invoke<Array<{ snippet; sourceId; sourceTitle; distance }>>(
-      'rag_search', { bookId, query, topN }
-    )
+  async ragSearch(
+    bookId: string, query: string, topN = 5,
+    endpoint?: string, apiKey?: string, embeddingModel?: string,
+  ) {
+    return invoke<RagResult[]>('rag_search', {
+      bookId, query, topN, endpoint, apiKey, embeddingModel,
+    })
   },
 
   /** 触发 Embedding 生成 */
-  async triggerEmbedding(bookId: string): Promise<void> {
-    return invoke<void>('trigger_embedding', { bookId })
+  async triggerEmbedding(
+    bookId: string, endpoint: string, apiKey: string, embeddingModel: string,
+  ): Promise<void> {
+    return invoke<void>('trigger_embedding', {
+      bookId, endpoint, apiKey, embeddingModel,
+    })
+  },
+
+  /** 检查 Embedding 索引状态 */
+  async checkEmbeddingStatus(bookId: string): Promise<EmbeddingStatus> {
+    return invoke<EmbeddingStatus>('check_embedding_status', { bookId })
   },
 
   /** 流式 AI 对话 */
@@ -860,10 +704,19 @@ export const aiApi = {
 
   /** 测试 AI 服务连接 */
   async testConnection(
-    provider: string, endpoint: string, apiKey?: string
+    provider: string, endpoint: string, apiKey?: string,
   ): Promise<ConnectionTestResult> {
     return invoke<ConnectionTestResult>('test_ai_connection',
-      { provider, endpoint, apiKey }
+      { provider, endpoint, apiKey },
+    )
+  },
+
+  /** 测试 RAG 服务连接（v0.4.0 新增） */
+  async testRagConnection(
+    provider: string, endpoint: string, apiKey?: string,
+  ): Promise<ConnectionTestResult> {
+    return invoke<ConnectionTestResult>('test_rag_connection',
+      { provider, endpoint, apiKey },
     )
   },
 }
@@ -873,7 +726,7 @@ export const aiApi = {
 
 ## 8. 样式与渲染
 
-**文件：** `src/styles/globals.css`（第 298–377 行）
+**文件：** `src/styles/globals.css`
 
 ### AI Markdown 消息样式
 
@@ -947,7 +800,7 @@ export type ExtensionPoint =
 
 **`Cargo.toml` 相关依赖：**
 
-- `reqwest` — HTTP 客户端，用于 API 请求
+- `reqwest` — HTTP 客户端（stream/json/rustls-tls/gzip/brotli/http2）
 - `serde` / `serde_json` — JSON 序列化/反序列化
 - `futures-util` — 异步流处理（`StreamExt`）
 - `tauri` — 应用框架 + 事件推送
@@ -958,7 +811,7 @@ export type ExtensionPoint =
 
 ### WorldCard 向量化字段
 
-**`src-tauri/src/models/mod.rs`（第 99 行）：**
+**`src-tauri/src/models/mod.rs`：**
 
 ```rust
 pub struct WorldCard {
@@ -967,36 +820,13 @@ pub struct WorldCard {
 }
 ```
 
-**数据库表 `world_cards`（`db/mod.rs` 第 119 行）：**
+**数据库表 `world_cards`（`db/mod.rs`）：**
 
 ```sql
 vectorized INTEGER NOT NULL DEFAULT 0
 ```
 
-此字段为 Phase 4 的语义向量检索做准备。
-
----
-
-## 文件清单总览
-
-| 文件 | 说明 |
-|------|------|
-| `src-tauri/src/commands/ai.rs` | **AI 核心后端**：连接测试、RAG、Embedding、流式对话 |
-| `src-tauri/src/commands/mod.rs` | 声明 `pub mod ai` |
-| `src-tauri/src/lib.rs` | 注册 5 个 AI IPC 命令 + HTTP 插件 |
-| `src-tauri/src/models/mod.rs` | `WorldCard.vectorized` 字段 |
-| `src-tauri/src/db/mod.rs` | `world_cards` 表 `vectorized` 列 |
-| `src-tauri/capabilities/default.json` | HTTP 请求权限 |
-| `src/components/ai/AiSidePanel.tsx` | **AI 助手侧面板**：流式对话 UI、RAG 集成、Markdown 渲染 |
-| `src/pages/SettingsPage.tsx` | **AI 设置页面**：服务商/模型/Temperature/Key/连接测试 |
-| `src/pages/EditorPage.tsx` | 编辑器页面集成 AI 面板 |
-| `src/components/editor/EditorToolbar.tsx` | 工具栏 AI 面板开关按钮 |
-| `src/stores/appStore.ts` | AI 配置状态 + localStorage 持久化 |
-| `src/stores/uiAtoms.ts` | `aiPanelOpenAtom` 控制面板开关 |
-| `src/types/index.ts` | `AiConfig` 和 `RagResult` 类型定义 |
-| `src/lib/tauri-bridge.ts` | `aiApi` IPC 桥接层（5 个方法） |
-| `src/styles/globals.css` | AI 消息 Markdown 渲染样式 |
-| `src/plugins/types.ts` | `ai-prompt` 扩展点定义 |
+此字段用于标记已经过 Embedding 索引的卡片。
 
 ---
 
@@ -1017,7 +847,7 @@ vectorized INTEGER NOT NULL DEFAULT 0
   │     ├─► phase="answering" → 流式输出，Markdown 渲染
   │     └─► phase="done" → 输出 Token/字数用量统计
   │
-  └─► stream_ai_chat(args)
+  └─► stream_ai_chat(args: StreamChatArgs)
         │
         ├─► "ollama" → stream_ollama
         │     POST {endpoint}/api/chat
@@ -1027,10 +857,36 @@ vectorized INTEGER NOT NULL DEFAULT 0
         └─► "openai_compatible" → stream_openai_compatible
               POST {endpoint}/chat/completions
               SSE 逐行解析
-              提取 choices[0].delta.content
-              遇到 [DONE] → emit({ done: true })
+              提取 choices[0].delta.content（正式回答）
+              提取 choices[0].delta.reasoning_content（思考过程，智谱/DeepSeek）
+              遇到 [DONE] → emit({ done: true, usage: {...} })
               → emit('ai-stream-chunk', ...)
 
-前端 listen<StreamEvent> → updateAssistant(id, content)
+前端 listen<StreamEvent> → updateAiMessage(bookId, id, patch)
+  → 按 phase 渲染：thinking 折叠 / answering 流式 / done 用量统计
   → ReactMarkdown 渲染 Markdown 内容
 ```
+
+---
+
+## 文件清单总览
+
+| 文件 | 说明 |
+|------|------|
+| `src-tauri/src/commands/ai.rs` | **AI 核心后端**：连接测试、RAG、Embedding、流式对话 |
+| `src-tauri/src/commands/mod.rs` | 声明 `pub mod ai` |
+| `src-tauri/src/lib.rs` | 注册 6 个 AI IPC 命令 + HTTP 插件 |
+| `src-tauri/src/models/mod.rs` | `WorldCard.vectorized` 字段 |
+| `src-tauri/src/db/mod.rs` | `world_cards` / `embeddings` 表结构 |
+| `src-tauri/capabilities/default.json` | HTTP 请求权限 |
+| `src/components/ai/AiSidePanel.tsx` | **AI 助手侧面板**：流式对话 UI、RAG 集成、Embedding 管理、Markdown 渲染 |
+| `src/pages/SettingsPage.tsx` | **AI 设置页面**：对话配置 + RAG 独立配置 + 连接测试 |
+| `src/pages/EditorPage.tsx` | 编辑器页面集成 AI 面板 |
+| `src/components/editor/EditorToolbar.tsx` | 工具栏 AI 面板开关按钮 |
+| `src/stores/appStore.ts` | AI 配置状态 + 对话记录 + localStorage 持久化 + 旧版迁移 |
+| `src/stores/uiAtoms.ts` | `aiPanelOpenAtom` 控制面板开关 |
+| `src/types/index.ts` | `AiChatConfig` / `RagConfig` / `AiMessage` / `RagResult` 类型定义 |
+| `src/lib/tauri-bridge.ts` | `aiApi` IPC 桥接层（6 个方法） |
+| `src/styles/globals.css` | AI 消息 Markdown 渲染样式 |
+| `src/plugins/types.ts` | `ai-prompt` 扩展点定义 |
+| `src-tauri/Cargo.toml` | reqwest/serde/futures-util 依赖声明 |

@@ -30,24 +30,33 @@ TimeWrite 采用**双层状态管理**架构：Zustand 管理业务数据，Jota
 | 字段 | 类型 | 持久化 | 说明 |
 |------|------|--------|------|
 | `books` | `Book[]` | ❌ | 作品列表 |
-| `currentBook` | `Book \| null` | ❌ | 当前打开作品 |
-| `currentChapter` | `Chapter \| null` | ❌ | 当前编辑章节 |
+| `currentBookId` | `string \| null` | ❌ | 当前打开作品 ID |
+| `currentChapterId` | `string \| null` | ❌ | 当前编辑章节 ID |
 | `volumes` | `Volume[]` | ❌ | 卷列表 |
 | `chapters` | `Chapter[]` | ❌ | 章节列表 |
-| `aiConfig` | `AiConfig` | ✅ localStorage | AI 配置 |
-| `aiConnectionStatus` | 枚举 | ❌ | 连接状态 |
-| `theme` | 枚举 | ✅ localStorage | 主题 |
-| `eyeCare` | 枚举 | ✅ localStorage | 护眼模式 |
-| `fontFamily` | 枚举 | ✅ localStorage | 字体 |
-| `fontSize` | number | ✅ localStorage | 字号 |
-| `gridSize` | 枚举 | ✅ localStorage | 网格尺寸 |
-| `editorWidth` | 枚举 | ✅ localStorage | 编辑器宽度 |
+| `dbStatus` | `'idle' \| 'connected' \| 'error'` | ❌ | 数据库连接状态 |
+| `aiConfig` | `{ chat: AiChatConfig, rag: RagConfig }` | ✅ localStorage | AI 对话与 RAG 独立配置 |
+| `aiConnectionStatus` | `'idle' \| 'testing' \| 'connected' \| 'error'` | ❌ | 对话连接状态 |
+| `aiConversations` | `Record<string, AiMessage[]>` | ✅ localStorage | 按 bookId 分组的对话记录 |
+| `theme` | `'light' \| 'dark' \| 'system'` | ✅ localStorage | 主题 |
+| `eyeCareMode` | `'off' \| 'warm' \| 'green'` | ✅ localStorage | 护眼模式 |
+| `fontFamily` | `'simhei' \| 'simsun' \| 'kaiti' \| 'yahei'` | ✅ localStorage | 字体 |
+| `fontSize` | `number`（12-24） | ✅ localStorage | 字号 |
+| `gridSize` | `'small' \| 'medium' \| 'large'` | ✅ localStorage | 网格尺寸 |
+| `editorWidth` | `'mobile' \| 'standard' \| 'wide'` | ✅ localStorage | 编辑器宽度 |
+| `appVersion` | `string` | ❌ | 应用版本号（运行时获取） |
+| `isLoadingBooks` | `boolean` | ❌ | 书籍加载状态 |
+| `isLoadingChapters` | `boolean` | ❌ | 章节加载状态 |
 
 ### Actions
-- 书籍 CRUD：`loadBooks` / `createBook` / `updateBook` / `deleteBook`
-- 章节管理：`loadChapters` / `createChapter` / `updateChapter`
+- 书籍 CRUD：`setBooks` / `addBook` / `removeBook` / `updateBook`
+- 章节管理：`setChapters` / `addChapter` / `removeChapter` / `updateChapter` / `reorderChapters` / `moveChapterToVolume`
+- 卷管理：`setVolumes` / `reorderVolumes`
 - AI 配置：`setAiConfig` / `setAiConnectionStatus`
-- 主题字体：`setTheme` / `setEyeCare` / `setFontFamily` / `setFontSize`
+- AI 对话：`addAiMessage` / `updateAiMessage` / `setAiMessages` / `clearAiConversation` / `persistAiConversation`
+- 主题字体：`setTheme` / `setEyeCareMode` / `setFontFamily` / `setFontSize`
+- 布局偏好：`setGridSize` / `setEditorWidth`
+- 编辑器状态：`saveCurrentEditorState`（恢复上次编辑位置）
 
 ## Zustand PluginStore
 
@@ -58,25 +67,31 @@ TimeWrite 采用**双层状态管理**架构：Zustand 管理业务数据，Jota
 
 通过 PluginManager 单例交互。
 
-## Jotai UI Atoms（13 个）
+## Jotai UI Atoms（15 个）
 
 | atom | 说明 |
 |------|------|
 | `editorFocusAtom` | 编辑器是否聚焦 |
+| `editorInstanceAtom` | TipTap 编辑器实例引用 |
 | `sidebarOpenAtom` | 侧边栏展开状态 |
 | `aiPanelOpenAtom` | AI 对话面板展开 |
 | `historyPanelOpenAtom` | 版本历史面板展开 |
 | `zenModeAtom` | 专注模式 |
 | `isSavingAtom` | 正在保存状态 |
 | `lastSavedAtom` | 最后保存时间 |
-| `wordCountAtom` | 字数统计 |
+| `wordCountAtom` | 字数统计 `{ chapter, total }` |
 | `searchOpenAtom` | 搜索面板 |
-| `contentRefreshAtom` | 内容刷新计数器 |
+| `contentRefreshAtom` | 内容刷新计数器（快照恢复等场景） |
+| `editorScrollPositionAtom` | 编辑器滚动位置 |
+| `editorCursorPositionAtom` | 编辑器光标/选区位置 |
 | `diffViewModeAtom` | Diff 对比视图模式 |
 | `hoverKeywordAtom` | 悬浮速览关键词 |
-| `modalStackAtom` | 模态框栈 |
+| `modalStackAtom` | 模态框栈（嵌套弹窗管理） |
 
 ## 持久化策略
 
-- **业务数据**（作品/章节/卷）：存在于 Rust 端 SQLite，前端通过 IPC 加载
-- **用户偏好**（主题/字体/字号/AI 配置等）：通过 `localStorage` 持久化，启动时自动恢复
+- **业务数据**（作品/章节/卷/快照/世界观卡片）：存储在 Rust 端 SQLite（WAL 模式），前端通过 IPC 加载
+- **用户偏好**（主题/字体/字号/网格/编辑器宽度/AI 配置等）：通过 `localStorage` 持久化，启动时自动恢复
+- **AI 对话记录**：按 `bookId` 分组存储在 `localStorage`，流式更新时仅写内存（高频），仅在添加/清空/整体设置时写盘
+- **编辑器状态**：按 `bookId` 保存上次编辑位置（章节ID、滚动位置、光标位置），打开作品时自动恢复
+- **AI 配置迁移**：自动兼容旧版扁平格式，检测并迁移为 `chat` + `rag` 解耦结构
