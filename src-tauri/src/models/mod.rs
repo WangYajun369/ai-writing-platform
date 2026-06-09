@@ -29,7 +29,7 @@ pub struct Book {
     pub updated_at: String,
 }
 
-/// 卷 — 对应 `volumes` 表，按 sort_order 排序
+/// 卷 — 对应 `volumes` 表，按 sort_order 排序，支持软删除 (deleted_at)
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Volume {
     pub id: String,
@@ -40,6 +40,8 @@ pub struct Volume {
     pub sort_order: i64,
     #[serde(rename = "createdAt")]
     pub created_at: String,
+    #[serde(rename = "deletedAt")]
+    pub deleted_at: Option<String>,
 }
 
 /// 章节 — 对应 `chapters` 表，支持软删除 (deleted_at)

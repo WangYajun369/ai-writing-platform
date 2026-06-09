@@ -81,7 +81,8 @@ impl AppDb {
                 book_id     TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
                 title       TEXT NOT NULL,
                 sort_order  INTEGER NOT NULL DEFAULT 0,
-                created_at  TEXT NOT NULL
+                created_at  TEXT NOT NULL,
+                deleted_at  TEXT
             );
 
             CREATE TABLE IF NOT EXISTS chapters (
@@ -132,9 +133,15 @@ impl AppDb {
             );
         "#).context("创建数据表失败")?;
 
+        // 迁移现有数据库：为旧表添加 deleted_at 列（如果不存在）
+        // 注意：必须在索引创建之前执行，否则旧库会因列不存在而创建索引失败
+        let _ = conn.execute("ALTER TABLE volumes ADD COLUMN deleted_at TEXT", []);
+        let _ = conn.execute("ALTER TABLE chapters ADD COLUMN deleted_at TEXT", []);
+
         // 关键字段索引（提升查询性能）
         conn.execute_batch(r#"
             CREATE INDEX IF NOT EXISTS idx_volumes_book_id ON volumes(book_id);
+            CREATE INDEX IF NOT EXISTS idx_volumes_deleted_at ON volumes(deleted_at);
             CREATE INDEX IF NOT EXISTS idx_chapters_book_id ON chapters(book_id);
             CREATE INDEX IF NOT EXISTS idx_chapters_volume_id ON chapters(volume_id);
             CREATE INDEX IF NOT EXISTS idx_chapters_deleted_at ON chapters(deleted_at);

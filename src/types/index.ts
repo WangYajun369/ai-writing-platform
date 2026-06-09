@@ -32,6 +32,8 @@ export interface Volume {
   title: string
   sortOrder: number
   createdAt: string
+  /** 软删除时间 */
+  deletedAt?: string
 }
 
 /** 章节信息 */

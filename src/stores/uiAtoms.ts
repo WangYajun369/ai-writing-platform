@@ -43,3 +43,9 @@ export const searchOpenAtom = atom<boolean>(false)
 
 /** 章节内容外部刷新计数器（恢复快照等场景递增触发编辑器重载） */
 export const contentRefreshAtom = atom<number>(0)
+
+/** 编辑器滚动位置（用于恢复上次编辑位置） */
+export const editorScrollPositionAtom = atom<number>(0)
+
+/** 编辑器光标/选区位置 { from: number, to: number } */
+export const editorCursorPositionAtom = atom<{ from: number; to: number } | null>(null)

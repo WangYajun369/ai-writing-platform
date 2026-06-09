@@ -1,6 +1,6 @@
 //! 卷管理 IPC 命令
 //!
-//! 提供书籍卷的增删改查与排序操作。
+//! 提供书籍卷的增删改查与排序操作，支持软删除 (deleted_at)。
 
 use tauri::State;
 use rusqlite::params;
@@ -12,12 +12,12 @@ use crate::models::Volume;
 /// 获取当前 UTC 时间
 fn now() -> String { Utc::now().to_rfc3339() }
 
-/// 列出指定书籍的所有卷，按 sort_order 升序
+/// 列出指定书籍的所有未删除卷，按 sort_order 升序
 #[tauri::command]
 pub async fn list_volumes(db: State<'_, AppDb>, book_id: String) -> Result<Vec<Volume>, String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     let mut stmt = conn.prepare(
-        "SELECT id,book_id,title,sort_order,created_at FROM volumes WHERE book_id=?1 ORDER BY sort_order"
+        "SELECT id,book_id,title,sort_order,created_at,deleted_at FROM volumes WHERE book_id=?1 AND deleted_at IS NULL ORDER BY sort_order"
     ).map_err(|e| e.to_string())?;
     let items = stmt.query_map(params![book_id], |row| {
         Ok(Volume {
@@ -26,6 +26,27 @@ pub async fn list_volumes(db: State<'_, AppDb>, book_id: String) -> Result<Vec<V
             title: row.get(2)?,
             sort_order: row.get(3)?,
             created_at: row.get(4)?,
+            deleted_at: row.get(5)?,
+        })
+    }).map_err(|e| e.to_string())?;
+    items.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+/// 列出指定书籍所有已软删除的卷，按删除时间倒序
+#[tauri::command]
+pub async fn list_deleted_volumes(db: State<'_, AppDb>, book_id: String) -> Result<Vec<Volume>, String> {
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
+    let mut stmt = conn.prepare(
+        "SELECT id,book_id,title,sort_order,created_at,deleted_at FROM volumes WHERE book_id=?1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC"
+    ).map_err(|e| e.to_string())?;
+    let items = stmt.query_map(params![book_id], |row| {
+        Ok(Volume {
+            id: row.get(0)?,
+            book_id: row.get(1)?,
+            title: row.get(2)?,
+            sort_order: row.get(3)?,
+            created_at: row.get(4)?,
+            deleted_at: row.get(5)?,
         })
     }).map_err(|e| e.to_string())?;
     items.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
@@ -46,7 +67,7 @@ pub async fn create_volume(
         "INSERT INTO volumes (id,book_id,title,sort_order,created_at) VALUES (?1,?2,?3,?4,?5)",
         params![id, book_id, title, sort_order, ts],
     ).map_err(|e| e.to_string())?;
-    Ok(Volume { id, book_id, title, sort_order, created_at: ts })
+    Ok(Volume { id, book_id, title, sort_order, created_at: ts, deleted_at: None })
 }
 
 /// 更新卷标题
@@ -58,9 +79,37 @@ pub async fn update_volume(db: State<'_, AppDb>, id: String, title: String) -> R
     Ok(())
 }
 
-/// 删除卷（级联将下属章节 volume_id 置 NULL）
+/// 软删除卷（设置 deleted_at 时间戳），下属章节 volume_id 置 NULL
 #[tauri::command]
 pub async fn delete_volume(db: State<'_, AppDb>, id: String) -> Result<(), String> {
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
+    let ts = now();
+    conn.execute(
+        "UPDATE volumes SET deleted_at=?1 WHERE id=?2",
+        params![ts, id],
+    ).map_err(|e| e.to_string())?;
+    // 将下属未删除章节的 volume_id 置 NULL（解除关联）
+    conn.execute(
+        "UPDATE chapters SET volume_id=NULL WHERE volume_id=?1 AND deleted_at IS NULL",
+        params![id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 恢复已软删除的卷（清除 deleted_at）
+#[tauri::command]
+pub async fn restore_volume(db: State<'_, AppDb>, id: String) -> Result<(), String> {
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
+    conn.execute(
+        "UPDATE volumes SET deleted_at=NULL WHERE id=?1",
+        params![id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 硬删除卷（真正从数据库删除记录）
+#[tauri::command]
+pub async fn hard_delete_volume(db: State<'_, AppDb>, id: String) -> Result<(), String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     conn.execute("DELETE FROM volumes WHERE id=?1", params![id])
         .map_err(|e| e.to_string())?;

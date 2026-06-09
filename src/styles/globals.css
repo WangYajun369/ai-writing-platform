@@ -408,7 +408,7 @@
 
 /* ===== 代码块 ===== */
 .tiptap-editor pre {
-  background: hsl(var(--muted-foreground) / 0.1) !important;
+  background: hsl(var(--muted) / 0.6) !important;
   color: hsl(var(--foreground) / 0.85) !important;
   border: 1px solid hsl(var(--border)) !important;
   border-radius: 0.5rem !important;
@@ -439,6 +439,137 @@
   background: hsl(var(--muted-foreground) / 0.15) !important;
 }
 
+/* ===== 代码语法高亮（highlight.js 兼容） ===== */
+/* 注释 */
+.tiptap-editor .hljs-comment,
+.tiptap-editor .hljs-quote {
+  color: hsl(var(--muted-foreground) / 0.75);
+  font-style: italic;
+}
+
+/* 关键字 */
+.tiptap-editor .hljs-keyword,
+.tiptap-editor .hljs-selector-tag,
+.tiptap-editor .hljs-type {
+  color: #c678dd;
+}
+
+/* 字符串 */
+.tiptap-editor .hljs-string,
+.tiptap-editor .hljs-addition {
+  color: #98c379;
+}
+
+/* 数字 */
+.tiptap-editor .hljs-number,
+.tiptap-editor .hljs-literal {
+  color: #d19a66;
+}
+
+/* 函数 / 方法名 */
+.tiptap-editor .hljs-function .hljs-title,
+.tiptap-editor .hljs-title.function_,
+.tiptap-editor .hljs-title.class_ {
+  color: #61afef;
+}
+
+/* 类名 / 标题 */
+.tiptap-editor .hljs-title,
+.tiptap-editor .hljs-name,
+.tiptap-editor .hljs-section {
+  color: #e5c07b;
+}
+
+/* 变量 / 模板字符串变量 */
+.tiptap-editor .hljs-variable,
+.tiptap-editor .hljs-template-variable {
+  color: #e06c75;
+}
+
+/* 属性 / 选择器 */
+.tiptap-editor .hljs-attr,
+.tiptap-editor .hljs-attribute,
+.tiptap-editor .hljs-selector-attr,
+.tiptap-editor .hljs-selector-class,
+.tiptap-editor .hljs-selector-id,
+.tiptap-editor .hljs-selector-pseudo {
+  color: #d19a66;
+}
+
+/* 内置对象 / 字面量 */
+.tiptap-editor .hljs-built_in,
+.tiptap-editor .hljs-symbol {
+  color: #e5c07b;
+}
+
+/* 正则表达式 */
+.tiptap-editor .hljs-regexp {
+  color: #56b6c2;
+}
+
+/* 链接 */
+.tiptap-editor .hljs-link {
+  color: #61afef;
+  text-decoration: underline;
+}
+
+/* 删除 / 新增行标记 */
+.tiptap-editor .hljs-deletion {
+  color: #e06c75;
+}
+
+/* 元数据 / 参数 */
+.tiptap-editor .hljs-meta,
+.tiptap-editor .hljs-params {
+  color: #abb2bf;
+}
+
+/* 标签 / Doctag */
+.tiptap-editor .hljs-tag,
+.tiptap-editor .hljs-doctag {
+  color: #e06c75;
+}
+
+/* 操作符 / 标点 */
+.tiptap-editor .hljs-operator,
+.tiptap-editor .hljs-punctuation {
+  color: hsl(var(--foreground) / 0.65);
+}
+
+/* 属性值 */
+.tiptap-editor .hljs-property {
+  color: #abb2bf;
+}
+
+/* 强调 / 加粗 */
+.tiptap-editor .hljs-emphasis {
+  font-style: italic;
+}
+
+.tiptap-editor .hljs-strong {
+  font-weight: 700;
+}
+
+/* 公式 */
+.tiptap-editor .hljs-formula {
+  color: #56b6c2;
+}
+
+/* 项目符号 */
+.tiptap-editor .hljs-bullet {
+  color: #61afef;
+}
+
+/* 代码内嵌 */
+.tiptap-editor .hljs-code {
+  color: #abb2bf;
+}
+
+/* 占位符 / 子表达式 */
+.tiptap-editor .hljs-subst {
+  color: hsl(var(--foreground) / 0.85);
+}
+
 /* 编辑器占位提示文字：在内容为空时显示 data-placeholder 属性的文本 */
 .tiptap-editor p.is-editor-empty:first-child::before {
   @apply text-muted-foreground;
@@ -446,6 +577,61 @@
   float: left;
   height: 0;
   pointer-events: none;
+}
+
+/* ===== TipTap 表格样式 ===== */
+.tiptap-editor table {
+  @apply w-full border-collapse my-4;
+  font-size: 0.9375em;
+  line-height: 1.6;
+}
+
+.tiptap-editor table p {
+  text-indent: 0 !important;
+  margin: 0 !important;
+  padding: 0.25em 0 !important;
+}
+
+.tiptap-editor th {
+  @apply bg-muted/80 border border-border px-3 py-2 text-left font-semibold;
+  min-width: 2.5em;
+}
+
+.tiptap-editor td {
+  @apply border border-border px-3 py-2;
+  min-width: 2.5em;
+}
+
+/* 表格选中单元格高亮 */
+.tiptap-editor .selectedCell {
+  @apply bg-primary/10;
+}
+
+/* 表格列调整手柄 */
+.tiptap-editor .column-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -2px;
+  width: 4px;
+  background-color: hsl(var(--primary) / 0.3);
+  cursor: col-resize;
+  z-index: 5;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.tiptap-editor .column-resize-handle:hover,
+.tiptap-editor th:hover .column-resize-handle {
+  opacity: 1;
+}
+
+/* 表格内文字格式保持 */
+.tiptap-editor td strong,
+.tiptap-editor th strong,
+.tiptap-editor td em,
+.tiptap-editor th em {
+  color: inherit;
 }
 
 /* ===== 护眼模式：编辑器 prose 色彩覆盖 ===== */

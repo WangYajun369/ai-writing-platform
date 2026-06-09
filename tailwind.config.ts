@@ -142,6 +142,10 @@ export default {
         'fade-in': 'fade-in 0.2s ease-out',
         /** 从左滑入动画，0.2s ease-out */
         'slide-in': 'slide-in 0.2s ease-out',
+        /** 弹入动画，用于拖拽预览 */
+        'pop-in': 'pop-in 0.15s ease-out',
+        /** 脉冲指示动画，用于插入线 */
+        'pulse-indicator': 'pulse-indicator 1.2s ease-in-out infinite',
       },
 
       // -------------------------------------------------------------------
@@ -158,6 +162,16 @@ export default {
         'slide-in': {
           from: { transform: 'translateX(-8px)', opacity: '0' },
           to: { transform: 'translateX(0)', opacity: '1' },
+        },
+        /** 弹入关键帧：缩小+透明 → 放大还原+不透明 */
+        'pop-in': {
+          from: { transform: 'scale(0.92)', opacity: '0.6' },
+          to: { transform: 'scale(1)', opacity: '1' },
+        },
+        /** 插入指示器脉冲：呼吸效果 */
+        'pulse-indicator': {
+          '0%, 100%': { opacity: '1' },
+          '50%': { opacity: '0.5' },
         },
       },
     },

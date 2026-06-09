@@ -11,7 +11,7 @@ import { useAtom } from 'jotai'
 import { XIcon } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
 import { sidebarOpenAtom, zenModeAtom, aiPanelOpenAtom, historyPanelOpenAtom } from '@/stores/uiAtoms'
-import { useAppStore } from '@/stores/appStore'
+import { useAppStore, getEditorState } from '@/stores/appStore'
 import { chapterApi, volumeApi } from '@/lib/tauri-bridge'
 import { cn } from '@/lib/utils'
 import EditorLayout from '@/components/layout/EditorLayout'
@@ -63,20 +63,29 @@ export default function EditorPage() {
   async function loadBookTree(id: string) {
     setLoadingChapters(true)
     try {
-      const [volumes, chapters] = await Promise.all([
+      const [volumes, deletedVolumes, chapters, deletedChapters] = await Promise.all([
         volumeApi.listByBook(id),
+        volumeApi.listDeleted(id),
         chapterApi.listByBook(id),
+        chapterApi.listDeleted(id),
       ])
-      setVolumes(volumes)
-      setChapters(chapters)
+      // 合并未删除和已删除的数据，确保回收站数据不丢失
+      setVolumes([...volumes, ...deletedVolumes])
+      setChapters([...chapters, ...deletedChapters])
 
-      // 无章节时自动创建第一章；无选中章节时自动选中第一章
+      // 无章节时自动创建第一章；尝试恢复上次编辑位置，否则选中第一章
       if (chapters.length === 0) {
         const ch = await chapterApi.create({ bookId: id, title: '第一章', sortOrder: 0 })
         addChapter(ch)
         setCurrentChapterId(ch.id)
       } else if (!currentChapterId || !chapters.some((c) => c.id === currentChapterId)) {
-        setCurrentChapterId(chapters[0].id)
+        // 尝试恢复上次编辑的章节
+        const savedState = getEditorState(id)
+        if (savedState && chapters.some((c) => c.id === savedState.chapterId)) {
+          setCurrentChapterId(savedState.chapterId)
+        } else {
+          setCurrentChapterId(chapters[0].id)
+        }
       }
     } catch (err) {
       console.error('加载章节树失败', err)

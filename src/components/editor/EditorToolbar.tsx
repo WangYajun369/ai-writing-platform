@@ -33,6 +33,13 @@ import {
   Code2Icon,
   BoldIcon,
   PaletteIcon,
+  TableIcon,
+  Trash2Icon,
+  ArrowUpIcon,
+  ArrowDownIcon,
+  ArrowLeftToLineIcon,
+  ArrowRightToLineIcon,
+  ChevronDownIcon,
 } from 'lucide-react'
 import {
     sidebarOpenAtom,
@@ -66,6 +73,28 @@ export default function EditorToolbar() {
   // 保存打开颜色选择器前的编辑器选区，防止选区丢失导致无法应用颜色
   const savedColorTargetRef = useRef<{ from: number; to: number } | null>(null)
 
+  // 表格选择器
+  const [tablePickerOpen, setTablePickerOpen] = useState(false)
+  const tablePickerRef = useRef<HTMLDivElement>(null)
+  const [gridHover, setGridHover] = useState({ rows: 3, cols: 3 })
+  const [isInTable, setIsInTable] = useState(false)
+
+  // 监听编辑器选区变化，实时更新 isInTable 状态，
+  // 确保点击表格时工具栏显示删行/删列/删表按钮，点击其他地方时隐藏
+  useEffect(() => {
+    if (!editor) return
+    function updateTableState() {
+      setIsInTable(editor?.isActive('table') ?? false)
+    }
+    updateTableState()
+    editor.on('selectionUpdate', updateTableState)
+    editor.on('transaction', updateTableState)
+    return () => {
+      editor.off('selectionUpdate', updateTableState)
+      editor.off('transaction', updateTableState)
+    }
+  }, [editor])
+
   /** 打开/关闭颜色选择器，保存当前选区 */
   function handleToggleColorPicker() {
     if (editor && !colorPickerOpen) {
@@ -75,17 +104,20 @@ export default function EditorToolbar() {
     setColorPickerOpen((v) => !v)
   }
 
-  // 点击外部关闭颜色选择器
+  // 点击外部关闭颜色选择器/表格选择器
   useEffect(() => {
-    if (!colorPickerOpen) return
+    if (!colorPickerOpen && !tablePickerOpen) return
     function handleClick(e: MouseEvent) {
-      if (colorPickerRef.current && !colorPickerRef.current.contains(e.target as Node)) {
+      if (colorPickerOpen && colorPickerRef.current && !colorPickerRef.current.contains(e.target as Node)) {
         setColorPickerOpen(false)
+      }
+      if (tablePickerOpen && tablePickerRef.current && !tablePickerRef.current.contains(e.target as Node)) {
+        setTablePickerOpen(false)
       }
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
-  }, [colorPickerOpen])
+  }, [colorPickerOpen, tablePickerOpen])
 
   /** 从文件扩展名推断 MIME 类型 */
   const guessMimeType = useCallback((path: string): string => {
@@ -233,6 +265,61 @@ export default function EditorToolbar() {
         title="代码块"
         icon={<Code2Icon className="w-4 h-4" />}
       />
+      {/* 代码语言选择器（仅在代码块内显示） */}
+      {(editor?.isActive('codeBlock') ?? false) && <CodeLanguageSelect editor={editor} />}
+
+      {/* 表格 */}
+      <div className="relative flex items-center gap-1">
+        <ToolbarBtn
+          active={tablePickerOpen || isInTable}
+          onClick={() => {
+            setTablePickerOpen((v) => !v)
+            setColorPickerOpen(false)
+          }}
+          title="表格"
+          icon={<TableIcon className="w-4 h-4" />}
+        />
+        {tablePickerOpen && (
+          <TablePopover
+            ref={tablePickerRef}
+            editor={editor}
+            gridHover={gridHover}
+            onGridHover={setGridHover}
+            onClose={() => setTablePickerOpen(false)}
+          />
+        )}
+
+        {/* 表格上下文操作按钮（仅在光标位于表格内时显示） */}
+        {isInTable && !tablePickerOpen && (
+          <>
+            <span className="w-px h-4 bg-border mx-0.5" />
+            <button
+              onClick={() => editor?.chain().focus().deleteRow().run()}
+              className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+              title="删除当前行"
+            >
+              <MinusIcon className="w-3 h-3" />
+              <span>删行</span>
+            </button>
+            <button
+              onClick={() => editor?.chain().focus().deleteColumn().run()}
+              className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+              title="删除当前列"
+            >
+              <MinusIcon className="w-3 h-3" />
+              <span>删列</span>
+            </button>
+            <button
+              onClick={() => editor?.chain().focus().deleteTable().run()}
+              className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+              title="删除整个表格"
+            >
+              <Trash2Icon className="w-3 h-3" />
+              <span>删表</span>
+            </button>
+          </>
+        )}
+      </div>
 
       <div className="w-px h-5 bg-border mx-1" />
 
@@ -501,3 +588,231 @@ const ColorPickerPopover = forwardRef<
     </div>
   )
 })
+
+/**
+ * 表格操作弹窗
+ *
+ * 提供表格网格尺寸选择器和行/列添加操作。
+ * 删除行/列/表格操作已移至工具栏直接显示。
+ */
+const TablePopover = forwardRef<
+  HTMLDivElement,
+  {
+    editor: ReturnType<typeof import('@tiptap/react').useEditor>
+    gridHover: { rows: number; cols: number }
+    onGridHover: (dim: { rows: number; cols: number }) => void
+    onClose: () => void
+  }
+>(function TablePopover({ editor, gridHover, onGridHover, onClose }, ref) {
+  const MAX_ROWS = 6
+  const MAX_COLS = 6
+  const isInTable = editor?.isActive('table') ?? false
+
+  function handleInsertTable() {
+    editor
+      ?.chain()
+      .focus()
+      .insertTable({ rows: gridHover.rows, cols: gridHover.cols, withHeaderRow: true })
+      .run()
+    onClose()
+  }
+
+  return (
+    <div
+      ref={ref}
+      className="absolute top-full right-0 mt-1 z-30 bg-popover border rounded-lg shadow-lg p-3 min-w-52"
+    >
+      {/* --- 表格内行/列添加操作 --- */}
+      {isInTable && (
+        <>
+          <span className="text-xs font-medium text-muted-foreground block mb-2">添加行/列</span>
+
+          <div className="flex items-center gap-1 mb-1.5">
+            <span className="text-xs text-muted-foreground w-8">行：</span>
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => editor?.chain().focus().addRowBefore().run()}
+              className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-muted transition-colors"
+              title="在上方插入行"
+            >
+              <ArrowUpIcon className="w-3 h-3" />
+              <PlusIcon className="w-2.5 h-2.5" />
+            </button>
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => editor?.chain().focus().addRowAfter().run()}
+              className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-muted transition-colors"
+              title="在下方插入行"
+            >
+              <ArrowDownIcon className="w-3 h-3" />
+              <PlusIcon className="w-2.5 h-2.5" />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1 mb-2">
+            <span className="text-xs text-muted-foreground w-8">列：</span>
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => editor?.chain().focus().addColumnBefore().run()}
+              className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-muted transition-colors"
+              title="在左侧插入列"
+            >
+              <ArrowLeftToLineIcon className="w-3 h-3" />
+              <PlusIcon className="w-2.5 h-2.5" />
+            </button>
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => editor?.chain().focus().addColumnAfter().run()}
+              className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-muted transition-colors"
+              title="在右侧插入列"
+            >
+              <ArrowRightToLineIcon className="w-3 h-3" />
+              <PlusIcon className="w-2.5 h-2.5" />
+            </button>
+          </div>
+
+          <div className="h-px bg-border my-2" />
+        </>
+      )}
+
+      {/* --- 网格尺寸选择器 --- */}
+      <span className="text-xs font-medium text-muted-foreground block mb-2">插入表格</span>
+
+      <div className="flex justify-center mb-2">
+        <div
+          className="inline-grid gap-0.5"
+          style={{ gridTemplateColumns: `repeat(${MAX_COLS}, 1.5rem)` }}
+        >
+          {Array.from({ length: MAX_ROWS }, (_, row) =>
+            Array.from({ length: MAX_COLS }, (_, col) => {
+              const isActive = row < gridHover.rows && col < gridHover.cols
+              return (
+                <div
+                  key={`${row}-${col}`}
+                  onMouseEnter={() => onGridHover({ rows: row + 1, cols: col + 1 })}
+                  onClick={handleInsertTable}
+                  className={cn(
+                    'w-6 h-6 rounded-sm border cursor-pointer transition-colors',
+                    isActive
+                      ? 'bg-primary/30 border-primary/50'
+                      : 'border-border hover:border-muted-foreground/40'
+                  )}
+                />
+              )
+            })
+          )}
+        </div>
+      </div>
+
+      <p className="text-center text-xs text-muted-foreground mb-2">
+        {gridHover.rows} × {gridHover.cols}
+      </p>
+
+      {/* 取消按钮 */}
+      <button
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={onClose}
+        className="w-full py-1.5 text-xs rounded text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+      >
+        取消
+      </button>
+    </div>
+  )
+})
+
+/** 代码块支持的语言列表 */
+const CODE_LANGUAGES: { value: string; label: string }[] = [
+  { value: 'plaintext', label: '纯文本' },
+  { value: 'javascript', label: 'JavaScript' },
+  { value: 'typescript', label: 'TypeScript' },
+  { value: 'python', label: 'Python' },
+  { value: 'rust', label: 'Rust' },
+  { value: 'java', label: 'Java' },
+  { value: 'go', label: 'Go' },
+  { value: 'c', label: 'C' },
+  { value: 'cpp', label: 'C++' },
+  { value: 'csharp', label: 'C#' },
+  { value: 'ruby', label: 'Ruby' },
+  { value: 'php', label: 'PHP' },
+  { value: 'swift', label: 'Swift' },
+  { value: 'kotlin', label: 'Kotlin' },
+  { value: 'scala', label: 'Scala' },
+  { value: 'bash', label: 'Bash' },
+  { value: 'shell', label: 'Shell' },
+  { value: 'sql', label: 'SQL' },
+  { value: 'json', label: 'JSON' },
+  { value: 'xml', label: 'XML' },
+  { value: 'html', label: 'HTML' },
+  { value: 'css', label: 'CSS' },
+  { value: 'scss', label: 'SCSS' },
+  { value: 'less', label: 'Less' },
+  { value: 'markdown', label: 'Markdown' },
+  { value: 'yaml', label: 'YAML' },
+  { value: 'toml', label: 'TOML' },
+  { value: 'dockerfile', label: 'Dockerfile' },
+  { value: 'nginx', label: 'Nginx' },
+  { value: 'makefile', label: 'Makefile' },
+  { value: 'graphql', label: 'GraphQL' },
+  { value: 'ini', label: 'INI' },
+  { value: 'diff', label: 'Diff' },
+  { value: 'powershell', label: 'PowerShell' },
+]
+
+/**
+ * 代码块语言选择器
+ *
+ * 在光标位于代码块内时显示，允许切换代码块的语言以实现语法高亮。
+ */
+function CodeLanguageSelect({ editor }: { editor: ReturnType<typeof import('@tiptap/react').useEditor> }) {
+  const currentLang = (editor?.getAttributes('codeBlock').language ?? 'plaintext') as string
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  // 点击外部关闭
+  useEffect(() => {
+    if (!open) return
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  const currentLabel = CODE_LANGUAGES.find((l) => l.value === currentLang)?.label ?? currentLang
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+        title="选择代码语言"
+      >
+        <span>{currentLabel}</span>
+        <ChevronDownIcon className="w-3 h-3" />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-30 bg-popover border rounded-lg shadow-lg py-1 max-h-64 overflow-y-auto min-w-36">
+          {CODE_LANGUAGES.map((lang) => (
+            <button
+              key={lang.value}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                editor?.chain().focus().updateAttributes('codeBlock', { language: lang.value }).run()
+                setOpen(false)
+              }}
+              className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
+                currentLang === lang.value
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-foreground hover:bg-muted'
+              }`}
+            >
+              {lang.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}

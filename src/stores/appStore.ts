@@ -10,6 +10,40 @@ const PREFERENCES_KEY = 'time-write-preferences'
 const AI_CONFIG_KEY = 'time-write-ai-config'
 /** localStorage 键名，用于持久化 AI 对话记录（按 bookId 分组） */
 const AI_CONVERSATIONS_KEY = 'time-write-ai-conversations'
+/** localStorage 键名，用于持久化编辑器状态（按 bookId 保存当前编辑位置） */
+const EDITOR_STATE_KEY = 'time-write-editor-state'
+
+/** 编辑器恢复状态（记录用户上次编辑的作品、章节和光标位置） */
+export interface EditorState {
+  bookId: string
+  chapterId: string
+  scrollTop: number
+  cursorPos: { from: number; to: number } | null
+}
+
+/** 从 localStorage 读取所有作品的编辑器状态 */
+function loadAllEditorStates(): Record<string, EditorState> {
+  try {
+    const raw = localStorage.getItem(EDITOR_STATE_KEY)
+    if (raw) return JSON.parse(raw)
+  } catch { /* ignore */ }
+  return {}
+}
+
+/** 保存指定作品的编辑器状态到 localStorage */
+function saveEditorState(state: EditorState) {
+  try {
+    const all = loadAllEditorStates()
+    all[state.bookId] = state
+    localStorage.setItem(EDITOR_STATE_KEY, JSON.stringify(all))
+  } catch { /* ignore */ }
+}
+
+/** 获取指定作品上次的编辑器状态 */
+export function getEditorState(bookId: string): EditorState | null {
+  const all = loadAllEditorStates()
+  return all[bookId] ?? null
+}
 
 /** 从 localStorage 读取持久化的用户偏好（含外观设置） */
 function loadPreferences(): Partial<Pick<AppState, 'theme' | 'eyeCareMode' | 'fontFamily' | 'fontSize' | 'gridSize' | 'editorWidth'>> {
@@ -202,6 +236,9 @@ interface AppState {
   updateChapter: (id: string, patch: Partial<Chapter>) => void
   addChapter: (chapter: Chapter) => void
   removeChapter: (id: string) => void
+  reorderVolumes: (orderedIds: string[]) => void
+  reorderChapters: (orderedIds: string[]) => void
+  moveChapterToVolume: (chapterId: string, volumeId: string | null, sortOrder?: number) => void
   updateBook: (id: string, patch: Partial<Book>) => void
   addBook: (book: Book) => void
   removeBook: (id: string) => void
@@ -223,6 +260,8 @@ interface AppState {
   setLoadingBooks: (v: boolean) => void
   setLoadingChapters: (v: boolean) => void
   setAppVersion: (v: string) => void
+  /** 保存当前编辑器状态（作品+章节+光标+滚动位置），下次打开自动恢复 */
+  saveCurrentEditorState: (bookId: string, chapterId: string, scrollTop: number, cursorPos: { from: number; to: number } | null) => void
 }
 
 const savedPrefs = loadPreferences()
@@ -230,7 +269,7 @@ const savedAiConfig = loadAiConfig()
 const savedAiConversations = loadAiConversations()
 
 export const useAppStore = create<AppState>()(
-  subscribeWithSelector((set) => ({
+  subscribeWithSelector((set, get) => ({
     books: [],
     currentBookId: null,
     isLoadingBooks: false,
@@ -283,6 +322,31 @@ export const useAppStore = create<AppState>()(
 
     removeChapter: (id) =>
       set((s) => ({ chapters: s.chapters.filter((c) => c.id !== id) })),
+
+    reorderVolumes: (orderedIds) =>
+      set((s) => ({
+        volumes: s.volumes.map((v) => {
+          const idx = orderedIds.indexOf(v.id)
+          return idx !== -1 ? { ...v, sortOrder: idx } : v
+        }),
+      })),
+
+    reorderChapters: (orderedIds) =>
+      set((s) => ({
+        chapters: s.chapters.map((c) => {
+          const idx = orderedIds.indexOf(c.id)
+          return idx !== -1 ? { ...c, sortOrder: idx } : c
+        }),
+      })),
+
+    moveChapterToVolume: (chapterId, volumeId, sortOrder) =>
+      set((s) => ({
+        chapters: s.chapters.map((c) =>
+          c.id === chapterId
+            ? { ...c, volumeId: volumeId ?? undefined, sortOrder: sortOrder ?? c.sortOrder }
+            : c,
+        ),
+      })),
 
     updateBook: (id, patch) =>
       set((s) => ({
@@ -385,6 +449,9 @@ export const useAppStore = create<AppState>()(
     setLoadingBooks: (v) => set({ isLoadingBooks: v }),
     setLoadingChapters: (v) => set({ isLoadingChapters: v }),
     setAppVersion: (appVersion) => set({ appVersion }),
+    saveCurrentEditorState: (bookId, chapterId, scrollTop, cursorPos) => {
+      saveEditorState({ bookId, chapterId, scrollTop, cursorPos })
+    },
   }))
 )
 

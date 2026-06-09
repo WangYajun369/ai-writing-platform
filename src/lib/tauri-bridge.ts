@@ -41,6 +41,10 @@ export const volumeApi = {
     return invoke<Volume[]>('list_volumes', { bookId })
   },
 
+  async listDeleted(bookId: string): Promise<Volume[]> {
+    return invoke<Volume[]>('list_deleted_volumes', { bookId })
+  },
+
   async create(bookId: string, title: string, sortOrder: number): Promise<Volume> {
     return invoke<Volume>('create_volume', { bookId, title, sortOrder })
   },
@@ -53,6 +57,14 @@ export const volumeApi = {
     return invoke<void>('delete_volume', { id })
   },
 
+  async restore(id: string): Promise<void> {
+    return invoke<void>('restore_volume', { id })
+  },
+
+  async hardDelete(id: string): Promise<void> {
+    return invoke<void>('hard_delete_volume', { id })
+  },
+
   async reorder(ids: string[]): Promise<void> {
     return invoke<void>('reorder_volumes', { ids })
   },
@@ -63,6 +75,18 @@ export const volumeApi = {
 export const chapterApi = {
   async listByBook(bookId: string): Promise<Chapter[]> {
     return invoke<Chapter[]>('list_chapters', { bookId })
+  },
+
+  async listDeleted(bookId: string): Promise<Chapter[]> {
+    return invoke<Chapter[]>('list_deleted_chapters', { bookId })
+  },
+
+  async restore(chapterId: string): Promise<{ volumeId: string | null }> {
+    return invoke<{ volumeId: string | null }>('restore_chapter', { chapterId })
+  },
+
+  async hardDelete(chapterId: string): Promise<void> {
+    return invoke<void>('hard_delete_chapter', { chapterId })
   },
 
   async getContent(chapterId: string): Promise<string> {
@@ -96,6 +120,11 @@ export const chapterApi = {
 
   async reorder(chapterIds: string[]): Promise<void> {
     return invoke<void>('reorder_chapters', { chapterIds })
+  },
+
+  /** 移动章节到指定卷（或根目录） */
+  async moveToVolume(chapterId: string, volumeId: string | null): Promise<void> {
+    return invoke<void>('move_chapter_to_volume', { chapterId, volumeId })
   },
 }
 
