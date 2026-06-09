@@ -124,13 +124,23 @@ function AppInit() {
   // 世界观独立窗口模式
   if (worldWindowInfo.isWorld && worldWindowInfo.bookId) {
     return (
-      <div className="h-screen flex flex-col overflow-hidden bg-background">
+      <div
+        className="h-screen flex flex-col overflow-hidden bg-background"
+        onContextMenu={(e) => e.preventDefault()}
+      >
         <WorldbuildingPanel bookId={worldWindowInfo.bookId} />
       </div>
     )
   }
 
-  return <AppRouter />
+  return (
+    <div
+      className="h-screen flex flex-col overflow-hidden bg-background"
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <AppRouter />
+    </div>
+  )
 }
 
 export default function App() {

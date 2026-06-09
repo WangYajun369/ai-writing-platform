@@ -5,6 +5,7 @@
  * 修改成功后通过 updateBook 更新全局状态并触发回调。
  */
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { XIcon } from 'lucide-react'
 import { bookApi } from '@/lib/tauri-bridge'
 import { useAppStore } from '@/stores/appStore'
@@ -98,13 +99,13 @@ export default function EditBookDialog({ book, onClose, onSaved }: EditBookDialo
     }
   }
 
-  return (
+  return createPortal(
     <>
       {/* 遮罩 */}
-      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/50 z-[60]" onClick={onClose} />
 
       {/* 弹窗 */}
-      <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-card border rounded-2xl shadow-xl p-6 max-h-[90vh] overflow-y-auto">
+      <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[70] w-full max-w-md bg-card border rounded-2xl shadow-xl p-6 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-semibold">编辑作品信息</h2>
           <button onClick={onClose} className="p-1 rounded hover:bg-muted">
@@ -183,6 +184,7 @@ export default function EditBookDialog({ book, onClose, onSaved }: EditBookDialo
           </div>
         </form>
       </div>
-    </>
+    </>,
+    document.body,
   )
 }

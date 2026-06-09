@@ -16,6 +16,7 @@ import { formatWordCount, formatRelativeTime } from '@/lib/utils'
 import { useAppStore } from '@/stores/appStore'
 import { resolveCoverSrc } from './CoverPicker'
 import EditBookDialog from './EditBookDialog'
+import { useContextMenu } from '@/components/common/ContextMenu'
 
 /** 允许的封面图片扩展名 */
 const ALLOWED_COVER_EXTS = ['jpg', 'jpeg', 'png', 'webp']
@@ -30,12 +31,10 @@ interface BookCardProps {
 }
 
 export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCardProps) {
-  const [menuOpen, setMenuOpen] = useState(false)
   const [coverChanging, setCoverChanging] = useState(false)
   const [coverSrc, setCoverSrc] = useState<string | undefined>(undefined)
   const [showEditDialog, setShowEditDialog] = useState(false)
   const prevCoverSrcRef = useRef<string | undefined>(undefined)
-  const menuRef = useRef<HTMLDivElement>(null)
   const { removeBook, updateBook } = useAppStore()
 
   // 异步加载封面为 blob URL
@@ -67,9 +66,19 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
     ? Math.min((book.todayCount / book.dailyTarget) * 100, 100)
     : 0
 
+  // 右键菜单（grid / list 共用）
+  const { onContextMenu, openMenu, contextMenu } = useContextMenu({
+    items: [
+      { label: '打开编辑', icon: EditIcon, onClick: () => onOpen(book) },
+      { label: '编辑信息', icon: PencilIcon, onClick: () => setShowEditDialog(true) },
+      { label: '修改封面', icon: ImageIcon, onClick: handleChangeCover, disabled: coverChanging },
+      { type: 'divider' as const },
+      { label: '删除', icon: Trash2Icon, onClick: handleDelete, danger: true },
+    ],
+  })
+
   /** 选择并上传封面 */
   async function handleChangeCover() {
-    setMenuOpen(false)
     setCoverChanging(true)
     try {
       const selected = await open({
@@ -114,7 +123,6 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
     } catch (err) {
       console.error('删除失败', err)
     }
-    setMenuOpen(false)
   }
 
   if (viewMode === 'list') {
@@ -122,6 +130,7 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
       <div
         className="flex items-center gap-4 p-4 rounded-xl bg-card border hover:border-primary/40 transition-all cursor-pointer group relative"
         onDoubleClick={() => onOpen(book)}
+        onContextMenu={onContextMenu}
       >
         {/* 封面缩略图 */}
         <div className="w-10 h-14 rounded flex-shrink-0 flex items-center justify-center overflow-hidden bg-gradient-to-br from-primary/20 to-primary/5">
@@ -142,74 +151,39 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
 
         <button
           className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted"
-          onClick={(e) => { e.stopPropagation(); setMenuOpen(true) }}
+          onClick={(e) => {
+            e.stopPropagation()
+            const rect = e.currentTarget.getBoundingClientRect()
+            openMenu(rect.left, rect.bottom + 4)
+          }}
         >
           <MoreVerticalIcon className="w-4 h-4" />
         </button>
 
-        {/* 下拉菜单 */}
-        {menuOpen && (
-          <div
-            ref={menuRef}
-            className="absolute right-0 top-full mt-1 z-20 bg-popover border rounded-lg shadow-lg py-1 min-w-32"
-            onClick={(e) => e.stopPropagation()}
-          >
-          <button
-            className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left"
-            onClick={() => { onOpen(book); setMenuOpen(false) }}
-          >
-            <EditIcon className="w-3 h-3" /> 打开编辑
-          </button>
-          <button
-            className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left"
-            onClick={() => { setMenuOpen(false); setShowEditDialog(true) }}
-          >
-            <PencilIcon className="w-3 h-3" /> 编辑信息
-          </button>
-          <button
-            className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left"
-            onClick={handleChangeCover}
-            disabled={coverChanging}
-          >
-            <ImageIcon className="w-3 h-3" /> 修改封面
-          </button>
-          <button
-            className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left text-destructive"
-            onClick={handleDelete}
-          >
-            <Trash2Icon className="w-3 h-3" /> 删除
-          </button>
-        </div>
-      )}
+        {/* 共用右键菜单 */}
+        {contextMenu}
 
-      {/* 遮盖层关闭菜单 */}
-      {menuOpen && (
-        <div
-          className="fixed inset-0 z-10"
-          onClick={() => setMenuOpen(false)}
-        />
-      )}
-
-      {/* 编辑信息弹窗 */}
-      {showEditDialog && (
-        <EditBookDialog
-          book={book}
-          onClose={() => setShowEditDialog(false)}
-          onSaved={(_updated) => {
-            setShowEditDialog(false)
-            onRefresh()
-          }}
-        />
-      )}
-    </div>
-  )
-}
+        {/* 编辑信息弹窗 */}
+        {showEditDialog && (
+          <EditBookDialog
+            book={book}
+            onClose={() => setShowEditDialog(false)}
+            onSaved={(_updated) => {
+              setShowEditDialog(false)
+              onRefresh()
+            }}
+          />
+        )}
+      </div>
+    )
+  }
 
   // Grid 卡片
   return (
     <div
       className="relative group rounded-xl border bg-card hover:border-primary/40 hover:shadow-md transition-all cursor-pointer overflow-hidden"
       onDoubleClick={() => onOpen(book)}
+      onContextMenu={onContextMenu}
     >
       {/* 封面区域 */}
       <div className="aspect-[3/4] bg-gradient-to-br from-primary/20 via-primary/10 to-accent flex items-end p-3 relative">
@@ -245,53 +219,17 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
       {/* 右键/更多菜单按钮 */}
       <button
         className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 bg-black/40 text-white p-1 rounded-md transition-opacity"
-        onClick={(e) => { e.stopPropagation(); setMenuOpen(true) }}
+        onClick={(e) => {
+          e.stopPropagation()
+          const rect = e.currentTarget.getBoundingClientRect()
+          openMenu(rect.left, rect.top + 4)
+        }}
       >
         <MoreVerticalIcon className="w-3 h-3" />
       </button>
 
-      {/* 下拉菜单 */}
-      {menuOpen && (
-        <div
-          ref={menuRef}
-          className="absolute top-8 left-2 z-20 bg-popover border rounded-lg shadow-lg py-1 min-w-32"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left"
-            onClick={() => { onOpen(book); setMenuOpen(false) }}
-          >
-            <EditIcon className="w-3 h-3" /> 打开编辑
-          </button>
-          <button
-            className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left"
-            onClick={() => { setMenuOpen(false); setShowEditDialog(true) }}
-          >
-            <PencilIcon className="w-3 h-3" /> 编辑信息
-          </button>
-          <button
-            className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left"
-            onClick={handleChangeCover}
-            disabled={coverChanging}
-          >
-            <ImageIcon className="w-3 h-3" /> 修改封面
-          </button>
-          <button
-            className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted w-full text-left text-destructive"
-            onClick={handleDelete}
-          >
-            <Trash2Icon className="w-3 h-3" /> 删除
-          </button>
-        </div>
-      )}
-
-      {/* 遮盖层关闭菜单 */}
-      {menuOpen && (
-        <div
-          className="fixed inset-0 z-10"
-          onClick={() => setMenuOpen(false)}
-        />
-      )}
+      {/* 共用右键菜单 */}
+      {contextMenu}
 
       {/* 编辑信息弹窗 */}
       {showEditDialog && (

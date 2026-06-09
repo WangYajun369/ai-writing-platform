@@ -24,6 +24,10 @@ export type UserPreferences = {
   fontSize: number
   gridSize: 'small' | 'medium' | 'large'
   editorWidth: 'mobile' | 'standard' | 'wide'
+  /** 书库视图模式 */
+  libraryViewMode: 'grid' | 'list'
+  /** 书库排序方式 */
+  librarySortBy: 'updatedAt' | 'createdAt' | 'title' | 'wordCount'
 }
 
 /** 编辑器恢复状态（记录用户上次编辑的作品、章节和光标位置） */
@@ -202,6 +206,10 @@ interface AppState {
   // 编辑器显示宽度
   editorWidth: 'mobile' | 'standard' | 'wide'
 
+  // 书库页面缓存状态
+  libraryViewMode: 'grid' | 'list'
+  librarySortBy: 'updatedAt' | 'createdAt' | 'title' | 'wordCount'
+
   // 应用版本号（从 tauri.conf.json 运行时获取，前端统一使用此值）
   appVersion: string
 
@@ -233,6 +241,8 @@ interface AppState {
   setFontSize: (size: number) => void
   setGridSize: (gridSize: AppState['gridSize']) => void
   setEditorWidth: (editorWidth: AppState['editorWidth']) => void
+  setLibraryViewMode: (mode: AppState['libraryViewMode']) => void
+  setLibrarySortBy: (sortBy: AppState['librarySortBy']) => void
   setAiConnectionStatus: (status: AppState['aiConnectionStatus'], detail?: string) => void
   setDbStatus: (status: AppState['dbStatus']) => void
   setLoadingBooks: (v: boolean) => void
@@ -282,6 +292,8 @@ export const useAppStore = create<AppState>()((set) => ({
     fontSize: savedPrefs.fontSize ?? 16,
     gridSize: savedPrefs.gridSize ?? 'medium',
     editorWidth: savedPrefs.editorWidth ?? 'standard',
+    libraryViewMode: savedPrefs.libraryViewMode ?? 'grid',
+    librarySortBy: savedPrefs.librarySortBy ?? 'updatedAt',
     appVersion: '',
 
     setBooks: (books) => set({ books }),
@@ -420,6 +432,14 @@ export const useAppStore = create<AppState>()((set) => ({
     setEditorWidth: (editorWidth) => {
       savePreferences({ editorWidth })
       set({ editorWidth })
+    },
+    setLibraryViewMode: (libraryViewMode) => {
+      savePreferences({ libraryViewMode })
+      set({ libraryViewMode })
+    },
+    setLibrarySortBy: (librarySortBy) => {
+      savePreferences({ librarySortBy })
+      set({ librarySortBy })
     },
     setAiConnectionStatus: (aiConnectionStatus, aiConnectionDetail = '') =>
       set({ aiConnectionStatus, aiConnectionDetail }),

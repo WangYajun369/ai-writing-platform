@@ -16,9 +16,9 @@ import { cn, formatWordCount } from '@/lib/utils'
 import type { Book } from '@/types'
 import BookCard from '@/components/library/BookCard'
 import NewBookDialog from '@/components/library/NewBookDialog'
+import { closeAllMenus } from '@/components/common/ContextMenu'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
-type ViewMode = 'grid' | 'list'
 type SortBy = 'updatedAt' | 'createdAt' | 'title' | 'wordCount'
 
 /** 不同网格大小对应的列数映射（对应不同容器宽度断点） */
@@ -36,9 +36,14 @@ const GRID_ROW_HEIGHT_MAP = { small: 260, medium: 340, large: 460 } as const
 
 export default function LibraryPage() {
   const navigate = useNavigate()
-  const { books, setBooks, setCurrentBookId, isLoadingBooks, setLoadingBooks, gridSize, appVersion } = useAppStore()
-  const [viewMode, setViewMode] = useState<ViewMode>('grid')
-  const [sortBy, setSortBy] = useState<SortBy>('updatedAt')
+  const {
+    books, setBooks, setCurrentBookId, isLoadingBooks, setLoadingBooks,
+    gridSize, appVersion,
+    libraryViewMode, setLibraryViewMode,
+    librarySortBy, setLibrarySortBy,
+  } = useAppStore()
+  const viewMode = libraryViewMode
+  const sortBy = librarySortBy
   const [searchQuery, setSearchQuery] = useState('')
   const [showNewBookDialog, setShowNewBookDialog] = useState(false)
 
@@ -128,6 +133,13 @@ export default function LibraryPage() {
     requestAnimationFrame(() => virtualizer.measure())
   }, [filteredBooks.length, effectiveColumnCount, virtualizer])
 
+  /** 右键空白区域时关闭所有菜单，不弹出任何菜单 */
+  const handleBlankContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    closeAllMenus()
+  }, [])
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* 顶栏 */}
@@ -154,7 +166,7 @@ export default function LibraryPage() {
         {/* 排序 */}
         <select
           value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as SortBy)}
+          onChange={(e) => setLibrarySortBy(e.target.value as SortBy)}
           className="text-sm bg-muted border-0 rounded-lg px-3 py-2 outline-none cursor-pointer"
         >
           <option value="updatedAt">最近修改</option>
@@ -166,13 +178,13 @@ export default function LibraryPage() {
         {/* 视图切换 */}
         <div className="flex rounded-lg overflow-hidden border">
           <button
-            onClick={() => setViewMode('grid')}
+            onClick={() => setLibraryViewMode('grid')}
             className={cn('p-2 transition-colors', viewMode === 'grid' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
           >
             <GridIcon className="w-4 h-4" />
           </button>
           <button
-            onClick={() => setViewMode('list')}
+            onClick={() => setLibraryViewMode('list')}
             className={cn('p-2 transition-colors', viewMode === 'list' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
           >
             <ListIcon className="w-4 h-4" />
@@ -197,7 +209,7 @@ export default function LibraryPage() {
       </header>
 
       {/* 主体内容（虚拟化滚动容器） */}
-      <main ref={parentRef} className="flex-1 overflow-y-auto p-6">
+      <main ref={parentRef} className="flex-1 overflow-y-auto p-6" onContextMenu={handleBlankContextMenu}>
         {isLoadingBooks ? (
           <div className="flex items-center justify-center h-64">
             <div className="text-muted-foreground animate-pulse">加载中…</div>

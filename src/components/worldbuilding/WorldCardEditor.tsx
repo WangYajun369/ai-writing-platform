@@ -5,6 +5,7 @@
  * 标题、内容、标签字段，保存后触发父组件刷新。
  */
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { XIcon } from 'lucide-react'
 import type { WorldCard, WorldCardType } from '@/types'
 import { worldCardApi } from '@/lib/tauri-bridge'
@@ -50,10 +51,10 @@ export default function WorldCardEditor({ bookId, card, onClose, onSaved }: Worl
     onClose()
   }
 
-  return (
+  return createPortal(
     <>
-      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
-      <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg bg-card border rounded-2xl shadow-xl p-6">
+      <div className="fixed inset-0 bg-black/50 z-[60]" onClick={onClose} />
+      <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[70] w-full max-w-lg bg-card border rounded-2xl shadow-xl p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold">{card ? '编辑设定' : '新建设定'}</h3>
           <button onClick={onClose}><XIcon className="w-5 h-5" /></button>
@@ -119,6 +120,7 @@ export default function WorldCardEditor({ bookId, card, onClose, onSaved }: Worl
           </button>
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   )
 }
