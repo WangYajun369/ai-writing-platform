@@ -1,5 +1,17 @@
 # 更新日志
 
+## v0.6.0 (2026-06-09)
+
+### 新增
+- ErrorBoundary 组件：新增全局错误边界，捕获渲染异常并展示友好提示，提升应用稳定性
+
+### 优化
+- 升级 Tiptap 编辑器至 v3：RichTextEditor、EditorToolbar 适配新 API，编辑器性能更优
+- 迁移 Tailwind CSS v3 到 v4：移除 tailwind.config.ts，采用 CSS-first 配置，优化构建性能
+- 重构存储层：appStore 状态管理全面重构，优化渲染性能，涉及 App.tsx、EditorPage、LibraryPage、AiSidePanel 等多处适配
+- 核心依赖版本大升级：更新 Rust/Node 依赖至最新版本，移除废弃依赖
+- 样式增强：globals.css 扩展动画与基础样式，提升 UI 细节
+
 ## v0.5.0 (2026-06-09)
 
 ### 新增
