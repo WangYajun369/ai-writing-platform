@@ -6,7 +6,6 @@
  */
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
-import { Node as ProseNode } from '@tiptap/pm/model'
 
 const pluginKey = new PluginKey('trailingNode')
 

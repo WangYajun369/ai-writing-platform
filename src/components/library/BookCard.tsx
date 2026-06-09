@@ -195,7 +195,7 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
         <EditBookDialog
           book={book}
           onClose={() => setShowEditDialog(false)}
-          onSaved={(updated) => {
+          onSaved={(_updated) => {
             setShowEditDialog(false)
             onRefresh()
           }}
@@ -298,7 +298,7 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
         <EditBookDialog
           book={book}
           onClose={() => setShowEditDialog(false)}
-          onSaved={(updated) => {
+          onSaved={(_updated) => {
             setShowEditDialog(false)
             onRefresh()
           }}

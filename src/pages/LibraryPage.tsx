@@ -12,7 +12,7 @@ import { useNavigate } from 'react-router-dom'
 import { PlusIcon, SearchIcon, GridIcon, ListIcon, SettingsIcon, BookOpenIcon } from 'lucide-react'
 import { useAppStore } from '@/stores/appStore'
 import { bookApi } from '@/lib/tauri-bridge'
-import { cn, formatWordCount, formatRelativeTime } from '@/lib/utils'
+import { cn, formatWordCount } from '@/lib/utils'
 import type { Book } from '@/types'
 import BookCard from '@/components/library/BookCard'
 import NewBookDialog from '@/components/library/NewBookDialog'
@@ -66,7 +66,7 @@ export default function LibraryPage() {
     return () => observer.disconnect()
   }, [viewMode, gridSize])
 
-  async function loadBooks() {
+  const loadBooks = useCallback(async () => {
     setLoadingBooks(true)
     try {
       const data = await bookApi.list()
@@ -76,22 +76,25 @@ export default function LibraryPage() {
     } finally {
       setLoadingBooks(false)
     }
-  }
+  }, [setLoadingBooks, setBooks])
 
   function handleOpenBook(book: Book) {
     setCurrentBookId(book.id)
     navigate(`/editor/${book.id}`)
   }
 
-  // 过滤 + 排序
-  const filteredBooks = books
-    .filter((b) => b.title.includes(searchQuery) || b.author.includes(searchQuery))
-    .sort((a, b) => {
-      if (sortBy === 'title') return a.title.localeCompare(b.title, 'zh-CN')
-      if (sortBy === 'wordCount') return b.wordCount - a.wordCount
-      if (sortBy === 'createdAt') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-    })
+  // 过滤 + 排序（useMemo 避免每次渲染重复计算）
+  const filteredBooks = useMemo(() =>
+    books
+      .filter((b) => b.title.includes(searchQuery) || b.author.includes(searchQuery))
+      .sort((a, b) => {
+        if (sortBy === 'title') return a.title.localeCompare(b.title, 'zh-CN')
+        if (sortBy === 'wordCount') return b.wordCount - a.wordCount
+        if (sortBy === 'createdAt') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      }),
+    [books, searchQuery, sortBy],
+  )
 
   // 按行分组（grid 模式多列，list 模式单列）
   const effectiveColumnCount = viewMode === 'list' ? 1 : columnCount

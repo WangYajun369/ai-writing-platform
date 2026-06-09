@@ -8,7 +8,7 @@
  * 对话记录以当前作品（bookId）为维度持久化到 localStorage，
  * 切换作品时自动加载对应对话历史。
  */
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, memo } from 'react'
 import { SendIcon, BotIcon, Trash2Icon, Loader2Icon, CircleCheckIcon, CircleAlertIcon, CircleIcon, ChevronDownIcon, DatabaseZapIcon, RefreshCwIcon } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -33,8 +33,21 @@ export default function AiSidePanel() {
   const [embeddingStatus, setEmbeddingStatus] = useState<EmbeddingStatus | null>(null)
   const [embeddingStatusLoading, setEmbeddingStatusLoading] = useState(false)
 
+  const scrollRafRef = useRef<number | null>(null)
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    // 使用 requestAnimationFrame 限流，避免流式输出时过于频繁的滚动
+    if (scrollRafRef.current) return
+    scrollRafRef.current = requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+      scrollRafRef.current = null
+    })
+    return () => {
+      if (scrollRafRef.current) {
+        cancelAnimationFrame(scrollRafRef.current)
+        scrollRafRef.current = null
+      }
+    }
   }, [messages])
 
   // 组件卸载时清理事件监听，防止内存泄漏
@@ -379,12 +392,12 @@ export default function AiSidePanel() {
 }
 
 /**
- * 对话气泡子组件
+ * 对话气泡子组件（React.memo 包裹，避免流式对话时不变消息的重渲染）
  *
  * 根据角色（用户/助手）切换对齐方向与气泡配色。
  * 助手消息使用 react-markdown 渲染，支持 GFM（表格/删除线等）。
  */
-function MessageBubble({ message }: { message: AiMessage }) {
+const MessageBubble = memo(function MessageBubble({ message }: { message: AiMessage }) {
   const isUser = message.role === 'user'
   const [thinkingExpanded, setThinkingExpanded] = useState(false)
 
@@ -487,4 +500,4 @@ function MessageBubble({ message }: { message: AiMessage }) {
       </div>
     </div>
   )
-}
+})

@@ -4,7 +4,7 @@
  * 包裹 Jotai Provider 提供全局 UI 状态管理，承担主题与护眼模式初始化逻辑。
  * 同时检测是否为世界观资料库独立窗口（?worldwin=1），若是则仅渲染世界观面板。
  */
-import { useEffect, useMemo } from 'react'
+import { useEffect } from 'react'
 import { Provider as JotaiProvider } from 'jotai'
 import AppRouter from './router'
 import { useAppStore } from './stores/appStore'
@@ -43,14 +43,14 @@ function AppInit() {
     })
   }, [])
 
-  // 检测是否为世界观独立窗口
-  const worldWindowInfo = useMemo(() => {
+  // 检测是否为世界观独立窗口（URL 参数仅在挂载时确定，不会变化）
+  const worldWindowInfo = (() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('worldwin') === '1') {
       return { isWorld: true, bookId: params.get('bookId') }
     }
     return { isWorld: false, bookId: null }
-  }, [])
+  })()
 
   // 启动时从 localStorage 恢复偏好
   useEffect(() => {

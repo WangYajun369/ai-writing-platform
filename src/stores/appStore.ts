@@ -1,16 +1,30 @@
 import { create } from 'zustand'
 import type { Book, Chapter, Volume, AiConfig, AiMessage, AiChatConfig } from '../types'
+import { createStorage } from '../lib/utils'
 
 // ==================== App Store（全局业务状态）====================
 
-/** localStorage 键名，用于持久化用户偏好设置 */
-const PREFERENCES_KEY = 'time-write-preferences'
 /** localStorage 键名，用于持久化 AI 配置 */
 const AI_CONFIG_KEY = 'time-write-ai-config'
-/** localStorage 键名，用于持久化 AI 对话记录（按 bookId 分组） */
-const AI_CONVERSATIONS_KEY = 'time-write-ai-conversations'
-/** localStorage 键名，用于持久化编辑器状态（按 bookId 保存当前编辑位置） */
-const EDITOR_STATE_KEY = 'time-write-editor-state'
+
+/** 编辑器状态持久化 */
+const editorStateStore = createStorage<Record<string, EditorState>>('time-write-editor-state', {})
+
+/** 用户偏好持久化 */
+const preferencesStore = createStorage<Partial<UserPreferences>>('time-write-preferences', {})
+
+/** AI 对话记录持久化 */
+const aiConversationsStore = createStorage<Record<string, AiMessage[]>>('time-write-ai-conversations', {})
+
+/** 用户偏好类型 */
+export type UserPreferences = {
+  theme: 'light' | 'dark' | 'system'
+  eyeCareMode: 'off' | 'warm' | 'green'
+  fontFamily: 'simhei' | 'simsun' | 'kaiti' | 'yahei'
+  fontSize: number
+  gridSize: 'small' | 'medium' | 'large'
+  editorWidth: 'mobile' | 'standard' | 'wide'
+}
 
 /** 编辑器恢复状态（记录用户上次编辑的作品、章节和光标位置） */
 export interface EditorState {
@@ -20,37 +34,23 @@ export interface EditorState {
   cursorPos: { from: number; to: number } | null
 }
 
-/** 从 localStorage 读取所有作品的编辑器状态 */
-function loadAllEditorStates(): Record<string, EditorState> {
-  try {
-    const raw = localStorage.getItem(EDITOR_STATE_KEY)
-    if (raw) return JSON.parse(raw)
-  } catch { /* ignore */ }
-  return {}
-}
-
 /** 保存指定作品的编辑器状态到 localStorage */
 function saveEditorState(state: EditorState) {
-  try {
-    const all = loadAllEditorStates()
-    all[state.bookId] = state
-    localStorage.setItem(EDITOR_STATE_KEY, JSON.stringify(all))
-  } catch { /* ignore */ }
+  const all = editorStateStore.load()
+  all[state.bookId] = state
+  editorStateStore.save(all)
 }
 
 /** 获取指定作品上次的编辑器状态 */
 export function getEditorState(bookId: string): EditorState | null {
-  const all = loadAllEditorStates()
+  const all = editorStateStore.load()
   return all[bookId] ?? null
 }
 
-/** 从 localStorage 读取持久化的用户偏好（含外观设置） */
-function loadPreferences(): Partial<Pick<AppState, 'theme' | 'eyeCareMode' | 'fontFamily' | 'fontSize' | 'gridSize' | 'editorWidth'>> {
-  try {
-    const raw = localStorage.getItem(PREFERENCES_KEY)
-    if (raw) return JSON.parse(raw)
-  } catch { /* ignore */ }
-  return {}
+/** 将用户偏好写入 localStorage（含外观设置） */
+function savePreferences(prefs: Partial<UserPreferences>) {
+  const existing = preferencesStore.load()
+  preferencesStore.save({ ...existing, ...prefs })
 }
 
 /** 检测旧版扁平 AiConfig 格式（无 .chat/.rag 嵌套），转为新格式 */
@@ -147,25 +147,6 @@ function loadAiConfig(): Partial<AiConfig> {
   return {}
 }
 
-/** 从 localStorage 读取持久化的 AI 对话记录 */
-function loadAiConversations(): Record<string, AiMessage[]> {
-  try {
-    const raw = localStorage.getItem(AI_CONVERSATIONS_KEY)
-    if (raw) return JSON.parse(raw)
-  } catch { /* ignore */ }
-  return {}
-}
-
-/** 将用户偏好写入 localStorage（含外观设置） */
-function savePreferences(prefs: Partial<Pick<AppState, 'theme' | 'eyeCareMode' | 'fontFamily' | 'fontSize' | 'gridSize' | 'editorWidth'>>) {
-  try {
-    // 合并已有偏好，避免覆盖未传入的字段
-    const existing = loadPreferences()
-    const merged = { ...existing, ...prefs }
-    localStorage.setItem(PREFERENCES_KEY, JSON.stringify(merged))
-  } catch { /* ignore */ }
-}
-
 /** 将 AI 配置写入 localStorage */
 function saveAiConfig(config: AiConfig) {
   try {
@@ -175,9 +156,7 @@ function saveAiConfig(config: AiConfig) {
 
 /** 将 AI 对话记录写入 localStorage */
 function saveAiConversations(conversations: Record<string, AiMessage[]>) {
-  try {
-    localStorage.setItem(AI_CONVERSATIONS_KEY, JSON.stringify(conversations))
-  } catch { /* ignore */ }
+  aiConversationsStore.save(conversations)
 }
 
 interface AppState {
@@ -263,11 +242,12 @@ interface AppState {
   saveCurrentEditorState: (bookId: string, chapterId: string, scrollTop: number, cursorPos: { from: number; to: number } | null) => void
 }
 
-const savedPrefs = loadPreferences()
+const savedPrefs = preferencesStore.load()
 const savedAiConfig = loadAiConfig()
-const savedAiConversations = loadAiConversations()
+const savedAiConversations = aiConversationsStore.load()
 
-export const useAppStore = create<AppState>()((set, get) => ({
+
+export const useAppStore = create<AppState>()((set) => ({
     books: [],
     currentBookId: null,
     isLoadingBooks: false,

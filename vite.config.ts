@@ -10,8 +10,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 
-// @ts-ignore
-export default defineConfig(async () => ({
+export default defineConfig(() => ({
   /** 插件列表：React JSX + Tailwind CSS v4 */
   plugins: [react(), tailwindcss()],
 
@@ -99,8 +98,8 @@ export default defineConfig(async () => ({
           if (id.includes('react-router')) return 'router'
           // Markdown 渲染（react-markdown + remark-gfm）
           if (id.includes('react-markdown') || id.includes('remark-gfm')) return 'markdown'
-          // 工具函数库（Lodash / date-fns / uuid）
-          if (id.includes('lodash-es') || id.includes('date-fns') || id.includes('uuid')) return 'utils'
+          // 工具函数库（date-fns / uuid）
+          if (id.includes('date-fns') || id.includes('uuid')) return 'utils'
           // 虚拟滚动库（TanStack Virtual）
           if (id.includes('@tanstack/react-virtual')) return 'virtual'
         },

@@ -50,7 +50,8 @@ export default function EditorPage() {
     loadedBookIdRef.current = bookId
     setCurrentBookId(bookId)
     loadBookTree(bookId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // loadBookTree 内部使用的 setter 函数引用稳定，无需加入依赖
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId])
 
   // 组件卸载（离开编辑页返回书库）时关闭世界观独立窗口

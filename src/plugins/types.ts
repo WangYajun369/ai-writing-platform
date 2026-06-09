@@ -65,6 +65,9 @@ export interface PluginManifest {
   minAppVersion?: string
 }
 
+/** 插件定义（使用 definePlugin 时的输入类型，无需嵌套 manifest） */
+export type PluginDefinition = Omit<Plugin, 'manifest'> & PluginManifest
+
 /** 插件生命周期接口 */
 export interface Plugin {
   /** 插件元信息 */

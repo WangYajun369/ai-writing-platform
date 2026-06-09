@@ -14,6 +14,7 @@ export type {
   ExtensionPoint,
   InstalledPlugin,
   PluginStatus,
+  PluginDefinition,
 } from './types'
 
 /**
@@ -48,8 +49,10 @@ export type {
  * })
  * ```
  */
+import type { PluginDefinition } from './types'
+
 export function definePlugin(
-  plugin: Omit<import('./types').Plugin, 'manifest'> & import('./types').PluginManifest,
+  plugin: PluginDefinition,
 ): import('./types').Plugin {
   const { id, name, version, description, author, homepage, icon, extensionPoints, minAppVersion, ...rest } = plugin
   return {

@@ -48,27 +48,34 @@ export function calcBookWordCount(
   }, 0)
 }
 
-/** 深拷贝 */
-export function deepClone<T>(obj: T): T {
-  return JSON.parse(JSON.stringify(obj))
-}
-
-/** 防抖 */
-export function debounce<T extends (...args: unknown[]) => unknown>(
-  fn: T,
-  delay: number
-): (...args: Parameters<T>) => void {
-  let timer: ReturnType<typeof setTimeout>
-  return (...args: Parameters<T>) => {
-    clearTimeout(timer)
-    timer = setTimeout(() => fn(...args), delay)
+/**
+ * localStorage 持久化工具：创建一个带读取/写入的持久化存储包装器
+ *
+ * 用法：
+ *   const store = createStorage('my-key', { theme: 'light' })
+ *   const data = store.load()    // 读取并合并默认值
+ *   store.save({ theme: 'dark' }) // 部分更新并写入
+ */
+export function createStorage<T extends Record<string, unknown>>(key: string, defaults: T) {
+  return {
+    load(): T {
+      try {
+        const raw = localStorage.getItem(key)
+        if (raw) return { ...defaults, ...JSON.parse(raw) }
+      } catch { /* ignore */ }
+      return defaults
+    },
+    save(data: T) {
+      try {
+        localStorage.setItem(key, JSON.stringify(data))
+      } catch { /* ignore */ }
+    },
+    /** 合并部分字段并保存 */
+    patch(partial: Partial<T>) {
+      const existing = this.load()
+      this.save({ ...existing, ...partial })
+    },
   }
-}
-
-/** 截断文本 */
-export function truncate(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text
-  return text.slice(0, maxLength) + '…'
 }
 
 /** 生成章节状态标签配置 */

@@ -168,5 +168,5 @@ export interface AiMessage {
 /** Diff 对比视图模式 */
 export type DiffViewMode = 'side-by-side' | 'inline'
 
-/** 导入导出格式 */
-export type ExportFormat = 'txt' | 'md' | 'html' | 'epub' | 'pdf'
+/** 导入导出格式（当前仅支持 txt/md/html） */
+export type ExportFormat = 'txt' | 'md' | 'html'
