@@ -14,13 +14,17 @@ import { listen } from '@tauri-apps/api/event'
 import { sidebarOpenAtom, zenModeAtom, aiPanelOpenAtom, contentRefreshAtom } from '@/stores/uiAtoms'
 import { useAppStore, getEditorState } from '@/stores/appStore'
 import { chapterApi, volumeApi } from '@/lib/tauri-bridge'
-import { cn } from '@/lib/utils'
+import { cn, createStorage } from '@/lib/utils'
+import { useResizeHandle } from '@/hooks/useResizeHandle'
 import EditorLayout from '@/components/layout/EditorLayout'
 import OutlinePanel from '@/components/outline/OutlinePanel'
 import RichTextEditor from '@/components/editor/RichTextEditor'
 import AiSidePanel from '@/components/ai/AiSidePanel'
 import EditorToolbar from '@/components/editor/EditorToolbar'
 import StatusBar from '@/components/layout/StatusBar'
+
+/** AI 面板宽度本地持久化 */
+const aiPanelStorage = createStorage('mirageink-ai-panel-width', { width: 384 })
 
 export default function EditorPage() {
   const { bookId } = useParams<{ bookId: string }>()
@@ -54,6 +58,15 @@ export default function EditorPage() {
   }, [bookId])
 
   const [, setContentRefresh] = useAtom(contentRefreshAtom)
+
+  // AI 面板可拖拽调整宽度
+  const { width: aiPanelWidth, resizeHandleProps, isResizing: aiResizing } = useResizeHandle({
+    initialWidth: aiPanelStorage.load().width,
+    minWidth: 240,
+    maxWidth: 720,
+    direction: 'right',
+    onResizeEnd: (w) => aiPanelStorage.patch({ width: w }),
+  })
 
   // 监听版本历史窗口恢复快照后刷新编辑器内容
   useEffect(() => {
@@ -151,11 +164,24 @@ export default function EditorPage() {
           </EditorLayout>
         </main>
 
-        {/* 右侧面板（AI） */}
+        {/* 拖拽手柄 + 右侧 AI 面板 */}
         {aiPanelOpen && !zenMode && (
-          <aside className="w-96 border-l bg-card flex-shrink-0 overflow-hidden">
-            <AiSidePanel />
-          </aside>
+          <>
+            {/* 可拖拽分界线 */}
+            <div
+              {...resizeHandleProps}
+              className={cn(
+                'w-1.5 shrink-0 cursor-col-resize transition-colors bg-border/30 hover:bg-primary/60 active:bg-primary',
+                aiResizing && 'bg-primary/60',
+              )}
+            />
+            <aside
+              className="border-l bg-card shrink-0 overflow-hidden"
+              style={{ width: aiPanelWidth }}
+            >
+              <AiSidePanel />
+            </aside>
+          </>
         )}
       </div>
 

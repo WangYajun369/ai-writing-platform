@@ -9,7 +9,8 @@
  * 切换作品时自动加载对应对话历史。
  */
 import { useState, useRef, useEffect, useCallback, memo } from 'react'
-import { SendIcon, BotIcon, Trash2Icon, Loader2Icon, CircleCheckIcon, CircleAlertIcon, CircleIcon, ChevronDownIcon, DatabaseZapIcon, RefreshCwIcon } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { SendIcon, BotIcon, Trash2Icon, Loader2Icon, CircleCheckIcon, CircleAlertIcon, CircleIcon, ChevronDownIcon, DatabaseZapIcon, RefreshCwIcon, SettingsIcon } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
@@ -18,6 +19,33 @@ import { aiApi, type StreamEvent, type UsageInfo, type EmbeddingStatus } from '@
 import { cn } from '@/lib/utils.ts'
 import type { AiMessage } from '@/types'
 import { getChatApiKey, getRagApiKey } from '@/types'
+
+/** 将 AI 异常信息转换为用户友好的提示 */
+function getFriendlyAiError(rawError: string): string {
+  const lower = rawError.toLowerCase()
+  if (lower.includes('401') || lower.includes('unauthorized') || lower.includes('invalid api key') || lower.includes('authentication')) {
+    return 'API Key 无效或已过期，请前往**设置**页面更新 API Key'
+  }
+  if (lower.includes('403') || lower.includes('forbidden')) {
+    return 'API 访问被拒绝，请检查**设置**中的 API Key 权限'
+  }
+  if (lower.includes('404') || lower.includes('not found')) {
+    return '模型不可用，请前往**设置**页面检查模型名称是否正确'
+  }
+  if (lower.includes('429') || lower.includes('rate limit') || lower.includes('too many')) {
+    return '请求过于频繁，请稍后重试'
+  }
+  if (lower.includes('timeout') || lower.includes('timed out')) {
+    return 'AI 服务响应超时，请检查网络连接后重试'
+  }
+  if (lower.includes('connection') || lower.includes('connect') || lower.includes('network') || lower.includes('econnrefused')) {
+    return '无法连接到 AI 服务，请检查网络连接并在**设置**中确认 API 地址正确'
+  }
+  if (lower.includes('500') || lower.includes('503') || lower.includes('internal server')) {
+    return 'AI 服务暂时不可用，请稍后重试'
+  }
+  return 'AI 响应异常，请在**设置**中检查 AI 是否可用'
+}
 
 export default function AiSidePanel() {
   const messages = useCurrentAiMessages()
@@ -178,7 +206,8 @@ export default function AiSidePanel() {
         const { content, thinking, phase, done, error, usage } = event.payload
         if (error) {
           streamErrorRef.current = true
-          updateAssistant(assistantId, `⚠️ AI 响应中断：${error}`, thinking, 'done')
+          const friendly = getFriendlyAiError(error)
+          updateAssistant(assistantId, `⚠️ ${friendly}\n\n> 错误详情：${error}`, thinking, 'done')
           setStreaming(false)
           persistAiConversation(bookId)
           return
@@ -209,7 +238,9 @@ export default function AiSidePanel() {
         messages: chatMessages,
       })
     } catch (err) {
-      updateAssistant(assistantId, `⚠️ AI 响应失败：${String(err)}`)
+      const rawErr = String(err)
+      const friendly = getFriendlyAiError(rawErr)
+      updateAssistant(assistantId, `⚠️ ${friendly}\n\n> 错误详情：${rawErr}`)
       if (bookId) persistAiConversation(bookId)
     } finally {
       setStreaming(false)
@@ -400,6 +431,8 @@ export default function AiSidePanel() {
 const MessageBubble = memo(function MessageBubble({ message }: { message: AiMessage }) {
   const isUser = message.role === 'user'
   const [thinkingExpanded, setThinkingExpanded] = useState(false)
+  const isError = !isUser && message.content.startsWith('⚠️')
+  const navigate = useNavigate()
 
   /** 兜底计算：若 Rust 侧 outputChars 为 0，用前端实际内容字符数替代 */
   const contentCharCount = [...message.content].length
@@ -486,6 +519,17 @@ const MessageBubble = memo(function MessageBubble({ message }: { message: AiMess
             {message.content}
           </ReactMarkdown>
         ) : null}
+
+        {/* 错误提示操作按钮 */}
+        {isError && (
+          <button
+            onClick={() => navigate('/settings')}
+            className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 text-xs font-medium transition-colors"
+          >
+            <SettingsIcon className="w-3.5 h-3.5" />
+            前往设置检查
+          </button>
+        )}
 
         {/* 用量统计（仅助手消息完成时显示） */}
         {!isUser && !message.loading && effectiveUsage && (
