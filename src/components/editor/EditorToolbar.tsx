@@ -7,7 +7,7 @@
  */
 import { useAtom, useAtomValue } from 'jotai'
 import { useNavigate } from 'react-router-dom'
-import { useState, useEffect, useCallback, useRef, forwardRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
@@ -512,13 +512,15 @@ function SaveIndicator() {
  *
  * 展示预设色块网格 + 自定义颜色输入 + 清除颜色按钮。
  */
-const ColorPickerPopover = forwardRef<
-  HTMLDivElement,
-  {
-    currentColor: string | null
-    onSelectColor: (color: string | null) => void
-  }
->(function ColorPickerPopover({ currentColor, onSelectColor }, ref) {
+function ColorPickerPopover({
+  currentColor,
+  onSelectColor,
+  ref,
+}: {
+  currentColor: string | null
+  onSelectColor: (color: string | null) => void
+  ref: React.Ref<HTMLDivElement>
+}) {
   const [customColor, setCustomColor] = useState('#000000')
 
   return (
@@ -587,7 +589,7 @@ const ColorPickerPopover = forwardRef<
       </div>
     </div>
   )
-})
+}
 
 /**
  * 表格操作弹窗
@@ -595,15 +597,19 @@ const ColorPickerPopover = forwardRef<
  * 提供表格网格尺寸选择器和行/列添加操作。
  * 删除行/列/表格操作已移至工具栏直接显示。
  */
-const TablePopover = forwardRef<
-  HTMLDivElement,
-  {
-    editor: ReturnType<typeof import('@tiptap/react').useEditor>
-    gridHover: { rows: number; cols: number }
-    onGridHover: (dim: { rows: number; cols: number }) => void
-    onClose: () => void
-  }
->(function TablePopover({ editor, gridHover, onGridHover, onClose }, ref) {
+function TablePopover({
+  editor,
+  gridHover,
+  onGridHover,
+  onClose,
+  ref,
+}: {
+  editor: ReturnType<typeof import('@tiptap/react').useEditor>
+  gridHover: { rows: number; cols: number }
+  onGridHover: (dim: { rows: number; cols: number }) => void
+  onClose: () => void
+  ref: React.Ref<HTMLDivElement>
+}) {
   const MAX_ROWS = 6
   const MAX_COLS = 6
   const isInTable = editor?.isActive('table') ?? false
@@ -718,7 +724,7 @@ const TablePopover = forwardRef<
       </button>
     </div>
   )
-})
+}
 
 /** 代码块支持的语言列表 */
 const CODE_LANGUAGES: { value: string; label: string }[] = [

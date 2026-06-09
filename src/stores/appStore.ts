@@ -1,5 +1,4 @@
 import { create } from 'zustand'
-import { subscribeWithSelector } from 'zustand/middleware'
 import type { Book, Chapter, Volume, AiConfig, AiMessage, AiChatConfig } from '../types'
 
 // ==================== App Store（全局业务状态）====================
@@ -268,8 +267,7 @@ const savedPrefs = loadPreferences()
 const savedAiConfig = loadAiConfig()
 const savedAiConversations = loadAiConversations()
 
-export const useAppStore = create<AppState>()(
-  subscribeWithSelector((set, get) => ({
+export const useAppStore = create<AppState>()((set, get) => ({
     books: [],
     currentBookId: null,
     isLoadingBooks: false,
@@ -453,7 +451,6 @@ export const useAppStore = create<AppState>()(
       saveEditorState({ bookId, chapterId, scrollTop, cursorPos })
     },
   }))
-)
 
 // 便捷选择器
 export const useCurrentBook = () => {

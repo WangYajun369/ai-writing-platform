@@ -11,7 +11,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
-import { lowlight } from 'lowlight'
+import { createLowlight, common } from 'lowlight'
+
+const lowlight = createLowlight(common)
 import Underline from '@tiptap/extension-underline'
 import TextStyle from '@tiptap/extension-text-style'
 import Color from '@tiptap/extension-color'
@@ -65,7 +67,7 @@ export default function RichTextEditor() {
   // 标记是否已完成首次位置恢复
   const positionRestoredRef = useRef(false)
   // 保存编辑器状态定时器（防抖）
-  const saveEditorStateTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const saveEditorStateTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   // 用 ref 保持最新引用，避免 useEditor onUpdate 闭包过期
   const chaptersRef = useRef(chapters)
   chaptersRef.current = chapters
@@ -73,7 +75,7 @@ export default function RichTextEditor() {
   currentChapterRef.current = currentChapter
 
   // 防抖 timer ref（用于跨章节切换时清除旧 timer，避免旧章节数据覆盖新章节）
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   // 保存函数（持久化 + 用后端返回的全书总字数校正 wordCountAtom.total）
   const saveContent = useCallback(
