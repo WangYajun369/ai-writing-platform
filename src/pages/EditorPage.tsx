@@ -3,14 +3,15 @@
  *
  * 编辑器主页面，组装三栏布局（目录树/编辑器/右侧面板）。
  * 负责加载书籍的卷章树数据，管理专注模式 Esc 退出。
- * 世界观资料库已改为独立窗口，离开编辑器时自动关闭。
+ * 世界观资料库与版本历史均为独立窗口，离开编辑器时自动关闭。
  */
 import { useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAtom } from 'jotai'
 import { XIcon } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
-import { sidebarOpenAtom, zenModeAtom, aiPanelOpenAtom, historyPanelOpenAtom } from '@/stores/uiAtoms'
+import { listen } from '@tauri-apps/api/event'
+import { sidebarOpenAtom, zenModeAtom, aiPanelOpenAtom, contentRefreshAtom } from '@/stores/uiAtoms'
 import { useAppStore, getEditorState } from '@/stores/appStore'
 import { chapterApi, volumeApi } from '@/lib/tauri-bridge'
 import { cn } from '@/lib/utils'
@@ -18,7 +19,6 @@ import EditorLayout from '@/components/layout/EditorLayout'
 import OutlinePanel from '@/components/outline/OutlinePanel'
 import RichTextEditor from '@/components/editor/RichTextEditor'
 import AiSidePanel from '@/components/ai/AiSidePanel'
-import SnapshotPanel from '@/components/editor/SnapshotPanel'
 import EditorToolbar from '@/components/editor/EditorToolbar'
 import StatusBar from '@/components/layout/StatusBar'
 
@@ -28,7 +28,6 @@ export default function EditorPage() {
   const [sidebarOpen] = useAtom(sidebarOpenAtom)
   const [zenMode, setZenMode] = useAtom(zenModeAtom)
   const [aiPanelOpen] = useAtom(aiPanelOpenAtom)
-  const [historyPanelOpen] = useAtom(historyPanelOpenAtom)
   const {
     setCurrentBookId,
     setVolumes,
@@ -54,10 +53,23 @@ export default function EditorPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId])
 
-  // 组件卸载（离开编辑页返回书库）时关闭世界观独立窗口
+  const [, setContentRefresh] = useAtom(contentRefreshAtom)
+
+  // 监听版本历史窗口恢复快照后刷新编辑器内容
+  useEffect(() => {
+    const unlisten = listen<string>('history-snapshot-restored', () => {
+      setContentRefresh((v) => v + 1)
+    })
+    return () => {
+      unlisten.then((fn) => fn())
+    }
+  }, [setContentRefresh])
+
+  // 组件卸载（离开编辑页返回书库）时关闭世界观和版本历史独立窗口
   useEffect(() => {
     return () => {
       invoke('close_world_window').catch(() => {})
+      invoke('close_history_window').catch(() => {})
     }
   }, [])
 
@@ -139,12 +151,7 @@ export default function EditorPage() {
           </EditorLayout>
         </main>
 
-        {/* 右侧面板（版本历史 / AI） */}
-        {historyPanelOpen && !zenMode && (
-          <aside className="w-80 border-l bg-card flex-shrink-0 overflow-hidden">
-            <SnapshotPanel />
-          </aside>
-        )}
+        {/* 右侧面板（AI） */}
         {aiPanelOpen && !zenMode && (
           <aside className="w-96 border-l bg-card flex-shrink-0 overflow-hidden">
             <AiSidePanel />

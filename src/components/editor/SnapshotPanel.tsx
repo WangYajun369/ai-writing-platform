@@ -1,14 +1,19 @@
 /**
- * SnapshotPanel — 版本快照面板
+ * SnapshotPanel — 版本历史面板
  *
  * 管理章节的版本历史，支持：
  * - 自动快照与里程碑快照
  * - 快照预览（弹窗展示 HTML 内容）
- * - 快照恢复（回退章节到历史版本）
+ * - 快照恢复（回退章节到历史版本，恢复后关闭独立窗口）
  * - 快照删除
+ *
+ * 支持两种模式：
+ * 1. 独立窗口模式：通过 props 接收 chapterId/bookId/chapterTitle
+ * 2. 内嵌模式（已废弃，当前仅使用独立窗口）
  */
 import { useState, useEffect } from 'react'
 import { useAtom } from 'jotai'
+import { invoke } from '@tauri-apps/api/core'
 import {
   PlusIcon,
   Trash2Icon,
@@ -19,14 +24,20 @@ import {
   LoaderIcon,
 } from 'lucide-react'
 import { snapshotApi } from '@/lib/tauri-bridge'
-import { useCurrentChapter, useAppStore } from '@/stores/appStore'
 import { contentRefreshAtom } from '@/stores/uiAtoms'
 import { cn, formatWordCount, formatRelativeTime } from '@/lib/utils'
 import type { Snapshot } from '@/types'
 
-export default function SnapshotPanel() {
-  const currentChapter = useCurrentChapter()
-  const { updateChapter, updateBook } = useAppStore()
+interface SnapshotPanelProps {
+  /** 独立窗口模式：章节 ID */
+  chapterId?: string
+  /** 独立窗口模式：书籍 ID */
+  bookId?: string
+  /** 独立窗口模式：章节标题 */
+  chapterTitle?: string
+}
+
+export default function SnapshotPanel({ chapterId, bookId, chapterTitle }: SnapshotPanelProps) {
   const [, setContentRefresh] = useAtom(contentRefreshAtom)
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   const [loading, setLoading] = useState(false)
@@ -37,16 +48,21 @@ export default function SnapshotPanel() {
   const [previewHtml, setPreviewHtml] = useState('')
   const [previewLoading, setPreviewLoading] = useState(false)
 
+  // 独立窗口模式下使用 props，否则不渲染
+  const currentChapterId = chapterId
+  const currentBookId = bookId
+  const currentTitle = chapterTitle
+
   useEffect(() => {
     loadSnapshots()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentChapter?.id])
+  }, [currentChapterId])
 
   async function loadSnapshots() {
-    if (!currentChapter) return
+    if (!currentChapterId) return
     setLoading(true)
     try {
-      const data = await snapshotApi.list(currentChapter.id)
+      const data = await snapshotApi.list(currentChapterId)
       setSnapshots(data)
     } catch (err) {
       console.error('加载快照失败', err)
@@ -56,9 +72,9 @@ export default function SnapshotPanel() {
   }
 
   async function handleCreate(label?: string) {
-    if (!currentChapter) return
+    if (!currentChapterId) return
     try {
-      const snap = await snapshotApi.create(currentChapter.id, label)
+      const snap = await snapshotApi.create(currentChapterId, label)
       setSnapshots((prev) => [snap, ...prev])
       setShowCreate(false)
       setLabelInput('')
@@ -68,17 +84,14 @@ export default function SnapshotPanel() {
   }
 
   async function handleRestore(snap: Snapshot) {
-    if (!currentChapter) return
+    if (!currentChapterId) return
     setRestoring(snap.id)
     try {
       const result = await snapshotApi.restore(snap.id)
-      updateChapter(currentChapter.id, {
-        contentHtml: snap.contentHtml,
-        wordCount: result.wordCount,
-        updatedAt: new Date().toISOString(),
-      })
-      updateBook(currentChapter.bookId, { wordCount: result.bookWordCount })
+      // 通知主窗口刷新（Rust 端已 emit 事件）
       setContentRefresh((v) => v + 1)
+      // 关闭独立窗口
+      invoke('close_history_window').catch(() => {})
     } catch (err) {
       console.error('恢复快照失败', err)
     } finally {
@@ -119,40 +132,26 @@ export default function SnapshotPanel() {
     }
   }
 
-  if (!currentChapter) {
-    return (
-      <div className="flex flex-col h-full">
-        <div className="px-3 py-2 border-b">
-          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">版本历史</span>
-        </div>
-        <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground">
-          请先选择章节
-        </div>
-      </div>
-    )
-  }
-
-  // 预览弹窗
   const previewSnap = previewId ? snapshots.find((s) => s.id === previewId) ?? null : null
 
   return (
     <div className="flex flex-col h-full">
       {/* 头部 */}
-      <div className="px-3 py-2 border-b">
+      <div className="px-4 py-3 border-b flex-shrink-0">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">版本历史</span>
+          <span className="text-sm font-semibold">版本历史</span>
           <button
-            onClick={() => setShowCreate(true)}
-            className="p-1 rounded hover:bg-muted text-muted-foreground"
+            onClick={() => setShowCreate((v) => !v)}
+            className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground transition-colors"
             title="创建里程碑快照"
           >
-            <PlusIcon className="w-3.5 h-3.5" />
+            <PlusIcon className="w-4 h-4" />
           </button>
         </div>
 
         {/* 创建里程碑快照输入框 */}
         {showCreate && (
-          <div className="flex gap-1.5 mb-2">
+          <div className="flex gap-2 mb-2">
             <input
               value={labelInput}
               onChange={(e) => setLabelInput(e.target.value)}
@@ -162,35 +161,37 @@ export default function SnapshotPanel() {
               }}
               placeholder="快照标签（可选）…"
               autoFocus
-              className="flex-1 px-2 py-1 text-xs bg-muted rounded-lg outline-none focus:ring-1 focus:ring-ring"
+              className="flex-1 px-3 py-1.5 text-sm bg-muted rounded-lg outline-none focus:ring-1 focus:ring-ring"
             />
             <button
               onClick={() => handleCreate(labelInput.trim() || undefined)}
-              className="px-2 py-1 text-xs bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
+              className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
             >
               创建
             </button>
             <button
               onClick={() => { setShowCreate(false); setLabelInput('') }}
-              className="px-2 py-1 text-xs bg-muted rounded-lg hover:bg-muted/80"
+              className="px-3 py-1.5 text-sm bg-muted rounded-lg hover:bg-muted/80"
             >
               取消
             </button>
           </div>
         )}
 
-        <div className="text-xs text-muted-foreground">
-          {currentChapter.title} · {snapshots.length} 个快照
-        </div>
+        {currentTitle && (
+          <div className="text-xs text-muted-foreground">
+            {currentTitle} · {snapshots.length} 个快照
+          </div>
+        )}
       </div>
 
       {/* 快照列表 */}
-      <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-2">
+      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
         {loading ? (
-          <div className="text-xs text-muted-foreground text-center py-8">加载中…</div>
+          <div className="text-sm text-muted-foreground text-center py-12">加载中…</div>
         ) : snapshots.length === 0 ? (
-          <div className="text-xs text-muted-foreground text-center py-8">
-            还没有版本快照，点击 + 创建
+          <div className="text-sm text-muted-foreground text-center py-12">
+            还没有版本快照，点击 + 创建里程碑
           </div>
         ) : (
           snapshots.map((snap) => (
@@ -217,7 +218,7 @@ export default function SnapshotPanel() {
                 <span>·</span>
                 <span>{formatWordCount(snap.wordCount)}</span>
                 {snap.type === 'milestone' && (
-                  <span className="px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 text-xs">
+                  <span className="px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 text-[10px]">
                     里程碑
                   </span>
                 )}
@@ -227,7 +228,7 @@ export default function SnapshotPanel() {
               <div className="flex gap-1.5">
                 <button
                   onClick={() => handlePreview(snap)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-muted hover:bg-muted/80 text-muted-foreground"
+                  className="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-muted hover:bg-muted/80 text-muted-foreground transition-colors"
                 >
                   预览
                 </button>
@@ -246,7 +247,7 @@ export default function SnapshotPanel() {
                 </button>
                 <button
                   onClick={() => handleDelete(snap)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs rounded-md text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                  className="flex items-center gap-1 px-2 py-1 text-xs rounded-md text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                 >
                   <Trash2Icon className="w-3 h-3" />
                 </button>
@@ -259,11 +260,8 @@ export default function SnapshotPanel() {
       {/* 预览弹窗 */}
       {previewId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          {/* 遮罩 */}
           <div className="absolute inset-0 bg-black/50" onClick={() => { setPreviewId(null); setPreviewHtml('') }} />
-          {/* 弹窗 */}
           <div className="relative z-10 w-full max-w-3xl max-h-[80vh] flex flex-col bg-card rounded-xl border shadow-2xl mx-4">
-            {/* 弹窗头部 */}
             <div className="flex items-center justify-between px-5 py-3 border-b flex-shrink-0">
               <div className="flex items-center gap-2">
                 {previewSnap?.type === 'milestone' ? (
@@ -288,7 +286,6 @@ export default function SnapshotPanel() {
                 <XIcon className="w-4 h-4" />
               </button>
             </div>
-            {/* 弹窗内容 */}
             <div className="flex-1 overflow-y-auto px-6 py-4">
               {previewLoading ? (
                 <div className="flex items-center justify-center py-12 text-muted-foreground">

@@ -45,10 +45,10 @@ import {
     sidebarOpenAtom,
     zenModeAtom,
     aiPanelOpenAtom,
-    historyPanelOpenAtom, isSavingAtom, lastSavedAtom,
+    isSavingAtom, lastSavedAtom,
     editorInstanceAtom,
 } from '@/stores/uiAtoms.ts'
-import { useCurrentBook, useAppStore } from '@/stores/appStore.ts'
+import { useCurrentBook, useCurrentChapter, useAppStore } from '@/stores/appStore.ts'
 import { cn } from '@/lib/utils.ts'
 
 /** 预设字体颜色 */
@@ -63,9 +63,10 @@ export default function EditorToolbar() {
   const [sidebarOpen, setSidebarOpen] = useAtom(sidebarOpenAtom)
   const [zenMode, setZenMode] = useAtom(zenModeAtom)
   const [aiPanelOpen, setAiPanelOpen] = useAtom(aiPanelOpenAtom)
-  const [historyPanelOpen, setHistoryPanelOpen] = useAtom(historyPanelOpenAtom)
+  const [historyWindowOpen, setHistoryWindowOpen] = useState(false)
   const [worldWindowOpen, setWorldWindowOpen] = useState(false)
   const currentBook = useCurrentBook()
+  const currentChapter = useCurrentChapter()
   const { fontSize, setFontSize } = useAppStore()
   const editor = useAtomValue(editorInstanceAtom)
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
@@ -190,13 +191,61 @@ export default function EditorToolbar() {
     }
   }
 
+  async function handleToggleHistoryWindow() {
+    if (historyWindowOpen) {
+      try {
+        await invoke('close_history_window')
+      } catch (e) {
+        console.error('关闭版本历史窗口失败', e)
+      }
+      setHistoryWindowOpen(false)
+    } else {
+      if (!currentChapter) return
+      try {
+        await invoke('open_history_window', {
+          chapterId: currentChapter.id,
+          bookId: currentChapter.bookId,
+          chapterTitle: currentChapter.title,
+        })
+      } catch (e) {
+        console.error('打开版本历史窗口失败', e)
+        return
+      }
+      setHistoryWindowOpen(true)
+    }
+  }
+
+  // 监听章节切换，若版本历史窗口已打开则自动跟随到新章节
+  useEffect(() => {
+    if (!historyWindowOpen || !currentChapter) return
+    invoke('open_history_window', {
+      chapterId: currentChapter.id,
+      bookId: currentChapter.bookId,
+      chapterTitle: currentChapter.title,
+    })
+      .then(() => {
+        // Rust 端关闭旧窗口再创建新窗口，中间可能短暂触发
+        // history-window-closed 把按钮复位，这里显式恢复为激活状态
+        setHistoryWindowOpen(true)
+      })
+      .catch((e) => {
+        console.error('切换版本历史窗口失败', e)
+        setHistoryWindowOpen(false)
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentChapter?.id])
+
   // 监听 world 窗口被用户主动关闭（点 X），同步按钮状态
   useEffect(() => {
-    const unlisten = listen('world-window-closed', () => {
+    const unlistenWorld = listen('world-window-closed', () => {
       setWorldWindowOpen(false)
     })
+    const unlistenHistory = listen('history-window-closed', () => {
+      setHistoryWindowOpen(false)
+    })
     return () => {
-      unlisten.then((fn) => fn())
+      unlistenWorld.then((fn) => fn())
+      unlistenHistory.then((fn) => fn())
     }
   }, [])
 
@@ -420,8 +469,8 @@ export default function EditorToolbar() {
       <div className="w-px h-5 bg-border mx-1" />
 
       <ToolbarBtn
-        active={historyPanelOpen}
-        onClick={() => setHistoryPanelOpen((v) => !v)}
+        active={historyWindowOpen}
+        onClick={handleToggleHistoryWindow}
         title="版本历史"
         icon={<ClockIcon className="w-4 h-4" />}
       />

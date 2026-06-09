@@ -3,7 +3,7 @@
 //! 提供快照的增删查、创建（自动/里程碑）与恢复操作。
 //! 恢复快照会将章节内容回退到快照状态并更新全书字数。
 
-use tauri::State;
+use tauri::{Emitter, Manager, State};
 use rusqlite::params;
 use uuid::Uuid;
 use chrono::Utc;
@@ -83,7 +83,7 @@ pub async fn get_snapshot_content(db: State<'_, AppDb>, snapshot_id: String) -> 
 
 /// 从快照恢复章节内容（覆盖 current content_html），同步更新全书字数
 #[tauri::command]
-pub async fn restore_snapshot(db: State<'_, AppDb>, snapshot_id: String) -> Result<SaveChapterResult, String> {
+pub async fn restore_snapshot(app: tauri::AppHandle, db: State<'_, AppDb>, snapshot_id: String) -> Result<SaveChapterResult, String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     let (chapter_id, content_html, wc): (String, String, i64) = conn.query_row(
         "SELECT chapter_id, content_html, word_count FROM snapshots WHERE id=?1",
@@ -109,6 +109,11 @@ pub async fn restore_snapshot(db: State<'_, AppDb>, snapshot_id: String) -> Resu
         params![chapter_id],
         |row| row.get(0),
     ).map_err(|e| e.to_string())?;
+
+    // 通知主窗口刷新编辑器内容
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.emit("history-snapshot-restored", &chapter_id);
+    }
 
     Ok(SaveChapterResult { word_count: wc, book_word_count: book_wc })
 }

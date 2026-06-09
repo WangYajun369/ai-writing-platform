@@ -9,6 +9,7 @@ import { Provider as JotaiProvider } from 'jotai'
 import AppRouter from './router'
 import { useAppStore } from './stores/appStore'
 import WorldbuildingPanel from './components/worldbuilding/WorldbuildingPanel'
+import SnapshotPanel from './components/editor/SnapshotPanel'
 
 const STORAGE_KEY_THEME = 'timewrite-theme'
 const STORAGE_KEY_EYECARE = 'timewrite-eyecare'
@@ -50,6 +51,20 @@ function AppInit() {
       return { isWorld: true, bookId: params.get('bookId') }
     }
     return { isWorld: false, bookId: null }
+  })()
+
+  // 检测是否为版本历史独立窗口
+  const historyWindowInfo = (() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('historywin') === '1') {
+      return {
+        isHistory: true,
+        chapterId: params.get('chapterId'),
+        bookId: params.get('bookId'),
+        chapterTitle: params.get('chapterTitle'),
+      }
+    }
+    return { isHistory: false, chapterId: null, bookId: null, chapterTitle: null }
   })()
 
   // 启动时从 localStorage 恢复偏好
@@ -120,6 +135,22 @@ function AppInit() {
     document.documentElement.style.setProperty('--font-editor-size', `${fontSize}px`)
     localStorage.setItem(STORAGE_KEY_FONT_SIZE, String(fontSize))
   }, [fontSize])
+
+  // 版本历史独立窗口模式
+  if (historyWindowInfo.isHistory && historyWindowInfo.chapterId && historyWindowInfo.bookId) {
+    return (
+      <div
+        className="h-screen flex flex-col overflow-hidden bg-background"
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        <SnapshotPanel
+          chapterId={historyWindowInfo.chapterId}
+          bookId={historyWindowInfo.bookId}
+          chapterTitle={historyWindowInfo.chapterTitle ?? undefined}
+        />
+      </div>
+    )
+  }
 
   // 世界观独立窗口模式
   if (worldWindowInfo.isWorld && worldWindowInfo.bookId) {

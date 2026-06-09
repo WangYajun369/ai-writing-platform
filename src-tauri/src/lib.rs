@@ -85,6 +85,8 @@ pub fn run() {
             // 窗口管理
             commands::window::open_world_window,
             commands::window::close_world_window,
+            commands::window::open_history_window,
+            commands::window::close_history_window,
         ])
         .run(tauri::generate_context!())
         .expect("启动 Tauri 应用失败");
