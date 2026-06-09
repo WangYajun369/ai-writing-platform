@@ -1,7 +1,74 @@
-/* Tailwind CSS 基础指令：引入 base、components、utilities 三层样式 */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/**
+ * Tailwind CSS v4 入口
+ * 使用 CSS-first 配置模式，替代旧版 tailwind.config.ts
+ * @see https://tailwindcss.com/docs/v4-beta
+ */
+@import "tailwindcss";
+
+/* ==================== Tailwind 插件 ==================== */
+@plugin "@tailwindcss/typography";
+
+/* ==================== 暗色模式变体 ==================== */
+/* v3 的 darkMode: ['class'] 等效写法 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ==================== 主题扩展 ==================== */
+@theme {
+  /* ---- 颜色体系（语义化命名，兼容 shadcn/ui 规范） ---- */
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+
+  /* ---- 圆角半径 ---- */
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  /* ---- 字体族 ---- */
+  --font-sans: 'Inter', 'Noto Sans SC', 'system-ui', 'sans-serif';
+  --font-serif: 'Georgia', 'Noto Serif SC', 'serif';
+  --font-mono: 'JetBrains Mono', 'Consolas', 'monospace';
+
+  /* ---- 动画定义 ---- */
+  --animate-fade-in: fade-in 0.2s ease-out;
+  --animate-slide-in: slide-in 0.2s ease-out;
+  --animate-pop-in: pop-in 0.15s ease-out;
+  --animate-pulse-indicator: pulse-indicator 1.2s ease-in-out infinite;
+
+  /* ---- 关键帧 ---- */
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes slide-in {
+    from { transform: translateX(-8px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+  @keyframes pop-in {
+    from { transform: scale(0.92); opacity: 0.6; }
+    to { transform: scale(1); opacity: 1; }
+  }
+  @keyframes pulse-indicator {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+}
 
 /* ==================== 主题色彩变量 ==================== */
 @layer base {

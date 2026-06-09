@@ -7,12 +7,13 @@
 
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 
 // @ts-ignore
 export default defineConfig(async () => ({
-  /** 插件列表：启用 React JSX 转换支持 */
-  plugins: [react()],
+  /** 插件列表：React JSX + Tailwind CSS v4 */
+  plugins: [react(), tailwindcss()],
 
   /** 模块解析配置 */
   resolve: {
