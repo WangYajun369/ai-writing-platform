@@ -147,6 +147,18 @@ export interface WritingGoal {
   endDate?: string
 }
 
+/** 提交给 AI 大模型的请求载荷（用于详情展示） */
+export interface ChatRequestPayload {
+  provider: string
+  model: string
+  temperature: number
+  maxTokens: number
+  thinkingEnabled?: boolean
+  messages: { role: string; content: string }[]
+  /** RAG 检索上下文片段（启用时） */
+  ragContext?: { snippet: string; score?: number }[]
+}
+
 /** AI 对话消息 */
 export interface AiMessage {
   id: string
@@ -163,6 +175,8 @@ export interface AiMessage {
     inputChars: number
     outputChars: number
   } | null
+  /** 提交给 AI 的原始请求载荷（仅助手消息，供详情查看） */
+  requestPayload?: ChatRequestPayload
 }
 
 /** Diff 对比视图模式 */

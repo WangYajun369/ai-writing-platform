@@ -10,15 +10,17 @@
  */
 import { useState, useRef, useEffect, useCallback, memo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { SendIcon, BotIcon, Trash2Icon, Loader2Icon, CircleCheckIcon, CircleAlertIcon, CircleIcon, ChevronDownIcon, DatabaseZapIcon, RefreshCwIcon, SettingsIcon } from 'lucide-react'
+import { useAtomValue } from 'jotai'
+import { SendIcon, BotIcon, Trash2Icon, Loader2Icon, CircleCheckIcon, CircleAlertIcon, CircleIcon, ChevronDownIcon, DatabaseZapIcon, RefreshCwIcon, SettingsIcon, ClipboardPasteIcon, InfoIcon, XIcon } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useAppStore, useCurrentChapter, useCurrentAiMessages } from '@/stores/appStore.ts'
-import { aiApi, type StreamEvent, type UsageInfo, type EmbeddingStatus } from '@/lib/tauri-bridge.ts'
+import { aiApi, type StreamEvent, type UsageInfo, type EmbeddingStatus, type RagResultItem } from '@/lib/tauri-bridge.ts'
 import { cn } from '@/lib/utils.ts'
-import type { AiMessage } from '@/types'
+import type { AiMessage, ChatRequestPayload } from '@/types'
 import { getChatApiKey, getRagApiKey } from '@/types'
+import { editorInstanceAtom } from '@/stores/uiAtoms'
 
 /** 将 AI 异常信息转换为用户友好的提示 */
 function getFriendlyAiError(rawError: string): string {
@@ -51,10 +53,11 @@ export default function AiSidePanel() {
   const messages = useCurrentAiMessages()
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
+  const [detailPayload, setDetailPayload] = useState<ChatRequestPayload | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const unlistenRef = useRef<UnlistenFn | null>(null)
   const streamErrorRef = useRef(false) // 标记流是否遇到错误，防止最终更新覆盖错误信息
-  const { aiConfig, aiConnectionStatus, aiConnectionDetail, currentBookId, addAiMessage, updateAiMessage, clearAiConversation, persistAiConversation } = useAppStore()
+  const { aiConfig, aiConnectionStatus, aiConnectionDetail, currentBookId, addAiMessage, updateAiMessage, deleteAiMessage, clearAiConversation, persistAiConversation } = useAppStore()
   const currentChapter = useCurrentChapter()
   // Embedding 生成状态
   const [embeddingGenerating, setEmbeddingGenerating] = useState(false)
@@ -181,6 +184,7 @@ export default function AiSidePanel() {
     try {
       // RAG 检索上下文（仅启用时）
       let context = ''
+      let ragResults: { snippet: string; score?: number }[] = []
       if (currentChapter && aiConfig.rag.enabled) {
         const results = await aiApi.ragSearch(
           currentChapter.bookId,
@@ -192,6 +196,7 @@ export default function AiSidePanel() {
         ).catch(() => [])
         if (results.length > 0) {
           context = '\n\n相关背景：\n' + results.map((r) => r.snippet).join('\n---\n')
+          ragResults = results.map((r) => ({ snippet: r.snippet, score: 1 - r.distance }))
         }
       }
 
@@ -225,6 +230,19 @@ export default function AiSidePanel() {
       // 构建消息
       const chatMessages = buildMessages(context)
 
+      // 存储提交给 AI 的原始请求载荷（供详情按钮查看）
+      updateAiMessage(bookId, assistantId, {
+        requestPayload: {
+          provider: aiConfig.chat.provider,
+          model: aiConfig.chat.model,
+          temperature: aiConfig.chat.temperature,
+          maxTokens: aiConfig.chat.maxTokens,
+          thinkingEnabled: aiConfig.chat.thinkingEnabled,
+          messages: chatMessages,
+          ragContext: ragResults.length > 0 ? ragResults : undefined,
+        },
+      })
+
       // 调用 Rust 侧流式对话命令
       // done 事件中已设置最终内容和用量，此处仅等待流结束，不做重复更新
       await aiApi.streamChat({
@@ -256,6 +274,17 @@ export default function AiSidePanel() {
     if (messages.length > 0 && bookId && confirm('清空当前作品的对话记录？')) {
       clearAiConversation(bookId)
     }
+  }
+
+  /** 删除指定助手消息及其对应的用户提问 */
+  function handleDeleteMessage(messageId: string) {
+    if (!bookId) return
+    deleteAiMessage(bookId, messageId)
+  }
+
+  /** 展示提交给 AI 的请求详情 */
+  function handleShowDetail(payload: ChatRequestPayload) {
+    setDetailPayload(payload)
   }
 
   /** 触发 Embedding 生成 */
@@ -322,7 +351,7 @@ export default function AiSidePanel() {
           </div>
         )}
         {messages.map((msg) => (
-          <MessageBubble key={msg.id} message={msg} />
+          <MessageBubble key={msg.id} message={msg} onDelete={handleDeleteMessage} onShowDetail={handleShowDetail} />
         ))}
         <div ref={bottomRef} />
       </div>
@@ -418,6 +447,127 @@ export default function AiSidePanel() {
           )}
         </p>
       </div>
+
+      {/* 请求详情弹窗 */}
+      {detailPayload && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setDetailPayload(null)}>
+          <div
+            className="bg-background border rounded-xl shadow-2xl w-[90vw] max-w-2xl max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 弹窗头部 */}
+            <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <InfoIcon className="w-4 h-4 text-primary" />
+                <span className="text-sm font-semibold">提交给 AI 的请求详情</span>
+              </div>
+              <button
+                onClick={() => setDetailPayload(null)}
+                className="p-1 rounded hover:bg-muted transition-colors"
+              >
+                <XIcon className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* 弹窗内容 */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* 请求参数 */}
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">请求参数</h3>
+                <div className="bg-muted/50 rounded-lg p-3 text-xs space-y-1.5 font-mono">
+                  <div className="flex gap-3">
+                    <span className="text-muted-foreground shrink-0">服务商：</span>
+                    <span>{detailPayload.provider}</span>
+                  </div>
+                  <div className="flex gap-3">
+                    <span className="text-muted-foreground shrink-0">模型：</span>
+                    <span>{detailPayload.model}</span>
+                  </div>
+                  <div className="flex gap-3">
+                    <span className="text-muted-foreground shrink-0">Temperature：</span>
+                    <span>{detailPayload.temperature}</span>
+                  </div>
+                  <div className="flex gap-3">
+                    <span className="text-muted-foreground shrink-0">MaxTokens：</span>
+                    <span>{detailPayload.maxTokens}</span>
+                  </div>
+                  {detailPayload.thinkingEnabled !== undefined && (
+                    <div className="flex gap-3">
+                      <span className="text-muted-foreground shrink-0">思考模式：</span>
+                      <span>{detailPayload.thinkingEnabled ? '已启用' : '已关闭'}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* System Prompt */}
+              {detailPayload.messages.find((m) => m.role === 'system') && (
+                <div>
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">System Prompt</h3>
+                  <div className="border border-amber-200 dark:border-amber-800 rounded-lg overflow-hidden">
+                    <div className="px-3 py-1.5 bg-amber-100/50 dark:bg-amber-900/20 text-[11px] font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-current opacity-50" />
+                      完整 System Prompt
+                    </div>
+                    <div className="px-3 py-2 text-xs whitespace-pre-wrap break-words bg-amber-50/30 dark:bg-amber-950/20 text-foreground leading-relaxed max-h-[40vh] overflow-y-auto">
+                      {detailPayload.messages.find((m) => m.role === 'system')!.content || <span className="text-muted-foreground/40 italic">（空）</span>}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* RAG 检索上下文 */}
+              {detailPayload.ragContext && detailPayload.ragContext.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                    RAG 检索上下文（{detailPayload.ragContext.length} 条片段）
+                  </h3>
+                  <div className="space-y-2">
+                    {detailPayload.ragContext.map((item, i) => (
+                      <div key={i} className="border border-purple-200 dark:border-purple-800 rounded-lg overflow-hidden">
+                        <div className="px-3 py-1.5 bg-purple-100/50 dark:bg-purple-900/20 text-[11px] font-semibold text-purple-700 dark:text-purple-300 flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-current opacity-50" />
+                          片段 {i + 1}
+                          {item.score !== undefined && (
+                            <span className="ml-auto text-[10px] opacity-60 font-mono">相关度: {(item.score * 100).toFixed(1)}%</span>
+                          )}
+                        </div>
+                        <div className="px-3 py-2 text-xs whitespace-pre-wrap break-words bg-purple-50/30 dark:bg-purple-950/20 text-foreground leading-relaxed max-h-40 overflow-y-auto">
+                          {item.snippet}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 消息列表（不含 system） */}
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                  对话消息（{detailPayload.messages.filter((m) => m.role !== 'system').length} 条）
+                </h3>
+                <div className="space-y-2">
+                  {detailPayload.messages.filter((m) => m.role !== 'system').map((msg, i) => (
+                    <div key={i} className="border rounded-lg overflow-hidden">
+                      <div className={cn(
+                        'px-3 py-1.5 text-[11px] font-semibold flex items-center gap-1.5',
+                        msg.role === 'user' && 'bg-blue-100/50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300',
+                        msg.role === 'assistant' && 'bg-green-100/50 dark:bg-green-900/20 text-green-700 dark:text-green-300',
+                      )}>
+                        <span className="w-1.5 h-1.5 rounded-full bg-current opacity-50" />
+                        {msg.role === 'user' ? '用户' : '助手'}
+                      </div>
+                      <div className="px-3 py-2 text-xs whitespace-pre-wrap break-words max-h-48 overflow-y-auto bg-muted/30">
+                        {msg.content || <span className="text-muted-foreground/40 italic">（空）</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -428,11 +578,20 @@ export default function AiSidePanel() {
  * 根据角色（用户/助手）切换对齐方向与气泡配色。
  * 助手消息使用 react-markdown 渲染，支持 GFM（表格/删除线等）。
  */
-const MessageBubble = memo(function MessageBubble({ message }: { message: AiMessage }) {
+const MessageBubble = memo(function MessageBubble({ message, onDelete, onShowDetail }: { message: AiMessage; onDelete: (id: string) => void; onShowDetail: (payload: ChatRequestPayload) => void }) {
   const isUser = message.role === 'user'
   const [thinkingExpanded, setThinkingExpanded] = useState(false)
+  const [confirming, setConfirming] = useState(false)
   const isError = !isUser && message.content.startsWith('⚠️')
+  const hasPayload = !isUser && !!message.requestPayload
   const navigate = useNavigate()
+  const editor = useAtomValue(editorInstanceAtom)
+
+  /** 将 AI 回答插入到编辑器当前光标位置 */
+  function handleInsertToEditor() {
+    if (!editor || !message.content) return
+    editor.chain().focus().insertContent(message.content).run()
+  }
 
   /** 兜底计算：若 Rust 侧 outputChars 为 0，用前端实际内容字符数替代 */
   const contentCharCount = [...message.content].length
@@ -539,6 +698,58 @@ const MessageBubble = memo(function MessageBubble({ message }: { message: AiMess
             <span className="text-border/30">|</span>
             <span title="输入字数">↗ {effectiveUsage.inputChars} 字</span>
             <span title="输出字数">↘ {effectiveUsage.outputChars} 字</span>
+          </div>
+        )}
+
+        {/* 操作按钮（仅助手消息且非加载状态显示） */}
+        {!isUser && !isLoading && (
+          <div className="mt-2 pt-2 border-t border-border/30 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleInsertToEditor}
+                className="flex items-center gap-1 text-[11px] text-muted-foreground/50 hover:text-primary transition-colors"
+                title="插入到编辑器"
+              >
+                <ClipboardPasteIcon className="w-3 h-3" />
+                插入编辑器
+              </button>
+              {hasPayload && (
+                <button
+                  onClick={() => onShowDetail(message.requestPayload!)}
+                  className="flex items-center gap-1 text-[11px] text-muted-foreground/50 hover:text-primary transition-colors"
+                  title="查看提交给 AI 的请求详情"
+                >
+                  <InfoIcon className="w-3 h-3" />
+                  详情
+                </button>
+              )}
+            </div>
+            {confirming ? (
+              <span className="flex items-center gap-1.5">
+                <span className="text-[11px] text-muted-foreground">确认删除？</span>
+                <button
+                  onClick={() => onDelete(message.id)}
+                  className="text-xs px-2 py-0.5 rounded bg-destructive text-destructive-foreground hover:opacity-90 transition-opacity"
+                >
+                  删除
+                </button>
+                <button
+                  onClick={() => setConfirming(false)}
+                  className="text-xs px-2 py-0.5 rounded bg-muted-foreground/15 text-muted-foreground hover:bg-muted-foreground/25 transition-colors"
+                >
+                  取消
+                </button>
+              </span>
+            ) : (
+              <button
+                onClick={() => setConfirming(true)}
+                className="flex items-center gap-1 text-[11px] text-muted-foreground/50 hover:text-destructive transition-colors"
+                title="删除此轮问答"
+              >
+                <Trash2Icon className="w-3 h-3" />
+                删除
+              </button>
+            )}
           </div>
         )}
       </div>

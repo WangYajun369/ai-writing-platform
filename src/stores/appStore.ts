@@ -232,6 +232,7 @@ interface AppState {
   // AI 对话管理
   addAiMessage: (bookId: string, message: AiMessage) => void
   updateAiMessage: (bookId: string, messageId: string, patch: Partial<AiMessage>) => void
+  deleteAiMessage: (bookId: string, messageId: string) => void
   setAiMessages: (bookId: string, messages: AiMessage[]) => void
   clearAiConversation: (bookId: string) => void
   persistAiConversation: (bookId: string) => void
@@ -387,6 +388,40 @@ export const useAppStore = create<AppState>()((set) => ({
         }
         // 高频流式更新：仅更新内存，不写 localStorage
         return { aiConversations: conversations }
+      }),
+
+    deleteAiMessage: (bookId, messageId) =>
+      set((s) => {
+        const msgs = s.aiConversations[bookId]
+        if (!msgs) return s
+        const idx = msgs.findIndex((m) => m.id === messageId)
+        if (idx === -1) return s
+        const target = msgs[idx]
+        // 删除助手消息时，同步删除其前面的用户提问
+        if (target.role === 'assistant') {
+          const prevIdx = idx - 1
+          const toRemove = new Set([idx])
+          if (prevIdx >= 0 && msgs[prevIdx].role === 'user') {
+            toRemove.add(prevIdx)
+          }
+          const filtered = msgs.filter((_, i) => !toRemove.has(i))
+          const conversations = { ...s.aiConversations, [bookId]: filtered }
+          saveAiConversations(conversations)
+          return { aiConversations: conversations }
+        }
+        // 删除用户消息时，同步删除其后面的助手回答
+        if (target.role === 'user') {
+          const nextIdx = idx + 1
+          const toRemove = new Set([idx])
+          if (nextIdx < msgs.length && msgs[nextIdx].role === 'assistant') {
+            toRemove.add(nextIdx)
+          }
+          const filtered = msgs.filter((_, i) => !toRemove.has(i))
+          const conversations = { ...s.aiConversations, [bookId]: filtered }
+          saveAiConversations(conversations)
+          return { aiConversations: conversations }
+        }
+        return s
       }),
 
     setAiMessages: (bookId, messages) =>
