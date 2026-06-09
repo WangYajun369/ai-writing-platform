@@ -15,13 +15,13 @@ import { createLowlight, common } from 'lowlight'
 
 const lowlight = createLowlight(common)
 import Underline from '@tiptap/extension-underline'
-import TextStyle from '@tiptap/extension-text-style'
+import { TextStyle } from '@tiptap/extension-text-style'
 import Color from '@tiptap/extension-color'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
 import { ResizableImage } from './ResizableImageExtension'
 import { TrailingNode } from './TrailingNodeExtension'
-import Table from '@tiptap/extension-table'
+import { Table } from '@tiptap/extension-table'
 import TableRow from '@tiptap/extension-table-row'
 import TableHeader from '@tiptap/extension-table-header'
 import TableCell from '@tiptap/extension-table-cell'
@@ -170,7 +170,7 @@ export default function RichTextEditor() {
           const current = editor.getHTML()
           const incoming = html || '<p></p>'
           if (current !== incoming) {
-            editor.commands.setContent(incoming, false)
+            editor.commands.setContent(incoming, { emitUpdate: false })
           }
           const chapterCount = countWordsFromHtml(incoming)
           const totalCount = calcBookWordCount(chaptersRef.current, currentChapter.id, chapterCount)

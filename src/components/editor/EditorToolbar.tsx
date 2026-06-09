@@ -604,7 +604,7 @@ function TablePopover({
   onClose,
   ref,
 }: {
-  editor: ReturnType<typeof import('@tiptap/react').useEditor>
+  editor: import('@tiptap/core').Editor | null
   gridHover: { rows: number; cols: number }
   onGridHover: (dim: { rows: number; cols: number }) => void
   onClose: () => void
@@ -769,7 +769,7 @@ const CODE_LANGUAGES: { value: string; label: string }[] = [
  *
  * 在光标位于代码块内时显示，允许切换代码块的语言以实现语法高亮。
  */
-function CodeLanguageSelect({ editor }: { editor: ReturnType<typeof import('@tiptap/react').useEditor> }) {
+function CodeLanguageSelect({ editor }: { editor: import('@tiptap/core').Editor | null }) {
   const currentLang = (editor?.getAttributes('codeBlock').language ?? 'plaintext') as string
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
