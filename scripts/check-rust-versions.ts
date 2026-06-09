@@ -25,6 +25,7 @@ interface CrateVersion {
   current: string         // Cargo.lock 中的锁定版本（若可读取）
   latest: string
   status: 'up-to-date' | 'patch' | 'minor' | 'major' | 'error'
+  license: string
   error?: string
 }
 
@@ -34,6 +35,7 @@ interface CratesIoResponse {
     max_version: string
     newest_version: string
     description: string
+    license: string
   }
 }
 
@@ -241,7 +243,7 @@ function normalizeCargoVersion(v: string, latest?: string): string {
 }
 
 // ========== 从 crates.io API 获取最新版本 ==========
-async function fetchLatestVersion(crateName: string): Promise<string | null> {
+async function fetchLatestVersion(crateName: string): Promise<{ version: string; license: string } | null> {
   const url = `https://crates.io/api/v1/crates/${encodeURIComponent(crateName)}`
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 10000)
@@ -258,7 +260,10 @@ async function fetchLatestVersion(crateName: string): Promise<string | null> {
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     const data = (await r.json()) as CratesIoResponse
     // 优先使用 max_stable_version，保证拿到的不是 pre-release
-    return data.crate.max_stable_version || data.crate.max_version
+    return {
+      version: data.crate.max_stable_version || data.crate.max_version,
+      license: data.crate.license || 'Unknown',
+    }
   } finally {
     clearTimeout(timeout)
   }
@@ -329,6 +334,7 @@ async function main() {
       wanted: version,
       current: lockVersions.get(name) || normalizeCargoVersion(version),
       latest: '?',
+      license: '?',
       status: 'error',
     }
     try {
@@ -338,8 +344,9 @@ async function main() {
         result.latest = 'N/A'
         result.status = 'error'
       } else {
-        result.latest = latest
-        result.status = getStatus(normalizeCargoVersion(result.current), latest)
+        result.latest = latest.version
+        result.license = latest.license
+        result.status = getStatus(normalizeCargoVersion(result.current), latest.version)
       }
     } catch (e) {
       result.error = e instanceof Error ? e.message : String(e)
@@ -362,9 +369,9 @@ async function main() {
   const maxNameLen = Math.max(...filtered.map(i => i.name.length), 6)
 
   const header =
-    `${c.bold}${'Name'.padEnd(maxNameLen + 2)} ${'Current'.padEnd(13)} ${'Latest'.padEnd(13)} ${'Type'.padEnd(7)} Status${c.reset}`
+    `${c.bold}${'Name'.padEnd(maxNameLen + 2)} ${'Current'.padEnd(13)} ${'Latest'.padEnd(13)} ${'Type'.padEnd(7)} ${'Status'.padEnd(10)} ${'License'.padEnd(16)}${c.reset}`
   console.log(header)
-  console.log('─'.repeat(maxNameLen + 2 + 13 + 13 + 7 + 6))
+  console.log('─'.repeat(maxNameLen + 2 + 13 + 13 + 7 + 10 + 16 + 4))
 
   const statusColors: Record<string, string> = {
     'up-to-date': c.green,
@@ -399,14 +406,14 @@ async function main() {
       : info.latest
 
     console.log(
-      `${color}${info.name.padEnd(maxNameLen + 2)} ${info.current.padEnd(13)} ${dispLatest.padEnd(13)} ${typeLabel}   ${icon}${c.reset}`,
+      `${color}${info.name.padEnd(maxNameLen + 2)} ${info.current.padEnd(13)} ${dispLatest.padEnd(13)} ${typeLabel} ${icon.padEnd(10)} ${(info.license || 'N/A').padEnd(16)}${c.reset}`,
     )
 
     counts[info.status]++
   }
 
   // 7. 汇总
-  console.log('─'.repeat(maxNameLen + 2 + 13 + 13 + 7 + 6))
+  console.log('─'.repeat(maxNameLen + 2 + 13 + 13 + 7 + 10 + 16 + 4))
   const total = filtered.length
   console.log(
     `\n${c.bold}总计: ${total}${c.reset} 个 crate（耗时 ${elapsed}s）`,

@@ -29,6 +29,7 @@ interface VersionInfo {
   current: string       // lock 文件中的实际安装版本（若可读取）
   latest: string
   status: 'up-to-date' | 'patch' | 'minor' | 'major' | 'error'
+  license: string
   error?: string
 }
 
@@ -115,7 +116,7 @@ function readLockVersions(): Map<string, string> {
 }
 
 // ========== 从 npm registry 获取最新版本 ==========
-async function fetchLatestVersion(pkgName: string): Promise<string> {
+async function fetchLatestVersion(pkgName: string): Promise<{ version: string; license: string }> {
   const url = `https://registry.npmjs.org/${encodeURIComponent(pkgName)}/latest`
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 10000)
@@ -123,8 +124,10 @@ async function fetchLatestVersion(pkgName: string): Promise<string> {
   try {
     const r = await fetch(url, { signal: controller.signal })
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
-    const data = (await r.json()) as { version: string }
-    return data.version
+    const data = (await r.json()) as { version: string; license?: string | { type: string } }
+    const license = typeof data.license === 'string' ? data.license
+      : data.license?.type || 'Unknown'
+    return { version: data.version, license }
   } finally {
     clearTimeout(timeout)
   }
@@ -195,10 +198,13 @@ async function main() {
       wanted,
       current: lockVersions.get(name) || wanted.replace(/^[\^~]/, ''),
       latest: '?',
+      license: '?',
       status: 'error',
     }
     try {
-      result.latest = await fetchLatestVersion(name)
+      const fetched = await fetchLatestVersion(name)
+      result.latest = fetched.version
+      result.license = fetched.license
       result.status = getStatus(result.current, result.latest)
     } catch (e) {
       result.error = e instanceof Error ? e.message : String(e)
@@ -219,9 +225,9 @@ async function main() {
   // 5. 输出表格
   const maxNameLen = Math.max(...filtered.map(i => i.name.length), 6)
 
-  const header = `${c.bold}${'Name'.padEnd(maxNameLen + 2)} ${'Current'.padEnd(14)} ${'Latest'.padEnd(14)} ${'Type'.padEnd(6)} Status${c.reset}`
+  const header = `${c.bold}${'Name'.padEnd(maxNameLen + 2)} ${'Current'.padEnd(14)} ${'Latest'.padEnd(14)} ${'Type'.padEnd(6)} ${'Status'.padEnd(10)} ${'License'.padEnd(16)}${c.reset}`
   console.log(header)
-  console.log('─'.repeat(header.length - c.bold.length * 2 - c.reset.length * 2 + 10))
+  console.log('─'.repeat(header.length - c.bold.length * 2 - c.reset.length * 2 + 10 + 21))
 
   const statusColors: Record<string, string> = {
     'up-to-date': c.green,
@@ -250,14 +256,14 @@ async function main() {
       : info.latest
 
     console.log(
-      `${color}${info.name.padEnd(maxNameLen + 2)} ${(info.current).padEnd(14)} ${(diff).padEnd(14)} ${typeLabel}   ${icon}${c.reset}`,
+      `${color}${info.name.padEnd(maxNameLen + 2)} ${(info.current).padEnd(14)} ${(diff).padEnd(14)} ${typeLabel} ${icon.padEnd(10)} ${(info.license || 'N/A').padEnd(16)}${c.reset}`,
     )
 
     counts[info.status]++
   }
 
   // 6. 汇总
-  console.log('─'.repeat(header.length - c.bold.length * 2 - c.reset.length * 2 + 10))
+  console.log('─'.repeat(header.length - c.bold.length * 2 - c.reset.length * 2 + 10 + 21))
   const total = filtered.length
   console.log(
     `\n${c.bold}总计: ${total}${c.reset} 个包（耗时 ${elapsed}s）`,
