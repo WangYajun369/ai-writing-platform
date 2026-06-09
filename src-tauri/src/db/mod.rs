@@ -73,7 +73,8 @@ impl AppDb {
                 db_path     TEXT NOT NULL DEFAULT '',
                 tags        TEXT NOT NULL DEFAULT '[]',
                 created_at  TEXT NOT NULL,
-                updated_at  TEXT NOT NULL
+                updated_at  TEXT NOT NULL,
+                deleted_at  TEXT
             );
 
             CREATE TABLE IF NOT EXISTS volumes (
@@ -137,6 +138,7 @@ impl AppDb {
         // 注意：必须在索引创建之前执行，否则旧库会因列不存在而创建索引失败
         let _ = conn.execute("ALTER TABLE volumes ADD COLUMN deleted_at TEXT", []);
         let _ = conn.execute("ALTER TABLE chapters ADD COLUMN deleted_at TEXT", []);
+        let _ = conn.execute("ALTER TABLE books ADD COLUMN deleted_at TEXT", []);
 
         // 关键字段索引（提升查询性能）
         conn.execute_batch(r#"
@@ -145,6 +147,7 @@ impl AppDb {
             CREATE INDEX IF NOT EXISTS idx_chapters_book_id ON chapters(book_id);
             CREATE INDEX IF NOT EXISTS idx_chapters_volume_id ON chapters(volume_id);
             CREATE INDEX IF NOT EXISTS idx_chapters_deleted_at ON chapters(deleted_at);
+            CREATE INDEX IF NOT EXISTS idx_books_deleted_at ON books(deleted_at);
             CREATE INDEX IF NOT EXISTS idx_snapshots_chapter_id ON snapshots(chapter_id);
             CREATE INDEX IF NOT EXISTS idx_world_cards_book_id ON world_cards(book_id);
             CREATE INDEX IF NOT EXISTS idx_embeddings_source ON embeddings(source_type, source_id);

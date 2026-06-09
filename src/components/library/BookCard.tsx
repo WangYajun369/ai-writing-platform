@@ -35,7 +35,7 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
   const [coverSrc, setCoverSrc] = useState<string | undefined>(undefined)
   const [showEditDialog, setShowEditDialog] = useState(false)
   const prevCoverSrcRef = useRef<string | undefined>(undefined)
-  const { removeBook, updateBook } = useAppStore()
+  const { updateBook } = useAppStore()
 
   // 异步加载封面为 blob URL
   useEffect(() => {
@@ -116,10 +116,10 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
   }
 
   async function handleDelete() {
-    if (!confirm(`确认删除《${book.title}》？此操作不可恢复。`)) return
+    if (!confirm(`确认将《${book.title}》移入回收站？可在回收站中恢复或彻底删除。`)) return
     try {
       await bookApi.delete(book.id)
-      removeBook(book.id)
+      onRefresh()
     } catch (err) {
       console.error('删除失败', err)
     }
@@ -181,17 +181,24 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
   // Grid 卡片
   return (
     <div
-      className="relative group rounded-xl border bg-card hover:border-primary/40 hover:shadow-md transition-all cursor-pointer overflow-hidden"
+      className="relative group rounded-xl border bg-card hover:border-primary/40 hover:shadow-md transition-all cursor-pointer overflow-hidden flex flex-col"
       onDoubleClick={() => onOpen(book)}
       onContextMenu={onContextMenu}
     >
-      {/* 封面区域 */}
-      <div className="aspect-[3/4] bg-gradient-to-br from-primary/20 via-primary/10 to-accent flex items-end p-3 relative">
+      {/* 封面区域 — 固定宽高比，不受 flex 挤压 */}
+      <div className="aspect-[3/4] bg-muted/50 relative flex-shrink-0 overflow-hidden">
         {coverSrc ? (
-          <img src={coverSrc} alt={book.title} className="absolute inset-0 w-full h-full object-cover" />
+          <img src={coverSrc} alt={book.title} className="w-full h-full object-cover" />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-4xl font-bold text-primary/20">{book.title.charAt(0)}</span>
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-accent/5 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-1.5">
+              {/* 书本图标为主视觉 */}
+              <svg className="w-8 h-8 text-primary/20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+              </svg>
+              {/* 小号首字点缀 */}
+              <span className="text-lg font-semibold text-primary/20 select-none">{book.title.charAt(0)}</span>
+            </div>
           </div>
         )}
 
@@ -203,13 +210,13 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
         )}
       </div>
 
-      {/* 信息区 */}
-      <div className="p-3">
-        <p className="font-medium text-sm truncate">{book.title}</p>
-        <p className="text-xs text-muted-foreground">{book.author}</p>
-        <div className="flex items-center gap-2 mt-2">
-          <span className="text-xs text-muted-foreground">{formatWordCount(book.wordCount)}</span>
-          <span className="text-xs text-muted-foreground ml-auto flex items-center gap-1">
+      {/* 信息区 — flex-shrink-0 确保不被压缩 */}
+      <div className="p-3 flex flex-col gap-0.5 flex-shrink-0">
+        <p className="font-medium text-sm truncate leading-tight" title={book.title}>{book.title}</p>
+        <p className="text-xs text-muted-foreground truncate leading-tight" title={book.author}>{book.author || '未署名'}</p>
+        <div className="flex items-center gap-2 pt-1.5">
+          <span className="text-xs text-muted-foreground tabular-nums">{formatWordCount(book.wordCount)}</span>
+          <span className="text-xs text-muted-foreground ml-auto flex items-center gap-1 shrink-0">
             <CalendarIcon className="w-3 h-3" />
             {formatRelativeTime(book.updatedAt)}
           </span>

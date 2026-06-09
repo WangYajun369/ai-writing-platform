@@ -38,6 +38,10 @@ pub fn run() {
             commands::book::update_book,
             commands::book::set_book_cover,
             commands::book::delete_book,
+            commands::book::list_deleted_books,
+            commands::book::restore_book,
+            commands::book::hard_delete_book,
+            commands::book::clear_book_trash,
             // 卷
             commands::volume::list_volumes,
             commands::volume::list_deleted_volumes,
@@ -79,6 +83,7 @@ pub fn run() {
             commands::ai::stream_ai_chat,
             commands::ai::test_ai_connection,
             commands::ai::test_rag_connection,
+            commands::ai::summarize_chapter,
             // 导入导出
             commands::io::export_book,
             commands::io::import_txt,

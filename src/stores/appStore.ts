@@ -228,6 +228,9 @@ interface AppState {
   updateBook: (id: string, patch: Partial<Book>) => void
   addBook: (book: Book) => void
   removeBook: (id: string) => void
+  /** 回收站中作品数量 */
+  trashCount: number
+  setTrashCount: (count: number) => void
   setAiConfig: (config: Partial<AiConfig>) => void
   // AI 对话管理
   addAiMessage: (bookId: string, message: AiMessage) => void
@@ -346,6 +349,8 @@ export const useAppStore = create<AppState>()((set) => ({
 
     addBook: (book) => set((s) => ({ books: [...s.books, book] })),
     removeBook: (id) => set((s) => ({ books: s.books.filter((b) => b.id !== id) })),
+    trashCount: 0,
+    setTrashCount: (trashCount) => set({ trashCount }),
 
     setAiConfig: (config) =>
       set((s) => {

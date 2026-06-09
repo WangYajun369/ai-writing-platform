@@ -261,6 +261,7 @@ async fn call_embedding_api(
 
 /// RAG 语义检索（向量相似度搜索）
 ///
+/// 同时检索章节和世界观卡片的内容。
 /// 当 embeddings 表有数据时使用向量搜索，否则降级为 SQL LIKE。
 #[tauri::command]
 pub async fn rag_search(
@@ -276,12 +277,18 @@ pub async fn rag_search(
 
     // 尝试向量检索
     if let (Some(ref ep), Some(ref key), Some(ref model)) = (&endpoint, &api_key, &embedding_model) {
-        // 检查是否有已生成的 embedding
+        // 检查该书籍是否有已生成的 embedding（章节 + 世界观卡片，仅非空内容）
         let emb_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM embeddings e
-                 INNER JOIN chapters c ON e.source_id = c.id AND e.source_type = 'chapter'
-                 WHERE c.book_id = ?1 AND c.deleted_at IS NULL",
+                "SELECT (
+                    SELECT COUNT(*) FROM embeddings e
+                    INNER JOIN chapters c ON e.source_id = c.id AND e.source_type = 'chapter'
+                    WHERE c.book_id = ?1 AND c.deleted_at IS NULL AND c.content_html != ''
+                ) + (
+                    SELECT COUNT(*) FROM embeddings e
+                    INNER JOIN world_cards w ON e.source_id = w.id AND e.source_type = 'world_card'
+                    WHERE w.book_id = ?1 AND w.content_html != ''
+                )",
                 rusqlite::params![book_id],
                 |row| row.get(0),
             )
@@ -300,55 +307,95 @@ pub async fn rag_search(
         }
     }
 
-    // 降级：SQL LIKE 关键词搜索
+    // 降级：SQL LIKE 关键词搜索（章节 + 世界观卡片）
     like_search(&conn, &book_id, &query, top_n)
 }
 
-/// 向量相似度搜索
+/// 向量相似度搜索（章节 + 世界观卡片）
 fn vector_search(
     conn: &rusqlite::Connection,
     book_id: &str,
     query_vec: &[f32],
     top_n: usize,
 ) -> Result<Vec<RagResult>, String> {
-    // 查询该书籍所有章节的 embedding
-    let mut stmt = conn
-        .prepare(
-            "SELECT e.source_id, e.embedding, c.title, c.content_html
-             FROM embeddings e
-             INNER JOIN chapters c ON e.source_id = c.id AND e.source_type = 'chapter'
-             WHERE c.book_id = ?1 AND c.deleted_at IS NULL",
-        )
-        .map_err(|e| e.to_string())?;
-
     struct EmbRow {
+        source_type: String,
         source_id: String,
         embedding: Vec<u8>,
         title: String,
         content_html: String,
     }
 
-    let rows: Vec<EmbRow> = stmt
-        .query_map(rusqlite::params![book_id], |row| {
-            Ok(EmbRow {
-                source_id: row.get(0)?,
-                embedding: row.get(1)?,
-                title: row.get(2)?,
-                content_html: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+    let mut all_rows: Vec<EmbRow> = Vec::new();
+
+    // 查询该书籍所有章节的 embedding
+    {
+        let mut stmt = conn
+            .prepare(
+                "SELECT e.source_id, e.embedding, c.title, c.content_html
+                 FROM embeddings e
+                 INNER JOIN chapters c ON e.source_id = c.id AND e.source_type = 'chapter'
+                 WHERE c.book_id = ?1 AND c.deleted_at IS NULL",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let chapter_rows: Vec<EmbRow> = stmt
+            .query_map(rusqlite::params![book_id], |row| {
+                Ok(EmbRow {
+                    source_type: "chapter".into(),
+                    source_id: row.get(0)?,
+                    embedding: row.get(1)?,
+                    title: row.get(2)?,
+                    content_html: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                })
             })
-        })
-        .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
-        .collect();
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        all_rows.extend(chapter_rows);
+    }
+
+    // 查询该书籍所有世界观卡片的 embedding
+    {
+        let mut stmt = conn
+            .prepare(
+                "SELECT e.source_id, e.embedding, w.title, w.content_html
+                 FROM embeddings e
+                 INNER JOIN world_cards w ON e.source_id = w.id AND e.source_type = 'world_card'
+                 WHERE w.book_id = ?1",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let card_rows: Vec<EmbRow> = stmt
+            .query_map(rusqlite::params![book_id], |row| {
+                Ok(EmbRow {
+                    source_type: "world_card".into(),
+                    source_id: row.get(0)?,
+                    embedding: row.get(1)?,
+                    title: row.get(2)?,
+                    content_html: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        all_rows.extend(card_rows);
+    }
 
     // 计算余弦相似度并排序
-    let mut scored: Vec<(f64, String, String, String)> = Vec::new();
-    for row in &rows {
+    let mut scored: Vec<(f64, String, String, String, String)> = Vec::new();
+    for row in &all_rows {
         let emb_vec = bytes_to_floats(&row.embedding);
         let sim = cosine_similarity(query_vec, &emb_vec);
         let plain = strip_html(&row.content_html);
         let snip = snippet(&plain, 200);
-        scored.push((sim, snip, row.source_id.clone(), row.title.clone()));
+        scored.push((
+            sim,
+            snip,
+            row.source_id.clone(),
+            row.title.clone(),
+            row.source_type.clone(),
+        ));
     }
 
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
@@ -356,9 +403,9 @@ fn vector_search(
 
     Ok(scored
         .into_iter()
-        .map(|(dist, snip, sid, title)| RagResult {
+        .map(|(dist, snip, sid, title, stype)| RagResult {
             snippet: snip,
-            source_type: "chapter".into(),
+            source_type: stype,
             source_id: sid,
             source_title: title,
             distance: dist,
@@ -366,7 +413,7 @@ fn vector_search(
         .collect())
 }
 
-/// 降级的 SQL LIKE 搜索
+/// 降级的 SQL LIKE 搜索（章节 + 世界观卡片）
 fn like_search(
     conn: &rusqlite::Connection,
     book_id: &str,
@@ -374,30 +421,80 @@ fn like_search(
     top_n: usize,
 ) -> Result<Vec<RagResult>, String> {
     let pattern = format!("%{}%", query.chars().take(20).collect::<String>());
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, title, content_html FROM chapters
-             WHERE book_id=?1 AND content_html LIKE ?2 AND deleted_at IS NULL LIMIT ?3",
-        )
-        .map_err(|e| e.to_string())?;
+    let mut results: Vec<RagResult> = Vec::new();
 
-    let results = stmt
-        .query_map(rusqlite::params![book_id, pattern, top_n as i64], |row| {
-            let id: String = row.get(0)?;
-            let title: String = row.get(1)?;
-            let html: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
-            let snip = snippet(&strip_html(&html), 200);
-            Ok(RagResult {
-                snippet: snip,
-                source_type: "chapter".into(),
-                source_id: id,
-                source_title: title,
-                distance: 0.5,
-            })
-        })
-        .map_err(|e| e.to_string())?;
+    // 搜索章节
+    {
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, title, content_html FROM chapters
+                 WHERE book_id=?1 AND content_html LIKE ?2 AND deleted_at IS NULL LIMIT ?3",
+            )
+            .map_err(|e| e.to_string())?;
 
-    results.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+        let chapter_results = stmt
+            .query_map(
+                rusqlite::params![book_id, &pattern, top_n as i64],
+                |row| {
+                    let id: String = row.get(0)?;
+                    let title: String = row.get(1)?;
+                    let html: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+                    let snip = snippet(&strip_html(&html), 200);
+                    Ok(RagResult {
+                        snippet: snip,
+                        source_type: "chapter".into(),
+                        source_id: id,
+                        source_title: title,
+                        distance: 0.5,
+                    })
+                },
+            )
+            .map_err(|e| e.to_string())?;
+
+        for r in chapter_results {
+            if let Ok(item) = r {
+                results.push(item);
+            }
+        }
+    }
+
+    // 搜索世界观卡片
+    if results.len() < top_n {
+        let remaining = (top_n - results.len()) as i64;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, title, content_html FROM world_cards
+                 WHERE book_id=?1 AND content_html LIKE ?2 LIMIT ?3",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let card_results = stmt
+            .query_map(
+                rusqlite::params![book_id, &pattern, remaining],
+                |row| {
+                    let id: String = row.get(0)?;
+                    let title: String = row.get(1)?;
+                    let html: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+                    let snip = snippet(&strip_html(&html), 200);
+                    Ok(RagResult {
+                        snippet: snip,
+                        source_type: "world_card".into(),
+                        source_id: id,
+                        source_title: title,
+                        distance: 0.5,
+                    })
+                },
+            )
+            .map_err(|e| e.to_string())?;
+
+        for r in card_results {
+            if let Ok(item) = r {
+                results.push(item);
+            }
+        }
+    }
+
+    Ok(results)
 }
 
 /// 检查 Embedding 索引状态：对比章节/世界观卡片数量与已索引数量
@@ -430,7 +527,7 @@ pub fn check_embedding_status(
         .query_row(
             "SELECT COUNT(*) FROM embeddings e
              INNER JOIN chapters c ON e.source_id = c.id AND e.source_type = 'chapter'
-             WHERE c.book_id = ?1 AND c.deleted_at IS NULL",
+             WHERE c.book_id = ?1 AND c.deleted_at IS NULL AND c.content_html != ''",
             rusqlite::params![&book_id],
             |row| row.get::<_, i64>(0).map(|v| v as usize),
         )
@@ -440,7 +537,7 @@ pub fn check_embedding_status(
         .query_row(
             "SELECT COUNT(*) FROM embeddings e
              INNER JOIN world_cards w ON e.source_id = w.id AND e.source_type = 'world_card'
-             WHERE w.book_id = ?1",
+             WHERE w.book_id = ?1 AND w.content_html != ''",
             rusqlite::params![&book_id],
             |row| row.get::<_, i64>(0).map(|v| v as usize),
         )
@@ -910,4 +1007,125 @@ async fn stream_sse(
     });
 
     Ok(accumulated)
+}
+
+// ---- 章节内容总结 ----
+
+/// 章节总结结果
+#[derive(Debug, Clone, Serialize)]
+pub struct ChapterSummary {
+    /// 总结后的文本
+    pub summary: String,
+    /// 原始字数
+    pub original_chars: usize,
+    /// 总结后字数
+    pub summary_chars: usize,
+    /// 思考过程
+    pub thinking: String,
+}
+
+/// 章节总结请求参数
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SummarizeArgs {
+    pub endpoint: String,
+    pub model: String,
+    pub api_key: Option<String>,
+    pub temperature: f64,
+    pub max_tokens: Option<u32>,
+    pub chapter_title: String,
+    pub chapter_content: String,
+    pub thinking_enabled: Option<bool>,
+}
+
+/// 总结章节内容（非流式，返回完整总结）
+#[tauri::command]
+pub async fn summarize_chapter(
+    app: AppHandle,
+    args: SummarizeArgs,
+) -> Result<ChapterSummary, String> {
+    let system_prompt = "你是一位专业的小说创作助手。请仔细阅读以下章节内容，然后进行简洁的总结。\n\n总结要求：\n1. 提炼出章节的主要情节、关键事件和重要人物\n2. 保留故事的核心脉络和转折点\n3. 字数控制在300字以内\n4. 使用流畅的段落形式，不要使用列表格式\n\n请直接输出总结内容，不需要任何前缀说明。";
+
+    let user_content = format!("章节标题：{}\n\n章节内容：\n{}", args.chapter_title, args.chapter_content);
+
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .http1_only()
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .tcp_keepalive(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+    let url = format!(
+        "{}/chat/completions",
+        args.endpoint.trim_end_matches('/')
+    );
+
+    let mut req = client
+        .post(&url)
+        .header("Content-Type", "application/json");
+
+    if let Some(ref key) = args.api_key {
+        req = req.header("Authorization", format!("Bearer {}", key));
+    }
+
+    let mut body = serde_json::json!({
+        "model": args.model,
+        "messages": [
+            { "role": "system", "content": system_prompt },
+            { "role": "user", "content": user_content }
+        ],
+        "stream": false,
+        "temperature": args.temperature,
+    });
+
+    if let Some(max_tokens) = args.max_tokens {
+        body["max_tokens"] = serde_json::json!(max_tokens);
+    }
+
+    if args.thinking_enabled.unwrap_or(false) {
+        body["thinking"] = serde_json::json!({"type": "enabled"});
+    }
+
+    // 发送总结请求
+    let response = req
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("总结请求失败: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("AI 服务返回错误 ({}): {}", status, text));
+    }
+
+    let data: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+
+    // 提取返回内容
+    let content = data["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    // 提取思考过程（如果有）
+    let thinking = data["choices"][0]["message"]["reasoning_content"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    let original_chars = args.chapter_content.chars().count();
+    let summary_chars = content.chars().count();
+
+    // 发送完成事件
+    let _ = app.emit("chapter-summary-done", ());
+
+    Ok(ChapterSummary {
+        summary: content,
+        original_chars,
+        summary_chars,
+        thinking,
+    })
 }

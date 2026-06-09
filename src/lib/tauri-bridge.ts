@@ -20,6 +20,7 @@ export const bookApi = {
     return invoke<Book>('update_book', { id, params })
   },
 
+  /** 软删除：移入回收站，数据完整保留 */
   async delete(id: string): Promise<void> {
     return invoke<void>('delete_book', { id })
   },
@@ -31,6 +32,26 @@ export const bookApi = {
   /** 设置书籍封面：传入本地文件路径，后端复制到应用数据目录并更新数据库 */
   async setCover(id: string, sourcePath: string): Promise<Book> {
     return invoke<Book>('set_book_cover', { id, sourcePath })
+  },
+
+  /** 列出回收站中已删除的作品 */
+  async listDeleted(): Promise<Book[]> {
+    return invoke<Book[]>('list_deleted_books')
+  },
+
+  /** 从回收站恢复作品 */
+  async restore(id: string): Promise<void> {
+    return invoke<void>('restore_book', { id })
+  },
+
+  /** 彻底删除作品及其全部数据 */
+  async hardDelete(id: string): Promise<void> {
+    return invoke<void>('hard_delete_book', { id })
+  },
+
+  /** 一键清空回收站 */
+  async clearTrash(): Promise<number> {
+    return invoke<number>('clear_book_trash')
   },
 }
 
@@ -242,6 +263,24 @@ export interface RagResultItem {
   distance: number
 }
 
+export interface ChapterSummary {
+  summary: string
+  originalChars: number
+  summaryChars: number
+  thinking: string
+}
+
+export interface SummarizeArgs {
+  endpoint: string
+  model: string
+  apiKey?: string
+  temperature: number
+  maxTokens?: number
+  chapterTitle: string
+  chapterContent: string
+  thinkingEnabled?: boolean
+}
+
 export const aiApi = {
   /** RAG 语义检索：优先使用向量搜索，无 embedding 时降级为关键词搜索 */
   async ragSearch(
@@ -281,6 +320,11 @@ export const aiApi = {
   /** 测试 RAG Embedding 服务连接 */
   async testRagConnection(endpoint: string, apiKey: string, embeddingModel: string): Promise<ConnectionTestResult> {
     return invoke<ConnectionTestResult>('test_rag_connection', { endpoint, apiKey, embeddingModel })
+  },
+
+  /** 总结章节内容（非流式） */
+  async summarizeChapter(args: SummarizeArgs): Promise<ChapterSummary> {
+    return invoke<ChapterSummary>('summarize_chapter', { args })
   },
 }
 

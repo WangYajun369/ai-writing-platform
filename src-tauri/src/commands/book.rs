@@ -2,6 +2,9 @@
 //!
 //! 提供书籍的增删改查（CRUD）操作，通过 Tauri State 访问
 //! 应用级 SQLite 数据库（r2d2 连接池）。
+//!
+//! 支持软删除：删除操作仅标记 deleted_at，放入回收站；
+//! 彻底删除（硬删除）时才级联清除所有关联数据。
 
 use tauri::State;
 use tauri::Manager;
@@ -24,32 +27,40 @@ fn now() -> String {
     Utc::now().to_rfc3339()
 }
 
-/// 列出所有书籍，按 updated_at 降序排列
+/// 完整的 13 列 SELECT 列表（含 deleted_at）
+const BOOK_SELECT: &str = "id,title,author,description,cover_image,word_count,daily_target,today_count,db_path,tags,created_at,updated_at,deleted_at";
+
+/// 从 rusqlite Row 中解析 Book 结构
+fn parse_book(row: &rusqlite::Row) -> rusqlite::Result<Book> {
+    let tags_str: String = row.get(9)?;
+    let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+    Ok(Book {
+        id: row.get(0)?,
+        title: row.get(1)?,
+        author: row.get(2)?,
+        description: row.get(3)?,
+        cover_image: row.get(4)?,
+        word_count: row.get(5)?,
+        daily_target: row.get(6)?,
+        today_count: row.get(7)?,
+        db_path: row.get(8)?,
+        tags,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
+        deleted_at: row.get(12)?,
+    })
+}
+
+/// 列出所有未删除的书籍，按 updated_at 降序排列
 #[tauri::command]
 pub async fn list_books(db: State<'_, AppDb>) -> Result<Vec<Book>, String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     let mut stmt = conn.prepare(
-        "SELECT id,title,author,description,cover_image,word_count,daily_target,today_count,db_path,tags,created_at,updated_at FROM books ORDER BY updated_at DESC"
+        &format!("SELECT {BOOK_SELECT} FROM books WHERE deleted_at IS NULL ORDER BY updated_at DESC")
     ).map_err(|e| e.to_string())?;
 
-    let books = stmt.query_map([], |row| {
-        let tags_str: String = row.get(9)?;
-        let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-        Ok(Book {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            author: row.get(2)?,
-            description: row.get(3)?,
-            cover_image: row.get(4)?,
-            word_count: row.get(5)?,
-            daily_target: row.get(6)?,
-            today_count: row.get(7)?,
-            db_path: row.get(8)?,
-            tags,
-            created_at: row.get(10)?,
-            updated_at: row.get(11)?,
-        })
-    }).map_err(|e| e.to_string())?;
+    let books = stmt.query_map([], |row| parse_book(row))
+        .map_err(|e| e.to_string())?;
 
     books.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
@@ -59,27 +70,24 @@ pub async fn list_books(db: State<'_, AppDb>) -> Result<Vec<Book>, String> {
 pub async fn get_book(db: State<'_, AppDb>, id: String) -> Result<Book, String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     conn.query_row(
-        "SELECT id,title,author,description,cover_image,word_count,daily_target,today_count,db_path,tags,created_at,updated_at FROM books WHERE id=?1",
+        &format!("SELECT {BOOK_SELECT} FROM books WHERE id=?1"),
         params![id],
-        |row| {
-            let tags_str: String = row.get(9)?;
-            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-            Ok(Book {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                author: row.get(2)?,
-                description: row.get(3)?,
-                cover_image: row.get(4)?,
-                word_count: row.get(5)?,
-                daily_target: row.get(6)?,
-                today_count: row.get(7)?,
-                db_path: row.get(8)?,
-                tags,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
-            })
-        },
+        |row| parse_book(row),
     ).map_err(|e| e.to_string())
+}
+
+/// 列出回收站中已删除的书籍
+#[tauri::command]
+pub async fn list_deleted_books(db: State<'_, AppDb>) -> Result<Vec<Book>, String> {
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
+    let mut stmt = conn.prepare(
+        &format!("SELECT {BOOK_SELECT} FROM books WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC")
+    ).map_err(|e| e.to_string())?;
+
+    let books = stmt.query_map([], |row| parse_book(row))
+        .map_err(|e| e.to_string())?;
+
+    books.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
 /// 创建新书参数（由前端 JSON 反序列化）
@@ -119,6 +127,7 @@ pub async fn create_book(db: State<'_, AppDb>, params: CreateBookParams) -> Resu
         tags: params.tags,
         created_at: ts.clone(),
         updated_at: ts,
+        deleted_at: None,
     })
 }
 
@@ -244,11 +253,72 @@ pub async fn set_book_cover(
     get_book(db, id).await
 }
 
-/// 删除书籍（级联删除关联的卷、章节、快照）
+/// 删除书籍（软删除：标记 deleted_at，放入回收站，数据完整保留）
 #[tauri::command]
 pub async fn delete_book(db: State<'_, AppDb>, id: String) -> Result<(), String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
+    let ts = now();
+    conn.execute(
+        "UPDATE books SET deleted_at=?1, updated_at=?1 WHERE id=?2 AND deleted_at IS NULL",
+        params![ts, id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 恢复已删除的书籍（清除 deleted_at）
+#[tauri::command]
+pub async fn restore_book(db: State<'_, AppDb>, id: String) -> Result<(), String> {
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
+    let affected = conn.execute(
+        "UPDATE books SET deleted_at=NULL, updated_at=?1 WHERE id=?2",
+        params![now(), id],
+    ).map_err(|e| e.to_string())?;
+    if affected == 0 {
+        return Err("未找到该作品或未被删除".into());
+    }
+    Ok(())
+}
+
+/// 彻底删除书籍及其全部关联数据（卷、章节、快照、世界观卡片、embedding 向量）
+#[tauri::command]
+pub async fn hard_delete_book(db: State<'_, AppDb>, id: String) -> Result<(), String> {
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
+    // CASCADE 自动删除 volumes / chapters / snapshots / world_cards
     conn.execute("DELETE FROM books WHERE id=?1", params![id])
         .map_err(|e| e.to_string())?;
+    // 清理孤立 embedding 向量
+    conn.execute(
+        "DELETE FROM embeddings WHERE source_type='chapter' AND source_id NOT IN (SELECT id FROM chapters)",
+        [],
+    ).map_err(|e| e.to_string())?;
+    conn.execute(
+        "DELETE FROM embeddings WHERE source_type='world_card' AND source_id NOT IN (SELECT id FROM world_cards)",
+        [],
+    ).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// 一键清空回收站：彻底删除所有已标记删除的书籍
+#[tauri::command]
+pub async fn clear_book_trash(db: State<'_, AppDb>) -> Result<u32, String> {
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
+    let count: u32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM books WHERE deleted_at IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM books WHERE deleted_at IS NOT NULL", [])
+        .map_err(|e| e.to_string())?;
+    // 清理孤立 embedding 向量
+    let _ = conn.execute(
+        "DELETE FROM embeddings WHERE source_type='chapter' AND source_id NOT IN (SELECT id FROM chapters)",
+        [],
+    );
+    let _ = conn.execute(
+        "DELETE FROM embeddings WHERE source_type='world_card' AND source_id NOT IN (SELECT id FROM world_cards)",
+        [],
+    );
+    Ok(count)
 }

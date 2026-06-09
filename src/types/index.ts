@@ -23,6 +23,8 @@ export interface Book {
   /** db 文件路径 */
   dbPath: string
   tags: string[]
+  /** 软删除时间（放入回收站的时间） */
+  deletedAt?: string
 }
 
 /** 卷信息 */
@@ -156,7 +158,14 @@ export interface ChatRequestPayload {
   thinkingEnabled?: boolean
   messages: { role: string; content: string }[]
   /** RAG 检索上下文片段（启用时） */
-  ragContext?: { snippet: string; score?: number }[]
+  ragContext?: { snippet: string; sourceType?: string; sourceTitle?: string; score?: number }[]
+  /** 章节总结信息（字数超过阈值时） */
+  chapterSummary?: {
+    summary: string
+    originalChars: number
+    summaryChars: number
+    thinking: string
+  }
 }
 
 /** AI 对话消息 */
@@ -167,7 +176,9 @@ export interface AiMessage {
   /** 深度思考过程（智谱/DeepSeek 推理模型） */
   thinking: string
   /** 当前生成阶段 */
-  phase: 'thinking' | 'answering' | 'done'
+  phase: 'thinking' | 'answering' | 'done' | 'summarizing'
+  /** 是否处于章节总结阶段 */
+  isSummarizing?: boolean
   loading?: boolean
   usage?: {
     inputTokens: number

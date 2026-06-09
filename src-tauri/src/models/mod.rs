@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// 书籍 — 对应 `books` 表
+/// 书籍 — 对应 `books` 表，支持软删除 (deleted_at)
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Book {
     pub id: String,
@@ -27,6 +27,8 @@ pub struct Book {
     pub created_at: String,
     #[serde(rename = "updatedAt")]
     pub updated_at: String,
+    #[serde(rename = "deletedAt")]
+    pub deleted_at: Option<String>,
 }
 
 /// 卷 — 对应 `volumes` 表，按 sort_order 排序，支持软删除 (deleted_at)

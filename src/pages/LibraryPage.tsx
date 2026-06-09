@@ -5,17 +5,19 @@
  * - 多作品网格/列表视图（虚拟化滚动）
  * - 书名/作者搜索与排序
  * - 新建作品弹窗入口
+ * - 回收站（软删除作品管理）
  * - 底部状态栏（作品数、总字数）
  */
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { PlusIcon, SearchIcon, GridIcon, ListIcon, SettingsIcon, BookOpenIcon } from 'lucide-react'
+import { PlusIcon, SearchIcon, GridIcon, ListIcon, SettingsIcon, BookOpenIcon, Trash2Icon } from 'lucide-react'
 import { useAppStore } from '@/stores/appStore'
 import { bookApi } from '@/lib/tauri-bridge'
 import { cn, formatWordCount } from '@/lib/utils'
 import type { Book } from '@/types'
 import BookCard from '@/components/library/BookCard'
 import NewBookDialog from '@/components/library/NewBookDialog'
+import TrashModal from '@/components/library/TrashModal'
 import { closeAllMenus } from '@/components/common/ContextMenu'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
@@ -31,34 +33,45 @@ const GRID_COL_MAP = {
 /** 不同网格大小对应的间距 */
 const GRID_GAP_MAP = { small: 'gap-2', medium: 'gap-4', large: 'gap-6' } as const
 
-/** 不同网格大小对应的虚拟化行高预估值 */
-const GRID_ROW_HEIGHT_MAP = { small: 260, medium: 340, large: 460 } as const
+/**
+ * 不同网格大小对应的虚拟化行高预估值
+ *
+ * 卡片实际高度 ≈ 列宽 × (4/3) + 65px（信息区），随屏幕宽度变化。
+ * 估算值取上限覆盖 1920px 宽屏场景，避免初始定位偏低导致行重叠，
+ * measureElement 会在首帧后自动修正为精确值。
+ */
+const GRID_ROW_HEIGHT_MAP = { small: 480, medium: 560, large: 680 } as const
 
 export default function LibraryPage() {
   const navigate = useNavigate()
   const {
-    books, setBooks, setCurrentBookId, isLoadingBooks, setLoadingBooks,
+    books, setBooks, setCurrentBookId, currentBookId, isLoadingBooks, setLoadingBooks,
     gridSize, appVersion,
     libraryViewMode, setLibraryViewMode,
     librarySortBy, setLibrarySortBy,
+    trashCount, setTrashCount,
   } = useAppStore()
   const viewMode = libraryViewMode
   const sortBy = librarySortBy
   const [searchQuery, setSearchQuery] = useState('')
   const [showNewBookDialog, setShowNewBookDialog] = useState(false)
+  const [showTrashModal, setShowTrashModal] = useState(false)
 
   // 虚拟化滚动容器 ref
   const parentRef = useRef<HTMLDivElement>(null)
   // 网格列数（仅 grid 模式有效）
   const [columnCount, setColumnCount] = useState(4)
+  // 容器宽度，用于动态计算行高
+  const [containerWidth, setContainerWidth] = useState(0)
 
-  // 监听容器宽度，根据 gridSize 计算网格列数
+  // 监听容器宽度，根据 gridSize 计算网格列数，并记录容器宽度
   useEffect(() => {
     const el = parentRef.current
     if (!el) return
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const w = entry.contentRect.width
+        setContainerWidth(w)
         if (viewMode !== 'grid') return
         const thresholds = GRID_COL_MAP[gridSize]
         if (w >= 1280) setColumnCount(thresholds[1280])
@@ -71,17 +84,29 @@ export default function LibraryPage() {
     return () => observer.disconnect()
   }, [viewMode, gridSize])
 
+  const loadTrashCount = useCallback(async () => {
+    try {
+      const deleted = await bookApi.listDeleted()
+      setTrashCount(deleted.length)
+    } catch { /* ignore */ }
+  }, [setTrashCount])
+
   const loadBooks = useCallback(async () => {
     setLoadingBooks(true)
     try {
-      const data = await bookApi.list()
+      const [data] = await Promise.all([bookApi.list(), loadTrashCount()])
       setBooks(data)
     } catch (err) {
       console.error('加载书籍失败', err)
     } finally {
       setLoadingBooks(false)
     }
-  }, [setLoadingBooks, setBooks])
+  }, [setLoadingBooks, setBooks, loadTrashCount])
+
+  const handleTrashChanged = useCallback(() => {
+    loadBooks()
+    loadTrashCount()
+  }, [loadBooks, loadTrashCount])
 
   function handleOpenBook(book: Book) {
     setCurrentBookId(book.id)
@@ -118,20 +143,45 @@ export default function LibraryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 虚拟化实例（行高随 gridSize 动态调整）
+  // 动态计算网格行高：基于实际列宽计算，而非固定预估值
+  const gridRowHeight = useMemo(() => {
+    if (containerWidth === 0 || effectiveColumnCount === 0) return GRID_ROW_HEIGHT_MAP[gridSize]
+    const columnWidth = containerWidth / effectiveColumnCount
+    // 卡片高度 = 列宽 × (4/3) 封面比例 + 信息区高度 + padding
+    const cardHeight = columnWidth * (4 / 3) + 65
+    // 加上行间距 (gap-4 = 1rem = 16px)
+    return cardHeight + 16
+  }, [containerWidth, effectiveColumnCount, gridSize])
+
+  // 虚拟化实例（行高基于实际列宽动态计算）
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => (viewMode === 'list' ? 72 : GRID_ROW_HEIGHT_MAP[gridSize]),
+    estimateSize: () => (viewMode === 'list' ? 72 : gridRowHeight),
     overscan: 5,
   })
 
   // 过滤结果或列数变化时重置滚动并重新测量
   useEffect(() => {
-    virtualizer.scrollToOffset(0)
-    // 延迟一帧确保 DOM 更新后再测量
-    requestAnimationFrame(() => virtualizer.measure())
+    if (rows.length > 0) {
+      virtualizer.scrollToOffset(0)
+      requestAnimationFrame(() => virtualizer.measure())
+    }
   }, [filteredBooks.length, effectiveColumnCount, virtualizer])
+
+  // 监听从编辑页返回（currentBookId 从非 null 变为 null），强制重新测量
+  const prevBookIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const prev = prevBookIdRef.current
+    prevBookIdRef.current = currentBookId
+    if (prev !== null && prev !== '' && currentBookId === null) {
+      // 从编辑页返回，延迟重新测量
+      const timer = requestAnimationFrame(() => {
+        virtualizer.measure()
+      })
+      return () => cancelAnimationFrame(timer)
+    }
+  }, [currentBookId, virtualizer])
 
   /** 右键空白区域时关闭所有菜单，不弹出任何菜单 */
   const handleBlankContextMenu = useCallback((e: React.MouseEvent) => {
@@ -200,6 +250,20 @@ export default function LibraryPage() {
           新建作品
         </button>
 
+        {/* 回收站 */}
+        <button
+          onClick={() => setShowTrashModal(true)}
+          className="relative p-2 rounded-lg hover:bg-muted transition-colors"
+          title="作品回收站"
+        >
+          <Trash2Icon className="w-5 h-5 text-muted-foreground" />
+          {trashCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full px-1">
+              {trashCount > 99 ? '99+' : trashCount}
+            </span>
+          )}
+        </button>
+
         <button
           onClick={() => navigate('/settings')}
           className="p-2 rounded-lg hover:bg-muted transition-colors"
@@ -224,7 +288,6 @@ export default function LibraryPage() {
               return (
                 <div
                   key={vItem.index}
-                  ref={virtualizer.measureElement}
                   style={{
                     position: 'absolute',
                     top: 0,
@@ -234,7 +297,10 @@ export default function LibraryPage() {
                   }}
                 >
                   <div
+                    ref={virtualizer.measureElement}
+                    data-index={vItem.index}
                     className={cn(
+                      'pb-4',
                       viewMode === 'grid'
                         ? `grid ${GRID_GAP_MAP[gridSize]}`
                         : 'flex flex-col gap-2',
@@ -280,6 +346,14 @@ export default function LibraryPage() {
             setShowNewBookDialog(false)
             handleOpenBook(book)
           }}
+        />
+      )}
+
+      {/* 回收站弹窗 */}
+      {showTrashModal && (
+        <TrashModal
+          onClose={() => setShowTrashModal(false)}
+          onChanged={handleTrashChanged}
         />
       )}
     </div>
