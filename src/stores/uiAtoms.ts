@@ -49,3 +49,15 @@ export const editorScrollPositionAtom = atom<number>(0)
 
 /** 编辑器光标/选区位置 { from: number, to: number } */
 export const editorCursorPositionAtom = atom<{ from: number; to: number } | null>(null)
+
+/** AI 工具箱独立窗口是否打开（跨页面共享） */
+export const aiToolboxWindowOpenAtom = atom<boolean>(false)
+
+/** 版本历史独立窗口是否打开 */
+export const historyWindowOpenAtom = atom<boolean>(false)
+
+/** 世界观资料库独立窗口是否打开 */
+export const worldWindowOpenAtom = atom<boolean>(false)
+
+/** 章节总结独立窗口是否打开 */
+export const summaryWindowOpenAtom = atom<boolean>(false)

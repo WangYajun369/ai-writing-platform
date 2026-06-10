@@ -10,10 +10,12 @@
  */
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useAtom } from 'jotai'
 import { PlusIcon, SearchIcon, GridIcon, ListIcon, SettingsIcon, BookOpenIcon, Trash2Icon, WrenchIcon } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { useAppStore } from '@/stores/appStore'
+import { aiToolboxWindowOpenAtom } from '@/stores/uiAtoms'
 import { bookApi } from '@/lib/tauri-bridge'
 import { cn, formatWordCount } from '@/lib/utils'
 import type { Book } from '@/types'
@@ -58,7 +60,7 @@ export default function LibraryPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [showNewBookDialog, setShowNewBookDialog] = useState(false)
   const [showTrashModal, setShowTrashModal] = useState(false)
-  const [aiToolboxWindowOpen, setAiToolboxWindowOpen] = useState(false)
+  const [aiToolboxWindowOpen, setAiToolboxWindowOpen] = useAtom(aiToolboxWindowOpenAtom)
 
   // 虚拟化滚动容器 ref
   const parentRef = useRef<HTMLDivElement>(null)
@@ -118,6 +120,7 @@ export default function LibraryPage() {
       } catch (e) {
         console.error('关闭 AI 工具箱窗口失败', e)
       }
+      setAiToolboxWindowOpen(false)
     } else {
       try {
         await invoke('open_ai_toolbox_window')

@@ -49,6 +49,10 @@ import {
   aiPanelOpenAtom,
   isSavingAtom, lastSavedAtom,
   editorInstanceAtom,
+  historyWindowOpenAtom,
+  worldWindowOpenAtom,
+  summaryWindowOpenAtom,
+  aiToolboxWindowOpenAtom,
 } from '@/stores/uiAtoms.ts'
 import { useCurrentBook, useCurrentChapter, useAppStore } from '@/stores/appStore.ts'
 import { cn } from '@/lib/utils.ts'
@@ -65,10 +69,10 @@ export default function EditorToolbar() {
   const [sidebarOpen, setSidebarOpen] = useAtom(sidebarOpenAtom)
   const [zenMode, setZenMode] = useAtom(zenModeAtom)
   const [aiPanelOpen, setAiPanelOpen] = useAtom(aiPanelOpenAtom)
-  const [historyWindowOpen, setHistoryWindowOpen] = useState(false)
-  const [worldWindowOpen, setWorldWindowOpen] = useState(false)
-  const [summaryWindowOpen, setSummaryWindowOpen] = useState(false)
-  const [aiToolboxWindowOpen, setAiToolboxWindowOpen] = useState(false)
+  const [historyWindowOpen, setHistoryWindowOpen] = useAtom(historyWindowOpenAtom)
+  const [worldWindowOpen, setWorldWindowOpen] = useAtom(worldWindowOpenAtom)
+  const [summaryWindowOpen, setSummaryWindowOpen] = useAtom(summaryWindowOpenAtom)
+  const [aiToolboxWindowOpen, setAiToolboxWindowOpen] = useAtom(aiToolboxWindowOpenAtom)
   const currentBook = useCurrentBook()
   const currentChapter = useCurrentChapter()
   const { fontSize, setFontSize } = useAppStore()

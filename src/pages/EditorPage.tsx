@@ -78,12 +78,12 @@ export default function EditorPage() {
     }
   }, [setContentRefresh])
 
-  // 组件卸载（离开编辑页返回书库）时关闭世界观、版本历史、AI 工具箱独立窗口
+  // 组件卸载（离开编辑页返回书库）时关闭世界观、版本历史独立窗口
+  // 注意：AI 工具箱不依赖当前作品/章节上下文，不在此自动关闭
   useEffect(() => {
     return () => {
       invoke('close_world_window').catch(() => {})
       invoke('close_history_window').catch(() => {})
-      invoke('close_ai_toolbox_window').catch(() => {})
     }
   }, [])
 
