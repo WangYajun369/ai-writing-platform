@@ -37,7 +37,7 @@ interface SnapshotPanelProps {
   chapterTitle?: string
 }
 
-export default function SnapshotPanel({ chapterId, bookId, chapterTitle }: SnapshotPanelProps) {
+export default function SnapshotPanel({ chapterId, chapterTitle }: SnapshotPanelProps) {
   const [, setContentRefresh] = useAtom(contentRefreshAtom)
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   const [loading, setLoading] = useState(false)
@@ -50,7 +50,6 @@ export default function SnapshotPanel({ chapterId, bookId, chapterTitle }: Snaps
 
   // 独立窗口模式下使用 props，否则不渲染
   const currentChapterId = chapterId
-  const currentBookId = bookId
   const currentTitle = chapterTitle
 
   useEffect(() => {
@@ -87,7 +86,7 @@ export default function SnapshotPanel({ chapterId, bookId, chapterTitle }: Snaps
     if (!currentChapterId) return
     setRestoring(snap.id)
     try {
-      const result = await snapshotApi.restore(snap.id)
+      await snapshotApi.restore(snap.id)
       // 通知主窗口刷新（Rust 端已 emit 事件）
       setContentRefresh((v) => v + 1)
       // 关闭独立窗口
