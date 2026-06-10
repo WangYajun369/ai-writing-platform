@@ -74,7 +74,8 @@ impl AppDb {
                 tags        TEXT NOT NULL DEFAULT '[]',
                 created_at  TEXT NOT NULL,
                 updated_at  TEXT NOT NULL,
-                deleted_at  TEXT
+                deleted_at  TEXT,
+                outline     TEXT NOT NULL DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS volumes (
@@ -99,7 +100,8 @@ impl AppDb {
                 created_at   TEXT NOT NULL,
                 updated_at   TEXT NOT NULL,
                 summary      TEXT,
-                summary_at   TEXT
+                summary_at   TEXT,
+                outline      TEXT NOT NULL DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS snapshots (
@@ -144,6 +146,9 @@ impl AppDb {
         // 迁移：为 chapters 表添加 summary 和 summary_at 列
         let _ = conn.execute("ALTER TABLE chapters ADD COLUMN summary TEXT", []);
         let _ = conn.execute("ALTER TABLE chapters ADD COLUMN summary_at TEXT", []);
+        // 迁移：添加大纲字段
+        let _ = conn.execute("ALTER TABLE books ADD COLUMN outline TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE chapters ADD COLUMN outline TEXT NOT NULL DEFAULT ''", []);
 
         // 关键字段索引（提升查询性能）
         conn.execute_batch(r#"

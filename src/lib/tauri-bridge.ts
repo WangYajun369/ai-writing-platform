@@ -157,6 +157,11 @@ export const chapterApi = {
   async getSummary(chapterId: string): Promise<{ summary: string | null; summaryAt: string | null }> {
     return invoke<{ summary: string | null; summaryAt: string | null }>('get_chapter_summary', { chapterId })
   },
+
+  /** 保存章节大纲 */
+  async saveOutline(chapterId: string, outline: string): Promise<void> {
+    return invoke<void>('save_chapter_outline', { chapterId, outline })
+  },
 }
 
 // ==================== 版本快照 ====================

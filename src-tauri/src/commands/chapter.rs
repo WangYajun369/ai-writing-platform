@@ -18,7 +18,7 @@ fn now() -> String { Utc::now().to_rfc3339() }
 pub async fn list_chapters(db: State<'_, AppDb>, book_id: String) -> Result<Vec<Chapter>, String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     let mut stmt = conn.prepare(
-        "SELECT id,book_id,volume_id,title,word_count,status,sort_order,created_at,updated_at,deleted_at,summary,summary_at FROM chapters WHERE book_id=?1 AND deleted_at IS NULL ORDER BY sort_order"
+        "SELECT id,book_id,volume_id,title,word_count,status,sort_order,created_at,updated_at,deleted_at,summary,summary_at,outline FROM chapters WHERE book_id=?1 AND deleted_at IS NULL ORDER BY sort_order"
     ).map_err(|e| e.to_string())?;
     let items = stmt.query_map(params![book_id], |row| {
         Ok(Chapter {
@@ -35,6 +35,7 @@ pub async fn list_chapters(db: State<'_, AppDb>, book_id: String) -> Result<Vec<
             deleted_at: row.get(9)?,
             summary: row.get(10)?,
             summary_at: row.get(11)?,
+            outline: row.get(12)?,
         })
     }).map_err(|e| e.to_string())?;
     items.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
@@ -70,7 +71,7 @@ pub async fn create_chapter(db: State<'_, AppDb>, params: CreateChapterParams) -
     let ts = now();
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     conn.execute(
-        "INSERT INTO chapters (id,book_id,volume_id,title,content_html,word_count,status,sort_order,created_at,updated_at) VALUES (?1,?2,?3,?4,'',0,'draft',?5,?6,?7)",
+        "INSERT INTO chapters (id,book_id,volume_id,title,content_html,word_count,status,sort_order,created_at,updated_at,outline) VALUES (?1,?2,?3,?4,'',0,'draft',?5,?6,?7,'')",
         params![id, params.book_id, params.volume_id, params.title, params.sort_order, ts, ts],
     ).map_err(|e| e.to_string())?;
     Ok(Chapter {
@@ -87,6 +88,7 @@ pub async fn create_chapter(db: State<'_, AppDb>, params: CreateChapterParams) -
         deleted_at: None,
         summary: None,
         summary_at: None,
+        outline: String::new(),
     })
 }
 
@@ -161,7 +163,7 @@ pub async fn rename_chapter(db: State<'_, AppDb>, chapter_id: String, title: Str
 pub async fn list_deleted_chapters(db: State<'_, AppDb>, book_id: String) -> Result<Vec<Chapter>, String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     let mut stmt = conn.prepare(
-        "SELECT id,book_id,volume_id,title,word_count,status,sort_order,created_at,updated_at,deleted_at,summary,summary_at FROM chapters WHERE book_id=?1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC"
+        "SELECT id,book_id,volume_id,title,word_count,status,sort_order,created_at,updated_at,deleted_at,summary,summary_at,outline FROM chapters WHERE book_id=?1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC"
     ).map_err(|e| e.to_string())?;
     let items = stmt.query_map(params![book_id], |row| {
         Ok(Chapter {
@@ -178,6 +180,7 @@ pub async fn list_deleted_chapters(db: State<'_, AppDb>, book_id: String) -> Res
             deleted_at: row.get(9)?,
             summary: row.get(10)?,
             summary_at: row.get(11)?,
+            outline: row.get(12)?,
         })
     }).map_err(|e| e.to_string())?;
     items.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
@@ -355,4 +358,20 @@ pub async fn get_chapter_summary(
             })
         },
     ).map_err(|e| e.to_string())
+}
+
+/// 保存章节大纲内容
+#[tauri::command]
+pub async fn save_chapter_outline(
+    db: State<'_, AppDb>,
+    chapter_id: String,
+    outline: String,
+) -> Result<(), String> {
+    let ts = now();
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
+    conn.execute(
+        "UPDATE chapters SET outline=?1, updated_at=?2 WHERE id=?3",
+        params![outline, ts, chapter_id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
 }

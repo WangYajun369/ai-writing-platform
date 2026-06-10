@@ -38,8 +38,8 @@ pub async fn open_world_window(app: AppHandle, book_id: String) -> Result<(), St
 
     let w = WebviewWindowBuilder::new(&app, "world", WebviewUrl::External(url))
         .title("世界观资料库")
-        .inner_size(420.0, 650.0)
-        .min_inner_size(320.0, 400.0)
+        .inner_size(580.0, 680.0)
+        .min_inner_size(380.0, 420.0)
         .always_on_top(true)
         .build()
         .map_err(|e| format!("创建窗口失败: {}", e))?;

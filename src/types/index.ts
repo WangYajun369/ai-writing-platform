@@ -25,6 +25,8 @@ export interface Book {
   tags: string[]
   /** 软删除时间（放入回收站的时间） */
   deletedAt?: string
+  /** 作品大纲 */
+  outline?: string
 }
 
 /** 卷信息 */
@@ -58,6 +60,8 @@ export interface Chapter {
   summary?: string
   /** 上次总结时间 ISO */
   summaryAt?: string
+  /** 章节大纲 */
+  outline?: string
 }
 
 /** 版本快照 */

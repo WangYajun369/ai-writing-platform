@@ -27,8 +27,8 @@ fn now() -> String {
     Utc::now().to_rfc3339()
 }
 
-/// 完整的 13 列 SELECT 列表（含 deleted_at）
-const BOOK_SELECT: &str = "id,title,author,description,cover_image,word_count,daily_target,today_count,db_path,tags,created_at,updated_at,deleted_at";
+/// 完整的 SELECT 列表（含 deleted_at 和 outline）
+const BOOK_SELECT: &str = "id,title,author,description,cover_image,word_count,daily_target,today_count,db_path,tags,created_at,updated_at,deleted_at,outline";
 
 /// 从 rusqlite Row 中解析 Book 结构
 fn parse_book(row: &rusqlite::Row) -> rusqlite::Result<Book> {
@@ -48,6 +48,7 @@ fn parse_book(row: &rusqlite::Row) -> rusqlite::Result<Book> {
         created_at: row.get(10)?,
         updated_at: row.get(11)?,
         deleted_at: row.get(12)?,
+        outline: row.get(13)?,
     })
 }
 
@@ -110,7 +111,7 @@ pub async fn create_book(db: State<'_, AppDb>, params: CreateBookParams) -> Resu
 
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     conn.execute(
-        "INSERT INTO books (id,title,author,description,daily_target,tags,created_at,updated_at,word_count,today_count,db_path) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,0,0,'')",
+        "INSERT INTO books (id,title,author,description,daily_target,tags,created_at,updated_at,word_count,today_count,db_path,outline) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,0,0,'','')",
         params![id, params.title, params.author, params.description, params.daily_target, tags_json, ts, ts],
     ).map_err(|e| e.to_string())?;
 
@@ -128,6 +129,7 @@ pub async fn create_book(db: State<'_, AppDb>, params: CreateBookParams) -> Resu
         created_at: ts.clone(),
         updated_at: ts,
         deleted_at: None,
+        outline: String::new(),
     })
 }
 
@@ -166,6 +168,10 @@ pub async fn update_book(db: State<'_, AppDb>, id: String, params: serde_json::V
             let tags_json = serde_json::to_string(v).unwrap_or_else(|_| "[]".to_string());
             set_clauses.push(format!("tags=?{}", set_clauses.len() + 1));
             param_values.push(Box::new(tags_json));
+        }
+        if let Some(v) = params.get("outline").and_then(|v| v.as_str()) {
+            set_clauses.push(format!("outline=?{}", set_clauses.len() + 1));
+            param_values.push(Box::new(v.to_string()));
         }
 
         if !set_clauses.is_empty() {

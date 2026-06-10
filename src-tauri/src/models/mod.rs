@@ -29,6 +29,8 @@ pub struct Book {
     pub updated_at: String,
     #[serde(rename = "deletedAt")]
     pub deleted_at: Option<String>,
+    /// 作品大纲（纯文本）
+    pub outline: String,
 }
 
 /// 卷 — 对应 `volumes` 表，按 sort_order 排序，支持软删除 (deleted_at)
@@ -73,6 +75,8 @@ pub struct Chapter {
     /// 上次总结时间 ISO
     #[serde(rename = "summaryAt")]
     pub summary_at: Option<String>,
+    /// 章节大纲
+    pub outline: String,
 }
 
 /// 版本快照 — 对应 `snapshots` 表，type 为 auto 或 milestone
