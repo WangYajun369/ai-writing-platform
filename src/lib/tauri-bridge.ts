@@ -410,3 +410,60 @@ export const importExportApi = {
     return invoke<{ cache: unknown; backupType: string }>('import_backup', { filePath })
   },
 }
+
+// ==================== 调试控制台 ====================
+
+export interface LogEntry {
+  timestamp: string
+  level: string
+  message: string
+  /** 源文件完整路径 */
+  file?: string
+  /** 文件名 */
+  fileName?: string
+  /** 行号 */
+  line?: number
+}
+
+/** 数据库校验 — 单条问题 */
+export interface ValidationIssue {
+  table: string
+  column?: string
+  /** missing_table | missing_column | integrity_error | orphan_record */
+  issueType: string
+  detail: string
+}
+
+/** 数据库校验总结果 */
+export interface ValidationResult {
+  ok: boolean
+  tablesCount: number
+  issues: ValidationIssue[]
+}
+
+export const debugApi = {
+  /** 打开调试控制台窗口 */
+  async open(): Promise<void> {
+    return invoke<void>('open_debug_window')
+  },
+
+  /** 关闭调试控制台窗口 */
+  async close(): Promise<void> {
+    return invoke<void>('close_debug_window')
+  },
+
+  /** 获取所有已缓存的日志（调试窗口启动时调用） */
+  async getLogs(): Promise<LogEntry[]> {
+    return invoke<LogEntry[]>('get_debug_logs')
+  },
+
+  /** 清空所有日志 */
+  async clear(): Promise<void> {
+    return invoke<void>('clear_debug_logs')
+  },
+
+  /** 校验本地 SQLite 数据库表结构和数据完整性 */
+  async validateDatabase(): Promise<ValidationResult> {
+    return invoke<ValidationResult>('validate_database')
+  },
+}

@@ -54,12 +54,15 @@ impl AppDb {
             .get()
             .map_err(|e| anyhow::anyhow!("获取数据库连接失败: {}", e))?;
 
+        eprintln!("[SQL] PRAGMA → journal_mode=WAL");
         conn.execute_batch("PRAGMA journal_mode=WAL;")
             .context("启用 WAL 模式失败")?;
+        eprintln!("[SQL] PRAGMA → foreign_keys=ON");
         conn.execute_batch("PRAGMA foreign_keys=ON;")
             .context("启用外键约束失败")?;
 
         // 创建表
+        eprintln!("[SQL] CREATE TABLE → books, volumes, chapters, snapshots, world_cards, embeddings");
         conn.execute_batch(r#"
             CREATE TABLE IF NOT EXISTS books (
                 id          TEXT PRIMARY KEY,
@@ -140,6 +143,7 @@ impl AppDb {
 
         // 迁移现有数据库：为旧表添加 deleted_at 列（如果不存在）
         // 注意：必须在索引创建之前执行，否则旧库会因列不存在而创建索引失败
+        eprintln!("[SQL] ALTER TABLE → volumes,chapters,books ADD COLUMN deleted_at / summary / outline");
         let _ = conn.execute("ALTER TABLE volumes ADD COLUMN deleted_at TEXT", []);
         let _ = conn.execute("ALTER TABLE chapters ADD COLUMN deleted_at TEXT", []);
         let _ = conn.execute("ALTER TABLE books ADD COLUMN deleted_at TEXT", []);
@@ -151,6 +155,7 @@ impl AppDb {
         let _ = conn.execute("ALTER TABLE chapters ADD COLUMN outline TEXT NOT NULL DEFAULT ''", []);
 
         // 关键字段索引（提升查询性能）
+        eprintln!("[SQL] CREATE INDEX → volumes, chapters, books, snapshots, world_cards, embeddings");
         conn.execute_batch(r#"
             CREATE INDEX IF NOT EXISTS idx_volumes_book_id ON volumes(book_id);
             CREATE INDEX IF NOT EXISTS idx_volumes_deleted_at ON volumes(deleted_at);

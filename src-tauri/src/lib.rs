@@ -27,6 +27,19 @@ pub fn run() {
             let db_path = app_dir.join("time_write.db");
             let db = AppDb::new(db_path.to_str().unwrap()).expect("数据库初始化失败");
             app.manage(db);
+
+            // 主窗口关闭时自动关闭调试窗口
+            if let Some(main) = app.get_webview_window("main") {
+                let handle = app.handle().clone();
+                main.on_window_event(move |event| {
+                    if let tauri::WindowEvent::Destroyed = event {
+                        if let Some(debug) = handle.get_webview_window("debug") {
+                            let _ = debug.close();
+                        }
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -105,6 +118,12 @@ pub fn run() {
             commands::window::close_summary_window,
             commands::window::open_ai_toolbox_window,
             commands::window::close_ai_toolbox_window,
+            commands::window::open_debug_window,
+            commands::window::close_debug_window,
+            commands::window::log_message,
+            commands::window::get_debug_logs,
+            commands::window::clear_debug_logs,
+            commands::window::validate_database,
         ])
         .run(tauri::generate_context!())
         .expect("启动 Tauri 应用失败");

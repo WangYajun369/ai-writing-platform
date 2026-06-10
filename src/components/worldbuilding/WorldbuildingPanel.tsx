@@ -514,7 +514,9 @@ export default function WorldbuildingPanel({ bookId, initialTab }: Worldbuilding
                         return (
                           <div key={ch.id} className="rounded-lg border bg-card">
                             {/* 章节标题栏 */}
-                            <button
+                            <div
+                              role="button"
+                              tabIndex={0}
                               onClick={() =>
                                 setExpandedChapters((prev) => {
                                   const next = new Set(prev)
@@ -523,7 +525,13 @@ export default function WorldbuildingPanel({ bookId, initialTab }: Worldbuilding
                                   return next
                                 })
                               }
-                              className="w-full flex items-center gap-1.5 px-3 py-2 text-left hover:bg-muted/50 transition-colors rounded-lg"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault()
+                                  e.currentTarget.click()
+                                }
+                              }}
+                              className="w-full flex items-center gap-1.5 px-3 py-2 text-left hover:bg-muted/50 transition-colors rounded-lg cursor-pointer outline-none"
                             >
                               {isExpanded ? (
                                 <ChevronDownIcon className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
@@ -558,7 +566,7 @@ export default function WorldbuildingPanel({ bookId, initialTab }: Worldbuilding
                                   总结
                                 </button>
                               )}
-                            </button>
+                            </div>
                             {/* 展开大纲编辑区 */}
                             {isExpanded && (
                               <div className="px-3 pb-3 pt-0">

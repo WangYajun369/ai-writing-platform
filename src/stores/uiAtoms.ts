@@ -61,3 +61,6 @@ export const worldWindowOpenAtom = atom<boolean>(false)
 
 /** 章节总结独立窗口是否打开 */
 export const summaryWindowOpenAtom = atom<boolean>(false)
+
+/** 调试控制台独立窗口是否打开 */
+export const debugWindowOpenAtom = atom<boolean>(false)

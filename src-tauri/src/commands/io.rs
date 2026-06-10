@@ -1,10 +1,11 @@
-use tauri::State;
+use tauri::{AppHandle, State};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use chrono::Utc;
 use std::fmt::Write as FmtWrite;
 use crate::db::AppDb;
 use crate::models::{Book, Volume, Snapshot, WorldCard};
+use crate::commands::window::emit_sql_log;
 
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use aes_gcm::aead::{Aead, KeyInit};
@@ -13,6 +14,7 @@ use rand::Rng;
 /// 导出书籍（TXT / MD / HTML）
 #[tauri::command]
 pub async fn export_book(
+    app: AppHandle,
     db: State<'_, AppDb>,
     book_id: String,
     format: String,
@@ -21,6 +23,7 @@ pub async fn export_book(
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
 
     // 获取书籍信息
+    emit_sql_log(&app, "SELECT", "books", &format!("id={}, export info", book_id), file!(), line!());
     let (title, author): (String, String) = conn.query_row(
         "SELECT title,author FROM books WHERE id=?1",
         params![book_id],
@@ -28,6 +31,7 @@ pub async fn export_book(
     ).map_err(|e| e.to_string())?;
 
     // 获取所有章节（按 sort_order）
+    emit_sql_log(&app, "SELECT", "chapters", &format!("book_id={}, export chapters", book_id), file!(), line!());
     let mut stmt = conn.prepare(
         "SELECT title, content_html FROM chapters WHERE book_id=?1 AND deleted_at IS NULL ORDER BY sort_order"
     ).map_err(|e| e.to_string())?;
@@ -100,6 +104,7 @@ fn build_html(title: &str, author: &str, chapters: &[(String, String)]) -> Strin
 /// 导入 TXT 文件（正则自动分章）
 #[tauri::command]
 pub async fn import_txt(
+    app: AppHandle,
     db: State<'_, AppDb>,
     book_id: String,
     file_path: String,
@@ -139,6 +144,7 @@ pub async fn import_txt(
     use chrono::Utc;
     use uuid::Uuid;
 
+    emit_sql_log(&app, "INSERT", "chapters", &format!("import_txt, {} chapters for book_id={}", created_count, book_id), file!(), line!());
     for (i, (title, body)) in chapters.iter().enumerate() {
         let id = Uuid::new_v4().to_string();
         let ts = Utc::now().to_rfc3339();
@@ -152,6 +158,7 @@ pub async fn import_txt(
 
     // 更新总字数
     let ts = Utc::now().to_rfc3339();
+    emit_sql_log(&app, "UPDATE", "books", &format!("recalc word_count for book_id={}", book_id), file!(), line!());
     conn.execute(
         "UPDATE books SET word_count=(SELECT COALESCE(SUM(word_count),0) FROM chapters WHERE book_id=?1 AND deleted_at IS NULL), updated_at=?2 WHERE id=?1",
         params![book_id, ts],
@@ -367,6 +374,7 @@ struct ExportPayload {
 /// `cache_json` — 前端收集的 localStorage 缓存数据（JSON 字符串）
 #[tauri::command]
 pub async fn export_all_data(
+    app: AppHandle,
     db: State<'_, AppDb>,
     output_path: String,
     cache_json: String,
@@ -374,6 +382,7 @@ pub async fn export_all_data(
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
 
     // 全量查询所有书籍（含已删除）
+    emit_sql_log(&app, "SELECT", "books", "full export, all books", file!(), line!());
     let mut stmt = conn.prepare(
         "SELECT id,title,author,description,cover_image,word_count,daily_target,today_count,db_path,tags,created_at,updated_at,deleted_at,outline FROM books"
     ).map_err(|e| e.to_string())?;
@@ -397,6 +406,7 @@ pub async fn export_all_data(
         })
     }).map_err(|e| e.to_string())?.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
 
+    emit_sql_log(&app, "SELECT", "volumes", "full export, all volumes", file!(), line!());
     let mut stmt = conn.prepare(
         "SELECT id,book_id,title,sort_order,created_at,deleted_at FROM volumes"
     ).map_err(|e| e.to_string())?;
@@ -411,6 +421,7 @@ pub async fn export_all_data(
         })
     }).map_err(|e| e.to_string())?.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
 
+    emit_sql_log(&app, "SELECT", "chapters", "full export, all chapters", file!(), line!());
     let mut stmt = conn.prepare(
         "SELECT id,book_id,volume_id,title,content_html,word_count,status,sort_order,created_at,updated_at,deleted_at,summary,summary_at,outline FROM chapters"
     ).map_err(|e| e.to_string())?;
@@ -433,6 +444,7 @@ pub async fn export_all_data(
         })
     }).map_err(|e| e.to_string())?.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
 
+    emit_sql_log(&app, "SELECT", "snapshots", "full export, all snapshots", file!(), line!());
     let mut stmt = conn.prepare(
         "SELECT id,chapter_id,content_html,word_count,type,label,created_at FROM snapshots"
     ).map_err(|e| e.to_string())?;
@@ -448,6 +460,7 @@ pub async fn export_all_data(
         })
     }).map_err(|e| e.to_string())?.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
 
+    emit_sql_log(&app, "SELECT", "world_cards", "full export, all world_cards", file!(), line!());
     let mut stmt = conn.prepare(
         "SELECT id,book_id,type,title,content,content_html,tags,vectorized,created_at,updated_at FROM world_cards"
     ).map_err(|e| e.to_string())?;
@@ -467,6 +480,7 @@ pub async fn export_all_data(
         })
     }).map_err(|e| e.to_string())?.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
 
+    emit_sql_log(&app, "SELECT", "embeddings", "full export, all embeddings meta", file!(), line!());
     let mut stmt = conn.prepare(
         "SELECT source_type, source_id, COALESCE(model, '') as model, COALESCE(created_at, '') as created_at FROM embeddings"
     ).map_err(|e| e.to_string())?;
@@ -508,6 +522,7 @@ pub async fn export_all_data(
 /// 仅导出指定 `book_id` 关联的书籍、卷、章节、快照、世界观卡片和 embedding 元数据。
 #[tauri::command]
 pub async fn export_single_book(
+    app: AppHandle,
     db: State<'_, AppDb>,
     book_id: String,
     output_path: String,
@@ -516,6 +531,7 @@ pub async fn export_single_book(
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
 
     // 查询单本书籍
+    emit_sql_log(&app, "SELECT", "books", &format!("id={}, single export", book_id), file!(), line!());
     let mut stmt = conn.prepare(
         "SELECT id,title,author,description,cover_image,word_count,daily_target,today_count,db_path,tags,created_at,updated_at,deleted_at,outline FROM books WHERE id=?1"
     ).map_err(|e| e.to_string())?;
@@ -540,6 +556,7 @@ pub async fn export_single_book(
     }).map_err(|e| e.to_string())?.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
 
     // 查询该作品的卷
+    emit_sql_log(&app, "SELECT", "volumes", &format!("book_id={}, single export", book_id), file!(), line!());
     let mut stmt = conn.prepare(
         "SELECT id,book_id,title,sort_order,created_at,deleted_at FROM volumes WHERE book_id=?1"
     ).map_err(|e| e.to_string())?;
@@ -555,6 +572,7 @@ pub async fn export_single_book(
     }).map_err(|e| e.to_string())?.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
 
     // 查询该作品的章节
+    emit_sql_log(&app, "SELECT", "chapters", &format!("book_id={}, single export", book_id), file!(), line!());
     let mut stmt = conn.prepare(
         "SELECT id,book_id,volume_id,title,content_html,word_count,status,sort_order,created_at,updated_at,deleted_at,summary,summary_at,outline FROM chapters WHERE book_id=?1"
     ).map_err(|e| e.to_string())?;
@@ -578,6 +596,7 @@ pub async fn export_single_book(
     }).map_err(|e| e.to_string())?.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
 
     // 查询该作品章节的快照（通过 chapter_id 关联）
+    emit_sql_log(&app, "SELECT", "snapshots+chapters", &format!("book_id={}, single export", book_id), file!(), line!());
     let mut stmt = conn.prepare(
         "SELECT s.id, s.chapter_id, s.content_html, s.word_count, s.type, s.label, s.created_at \
          FROM snapshots s INNER JOIN chapters c ON s.chapter_id = c.id WHERE c.book_id=?1"
@@ -595,6 +614,7 @@ pub async fn export_single_book(
     }).map_err(|e| e.to_string())?.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
 
     // 查询该作品的世界观卡片
+    emit_sql_log(&app, "SELECT", "world_cards", &format!("book_id={}, single export", book_id), file!(), line!());
     let mut stmt = conn.prepare(
         "SELECT id,book_id,type,title,content,content_html,tags,vectorized,created_at,updated_at FROM world_cards WHERE book_id=?1"
     ).map_err(|e| e.to_string())?;
@@ -616,6 +636,7 @@ pub async fn export_single_book(
 
     // 查询该作品章节的 embedding（通过 source_id 关联章节）
     // embedding 的 source_id 可能是 chapter_id 或 world_card_id
+    emit_sql_log(&app, "SELECT", "embeddings", &format!("book_id={}, single export meta", book_id), file!(), line!());
     let mut stmt = conn.prepare(
         "SELECT e.source_type, e.source_id, COALESCE(e.model, '') as model, COALESCE(e.created_at, '') as created_at \
          FROM embeddings e WHERE e.source_id IN (SELECT id FROM chapters WHERE book_id=?1) \
@@ -718,7 +739,8 @@ fn validate_single_backup_payload(json_str: &str) -> Result<String, String> {
 }
 
 /// 将备份数据写入数据库（通用，不管理事务）
-fn write_backup_data(conn: &rusqlite::Connection, dbx: &DatabaseExport) -> Result<(), rusqlite::Error> {
+fn write_backup_data(app: &AppHandle, conn: &rusqlite::Connection, dbx: &DatabaseExport) -> Result<(), rusqlite::Error> {
+    emit_sql_log(app, "INSERT", "books", &format!("backup import: {} books", dbx.books.len()), file!(), line!());
     for book in &dbx.books {
         let tags_json = serde_json::to_string(&book.tags).unwrap_or_else(|_| "[]".to_string());
         conn.execute(
@@ -733,6 +755,7 @@ fn write_backup_data(conn: &rusqlite::Connection, dbx: &DatabaseExport) -> Resul
         )?;
     }
 
+    emit_sql_log(app, "INSERT", "volumes", &format!("backup import: {} volumes", dbx.volumes.len()), file!(), line!());
     for vol in &dbx.volumes {
         conn.execute(
             "INSERT INTO volumes (id,book_id,title,sort_order,created_at,deleted_at) \
@@ -741,6 +764,7 @@ fn write_backup_data(conn: &rusqlite::Connection, dbx: &DatabaseExport) -> Resul
         )?;
     }
 
+    emit_sql_log(app, "INSERT", "chapters", &format!("backup import: {} chapters", dbx.chapters.len()), file!(), line!());
     for ch in &dbx.chapters {
         conn.execute(
             "INSERT INTO chapters (id,book_id,volume_id,title,content_html,word_count,status,sort_order,created_at,updated_at,deleted_at,summary,summary_at,outline) \
@@ -753,6 +777,7 @@ fn write_backup_data(conn: &rusqlite::Connection, dbx: &DatabaseExport) -> Resul
         )?;
     }
 
+    emit_sql_log(app, "INSERT", "snapshots", &format!("backup import: {} snapshots", dbx.snapshots.len()), file!(), line!());
     for snap in &dbx.snapshots {
         conn.execute(
             "INSERT INTO snapshots (id,chapter_id,content_html,word_count,type,label,created_at) \
@@ -764,6 +789,7 @@ fn write_backup_data(conn: &rusqlite::Connection, dbx: &DatabaseExport) -> Resul
         )?;
     }
 
+    emit_sql_log(app, "INSERT", "world_cards", &format!("backup import: {} world_cards", dbx.world_cards.len()), file!(), line!());
     for card in &dbx.world_cards {
         let tags_json = serde_json::to_string(&card.tags).unwrap_or_else(|_| "[]".to_string());
         conn.execute(
@@ -781,7 +807,8 @@ fn write_backup_data(conn: &rusqlite::Connection, dbx: &DatabaseExport) -> Resul
 }
 
 /// 执行全量数据写入（事务内：清空所有表 → 写入备份数据）
-fn run_full_import(conn: &rusqlite::Connection, payload: &ExportPayload) -> Result<(), rusqlite::Error> {
+fn run_full_import(app: &AppHandle, conn: &rusqlite::Connection, payload: &ExportPayload) -> Result<(), rusqlite::Error> {
+    emit_sql_log(app, "DELETE", "all tables", "full import: clearing all data", file!(), line!());
     conn.execute("DELETE FROM embeddings", [])?;
     conn.execute("DELETE FROM snapshots", [])?;
     conn.execute("DELETE FROM world_cards", [])?;
@@ -789,12 +816,13 @@ fn run_full_import(conn: &rusqlite::Connection, payload: &ExportPayload) -> Resu
     conn.execute("DELETE FROM volumes", [])?;
     conn.execute("DELETE FROM books", [])?;
 
-    write_backup_data(conn, &payload.database)
+    write_backup_data(app, conn, &payload.database)
 }
 
 /// 执行单作品数据写入（事务内：仅删除目标作品数据 → 写入备份数据）
-fn run_single_import(conn: &rusqlite::Connection, payload: &ExportPayload, book_id: &str) -> Result<(), rusqlite::Error> {
+fn run_single_import(app: &AppHandle, conn: &rusqlite::Connection, payload: &ExportPayload, book_id: &str) -> Result<(), rusqlite::Error> {
     // 注意删除顺序：先删子表（embeddings、snapshots），再删主表（world_cards、chapters、volumes、books）
+    emit_sql_log(app, "DELETE", "all tables", &format!("single import: clearing data for book_id={}", book_id), file!(), line!());
     conn.execute(
         "DELETE FROM embeddings WHERE source_id IN (SELECT id FROM chapters WHERE book_id=?1)",
         params![book_id],
@@ -812,7 +840,7 @@ fn run_single_import(conn: &rusqlite::Connection, payload: &ExportPayload, book_
     conn.execute("DELETE FROM volumes WHERE book_id=?1", params![book_id])?;
     conn.execute("DELETE FROM books WHERE id=?1", params![book_id])?;
 
-    write_backup_data(conn, &payload.database)
+    write_backup_data(app, conn, &payload.database)
 }
 
 /// 统一数据导入命令
@@ -828,6 +856,7 @@ fn run_single_import(conn: &rusqlite::Connection, payload: &ExportPayload, book_
 /// 返回值：`{ cache: ..., backupType: "full" | "single" }`，前端据此恢复 localStorage 并展示提示
 #[tauri::command]
 pub async fn import_backup(
+    app: AppHandle,
     db: State<'_, AppDb>,
     file_path: String,
 ) -> Result<serde_json::Value, String> {
@@ -855,15 +884,18 @@ pub async fn import_backup(
             validate_full_backup_payload(&json_str)?;
 
             let payload = payload; // 转移所有权避免借用冲突
+            emit_sql_log(&app, "BEGIN", "transaction", "full import transaction", file!(), line!());
             conn.execute("BEGIN", [])
                 .map_err(|e| format!("开始事务失败: {}", e))?;
 
-            match run_full_import(&conn, &payload) {
+            match run_full_import(&app, &conn, &payload) {
                 Ok(()) => {
+                    emit_sql_log(&app, "COMMIT", "transaction", "full import committed", file!(), line!());
                     conn.execute("COMMIT", [])
                         .map_err(|e| format!("提交事务失败: {}", e))?;
                 }
                 Err(e) => {
+                    emit_sql_log(&app, "ROLLBACK", "transaction", "full import rolled back", file!(), line!());
                     let _ = conn.execute("ROLLBACK", []);
                     return Err(format!("导入失败（事务已回滚，原数据未受影响）：{}", e));
                 }
@@ -878,15 +910,18 @@ pub async fn import_backup(
             // 单作品备份校验（恰好 1 本书）
             let book_id = validate_single_backup_payload(&json_str)?;
 
+            emit_sql_log(&app, "BEGIN", "transaction", &format!("single import transaction for book_id={}", book_id), file!(), line!());
             conn.execute("BEGIN", [])
                 .map_err(|e| format!("开始事务失败: {}", e))?;
 
-            match run_single_import(&conn, &payload, &book_id) {
+            match run_single_import(&app, &conn, &payload, &book_id) {
                 Ok(()) => {
+                    emit_sql_log(&app, "COMMIT", "transaction", "single import committed", file!(), line!());
                     conn.execute("COMMIT", [])
                         .map_err(|e| format!("提交事务失败: {}", e))?;
                 }
                 Err(e) => {
+                    emit_sql_log(&app, "ROLLBACK", "transaction", "single import rolled back", file!(), line!());
                     let _ = conn.execute("ROLLBACK", []);
                     return Err(format!("导入失败（事务已回滚，原数据未受影响）：{}", e));
                 }

@@ -3,19 +3,21 @@
 //! 提供章节的增删改查、内容保存（含全书字数聚合）、
 //! 状态更新、重命名、排序及软删除操作。
 
-use tauri::State;
+use tauri::{AppHandle, State};
 use rusqlite::params;
 use uuid::Uuid;
 use chrono::Utc;
 use crate::db::AppDb;
 use crate::models::Chapter;
+use crate::commands::window::emit_sql_log;
 
 /// 获取当前 UTC 时间
 fn now() -> String { Utc::now().to_rfc3339() }
 
 /// 列出指定书籍的所有未删除章节（不含 content_html），按 sort_order 升序
 #[tauri::command]
-pub async fn list_chapters(db: State<'_, AppDb>, book_id: String) -> Result<Vec<Chapter>, String> {
+pub async fn list_chapters(app: AppHandle, db: State<'_, AppDb>, book_id: String) -> Result<Vec<Chapter>, String> {
+    emit_sql_log(&app, "SELECT", "chapters", &format!("book_id={}", book_id), file!(), line!());
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     let mut stmt = conn.prepare(
         "SELECT id,book_id,volume_id,title,word_count,status,sort_order,created_at,updated_at,deleted_at,summary,summary_at,outline FROM chapters WHERE book_id=?1 AND deleted_at IS NULL ORDER BY sort_order"
@@ -43,7 +45,8 @@ pub async fn list_chapters(db: State<'_, AppDb>, book_id: String) -> Result<Vec<
 
 /// 获取章节的 content_html 内容
 #[tauri::command]
-pub async fn get_chapter_content(db: State<'_, AppDb>, chapter_id: String) -> Result<String, String> {
+pub async fn get_chapter_content(app: AppHandle, db: State<'_, AppDb>, chapter_id: String) -> Result<String, String> {
+    emit_sql_log(&app, "SELECT", "chapters", &format!("id={}, content_html", chapter_id), file!(), line!());
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     conn.query_row(
         "SELECT content_html FROM chapters WHERE id=?1",
@@ -66,9 +69,10 @@ pub struct CreateChapterParams {
 
 /// 创建新章节，生成 UUID，初始状态为 draft
 #[tauri::command]
-pub async fn create_chapter(db: State<'_, AppDb>, params: CreateChapterParams) -> Result<Chapter, String> {
+pub async fn create_chapter(app: AppHandle, db: State<'_, AppDb>, params: CreateChapterParams) -> Result<Chapter, String> {
     let id = Uuid::new_v4().to_string();
     let ts = now();
+    emit_sql_log(&app, "INSERT", "chapters", &format!("id={}, title={}, book_id={}", id, params.title, params.book_id), file!(), line!());
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     conn.execute(
         "INSERT INTO chapters (id,book_id,volume_id,title,content_html,word_count,status,sort_order,created_at,updated_at,outline) VALUES (?1,?2,?3,?4,'',0,'draft',?5,?6,?7,'')",
@@ -104,6 +108,7 @@ pub struct SaveChapterResult {
 /// 保存章节内容（HTML），自动更新书籍总字数并返回
 #[tauri::command]
 pub async fn save_chapter(
+    app: AppHandle,
     db: State<'_, AppDb>,
     chapter_id: String,
     content_html: String,
@@ -111,18 +116,21 @@ pub async fn save_chapter(
 ) -> Result<SaveChapterResult, String> {
     let ts = now();
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
+    emit_sql_log(&app, "UPDATE", "chapters", &format!("id={}, save content_html, wc={}", chapter_id, word_count), file!(), line!());
     conn.execute(
         "UPDATE chapters SET content_html=?1, word_count=?2, updated_at=?3 WHERE id=?4",
         params![content_html, word_count, ts, chapter_id],
     ).map_err(|e| e.to_string())?;
 
     // 更新书籍总字数
+    emit_sql_log(&app, "UPDATE", "books", "recalc word_count from chapters", file!(), line!());
     conn.execute(
         "UPDATE books SET word_count=(SELECT COALESCE(SUM(word_count),0) FROM chapters WHERE book_id=(SELECT book_id FROM chapters WHERE id=?1) AND deleted_at IS NULL), updated_at=?2 WHERE id=(SELECT book_id FROM chapters WHERE id=?1)",
         params![chapter_id, ts],
     ).map_err(|e| e.to_string())?;
 
     // 读取更新后的书籍总字数
+    emit_sql_log(&app, "SELECT", "books", &format!("word_count via chapter_id={}", chapter_id), file!(), line!());
     let book_wc: i64 = conn.query_row(
         "SELECT word_count FROM books WHERE id=(SELECT book_id FROM chapters WHERE id=?1)",
         params![chapter_id],
@@ -135,10 +143,12 @@ pub async fn save_chapter(
 /// 更新章节写作状态（outline / draft / polishing / finished）
 #[tauri::command]
 pub async fn update_chapter_status(
+    app: AppHandle,
     db: State<'_, AppDb>,
     chapter_id: String,
     status: String,
 ) -> Result<(), String> {
+    emit_sql_log(&app, "UPDATE", "chapters", &format!("id={}, status={}", chapter_id, status), file!(), line!());
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     conn.execute(
         "UPDATE chapters SET status=?1, updated_at=?2 WHERE id=?3",
@@ -149,7 +159,8 @@ pub async fn update_chapter_status(
 
 /// 重命名章节标题
 #[tauri::command]
-pub async fn rename_chapter(db: State<'_, AppDb>, chapter_id: String, title: String) -> Result<(), String> {
+pub async fn rename_chapter(app: AppHandle, db: State<'_, AppDb>, chapter_id: String, title: String) -> Result<(), String> {
+    emit_sql_log(&app, "UPDATE", "chapters", &format!("id={}, rename to {}", chapter_id, title), file!(), line!());
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     conn.execute(
         "UPDATE chapters SET title=?1, updated_at=?2 WHERE id=?3",
@@ -160,7 +171,8 @@ pub async fn rename_chapter(db: State<'_, AppDb>, chapter_id: String, title: Str
 
 /// 列出指定书籍所有已软删除的章节（deleted_at IS NOT NULL）
 #[tauri::command]
-pub async fn list_deleted_chapters(db: State<'_, AppDb>, book_id: String) -> Result<Vec<Chapter>, String> {
+pub async fn list_deleted_chapters(app: AppHandle, db: State<'_, AppDb>, book_id: String) -> Result<Vec<Chapter>, String> {
+    emit_sql_log(&app, "SELECT", "chapters", &format!("book_id={}, deleted", book_id), file!(), line!());
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     let mut stmt = conn.prepare(
         "SELECT id,book_id,volume_id,title,word_count,status,sort_order,created_at,updated_at,deleted_at,summary,summary_at,outline FROM chapters WHERE book_id=?1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC"
@@ -188,15 +200,17 @@ pub async fn list_deleted_chapters(db: State<'_, AppDb>, book_id: String) -> Res
 
 /// 软删除章节（设置 deleted_at 时间戳），同步更新全书字数
 #[tauri::command]
-pub async fn delete_chapter(db: State<'_, AppDb>, chapter_id: String) -> Result<(), String> {
+pub async fn delete_chapter(app: AppHandle, db: State<'_, AppDb>, chapter_id: String) -> Result<(), String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     let ts = now();
+    emit_sql_log(&app, "UPDATE", "chapters", &format!("id={}, soft delete", chapter_id), file!(), line!());
     conn.execute(
         "UPDATE chapters SET deleted_at=?1 WHERE id=?2",
         params![ts, chapter_id],
     ).map_err(|e| e.to_string())?;
 
     // 更新书籍总字数（软删除后需要重新聚合）
+    emit_sql_log(&app, "UPDATE", "books", "recalc word_count after chapter delete", file!(), line!());
     conn.execute(
         "UPDATE books SET word_count=(SELECT COALESCE(SUM(word_count),0) FROM chapters WHERE book_id=(SELECT book_id FROM chapters WHERE id=?1) AND deleted_at IS NULL), updated_at=?2 WHERE id=(SELECT book_id FROM chapters WHERE id=?1)",
         params![chapter_id, ts],
@@ -215,10 +229,11 @@ pub struct RestoreChapterResult {
 /// 恢复已软删除的章节（清除 deleted_at）
 /// 若章节原本有卷但卷已被删除，则将章节恢复到根目录
 #[tauri::command]
-pub async fn restore_chapter(db: State<'_, AppDb>, chapter_id: String) -> Result<RestoreChapterResult, String> {
+pub async fn restore_chapter(app: AppHandle, db: State<'_, AppDb>, chapter_id: String) -> Result<RestoreChapterResult, String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     let ts = now();
 
+    emit_sql_log(&app, "SELECT", "chapters", &format!("id={}, check volume_id", chapter_id), file!(), line!());
     // 读取章节当前的 volume_id
     let current_vid: Option<String> = conn.query_row(
         "SELECT volume_id FROM chapters WHERE id=?1",
@@ -228,6 +243,7 @@ pub async fn restore_chapter(db: State<'_, AppDb>, chapter_id: String) -> Result
 
     // 检查原卷是否存在且未被删除
     let effective_volume_id = if let Some(ref vid) = current_vid {
+        emit_sql_log(&app, "SELECT", "volumes", &format!("id={}, check exists", vid), file!(), line!());
         let vol_exists: bool = conn.query_row(
             "SELECT COUNT(*) > 0 FROM volumes WHERE id=?1 AND deleted_at IS NULL",
             params![vid],
@@ -238,12 +254,14 @@ pub async fn restore_chapter(db: State<'_, AppDb>, chapter_id: String) -> Result
         None
     };
 
+    emit_sql_log(&app, "UPDATE", "chapters", &format!("id={}, restore", chapter_id), file!(), line!());
     conn.execute(
         "UPDATE chapters SET deleted_at=NULL, volume_id=?1, updated_at=?2 WHERE id=?3",
         params![effective_volume_id, ts, chapter_id],
     ).map_err(|e| e.to_string())?;
 
     // 恢复后更新书籍总字数
+    emit_sql_log(&app, "UPDATE", "books", "recalc word_count after chapter restore", file!(), line!());
     conn.execute(
         "UPDATE books SET word_count=(SELECT COALESCE(SUM(word_count),0) FROM chapters WHERE book_id=(SELECT book_id FROM chapters WHERE id=?1) AND deleted_at IS NULL), updated_at=?2 WHERE id=(SELECT book_id FROM chapters WHERE id=?1)",
         params![chapter_id, ts],
@@ -254,15 +272,17 @@ pub async fn restore_chapter(db: State<'_, AppDb>, chapter_id: String) -> Result
 
 /// 硬删除章节（真正从数据库删除记录）
 #[tauri::command]
-pub async fn hard_delete_chapter(db: State<'_, AppDb>, chapter_id: String) -> Result<(), String> {
+pub async fn hard_delete_chapter(app: AppHandle, db: State<'_, AppDb>, chapter_id: String) -> Result<(), String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     let ts = now();
+    emit_sql_log(&app, "DELETE", "chapters", &format!("id={}, hard delete", chapter_id), file!(), line!());
     conn.execute(
         "DELETE FROM chapters WHERE id=?1",
         params![chapter_id],
     ).map_err(|e| e.to_string())?;
 
     // 更新全书总字数
+    emit_sql_log(&app, "UPDATE", "books", "recalc word_count after chapter hard delete", file!(), line!());
     conn.execute(
         "UPDATE books SET word_count=(SELECT COALESCE(SUM(c.word_count),0) FROM chapters c WHERE c.book_id=books.id AND c.deleted_at IS NULL), updated_at=?1",
         params![ts],
@@ -273,7 +293,8 @@ pub async fn hard_delete_chapter(db: State<'_, AppDb>, chapter_id: String) -> Re
 
 /// 重新排序章节（按传入 ID 顺序更新 sort_order）
 #[tauri::command]
-pub async fn reorder_chapters(db: State<'_, AppDb>, chapter_ids: Vec<String>) -> Result<(), String> {
+pub async fn reorder_chapters(app: AppHandle, db: State<'_, AppDb>, chapter_ids: Vec<String>) -> Result<(), String> {
+    emit_sql_log(&app, "UPDATE", "chapters", &format!("reorder {} chapters", chapter_ids.len()), file!(), line!());
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     for (i, id) in chapter_ids.iter().enumerate() {
         conn.execute("UPDATE chapters SET sort_order=?1 WHERE id=?2", params![i as i64, id])
@@ -286,6 +307,7 @@ pub async fn reorder_chapters(db: State<'_, AppDb>, chapter_ids: Vec<String>) ->
 /// 同时更新 sort_order，放置在目标卷末尾
 #[tauri::command]
 pub async fn move_chapter_to_volume(
+    app: AppHandle,
     db: State<'_, AppDb>,
     chapter_id: String,
     volume_id: Option<String>,
@@ -295,12 +317,14 @@ pub async fn move_chapter_to_volume(
 
     // 计算目标分组最大 sort_order + 1
     let max_order: i64 = if let Some(ref vid) = volume_id {
+        emit_sql_log(&app, "SELECT", "chapters", &format!("MAX(sort_order) for volume_id={}", vid), file!(), line!());
         conn.query_row(
             "SELECT COALESCE(MAX(sort_order), -1) FROM chapters WHERE volume_id=?1 AND deleted_at IS NULL",
             params![vid],
             |row| row.get(0),
         ).map_err(|e| e.to_string())?
     } else {
+        emit_sql_log(&app, "SELECT", "chapters", &format!("MAX(sort_order) for volume_id=NULL via chapter_id={}", chapter_id), file!(), line!());
         conn.query_row(
             "SELECT COALESCE(MAX(sort_order), -1) FROM chapters WHERE volume_id IS NULL AND deleted_at IS NULL AND book_id=(SELECT book_id FROM chapters WHERE id=?1)",
             params![chapter_id],
@@ -310,6 +334,7 @@ pub async fn move_chapter_to_volume(
 
     let new_sort = max_order + 1;
 
+    emit_sql_log(&app, "UPDATE", "chapters", &format!("id={}, move to volume_id={:?}, sort={}", chapter_id, volume_id, new_sort), file!(), line!());
     conn.execute(
         "UPDATE chapters SET volume_id=?1, sort_order=?2, updated_at=?3 WHERE id=?4",
         params![volume_id, new_sort, ts, chapter_id],
@@ -321,11 +346,13 @@ pub async fn move_chapter_to_volume(
 /// 保存章节的 AI 总结内容
 #[tauri::command]
 pub async fn save_chapter_summary(
+    app: AppHandle,
     db: State<'_, AppDb>,
     chapter_id: String,
     summary: String,
 ) -> Result<(), String> {
     let ts = now();
+    emit_sql_log(&app, "UPDATE", "chapters", &format!("id={}, save summary ({} chars)", chapter_id, summary.len()), file!(), line!());
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     conn.execute(
         "UPDATE chapters SET summary=?1, summary_at=?2 WHERE id=?3",
@@ -344,9 +371,11 @@ pub struct ChapterSummaryInfo {
 
 #[tauri::command]
 pub async fn get_chapter_summary(
+    app: AppHandle,
     db: State<'_, AppDb>,
     chapter_id: String,
 ) -> Result<ChapterSummaryInfo, String> {
+    emit_sql_log(&app, "SELECT", "chapters", &format!("id={}, summary", chapter_id), file!(), line!());
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     conn.query_row(
         "SELECT summary, summary_at FROM chapters WHERE id=?1",
@@ -363,9 +392,11 @@ pub async fn get_chapter_summary(
 /// 清除章节的 AI 总结内容（将 summary/summary_at 置为 null）
 #[tauri::command]
 pub async fn clear_chapter_summary(
+    app: AppHandle,
     db: State<'_, AppDb>,
     chapter_id: String,
 ) -> Result<(), String> {
+    emit_sql_log(&app, "UPDATE", "chapters", &format!("id={}, clear summary", chapter_id), file!(), line!());
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     conn.execute(
         "UPDATE chapters SET summary=NULL, summary_at=NULL WHERE id=?1",
@@ -377,11 +408,13 @@ pub async fn clear_chapter_summary(
 /// 保存章节大纲内容
 #[tauri::command]
 pub async fn save_chapter_outline(
+    app: AppHandle,
     db: State<'_, AppDb>,
     chapter_id: String,
     outline: String,
 ) -> Result<(), String> {
     let ts = now();
+    emit_sql_log(&app, "UPDATE", "chapters", &format!("id={}, save outline ({} chars)", chapter_id, outline.len()), file!(), line!());
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     conn.execute(
         "UPDATE chapters SET outline=?1, updated_at=?2 WHERE id=?3",

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use futures_util::StreamExt;
 use tokio::time::timeout;
 use crate::db::AppDb;
+use crate::commands::window::emit_sql_log;
 
 // ---- RAG & Embedding 公共结构 ----
 
@@ -293,6 +294,7 @@ async fn call_embedding_api(
 /// 当 embeddings 表有数据时使用向量搜索，否则降级为 SQL LIKE。
 #[tauri::command]
 pub async fn rag_search(
+    app: AppHandle,
     db: State<'_, AppDb>,
     book_id: String,
     query: String,
@@ -306,6 +308,7 @@ pub async fn rag_search(
     // 尝试向量检索
     if let (Some(ref ep), Some(ref key), Some(ref model)) = (&endpoint, &api_key, &embedding_model) {
         // 检查该书籍是否有已生成的 embedding（章节 + 世界观卡片，仅非空内容）
+        emit_sql_log(&app, "SELECT", "embeddings", &format!("COUNT for book_id={}", book_id), file!(), line!());
         let emb_count: i64 = conn
             .query_row(
                 "SELECT (
@@ -327,7 +330,7 @@ pub async fn rag_search(
             match call_embedding_api(ep, key, model, &[query.clone()]).await {
                 Ok(query_embs) => {
                     if let Some(query_vec) = query_embs.into_iter().next() {
-                        return vector_search(&conn, &book_id, &query_vec, top_n);
+                        return vector_search(&app, &conn, &book_id, &query_vec, top_n);
                     }
                 }
                 Err(e) => eprintln!("Embedding API 调用失败，降级为关键词搜索: {}", e),
@@ -336,11 +339,12 @@ pub async fn rag_search(
     }
 
     // 降级：SQL LIKE 关键词搜索（章节 + 世界观卡片）
-    like_search(&conn, &book_id, &query, top_n)
+    like_search(&app, &conn, &book_id, &query, top_n)
 }
 
 /// 向量相似度搜索（章节 + 世界观卡片）
 fn vector_search(
+    app: &AppHandle,
     conn: &rusqlite::Connection,
     book_id: &str,
     query_vec: &[f32],
@@ -358,6 +362,7 @@ fn vector_search(
 
     // 查询该书籍所有章节的 embedding
     {
+        emit_sql_log(app, "SELECT", "embeddings+chapters", &format!("book_id={}, embeddings for vector search", book_id), file!(), line!());
         let mut stmt = conn
             .prepare(
                 "SELECT e.source_id, e.embedding, c.title, c.content_html
@@ -385,6 +390,7 @@ fn vector_search(
 
     // 查询该书籍所有世界观卡片的 embedding
     {
+        emit_sql_log(app, "SELECT", "embeddings+world_cards", &format!("book_id={}, embeddings for vector search", book_id), file!(), line!());
         let mut stmt = conn
             .prepare(
                 "SELECT e.source_id, e.embedding, w.title, w.content_html
@@ -443,6 +449,7 @@ fn vector_search(
 
 /// 降级的 SQL LIKE 搜索（章节 + 世界观卡片）
 fn like_search(
+    app: &AppHandle,
     conn: &rusqlite::Connection,
     book_id: &str,
     query: &str,
@@ -453,6 +460,7 @@ fn like_search(
 
     // 搜索章节
     {
+        emit_sql_log(app, "SELECT", "chapters", &format!("book_id={}, LIKE search", book_id), file!(), line!());
         let mut stmt = conn
             .prepare(
                 "SELECT id, title, content_html FROM chapters
@@ -489,6 +497,7 @@ fn like_search(
     // 搜索世界观卡片
     if results.len() < top_n {
         let remaining = (top_n - results.len()) as i64;
+        emit_sql_log(app, "SELECT", "world_cards", &format!("book_id={}, LIKE search", book_id), file!(), line!());
         let mut stmt = conn
             .prepare(
                 "SELECT id, title, content_html FROM world_cards
@@ -530,11 +539,13 @@ fn like_search(
 /// 返回是否过期（stale），前端可根据此提示用户重新生成索引。
 #[tauri::command]
 pub fn check_embedding_status(
+    app: AppHandle,
     db: State<'_, AppDb>,
     book_id: String,
 ) -> Result<EmbeddingStatus, String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
 
+    emit_sql_log(&app, "SELECT", "chapters", &format!("COUNT for book_id={}", book_id), file!(), line!());
     let total_chapters: usize = conn
         .query_row(
             "SELECT COUNT(*) FROM chapters WHERE book_id = ?1 AND deleted_at IS NULL AND content_html != ''",
@@ -543,6 +554,7 @@ pub fn check_embedding_status(
         )
         .unwrap_or(0);
 
+    emit_sql_log(&app, "SELECT", "world_cards", &format!("COUNT for book_id={}", book_id), file!(), line!());
     let total_world_cards: usize = conn
         .query_row(
             "SELECT COUNT(*) FROM world_cards WHERE book_id = ?1 AND content_html != ''",
@@ -551,6 +563,7 @@ pub fn check_embedding_status(
         )
         .unwrap_or(0);
 
+    emit_sql_log(&app, "SELECT", "embeddings+chapters", &format!("indexed COUNT for book_id={}", book_id), file!(), line!());
     let indexed_chapters: usize = conn
         .query_row(
             "SELECT COUNT(*) FROM embeddings e
@@ -561,6 +574,7 @@ pub fn check_embedding_status(
         )
         .unwrap_or(0);
 
+    emit_sql_log(&app, "SELECT", "embeddings+world_cards", &format!("indexed COUNT for book_id={}", book_id), file!(), line!());
     let indexed_world_cards: usize = conn
         .query_row(
             "SELECT COUNT(*) FROM embeddings e
@@ -588,6 +602,7 @@ pub fn check_embedding_status(
 /// 调用 /embeddings API，批量生成后写入 embeddings 表。
 #[tauri::command]
 pub async fn trigger_embedding(
+    app: AppHandle,
     db: State<'_, AppDb>,
     book_id: String,
     endpoint: String,
@@ -606,6 +621,7 @@ pub async fn trigger_embedding(
         let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
 
         // 收集章节
+        emit_sql_log(&app, "SELECT", "chapters", &format!("book_id={}, collect for embedding", book_id), file!(), line!());
         let mut chap_stmt = conn
             .prepare(
                 "SELECT id, content_html FROM chapters
@@ -630,6 +646,7 @@ pub async fn trigger_embedding(
         let tc = chapters.len();
 
         // 收集世界观卡片
+        emit_sql_log(&app, "SELECT", "world_cards", &format!("book_id={}, collect for embedding", book_id), file!(), line!());
         let mut card_stmt = conn
             .prepare(
                 "SELECT id, content_html FROM world_cards WHERE book_id = ?1 AND content_html != ''",
@@ -704,6 +721,7 @@ pub async fn trigger_embedding(
     // 批量写入数据库
     {
         let conn = db.pool.get().map_err(|e| format!("获取写入连接失败: {}", e))?;
+        emit_sql_log(&app, "INSERT/UPDATE", "embeddings+world_cards", &format!("batch write {} entries", results.len()), file!(), line!());
         for (stype, sid, blob) in &results {
             conn.execute(
                 "INSERT OR REPLACE INTO embeddings (source_type, source_id, embedding, model)

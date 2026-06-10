@@ -11,12 +11,12 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAtom } from 'jotai'
-import { PlusIcon, SearchIcon, GridIcon, ListIcon, SettingsIcon, BookOpenIcon, Trash2Icon, WrenchIcon, UploadIcon, DownloadIcon } from 'lucide-react'
+import { PlusIcon, SearchIcon, GridIcon, ListIcon, SettingsIcon, BookOpenIcon, Trash2Icon, WrenchIcon, UploadIcon, DownloadIcon, BugIcon } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { save, open } from '@tauri-apps/plugin-dialog'
 import { useAppStore } from '@/stores/appStore'
-import { aiToolboxWindowOpenAtom } from '@/stores/uiAtoms'
+import { aiToolboxWindowOpenAtom, debugWindowOpenAtom } from '@/stores/uiAtoms'
 import { bookApi, importExportApi } from '@/lib/tauri-bridge'
 import { cn, formatWordCount } from '@/lib/utils'
 import type { Book } from '@/types'
@@ -62,6 +62,7 @@ export default function LibraryPage() {
   const [showNewBookDialog, setShowNewBookDialog] = useState(false)
   const [showTrashModal, setShowTrashModal] = useState(false)
   const [aiToolboxWindowOpen, setAiToolboxWindowOpen] = useAtom(aiToolboxWindowOpenAtom)
+  const [debugWindowOpen, setDebugWindowOpen] = useAtom(debugWindowOpenAtom)
 
   // 虚拟化滚动容器 ref
   const parentRef = useRef<HTMLDivElement>(null)
@@ -223,6 +224,24 @@ export default function LibraryPage() {
     }
   }
 
+  async function handleToggleDebugWindow() {
+    if (debugWindowOpen) {
+      try {
+        await invoke('close_debug_window')
+      } catch (e) {
+        console.error('关闭调试控制台失败', e)
+      }
+      setDebugWindowOpen(false)
+    } else {
+      try {
+        await invoke('open_debug_window')
+        setDebugWindowOpen(true)
+      } catch (e) {
+        console.error('打开调试控制台失败', e)
+      }
+    }
+  }
+
   function handleOpenBook(book: Book) {
     setCurrentBookId(book.id)
     navigate(`/editor/${book.id}`)
@@ -254,16 +273,45 @@ export default function LibraryPage() {
 
   // 加载书籍列表
   useEffect(() => {
+    console.log('已打开作品列表页')
     loadBooks()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // 监听 AI 工具箱窗口关闭事件
   useEffect(() => {
-    const unlisten = listen('ai-toolbox-window-closed', () => {
-      setAiToolboxWindowOpen(false)
+    let cancelled = false
+    let unlistenFn: (() => void) | undefined
+
+    listen('ai-toolbox-window-closed', () => {
+      if (!cancelled) setAiToolboxWindowOpen(false)
+    }).then((fn) => {
+      if (cancelled) fn()
+      else unlistenFn = fn
     })
-    return () => { unlisten.then((fn) => fn()) }
+
+    return () => {
+      cancelled = true
+      unlistenFn?.()
+    }
+  }, [])
+
+  // 监听调试控制台窗口关闭事件
+  useEffect(() => {
+    let cancelled = false
+    let unlistenFn: (() => void) | undefined
+
+    listen('debug-window-closed', () => {
+      if (!cancelled) setDebugWindowOpen(false)
+    }).then((fn) => {
+      if (cancelled) fn()
+      else unlistenFn = fn
+    })
+
+    return () => {
+      cancelled = true
+      unlistenFn?.()
+    }
   }, [])
 
   // 动态计算网格行高：基于实际列宽计算，而非固定预估值
@@ -417,6 +465,18 @@ export default function LibraryPage() {
           title="AI 工具箱"
         >
           <WrenchIcon className="w-5 h-5" />
+        </button>
+
+        {/* 调试控制台 */}
+        <button
+          onClick={handleToggleDebugWindow}
+          className={cn(
+            'p-2 rounded-lg transition-colors',
+            debugWindowOpen ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-muted-foreground',
+          )}
+          title="调试控制台"
+        >
+          <BugIcon className="w-5 h-5" />
         </button>
 
         <button
