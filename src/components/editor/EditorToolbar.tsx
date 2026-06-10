@@ -11,7 +11,6 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
-import { readFile } from '@tauri-apps/plugin-fs'
 import {
   ArrowLeftIcon,
   SidebarIcon,
@@ -56,6 +55,7 @@ import {
 } from '@/stores/uiAtoms.ts'
 import { useCurrentBook, useCurrentChapter, useAppStore } from '@/stores/appStore.ts'
 import { cn } from '@/lib/utils.ts'
+import { processEditorImage } from '@/lib/image-utils.ts'
 
 /** 预设字体颜色 */
 const PRESET_COLORS = [
@@ -128,35 +128,7 @@ export default function EditorToolbar() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [colorPickerOpen, tablePickerOpen])
 
-  /** 从文件扩展名推断 MIME 类型 */
-  const guessMimeType = useCallback((path: string): string => {
-    const ext = path.split('.').pop()?.toLowerCase() ?? ''
-    const mimeMap: Record<string, string> = {
-      png: 'image/png',
-      jpg: 'image/jpeg',
-      jpeg: 'image/jpeg',
-      gif: 'image/gif',
-      webp: 'image/webp',
-      svg: 'image/svg+xml',
-      bmp: 'image/bmp',
-    }
-    return mimeMap[ext] ?? 'image/png'
-  }, [])
-
-  /** 将 Uint8Array 转为 data: URL（使用浏览器原生 Blob + FileReader，避免逐字符拼接 O(n²) 问题） */
-  const uint8ToDataUrl = useCallback(
-    (bytes: Uint8Array, mime: string): Promise<string> =>
-      new Promise((resolve, reject) => {
-        const blob = new Blob([bytes as BlobPart], { type: mime })
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result as string)
-        reader.onerror = () => reject(reader.error)
-        reader.readAsDataURL(blob)
-      }),
-    []
-  )
-
-  /** 插入图片 */
+  /** 插入图片（压缩后以 Base64 内嵌，确保导出/导入自包含） */
   const handleInsertImage = useCallback(async () => {
     if (!editor) return
     try {
@@ -171,15 +143,12 @@ export default function EditorToolbar() {
       if (!selected) return // 用户取消
 
       const filePath = selected as string
-      const fileBytes = await readFile(filePath)
-      const mime = guessMimeType(filePath)
-      const dataUrl = await uint8ToDataUrl(fileBytes, mime)
-
+      const dataUrl = await processEditorImage(filePath)
       editor.chain().focus().setImage({ src: dataUrl }).run()
     } catch (err) {
       console.error('插入图片失败', err)
     }
-  }, [editor, guessMimeType, uint8ToDataUrl])
+  }, [editor])
 
   async function handleToggleWorldWindow() {
     if (worldWindowOpen) {

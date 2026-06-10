@@ -10,7 +10,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { Trash2Icon, RotateCcwIcon, XIcon, AlertTriangleIcon, BookOpenIcon } from 'lucide-react'
 import { bookApi } from '@/lib/tauri-bridge'
 import { formatWordCount, formatRelativeTime } from '@/lib/utils'
-import { resolveCoverSrc } from './CoverPicker'
+import { resolveCoverSrc } from '@/lib/image-utils.ts'
 import type { Book } from '@/types'
 
 interface TrashModalProps {

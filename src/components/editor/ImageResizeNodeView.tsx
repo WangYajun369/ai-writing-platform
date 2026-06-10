@@ -2,11 +2,11 @@
  * ImageResizeNodeView — 可缩放图片节点视图
  *
  * 选中图片时显示浮动缩放工具栏，支持缩小/放大/重置/替换/删除。
+ * 图片以压缩后的 Base64 data URL 内嵌在 HTML 中。
  */
 import { useCallback } from 'react'
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react'
 import { open } from '@tauri-apps/plugin-dialog'
-import { readFile } from '@tauri-apps/plugin-fs'
 import {
   MinusIcon,
   PlusIcon,
@@ -14,36 +14,11 @@ import {
   Trash2Icon,
   ImageUpIcon,
 } from 'lucide-react'
+import { processEditorImage } from '@/lib/image-utils.ts'
 
 const MIN_WIDTH_PCT = 20
 const MAX_WIDTH_PCT = 100
 const STEP = 10
-
-/** 从路径扩展名推断 MIME 类型 */
-function guessMimeType(path: string): string {
-  const ext = path.split('.').pop()?.toLowerCase() ?? ''
-  const mimeMap: Record<string, string> = {
-    png: 'image/png',
-    jpg: 'image/jpeg',
-    jpeg: 'image/jpeg',
-    gif: 'image/gif',
-    webp: 'image/webp',
-    svg: 'image/svg+xml',
-    bmp: 'image/bmp',
-  }
-  return mimeMap[ext] ?? 'image/png'
-}
-
-/** 将 Uint8Array 转为 data: URL（使用浏览器原生 Blob + FileReader，避免逐字符拼接 O(n²) 问题） */
-function uint8ToDataUrl(bytes: Uint8Array, mime: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const blob = new Blob([bytes as BlobPart], { type: mime })
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(blob)
-  })
-}
 
 export default function ImageResizeNodeView({
   node,
@@ -69,7 +44,7 @@ export default function ImageResizeNodeView({
     }
   }, [widthPct, updateAttributes])
 
-  /** 替换图片源 */
+  /** 替换图片源（压缩后以 Base64 内嵌） */
   const handleReplace = useCallback(async () => {
     try {
       const selectedPath = await open({
@@ -85,10 +60,7 @@ export default function ImageResizeNodeView({
       if (!selectedPath) return
 
       const filePath = selectedPath as string
-      const fileBytes = await readFile(filePath)
-      const mime = guessMimeType(filePath)
-      const dataUrl = await uint8ToDataUrl(fileBytes, mime)
-
+      const dataUrl = await processEditorImage(filePath)
       updateAttributes({ src: dataUrl })
     } catch (err) {
       console.error('替换图片失败', err)

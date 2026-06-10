@@ -38,6 +38,8 @@ thiserror = "1"
 regex-lite = "0.1"
 aes-gcm = "0.10"
 rand = "0.8"
+image = "0.25"
+base64 = "0.22"
 
 [features]
 # This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!

@@ -9,7 +9,8 @@ import { createPortal } from 'react-dom'
 import { XIcon } from 'lucide-react'
 import { bookApi } from '@/lib/tauri-bridge'
 import { useAppStore } from '@/stores/appStore'
-import CoverPicker, { resolveCoverSrc } from './CoverPicker'
+import CoverPicker from './CoverPicker'
+import { resolveCoverSrc } from '@/lib/image-utils.ts'
 import type { Book } from '@/types'
 
 interface NewBookDialogProps {

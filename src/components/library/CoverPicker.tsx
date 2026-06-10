@@ -2,7 +2,8 @@
  * CoverPicker — 封面图片选择组件
  *
  * 使用 Tauri dialog 插件打开系统文件选择器，校验图片格式和大小。
- * 通过 convertFileSrc 将本地路径转为可渲染的 asset URL。
+ * 选中文件后将路径通过 onChange 回传父组件，
+ * 由 set_book_cover（Rust 端）压缩后以 Base64 data URL 存入数据库。
  *
  * 限制：
  * - 格式：JPEG / PNG / WebP
@@ -11,7 +12,7 @@
 import { useState } from 'react'
 import { ImageIcon, UploadIcon, XIcon, AlertTriangleIcon } from 'lucide-react'
 import { open } from '@tauri-apps/plugin-dialog'
-import { stat, readFile } from '@tauri-apps/plugin-fs'
+import { stat } from '@tauri-apps/plugin-fs'
 import { cn } from '@/lib/utils'
 
 /** 允许的图片扩展名 */
@@ -149,45 +150,4 @@ export default function CoverPicker({ value, onChange, className }: CoverPickerP
       )}
     </div>
   )
-}
-
-/**
- * 将本地文件路径读取为可渲染的 URL
- *
- * 使用 readFile + data: URL（base64）方式，与编辑器内嵌图片保持一致。
- * data: URL 是纯字符串，不受协议/CSP/WebView2 跨域限制，在所有平台均可可靠渲染。
- *
- * 注意：返回的 data URL 不需要手动释放。
- */
-export async function resolveCoverSrc(path: string | undefined | null): Promise<string | undefined> {
-  if (!path) return undefined
-  if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:') || path.startsWith('blob:')) {
-    return path
-  }
-  if (path.startsWith('asset://') || path.startsWith('https://asset.')) {
-    return path
-  }
-
-  try {
-    const data = await readFile(path)
-    const ext = path.split('.').pop()?.toLowerCase() ?? 'png'
-    const mimeType = ext === 'jpg' || ext === 'jpeg'
-      ? 'image/jpeg'
-      : ext === 'webp'
-        ? 'image/webp'
-        : 'image/png'
-    // 使用 Blob + FileReader 生成 data: URL（base64），
-    // 与编辑器图片插入方案一致，避免跨平台协议兼容性问题
-    const blob = new Blob([data as BlobPart], { type: mimeType })
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result as string)
-      reader.onerror = () => reject(reader.error)
-      reader.readAsDataURL(blob)
-    })
-    return dataUrl
-  } catch (e) {
-    console.error('加载封面图片失败:', (e as Error).message)
-    return undefined
-  }
 }

@@ -7,20 +7,12 @@
 //! 彻底删除（硬删除）时才级联清除所有关联数据。
 
 use tauri::State;
-use tauri::Manager;
 use rusqlite::params;
 use uuid::Uuid;
 use chrono::Utc;
 use serde_json;
 use crate::db::AppDb;
 use crate::models::Book;
-use tauri::AppHandle;
-use std::path::Path;
-
-/// 支持的封面图片扩展名
-const ALLOWED_COVER_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp"];
-/// 封面最大文件大小（字节）：5 MB
-const MAX_COVER_SIZE: u64 = 5 * 1024 * 1024;
 
 /// 获取当前 UTC 时间的 RFC 3339 字符串表示
 fn now() -> String {
@@ -196,13 +188,15 @@ pub async fn update_book(db: State<'_, AppDb>, id: String, params: serde_json::V
     get_book(db, id).await
 }
 
-/// 设置书籍封面：从源路径复制封面图片到应用数据目录，更新数据库
+/// 设置书籍封面：压缩后以 Base64 data URL 形式存储到数据库
 ///
-/// 会自动校验文件扩展名和大小，超出限制时返回错误信息。
+/// 图片经过缩放（最大宽度 800px）和 JPEG 压缩（质量 85%），
+/// 以 Base64 内嵌在数据库，无需外部文件依赖，
+/// 确保导出/导入完全自包含。
+///
 /// 当 source_path 为空时，表示移除封面。
 #[tauri::command]
 pub async fn set_book_cover(
-    app: AppHandle,
     db: State<'_, AppDb>,
     id: String,
     source_path: String,
@@ -221,52 +215,16 @@ pub async fn set_book_cover(
         return get_book(db, id).await;
     }
 
-    let src = Path::new(&source_path);
+    // 压缩处理：宽 ≤ 800px，JPEG 质量 85
+    let data_url =
+        crate::commands::image::process_image_data(&source_path, 800, 85)?;
 
-    // 1. 校验扩展名
-    let ext = src
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_lowercase())
-        .unwrap_or_default();
-    if !ALLOWED_COVER_EXTENSIONS.contains(&ext.as_str()) {
-        return Err(format!(
-            "不支持的封面格式：.{ext}。仅支持 jpg、jpeg、png、webp。"
-        ));
-    }
-
-    // 2. 校验文件大小
-    let metadata = std::fs::metadata(src).map_err(|e| format!("无法读取封面文件: {e}"))?;
-    if metadata.len() > MAX_COVER_SIZE {
-        let size_mb = metadata.len() as f64 / (1024.0 * 1024.0);
-        return Err(format!(
-            "封面文件过大（{:.1} MB），最大允许 5 MB。",
-            size_mb
-        ));
-    }
-
-    // 3. 确保 covers 目录存在
-    let app_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("无法获取应用数据目录: {e}"))?;
-    let covers_dir = app_dir.join("covers");
-    std::fs::create_dir_all(&covers_dir)
-        .map_err(|e| format!("无法创建封面目录: {e}"))?;
-
-    // 4. 复制文件（用 book_id + 扩展名作为文件名）
-    let dest_filename = format!("{}.{ext}", id);
-    let dest = covers_dir.join(&dest_filename);
-    std::fs::copy(src, &dest).map_err(|e| format!("封面复制失败: {e}"))?;
-
-    // 5. 更新数据库
-    let cover_path = dest.to_str().ok_or("封面路径无效")?.to_string();
     let ts = now();
     {
         let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
         conn.execute(
             "UPDATE books SET cover_image=?1, updated_at=?2 WHERE id=?3",
-            params![cover_path, ts, id],
+            params![data_url, ts, id],
         )
         .map_err(|e| e.to_string())?;
     }

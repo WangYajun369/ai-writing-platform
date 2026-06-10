@@ -375,6 +375,15 @@ export const aiApi = {
   },
 }
 
+// ==================== 图片处理 ====================
+
+export const imageApi = {
+  /** 处理图片：压缩 + 缩放 + Base64 编码，返回 data: URL */
+  async process(sourcePath: string, maxWidth = 1200, quality = 80): Promise<string> {
+    return invoke<string>('process_image', { sourcePath, maxWidth, quality })
+  },
+}
+
 // ==================== 导入导出 ====================
 
 export const importExportApi = {

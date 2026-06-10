@@ -1,6 +1,6 @@
 //! TimeWrite（智写时光）Tauri 应用主逻辑
 //!
-//! 负责：Tauri Builder 配置、插件注册、数据库初始化、38 个 IPC 命令注册。
+//! 负责：Tauri Builder 配置、插件注册、数据库初始化、IPC 命令注册。
 
 mod commands;
 mod db;
@@ -19,7 +19,6 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_http::init())
         .setup(|app| {
-            // 初始化数据库（应用级元数据库）
             let app_dir = app
                 .path()
                 .app_data_dir()
@@ -95,6 +94,8 @@ pub fn run() {
             commands::io::export_all_data,
             commands::io::export_single_book,
             commands::io::import_backup,
+            // 图片处理
+            commands::image::process_image,
             // 窗口管理
             commands::window::open_world_window,
             commands::window::close_world_window,

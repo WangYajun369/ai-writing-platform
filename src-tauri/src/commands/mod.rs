@@ -10,4 +10,5 @@ pub mod snapshot;
 pub mod world_card;
 pub mod ai;
 pub mod io;
+pub mod image;
 pub mod window;

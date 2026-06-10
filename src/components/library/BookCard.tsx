@@ -14,7 +14,7 @@ import type { Book } from '@/types'
 import { bookApi, importExportApi } from '@/lib/tauri-bridge.ts'
 import { formatWordCount, formatRelativeTime } from '@/lib/utils'
 import { useAppStore } from '@/stores/appStore'
-import { resolveCoverSrc } from './CoverPicker'
+import { resolveCoverSrc } from '@/lib/image-utils.ts'
 import EditBookDialog from './EditBookDialog'
 import { useContextMenu } from '@/components/common/ContextMenu'
 
