@@ -1,14 +1,14 @@
 /**
  * 消息气泡组件
  */
-import { memo, useState } from 'react'
+import { memo, useState, useRef, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { invoke } from '@tauri-apps/api/core'
-import { Loader2Icon, ClipboardPasteIcon, InfoIcon, Trash2Icon, SettingsIcon, ChevronDownIcon, BookOpenIcon } from 'lucide-react'
+import { Loader2Icon, ClipboardPasteIcon, InfoIcon, Trash2Icon, SettingsIcon, ChevronDownIcon, BookOpenIcon, CheckIcon } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { cn } from '@/lib/utils'
+import { cn, markdownToHtml } from '@/lib/utils'
 import { editorInstanceAtom, worldWindowOpenAtom } from '@/stores/uiAtoms'
 import type { AiMessage, ChatRequestPayload } from '@/types'
 
@@ -24,6 +24,7 @@ export const MessageBubble = memo(function MessageBubble({ message, onDelete, on
   const [thinkingExpanded, setThinkingExpanded] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [summaryExpanded, setSummaryExpanded] = useState(false)
+  const [inserted, setInserted] = useState(false)
   const isError = !isUser && message.content.startsWith('⚠️')
   const hasPayload = !isUser && !!message.requestPayload
   const isSummarizing = message.isSummarizing || message.phase === 'summarizing'
@@ -31,6 +32,24 @@ export const MessageBubble = memo(function MessageBubble({ message, onDelete, on
   const navigate = useNavigate()
   const editor = useAtomValue(editorInstanceAtom)
   const setWorldWindowOpen = useSetAtom(worldWindowOpenAtom)
+
+  // 防重复插入：记录上次插入时间和内容 hash
+  const lastInsertRef = useRef<{ time: number; contentHash: string }>({ time: 0, contentHash: '' })
+  // 插入反馈自动重置定时器
+  const insertedTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  useEffect(() => {
+    return () => clearTimeout(insertedTimerRef.current)
+  }, [])
+
+  // 简单的字符串 hash（防重复，非加密用途）
+  const simpleHash = (s: string): string => {
+    let h = 0
+    for (let i = 0; i < s.length; i++) {
+      h = ((h << 5) - h + s.charCodeAt(i)) | 0
+    }
+    return String(h)
+  }
 
   // 计算有效用量
   const contentCharCount = message.content.length
@@ -47,10 +66,46 @@ export const MessageBubble = memo(function MessageBubble({ message, onDelete, on
   const isThinkingPhase = message.phase === 'thinking'
   const isLoading = message.loading && !message.content && !hasThinking && !isSummarizing
 
-  const handleInsertToEditor = () => {
-    if (!editor || !message.content) return
-    editor.chain().focus().insertContent(message.content).run()
-  }
+  const handleInsertToEditor = useCallback(() => {
+    if (!editor || !editor.isEditable || !message.content) return
+
+    const contentHash = simpleHash(message.content)
+    const now = Date.now()
+
+    // 防重复：500ms 内相同内容不允许重复插入
+    if (contentHash === lastInsertRef.current.contentHash && now - lastInsertRef.current.time < 500) {
+      return
+    }
+
+    try {
+      // 1. 将 AI 返回的 Markdown 转换为 TipTap 可解析的 HTML
+      const html = markdownToHtml(message.content)
+
+      // 2. 使用 chain 执行：聚焦 → 清除当前选区（如有则替换）→ 插入 HTML → 滚动到可见位置
+      editor
+        .chain()
+        .focus()
+        .insertContent(html)
+        .scrollIntoView()
+        .run()
+
+      // 3. 记录插入状态，防止短时间内重复插入
+      lastInsertRef.current = { time: now, contentHash }
+
+      // 4. 显示插入成功反馈
+      setInserted(true)
+      clearTimeout(insertedTimerRef.current)
+      insertedTimerRef.current = setTimeout(() => setInserted(false), 1500)
+    } catch (err) {
+      console.error('插入编辑器失败:', err)
+      // 降级处理：直接插入原始内容
+      try {
+        editor.chain().focus().insertContent(`<p>${message.content}</p>`).run()
+      } catch {
+        // 静默忽略
+      }
+    }
+  }, [editor, message.content])
 
   return (
     <div className={cn('flex gap-2', isUser ? 'flex-row-reverse' : 'flex-row')}>
@@ -156,6 +211,7 @@ export const MessageBubble = memo(function MessageBubble({ message, onDelete, on
             hasPayload={hasPayload}
             message={message}
             confirming={confirming}
+            inserted={inserted}
             onInsert={handleInsertToEditor}
             onShowDetail={onShowDetail}
             onDelete={() => setConfirming(true)}
@@ -251,6 +307,7 @@ function MessageActions({
   hasPayload,
   message,
   confirming,
+  inserted,
   onInsert,
   onShowDetail,
   onDelete,
@@ -260,6 +317,7 @@ function MessageActions({
   hasPayload: boolean
   message: AiMessage
   confirming: boolean
+  inserted: boolean
   onInsert: () => void
   onShowDetail: (payload: ChatRequestPayload) => void
   onDelete: () => void
@@ -271,11 +329,21 @@ function MessageActions({
       <div className="flex items-center gap-3">
         <button
           onClick={onInsert}
-          className="flex items-center gap-1 text-[11px] text-muted-foreground/50 hover:text-primary transition-colors"
-          title="插入到编辑器"
+          disabled={inserted}
+          className={cn(
+            'flex items-center gap-1 text-[11px] transition-colors',
+            inserted
+              ? 'text-emerald-500 cursor-default'
+              : 'text-muted-foreground/50 hover:text-primary'
+          )}
+          title={inserted ? '已插入编辑器' : '插入到编辑器'}
         >
-          <ClipboardPasteIcon className="w-3 h-3" />
-          插入编辑器
+          {inserted ? (
+            <CheckIcon className="w-3 h-3" />
+          ) : (
+            <ClipboardPasteIcon className="w-3 h-3" />
+          )}
+          {inserted ? '已插入' : '插入编辑器'}
         </button>
         {hasPayload && (
           <button
