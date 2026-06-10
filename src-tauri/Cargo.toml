@@ -1,6 +1,6 @@
 [package]
 name = "time-write"
-version = "0.8.0"
+version = "0.8.1"
 description = "智写时光 TimeWrite —— 跨平台小说创作工具"
 authors = ["TimeWrite Team"]
 edition = "2021"
