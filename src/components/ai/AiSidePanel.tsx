@@ -15,7 +15,9 @@ import {
 } from 'lucide-react'
 import { useAppStore, useCurrentAiMessages } from '@/stores/appStore'
 import { cn } from '@/lib/utils'
+import { aiApi } from '@/lib/tauri-bridge'
 import type { ChatRequestPayload } from '@/types'
+import { getChatApiKey } from '@/types'
 import { useAiChat, PROVIDER_LABELS, QUICK_HINTS } from './useAiChat'
 import { MessageBubble } from './MessageBubble'
 import { RequestDetailModal } from './RequestDetailModal'
@@ -35,7 +37,7 @@ export default function AiSidePanel() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRafRef = useRef<number | null>(null)
 
-  const { aiConfig, aiConnectionStatus, aiConnectionDetail, currentBookId } = useAppStore()
+  const { aiConfig, aiConnectionStatus, aiConnectionDetail, currentBookId, setAiConnectionStatus } = useAppStore()
   const {
     streaming,
     embeddingGenerating,
@@ -52,6 +54,22 @@ export default function AiSidePanel() {
   const statusColor = STATUS_CONFIG[aiConnectionStatus].color
   const statusLabel = STATUS_CONFIG[aiConnectionStatus].label
 
+  /** 点击状态区域检测 AI 连接是否可用 */
+  const handleTestConnection = useCallback(async () => {
+    if (aiConnectionStatus === 'testing') return
+    setAiConnectionStatus('testing')
+    try {
+      const result = await aiApi.testConnection(
+        aiConfig.chat.provider,
+        aiConfig.chat.endpoint,
+        getChatApiKey(aiConfig.chat),
+      )
+      setAiConnectionStatus(result.ok ? 'connected' : 'error', result.detail)
+    } catch (err) {
+      setAiConnectionStatus('error', String(err))
+    }
+  }, [aiConfig.chat, aiConnectionStatus, setAiConnectionStatus])
+
   // 稳定回调引用，避免子组件 memo 失效
   const onShowDetail = useCallback((payload: ChatRequestPayload) => {
     setDetailPayload(payload)
@@ -59,6 +77,11 @@ export default function AiSidePanel() {
   const onCloseDetail = useCallback(() => {
     setDetailPayload(null)
   }, [])
+
+  // 打开面板时滚动到最底部
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 自动滚动到底部：仅当流式进行中且用户在底部附近时滚动
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -100,6 +123,7 @@ export default function AiSidePanel() {
         aiConnectionStatus={aiConnectionStatus}
         aiConnectionDetail={aiConnectionDetail}
         onClear={handleClear}
+        onTestConnection={handleTestConnection}
       />
 
       {/* 消息列表 */}
@@ -138,6 +162,7 @@ const Header = memo(function Header({
   aiConnectionStatus,
   aiConnectionDetail,
   onClear,
+  onTestConnection,
 }: {
   providerLabel: string
   StatusIcon: typeof CircleIcon
@@ -146,15 +171,26 @@ const Header = memo(function Header({
   aiConnectionStatus: keyof typeof STATUS_CONFIG
   aiConnectionDetail: string | null
   onClear: () => void
+  onTestConnection: () => void
 }) {
+  const isTesting = aiConnectionStatus === 'testing'
+  const tooltipText = aiConnectionStatus === 'error'
+    ? (aiConnectionDetail || '连接失败') + ' | 点击重试'
+    : aiConnectionStatus === 'idle'
+      ? `${providerLabel} · 点击检测连接`
+      : isTesting
+        ? '正在检测连接…'
+        : `${providerLabel} · ${statusLabel} | 点击重新检测`
   return (
     <div className="px-3 py-2 border-b flex items-center justify-between shrink-0">
       <div className="flex items-center gap-2">
         <BotIcon className="w-4 h-4 text-primary" />
         <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">AI 助手</span>
-        <div
-          className="flex items-center gap-1 cursor-help"
-          title={aiConnectionStatus === 'error' ? aiConnectionDetail || '连接失败' : `${providerLabel} · ${statusLabel}`}
+        <button
+          onClick={onTestConnection}
+          disabled={isTesting}
+          title={tooltipText}
+          className="flex items-center gap-1 rounded px-1 py-0.5 hover:bg-muted/60 transition-colors disabled:opacity-70 disabled:cursor-wait"
         >
           <StatusIcon className={cn('w-3 h-3', statusColor)} />
           <span className={`text-[10px] ${
@@ -164,7 +200,7 @@ const Header = memo(function Header({
           }`}>
             {providerLabel}
           </span>
-        </div>
+        </button>
       </div>
       <button
         onClick={onClear}
