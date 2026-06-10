@@ -135,6 +135,21 @@ export function ChatConfigSection({
         </p>
       </div>
 
+      {/* 上下文窗口大小 */}
+      <div className="space-y-1">
+        <label className="text-sm font-medium">上下文窗口轮数: {config.contextWindowSize ?? 10}</label>
+        <input
+          type="range"
+          min={1} max={50} step={1}
+          value={config.contextWindowSize ?? 10}
+          onChange={(e) => onChange({ contextWindowSize: parseInt(e.target.value) || 10 })}
+          className="w-full"
+        />
+        <p className="text-xs text-muted-foreground">
+          保留最近 N 轮对话（每轮 = 提问 + 回答），超出部分自动压缩为摘要注入 system prompt。较小的值节省 token，较大的值保留更多上下文。
+        </p>
+      </div>
+
       {/* API Key */}
       <ApiKeyField
         label="API Key"

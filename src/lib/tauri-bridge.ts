@@ -285,6 +285,26 @@ export interface ChapterSummary {
   thinking: string
 }
 
+/** 对话总结参数 */
+export interface SummarizeConversationArgs {
+  endpoint: string
+  model: string
+  apiKey?: string
+  temperature: number
+  maxTokens?: number
+  messages: ChatMessage[]
+  previousSummary?: string
+  thinkingEnabled?: boolean
+}
+
+/** 对话总结结果 */
+export interface ConversationSummary {
+  summary: string
+  coveredCount: number
+  summaryChars: number
+  thinking: string
+}
+
 export interface SummarizeArgs {
   endpoint: string
   model: string
@@ -342,6 +362,11 @@ export const aiApi = {
   /** 总结章节内容（非流式） */
   async summarizeChapter(args: SummarizeArgs): Promise<ChapterSummary> {
     return invoke<ChapterSummary>('summarize_chapter', { args })
+  },
+
+  /** 总结历史对话（用于滑动窗口 context 压缩） */
+  async summarizeConversation(args: SummarizeConversationArgs): Promise<ConversationSummary> {
+    return invoke<ConversationSummary>('summarize_conversation', { args })
   },
 }
 

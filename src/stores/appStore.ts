@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Book, Chapter, Volume, AiConfig, AiMessage, AiChatConfig, AiToolCategory, AiToolPrompt } from '../types'
+import type { Book, Chapter, Volume, AiConfig, AiMessage, AiChatConfig, AiToolCategory, AiToolPrompt, ConversationSummary } from '../types'
 import { createStorage } from '../lib/utils'
 
 // ==================== App Store（全局业务状态）====================
@@ -128,6 +128,9 @@ function saveAiToolCategories(categories: AiToolCategory[]) {
 /** AI 对话记录持久化 */
 const aiConversationsStore = createStorage<Record<string, AiMessage[]>>('time-write-ai-conversations', {})
 
+/** AI 对话历史摘要持久化（按 bookId 分组，滑动窗口溢出后的压缩上下文） */
+const aiSummariesStore = createStorage<Record<string, ConversationSummary>>('time-write-ai-summaries', {})
+
 /** 用户偏好类型 */
 export type UserPreferences = {
   theme: 'light' | 'dark' | 'system'
@@ -181,17 +184,18 @@ function migrateLegacyAiConfig(raw: Record<string, unknown>): AiConfig {
   const oldProvider = (raw.provider as string) || 'bigmodel'
   const oldApiKey = raw.apiKey as string | undefined
   return {
-    chat: {
-      provider: (oldProvider as AiChatConfig['provider']),
-      endpoint: (raw.endpoint as string) || 'https://open.bigmodel.cn/api/paas/v4',
-      model: (raw.model as string) || 'glm-5.1',
-      temperature: (raw.temperature as number) ?? 0.7,
-      maxTokens: (raw.maxTokens as number) || 131072,
-      // 旧格式的 apiKey 同时赋给两个 provider，用户后续可独立修改
-      bigmodelApiKey: oldApiKey,
-      deepseekApiKey: oldApiKey,
-      thinkingEnabled: false,
-    },
+      chat: {
+        provider: (oldProvider as AiChatConfig['provider']),
+        endpoint: (raw.endpoint as string) || 'https://open.bigmodel.cn/api/paas/v4',
+        model: (raw.model as string) || 'glm-5.1',
+        temperature: (raw.temperature as number) ?? 0.7,
+        maxTokens: (raw.maxTokens as number) || 131072,
+        // 旧格式的 apiKey 同时赋给两个 provider，用户后续可独立修改
+        bigmodelApiKey: oldApiKey,
+        deepseekApiKey: oldApiKey,
+        thinkingEnabled: false,
+        contextWindowSize: 10,
+      },
     rag: {
       enabled: true,
       provider: 'bigmodel',
@@ -245,10 +249,18 @@ function loadAiConfig(): Partial<AiConfig> {
     const result = parsed as unknown as AiConfig
     let needsSave = false
     const chatObj = parsed.chat as Record<string, unknown> | undefined
-    if (chatObj && isLegacyChatApiKey(chatObj)) {
-      const migratedChat = migrateChatApiKey(chatObj) as unknown as AiChatConfig;
-      (result as unknown as Record<string, unknown>).chat = migratedChat
-      needsSave = true
+    if (chatObj) {
+      if (isLegacyChatApiKey(chatObj)) {
+        const migratedChat = migrateChatApiKey(chatObj) as unknown as AiChatConfig;
+        (result as unknown as Record<string, unknown>).chat = migratedChat
+        needsSave = true
+      }
+      // 兼容缺少 contextWindowSize 的旧配置（使用 result.chat 防止覆盖上方迁移结果）
+      const currentChat = (result as unknown as Record<string, unknown>).chat as Record<string, unknown>
+      if (currentChat && currentChat.contextWindowSize === undefined) {
+        currentChat.contextWindowSize = 10
+        needsSave = true
+      }
     }
     // 兼容 rag 子对象中仍使用旧 apiKey 字段或缺少 provider
     const ragObj = parsed.rag as Record<string, unknown> | undefined
@@ -299,6 +311,9 @@ interface AppState {
 
   // AI 对话记录（按 bookId 分组）
   aiConversations: Record<string, AiMessage[]>
+
+  // AI 对话历史摘要（按 bookId 分组，滑动窗口溢出后的压缩上下文）
+  aiSummaries: Record<string, ConversationSummary>
 
   // AI 工具箱分类列表
   aiToolCategories: AiToolCategory[]
@@ -354,6 +369,8 @@ interface AppState {
   setAiMessages: (bookId: string, messages: AiMessage[]) => void
   clearAiConversation: (bookId: string) => void
   persistAiConversation: (bookId: string) => void
+  setConversationSummary: (bookId: string, summary: ConversationSummary) => void
+  clearConversationSummary: (bookId: string) => void
   // AI 工具箱
   setAiToolCategories: (categories: AiToolCategory[]) => void
   addAiToolCategory: (category: AiToolCategory) => void
@@ -382,6 +399,7 @@ interface AppState {
 const savedPrefs = preferencesStore.load()
 const savedAiConfig = loadAiConfig()
 const savedAiConversations = aiConversationsStore.load()
+const savedAiSummaries = aiSummariesStore.load()
 
 
 export const useAppStore = create<AppState>()((set) => ({
@@ -403,6 +421,7 @@ export const useAppStore = create<AppState>()((set) => ({
         temperature: 0.7,
         maxTokens: 131072,
         thinkingEnabled: true,
+        contextWindowSize: 10,
       },
       rag: {
         enabled: true,
@@ -413,6 +432,7 @@ export const useAppStore = create<AppState>()((set) => ({
       ...savedAiConfig,
     },
     aiConversations: savedAiConversations,
+    aiSummaries: savedAiSummaries,
     aiToolCategories: loadAiToolCategories(),
     theme: savedPrefs.theme ?? 'system',
     eyeCareMode: savedPrefs.eyeCareMode ?? 'off',
@@ -617,7 +637,26 @@ export const useAppStore = create<AppState>()((set) => ({
         const conversations = { ...s.aiConversations }
         delete conversations[bookId]
         saveAiConversations(conversations)
-        return { aiConversations: conversations }
+        // 同步清除对话摘要
+        const summaries = { ...s.aiSummaries }
+        delete summaries[bookId]
+        aiSummariesStore.save(summaries)
+        return { aiConversations: conversations, aiSummaries: summaries }
+      }),
+
+    setConversationSummary: (bookId, summary) =>
+      set((s) => {
+        const summaries = { ...s.aiSummaries, [bookId]: summary }
+        aiSummariesStore.save(summaries)
+        return { aiSummaries: summaries }
+      }),
+
+    clearConversationSummary: (bookId) =>
+      set((s) => {
+        const summaries = { ...s.aiSummaries }
+        delete summaries[bookId]
+        aiSummariesStore.save(summaries)
+        return { aiSummaries: summaries }
       }),
 
     persistAiConversation: (_bookId) => {

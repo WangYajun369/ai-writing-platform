@@ -1138,6 +1138,150 @@ async fn stream_sse(
     Ok(accumulated)
 }
 
+// ---- 对话上下文窗口 ----
+
+/// 对话总结请求参数
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SummarizeConversationArgs {
+    pub endpoint: String,
+    pub model: String,
+    pub api_key: Option<String>,
+    pub temperature: f64,
+    pub max_tokens: Option<u32>,
+    /// 需要总结的历史消息（按时间顺序）
+    pub messages: Vec<ChatMessage>,
+    /// 已有的历史摘要（增量总结时传入）
+    pub previous_summary: Option<String>,
+    pub thinking_enabled: Option<bool>,
+}
+
+/// 对话总结结果
+#[derive(Debug, Clone, Serialize)]
+pub struct ConversationSummary {
+    /// 更新后的总结文本
+    pub summary: String,
+    /// 总结覆盖的消息数量
+    pub covered_count: usize,
+    /// 总结字数
+    pub summary_chars: usize,
+    /// 思考过程
+    pub thinking: String,
+}
+
+/// 总结历史对话内容（用于滑动窗口 context 管理）
+///
+/// 当对话轮次超过滑动窗口大小时，调用此命令将旧消息压缩为精炼摘要。
+/// 支持增量总结：传入 previous_summary 会在已有摘要基础上追加新内容。
+#[tauri::command]
+pub async fn summarize_conversation(
+    app: AppHandle,
+    args: SummarizeConversationArgs,
+) -> Result<ConversationSummary, String> {
+    let previous_hint = if let Some(ref prev) = args.previous_summary {
+        format!("\n\n对话此前已有部分历史摘要，请将新内容与历史摘要整合：\n\n【历史摘要】\n{}", prev)
+    } else {
+        String::new()
+    };
+
+    let system_prompt = format!(
+        "你是一个对话摘要助手。请将以下用户与 AI 助手的多轮对话压缩为精炼摘要。\n\n\
+        总结要求：\n\
+        1. 保留用户的核心需求、关键问题和重要决策\n\
+        2. 记录 AI 给出的重要建议、情节方向、人物设定等创作相关内容\n\
+        3. 忽略闲聊内容和客套话\n\
+        4. 使用简洁的段落形式，300字以内\n\
+        5. 新对话的内容在前，旧内容在后（时间倒序）\n\
+        请直接输出总结内容，不需要任何前缀说明。{}",
+        previous_hint
+    );
+
+    let conversation_text: String = args
+        .messages
+        .iter()
+        .filter(|m| !m.content.trim().is_empty())
+        .map(|m| format!("[{}]: {}", m.role, m.content))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .http1_only()
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .tcp_keepalive(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+    let url = format!(
+        "{}/chat/completions",
+        args.endpoint.trim_end_matches('/')
+    );
+
+    let mut req = client
+        .post(&url)
+        .header("Content-Type", "application/json");
+
+    if let Some(ref key) = args.api_key {
+        req = req.header("Authorization", format!("Bearer {}", key));
+    }
+
+    let mut body = serde_json::json!({
+        "model": args.model,
+        "messages": [
+            { "role": "system", "content": system_prompt },
+            { "role": "user", "content": conversation_text }
+        ],
+        "stream": false,
+        "temperature": args.temperature,
+    });
+
+    if let Some(max_tokens) = args.max_tokens {
+        body["max_tokens"] = serde_json::json!(max_tokens);
+    }
+
+    if args.thinking_enabled.unwrap_or(false) {
+        body["thinking"] = serde_json::json!({"type": "enabled"});
+    }
+
+    let response = req
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("对话总结请求失败: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("AI 服务返回错误 ({}): {}", status, text));
+    }
+
+    let data: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+
+    let content = data["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    let thinking = data["choices"][0]["message"]["reasoning_content"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    let covered_count = args.messages.iter().filter(|m| !m.content.trim().is_empty()).count();
+    let summary_chars = content.chars().count();
+
+    let _ = app.emit("conversation-summary-done", ());
+
+    Ok(ConversationSummary {
+        summary: content,
+        covered_count,
+        summary_chars,
+        thinking,
+    })
+}
+
 // ---- 章节内容总结 ----
 
 /// 章节总结结果

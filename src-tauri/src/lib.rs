@@ -87,6 +87,7 @@ pub fn run() {
             commands::ai::test_ai_connection,
             commands::ai::test_rag_connection,
             commands::ai::summarize_chapter,
+            commands::ai::summarize_conversation,
             // 导入导出
             commands::io::export_book,
             commands::io::import_txt,

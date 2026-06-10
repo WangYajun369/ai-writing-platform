@@ -108,6 +108,8 @@ export interface AiChatConfig {
   deepseekApiKey?: string
   /** DeepSeek 思考模式开关 */
   thinkingEnabled: boolean
+  /** 滑动窗口大小（保留最近 N 个轮次，每个轮次 = user + assistant 一对消息），默认 10 */
+  contextWindowSize: number
 }
 
 /** 获取当前选中服务商的 API Key */
@@ -196,6 +198,18 @@ export interface ChatRequestPayload {
     summaryChars: number
     thinking: string
   }
+}
+
+/** 对话历史摘要（滑动窗口溢出后的压缩上下文） */
+export interface ConversationSummary {
+  /** 压缩后的摘要文本 */
+  summary: string
+  /** 摘要覆盖的最早消息 ID（标记滑动窗口已推进到的位置） */
+  coveredUpToId: string
+  /** 摘要字数 */
+  summaryChars: number
+  /** 上次更新摘要的时间 */
+  updatedAt: string
 }
 
 /** AI 对话消息 */
