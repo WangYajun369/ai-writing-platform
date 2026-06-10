@@ -1,5 +1,10 @@
 # 更新日志
 
+## v0.7.1 (2026-06-10)
+
+### 修复
+- SnapshotPanel: 移除未使用变量 `currentBookId` 和 `result`，修复 TypeScript 编译错误（TS6133）
+
 ## v0.7.0 (2026-06-10)
 
 ### 新增
