@@ -12,6 +12,7 @@
 
 import { readFileSync } from 'fs'
 import { join, dirname } from 'path'
+import { execSync } from 'child_process'
 import { fileURLToPath } from 'url'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -242,30 +243,62 @@ function normalizeCargoVersion(v: string, latest?: string): string {
   return trimmed
 }
 
-// ========== 从 crates.io API 获取最新版本 ==========
+// ========== 从 crates.io API 获取最新版本和 License ==========
+// crates.io API v1 的 /crates/:name 端点不返回 license 字段，
+// 只有 /crates/:name/:version 版本详情端点才包含 license 信息。
+// 因此需要两次请求：先获取最新版本号，再获取该版本的 license。
+
 async function fetchLatestVersion(crateName: string): Promise<{ version: string; license: string } | null> {
-  const url = `https://crates.io/api/v1/crates/${encodeURIComponent(crateName)}`
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 10000)
+  const encodedName = encodeURIComponent(crateName)
+  const agent = 'MirageInk/check-versions (dependency checker)'
+  const headers = { 'User-Agent': agent, 'Accept': 'application/json' }
+
+  // 第一步：获取 crate 概览（包含 max_stable_version）
+  const crateUrl = `https://crates.io/api/v1/crates/${encodedName}`
 
   try {
-    const r = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'MirageInk/check-versions (dependency checker)',
-        'Accept': 'application/json',
-      },
-    })
+    const controller1 = new AbortController()
+    const timeout1 = setTimeout(() => controller1.abort(), 10000)
+
+    let r: Response
+    try {
+      r = await fetch(crateUrl, { signal: controller1.signal, headers })
+    } finally {
+      clearTimeout(timeout1)
+    }
+
     if (r.status === 404) return null
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     const data = (await r.json()) as CratesIoResponse
+
     // 优先使用 max_stable_version，保证拿到的不是 pre-release
-    return {
-      version: data.crate.max_stable_version || data.crate.max_version,
-      license: data.crate.license || 'Unknown',
+    const version = data.crate.max_stable_version || data.crate.max_version
+    if (!version) return null
+
+    // 第二步：获取该最新版本的详情（包含 license）
+    let license = 'Unknown'
+    try {
+      const versionUrl = `https://crates.io/api/v1/crates/${encodedName}/${version}`
+      const controller2 = new AbortController()
+      const timeout2 = setTimeout(() => controller2.abort(), 10000)
+
+      try {
+        const vr = await fetch(versionUrl, { signal: controller2.signal, headers })
+        if (vr.ok) {
+          const vdata = await vr.json()
+          license = vdata.version?.license || 'Unknown'
+        }
+      } finally {
+        clearTimeout(timeout2)
+      }
+    } catch {
+      // 无法获取 license 时保持 Unknown，不阻塞主流程
     }
-  } finally {
-    clearTimeout(timeout)
+
+    return { version, license }
+  } catch (e) {
+    // crate 概览请求失败时整体返回 null
+    return null
   }
 }
 
@@ -293,8 +326,86 @@ async function withConcurrency<T, R>(
   return results
 }
 
+// ========== Rust 工具链版本检测 ==========
+interface ToolchainInfo {
+  rustc: { version: string; latest: string; license: string }
+  cargo: { version: string; latest: string; license: string }
+  rustup: { version: string; latest: string; license: string }
+}
+
+async function getToolchainInfo(): Promise<ToolchainInfo> {
+  const run = (cmd: string): string => {
+    try {
+      return execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }).trim()
+    } catch {
+      return ''
+    }
+  }
+
+  const rustcRaw = run('rustc --version')
+  const cargoRaw = run('cargo --version')
+  const rustupRaw = run('rustup --version')
+
+  // 提取语义版本号: "rustc 1.96.0 (ac68faa20 2026-05-25)" -> "1.96.0"
+  const extractVer = (s: string) => {
+    const m = s.match(/(\d+\.\d+\.\d+)/)
+    return m ? m[1] : s || 'N/A'
+  }
+
+  const rustcVer = extractVer(rustcRaw)
+  const cargoVer = extractVer(cargoRaw)
+  const rustupVer = extractVer(rustupRaw)
+
+  // 获取最新稳定版本（从官方 channel TOML 中解析 [pkg.rustc]）
+  let rustcLatestVer = ''
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 8000)
+    const r = await fetch(
+      'https://static.rust-lang.org/dist/channel-rust-stable.toml',
+      { signal: controller.signal },
+    )
+    clearTimeout(timeout)
+    if (r.ok) {
+      const text = await r.text()
+      // 定位 [pkg.rustc] 小节
+      const rustcMatch = text.match(/\[pkg\.rustc[^\]]*\]\s*\n\s*version\s*=\s*"(\d+\.\d+\.\d+)/)
+      if (rustcMatch) rustcLatestVer = rustcMatch[1]
+    }
+  } catch {
+    // 降级：从 rustup check 获取最新稳定版号
+    const checkOutput = run('rustup check')
+    // 格式: stable-... -> 1.96.0 (hash date) 或 update available: X -> Y
+    const m = checkOutput.match(/->\s*(\d+\.\d+\.\d+)/)
+    if (m) rustcLatestVer = m[1]
+  }
+
+  if (!rustcLatestVer) rustcLatestVer = rustcVer
+
+  return {
+    rustc: {
+      version: rustcVer,
+      latest: rustcLatestVer,
+      license: 'MIT OR Apache-2.0',
+    },
+    cargo: {
+      version: cargoVer,
+      latest: rustcLatestVer, // cargo 随 rustc 一起发布，版本号与 rustc 同步
+      license: 'MIT OR Apache-2.0',
+    },
+    rustup: {
+      version: rustupVer,
+      latest: rustupVer, // rustup 自行管理更新
+      license: 'MIT OR Apache-2.0',
+    },
+  }
+}
+
 // ========== 主逻辑 ==========
 async function main() {
+  // 0. 获取 Rust 工具链信息
+  const toolchain = await getToolchainInfo()
+
   // 1. 读取并解析 Cargo.toml
   const cargoPath = join(ROOT, 'src-tauri', 'Cargo.toml')
   let cargoContent: string
@@ -324,6 +435,40 @@ async function main() {
   console.log(
     `\n${c.bold}🦀 正在检查 ${entries.length} 个 Rust 依赖的最新版本...${c.reset}\n`,
   )
+
+  // 打印 Rust 工具链信息
+  const toolStale =
+    toolchain.rustc.version !== 'N/A' &&
+    toolchain.rustc.version !== toolchain.rustc.latest
+
+  console.log(`${c.bold}🔧 Rust 工具链环境:${c.reset}`)
+  console.log(
+    `${c.dim}  ${'工具'.padEnd(12)} ${'当前版本'.padEnd(14)} ${'最新版本'.padEnd(14)} ${'协议'.padEnd(22)}${c.reset}`,
+  )
+  console.log(c.dim + '  ' + '─'.repeat(62) + c.reset)
+
+  const printTool = (
+    name: string,
+    version: string,
+    latest: string,
+    license: string,
+  ) => {
+    const stale = version !== 'N/A' && version !== latest
+    const statusIcon = version === 'N/A'
+      ? c.red + '❌ 未检测到'
+      : stale
+        ? c.yellow + '⬆️  可升级'
+        : c.green + '✅ 最新'
+    console.log(
+      `  ${name.padEnd(12)} ${c.cyan}${version.padEnd(14)}${c.reset} ${latest !== version ? c.yellow : c.green}${latest.padEnd(14)}${c.reset} ${statusIcon.padEnd(12)}${c.reset} ${c.dim}${license}${c.reset}`,
+    )
+  }
+
+  printTool('rustc', toolchain.rustc.version, toolchain.rustc.latest, toolchain.rustc.license)
+  printTool('cargo', toolchain.cargo.version, toolchain.cargo.latest, toolchain.cargo.license)
+  printTool('rustup', toolchain.rustup.version, toolchain.rustup.latest, toolchain.rustup.license)
+
+  console.log()
 
   // 4. 并发获取 crates.io 最新版本
   const start = Date.now()

@@ -6,6 +6,7 @@
 
 import { existsSync, readFileSync } from 'fs'
 import { join, dirname } from 'path'
+import { execSync } from 'child_process'
 import { fileURLToPath } from 'url'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -43,19 +44,45 @@ function fileContains(relPath, ...patterns) {
 console.log('\n🔍  TimeWrite 项目完整性检测\n')
 console.log('='.repeat(50))
 
+// ── 0. TypeScript 类型检查 ──────────────────────────────────
+console.log('\n🔎  [0/8] TypeScript 类型检查')
+try {
+  execSync('npx tsc --noEmit', { cwd: ROOT, stdio: 'pipe', timeout: 120000 })
+  console.log('  ✅  tsc --noEmit 通过（0 个类型错误）')
+  passed++
+} catch (e) {
+  const stderr = e.stderr?.toString() || e.stdout?.toString() || ''
+  // 提取错误行（去除 npm warn 等噪音）
+  const errorLines = stderr.split('\n').filter(l =>
+    l.includes('error TS') && !l.includes('npm warn')
+  )
+  if (errorLines.length > 0) {
+    console.log(`  ❌  tsc --noEmit 发现 ${errorLines.length} 个类型错误：`)
+    errorLines.slice(0, 15).forEach(l => console.log(`     ${l.trim()}`))
+    if (errorLines.length > 15) console.log(`     ... 还有 ${errorLines.length - 15} 个错误`)
+    errors.push(`TypeScript 类型错误 (${errorLines.length} 个)`)
+    failed++
+  } else {
+    // tsc 本身崩溃但无具体错误行
+    console.log('  ❌  tsc --noEmit 执行失败')
+    errors.push('TypeScript 编译失败（无具体错误信息）')
+    failed++
+  }
+}
+
 // ── 1. 根目录配置文件 ──────────────────────────────────────
-console.log('\n📦  [1/7] 根目录配置文件')
+console.log('\n📦  [1/8] 根目录配置文件')
 check('package.json 存在', fileExists('package.json'))
 check('package.json 含 tauri 命令', fileContains('package.json', '"tauri"'))
 check('index.html 存在', fileExists('index.html'))
 check('vite.config.ts 存在', fileExists('vite.config.ts'))
 check('tsconfig.json 存在', fileExists('tsconfig.json'))
 check('tsconfig.node.json 存在', fileExists('tsconfig.node.json'))
-check('tailwind.config.ts 存在', fileExists('tailwind.config.ts'))
-check('postcss.config.js 存在', fileExists('postcss.config.js'))
+check('tailwind.config.ts 不存在（已迁移至 CSS-first 配置）', !fileExists('tailwind.config.ts'))
+check('postcss.config.js 不存在（Tailwind v4 使用 Vite 插件，无需 PostCSS）', !fileExists('postcss.config.js'))
 
 // ── 2. src 前端核心文件 ────────────────────────────────────
-console.log('\n⚛️   [2/7] 前端源码（src/）')
+console.log('\n⚛️   [2/8] 前端源码（src/）')
 const srcFiles = [
   'src/main.tsx',
   'src/App.tsx',
@@ -68,14 +95,14 @@ const srcFiles = [
 for (const f of srcFiles) check(f, fileExists(f))
 
 // ── 3. 状态管理 ────────────────────────────────────────────
-console.log('\n🗄️   [3/7] 状态管理（stores/）')
+console.log('\n🗄️   [3/8] 状态管理（stores/）')
 check('stores/appStore.ts', fileExists('src/stores/appStore.ts'))
 check('stores/uiAtoms.ts', fileExists('src/stores/uiAtoms.ts'))
 check('appStore 包含 Zustand create', fileContains('src/stores/appStore.ts', 'create<'))
 check('uiAtoms 包含 Jotai atom', fileContains('src/stores/uiAtoms.ts', "from 'jotai'"))
 
 // ── 4. 页面组件 ────────────────────────────────────────────
-console.log('\n📄  [4/7] 页面组件（pages/）')
+console.log('\n📄  [4/8] 页面组件（pages/）')
 check('LibraryPage.tsx', fileExists('src/pages/LibraryPage.tsx'))
 check('EditorPage.tsx', fileExists('src/pages/EditorPage.tsx'))
 check('SettingsPage.tsx', fileExists('src/pages/SettingsPage.tsx'))
@@ -83,7 +110,7 @@ check('LibraryPage 含路由导入', fileContains('src/pages/LibraryPage.tsx', '
 check('EditorPage 含 useParams', fileContains('src/pages/EditorPage.tsx', 'useParams'))
 
 // ── 5. 功能组件 ────────────────────────────────────────────
-console.log('\n🧩  [5/7] 功能组件（components/）')
+console.log('\n🧩  [5/8] 功能组件（components/）')
 const compFiles = [
   'src/components/library/BookCard.tsx',
   'src/components/library/NewBookDialog.tsx',
@@ -99,10 +126,10 @@ const compFiles = [
 for (const f of compFiles) check(f, fileExists(f))
 check('RichTextEditor 含 TipTap useEditor', fileContains('src/components/editor/RichTextEditor.tsx', 'useEditor'))
 check('RichTextEditor 含 StarterKit', fileContains('src/components/editor/RichTextEditor.tsx', 'StarterKit'))
-check('AiSidePanel 含流式 fetch', fileContains('src/components/ai/AiSidePanel.tsx', 'stream: true'))
+check('useAiChat 含流式事件监听', fileExists('src/components/ai/useAiChat.ts') && fileContains('src/components/ai/useAiChat.ts', 'ai-stream-chunk'))
 
 // ── 6. Tauri Rust 后端 ─────────────────────────────────────
-console.log('\n🦀  [6/7] Rust 后端（src-tauri/）')
+console.log('\n🦀  [6/8] Rust 后端（src-tauri/）')
 const rustFiles = [
   'src-tauri/Cargo.toml',
   'src-tauri/tauri.conf.json',
@@ -132,7 +159,7 @@ check('db/mod.rs 含完整表结构（books/chapters/snapshots）',
   fileContains('src-tauri/src/db/mod.rs', 'CREATE TABLE IF NOT EXISTS books', 'CREATE TABLE IF NOT EXISTS chapters', 'CREATE TABLE IF NOT EXISTS snapshots'))
 
 // ── 7. 关键依赖一致性检查 ──────────────────────────────────
-console.log('\n📐  [7/7] 依赖与类型一致性')
+console.log('\n📐  [7/8] 依赖与类型一致性')
 let pkgJson
 try {
   pkgJson = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8'))

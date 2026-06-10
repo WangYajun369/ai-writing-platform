@@ -11,6 +11,7 @@
 
 import { readFileSync } from 'fs'
 import { join, dirname } from 'path'
+import { execSync } from 'child_process'
 import { fileURLToPath } from 'url'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -84,6 +85,100 @@ function getStatus(current: string, latest: string): VersionInfo['status'] {
   if (lMin > cMin) return 'minor'
   if (lPat > cPat) return 'patch'
   return 'up-to-date'
+}
+
+// ========== Node.js 工具链版本检测 ==========
+interface ToolchainInfo {
+  node: { version: string; latest: string; license: string }
+  pnpm: { version: string; latest: string; license: string }
+  npm: { version: string; latest: string; license: string }
+  tsx: { version: string; latest: string; license: string }
+}
+
+async function getToolchainInfo(): Promise<ToolchainInfo> {
+  const run = (cmd: string): string => {
+    try {
+      return execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }).trim()
+    } catch {
+      return ''
+    }
+  }
+
+  const extractVer = (s: string) => {
+    const m = s.match(/(\d+\.\d+\.\d+)/)
+    return m ? m[1] : s || 'N/A'
+  }
+
+  const nodeRaw = run('node --version')
+  const pnpmRaw = run('pnpm --version')
+  const npmRaw = run('npm --version')
+  const tsxRaw = run('npx tsx --version')
+
+  const nodeVer = nodeRaw.replace(/^v/, '') || 'N/A'
+  const pnpmVer = extractVer(pnpmRaw)
+  const npmVer = extractVer(npmRaw)
+  const tsxVer = extractVer(tsxRaw)
+
+  // 获取最新版本
+  let nodeLatest = ''
+  let pnpmLatest = ''
+  let npmLatest = ''
+  let tsxLatest = ''
+
+  const fetchJson = async (url: string, timeoutMs = 8000) => {
+    const controller = new AbortController()
+    const t = setTimeout(() => controller.abort(), timeoutMs)
+    try {
+      const r = await fetch(url, { signal: controller.signal })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      return (await r.json()) as Record<string, unknown>
+    } catch {
+      return null
+    } finally {
+      clearTimeout(t)
+    }
+  }
+
+  // Node.js 最新 LTS 版本（从 nodejs.org 发布列表）
+  try {
+    const releases = (await fetchJson(
+      'https://nodejs.org/download/release/index.json',
+    )) as Array<{ version: string; lts: string | false }> | null
+    if (releases) {
+      const lts = releases.find(r => r.lts !== false)
+      if (lts) nodeLatest = lts.version.replace(/^v/, '')
+    }
+  } catch { /* ignore */ }
+
+  // pnpm 最新版本（从 npm registry）
+  try {
+    const data = await fetchJson('https://registry.npmjs.org/pnpm/latest')
+    if (data?.version) pnpmLatest = data.version as string
+  } catch { /* ignore */ }
+
+  // npm 最新版本（从 npm registry）
+  try {
+    const data = await fetchJson('https://registry.npmjs.org/npm/latest')
+    if (data?.version) npmLatest = data.version as string
+  } catch { /* ignore */ }
+
+  // tsx 最新版本（从 npm registry）
+  try {
+    const data = await fetchJson('https://registry.npmjs.org/tsx/latest')
+    if (data?.version) tsxLatest = data.version as string
+  } catch { /* ignore */ }
+
+  if (!nodeLatest) nodeLatest = nodeVer
+  if (!pnpmLatest) pnpmLatest = pnpmVer
+  if (!npmLatest) npmLatest = npmVer
+  if (!tsxLatest) tsxLatest = tsxVer
+
+  return {
+    node: { version: nodeVer, latest: nodeLatest, license: 'MIT' },
+    pnpm: { version: pnpmVer, latest: pnpmLatest, license: 'MIT' },
+    npm: { version: npmVer, latest: npmLatest, license: 'Artistic-2.0' },
+    tsx: { version: tsxVer, latest: tsxLatest, license: 'MIT' },
+  }
 }
 
 // ========== 读取 pnpm-lock.yaml（获取实际安装版本）==========
@@ -188,6 +283,41 @@ async function main() {
   console.log(
     `\n${c.bold}📦 正在检查 ${entries.length} 个依赖的最新版本...${c.reset}\n`,
   )
+
+  // 打印 Node.js 工具链信息
+  const toolchain = await getToolchainInfo()
+
+  console.log(`${c.bold}🔧 Node.js 工具链环境:${c.reset}`)
+  console.log(
+    `${c.dim}  ${'工具'.padEnd(12)} ${'当前版本'.padEnd(14)} ${'最新版本'.padEnd(14)} ${'协议'.padEnd(18)}${c.reset}`,
+  )
+  console.log(c.dim + '  ' + '─'.repeat(58) + c.reset)
+
+  const printTool = (
+    name: string,
+    version: string,
+    latest: string,
+    license: string,
+  ) => {
+    const stale = version !== 'N/A' && version !== latest
+    const statusIcon = version === 'N/A'
+      ? c.red + '❌ 未检测到'
+      : stale
+        ? c.yellow + '⬆️  可升级'
+        : c.green + '✅ 最新'
+    const verColor = stale ? c.yellow : c.cyan
+    const latestColor = stale ? c.yellow : c.green
+    console.log(
+      `  ${name.padEnd(12)} ${verColor}${version.padEnd(14)}${c.reset} ${latestColor}${latest.padEnd(14)}${c.reset} ${statusIcon.padEnd(14)}${c.reset} ${c.dim}${license}${c.reset}`,
+    )
+  }
+
+  printTool('node', toolchain.node.version, toolchain.node.latest, toolchain.node.license)
+  printTool('pnpm', toolchain.pnpm.version, toolchain.pnpm.latest, toolchain.pnpm.license)
+  printTool('npm', toolchain.npm.version, toolchain.npm.latest, toolchain.npm.license)
+  printTool('tsx', toolchain.tsx.version, toolchain.tsx.latest, toolchain.tsx.license)
+
+  console.log()
 
   // 3. 并发获取最新版本
   const start = Date.now()
