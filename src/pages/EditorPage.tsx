@@ -25,6 +25,8 @@ import StatusBar from '@/components/layout/StatusBar'
 
 /** AI 面板比例本地持久化（0-1） */
 const aiPanelStorage = createStorage('mirageink-ai-panel-ratio', { ratio: 0.3 })
+/** 左侧目录面板像素宽度本地持久化 */
+const sidebarPanelStorage = createStorage('mirageink-sidebar-width', { width: 256 })
 
 export default function EditorPage() {
   const { bookId } = useParams<{ bookId: string }>()
@@ -75,6 +77,19 @@ export default function EditorPage() {
     } catch { /* ignore */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // 左侧目录面板可拖拽调整宽度（像素模式：固定像素宽度，不受窗口缩放影响）
+  const {
+    width: sidebarWidth,
+    resizeHandleProps: sidebarResizeHandleProps,
+    isResizing: sidebarResizing,
+  } = useResizeHandle({
+    initialWidth: sidebarPanelStorage.load().width,
+    minWidth: 180,
+    maxWidth: 500,
+    direction: 'left',
+    onResizeEnd: (width) => sidebarPanelStorage.patch({ width }),
+  })
 
   // AI 面板可拖拽调整宽度（比例模式：随窗口自动缩放）
   const { width: aiPanelWidth, resizeHandleProps, isResizing: aiResizing } = useResizeHandle({
@@ -169,11 +184,24 @@ export default function EditorPage() {
 
       {/* 主编辑区 */}
       <div ref={editorAreaRef} className="flex-1 flex overflow-hidden">
-        {/* 左侧目录树 */}
+        {/* 左侧目录树 + 拖拽手柄 */}
         {sidebarOpen && !zenMode && (
-          <aside className="sidebar w-64 border-r bg-card flex-shrink-0 flex flex-col overflow-hidden">
-            <OutlinePanel bookId={bookId!} />
-          </aside>
+          <>
+            <aside
+              className="border-r bg-card shrink-0 flex flex-col overflow-hidden"
+              style={{ width: sidebarWidth }}
+            >
+              <OutlinePanel bookId={bookId!} />
+            </aside>
+            {/* 目录拖拽分界线 */}
+            <div
+              {...sidebarResizeHandleProps}
+              className={cn(
+                'w-1.5 shrink-0 cursor-col-resize transition-colors bg-border/30 hover:bg-primary/60 active:bg-primary',
+                sidebarResizing && 'bg-primary/60',
+              )}
+            />
+          </>
         )}
 
         {/* 编辑器区域 */}
