@@ -34,14 +34,15 @@ function guessMimeType(path: string): string {
   return mimeMap[ext] ?? 'image/png'
 }
 
-/** Uint8Array → base64 字符串 */
-function uint8ToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  const len = bytes.length
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]!)
-  }
-  return btoa(binary)
+/** 将 Uint8Array 转为 data: URL（使用浏览器原生 Blob + FileReader，避免逐字符拼接 O(n²) 问题） */
+function uint8ToDataUrl(bytes: Uint8Array, mime: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const blob = new Blob([bytes as BlobPart], { type: mime })
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
 }
 
 export default function ImageResizeNodeView({
@@ -85,9 +86,8 @@ export default function ImageResizeNodeView({
 
       const filePath = selectedPath as string
       const fileBytes = await readFile(filePath)
-      const base64 = uint8ToBase64(fileBytes)
       const mime = guessMimeType(filePath)
-      const dataUrl = `data:${mime};base64,${base64}`
+      const dataUrl = await uint8ToDataUrl(fileBytes, mime)
 
       updateAttributes({ src: dataUrl })
     } catch (err) {

@@ -199,6 +199,7 @@ pub async fn update_book(db: State<'_, AppDb>, id: String, params: serde_json::V
 /// 设置书籍封面：从源路径复制封面图片到应用数据目录，更新数据库
 ///
 /// 会自动校验文件扩展名和大小，超出限制时返回错误信息。
+/// 当 source_path 为空时，表示移除封面。
 #[tauri::command]
 pub async fn set_book_cover(
     app: AppHandle,
@@ -206,6 +207,20 @@ pub async fn set_book_cover(
     id: String,
     source_path: String,
 ) -> Result<Book, String> {
+    // 处理移除封面的情况
+    if source_path.trim().is_empty() {
+        let ts = now();
+        {
+            let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
+            conn.execute(
+                "UPDATE books SET cover_image=NULL, updated_at=?1 WHERE id=?2",
+                params![ts, id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        return get_book(db, id).await;
+    }
+
     let src = Path::new(&source_path);
 
     // 1. 校验扩展名

@@ -143,15 +143,18 @@ export default function EditorToolbar() {
     return mimeMap[ext] ?? 'image/png'
   }, [])
 
-  /** 将 Uint8Array 转为 base64 字符串 */
-  const uint8ToBase64 = useCallback((bytes: Uint8Array): string => {
-    let binary = ''
-    const len = bytes.length
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(bytes[i]!)
-    }
-    return btoa(binary)
-  }, [])
+  /** 将 Uint8Array 转为 data: URL（使用浏览器原生 Blob + FileReader，避免逐字符拼接 O(n²) 问题） */
+  const uint8ToDataUrl = useCallback(
+    (bytes: Uint8Array, mime: string): Promise<string> =>
+      new Promise((resolve, reject) => {
+        const blob = new Blob([bytes as BlobPart], { type: mime })
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as string)
+        reader.onerror = () => reject(reader.error)
+        reader.readAsDataURL(blob)
+      }),
+    []
+  )
 
   /** 插入图片 */
   const handleInsertImage = useCallback(async () => {
@@ -169,15 +172,14 @@ export default function EditorToolbar() {
 
       const filePath = selected as string
       const fileBytes = await readFile(filePath)
-      const base64 = uint8ToBase64(fileBytes)
       const mime = guessMimeType(filePath)
-      const dataUrl = `data:${mime};base64,${base64}`
+      const dataUrl = await uint8ToDataUrl(fileBytes, mime)
 
       editor.chain().focus().setImage({ src: dataUrl }).run()
     } catch (err) {
       console.error('插入图片失败', err)
     }
-  }, [editor, guessMimeType, uint8ToBase64])
+  }, [editor, guessMimeType, uint8ToDataUrl])
 
   async function handleToggleWorldWindow() {
     if (worldWindowOpen) {

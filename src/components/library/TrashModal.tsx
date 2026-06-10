@@ -10,6 +10,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { Trash2Icon, RotateCcwIcon, XIcon, AlertTriangleIcon, BookOpenIcon } from 'lucide-react'
 import { bookApi } from '@/lib/tauri-bridge'
 import { formatWordCount, formatRelativeTime } from '@/lib/utils'
+import { resolveCoverSrc } from './CoverPicker'
 import type { Book } from '@/types'
 
 interface TrashModalProps {
@@ -21,6 +22,7 @@ export default function TrashModal({ onClose, onChanged }: TrashModalProps) {
   const [deletedBooks, setDeletedBooks] = useState<Book[]>([])
   const [loading, setLoading] = useState(true)
   const [actioning, setActioning] = useState<string | null>(null)
+  const [coverSrcs, setCoverSrcs] = useState<Record<string, string | undefined>>({})
 
   const loadDeleted = useCallback(async () => {
     setLoading(true)
@@ -37,6 +39,30 @@ export default function TrashModal({ onClose, onChanged }: TrashModalProps) {
   useEffect(() => {
     loadDeleted()
   }, [loadDeleted])
+
+  // 异步解析封面为可渲染的 Blob URL
+  useEffect(() => {
+    const controller = new AbortController()
+    const prevBlobUrls = new Set(Object.values(coverSrcs).filter((s): s is string => typeof s === 'string' && s.startsWith('blob:')))
+    const newSrcs: Record<string, string | undefined> = {}
+    Promise.all(
+      deletedBooks.map(async (book) => {
+        const src = await resolveCoverSrc(book.coverImage)
+        newSrcs[book.id] = src
+      })
+    ).then(() => {
+      if (!controller.signal.aborted) {
+        // 释放不在新列表中的旧 Blob URL
+        for (const url of prevBlobUrls) {
+          if (!Object.values(newSrcs).includes(url)) {
+            URL.revokeObjectURL(url)
+          }
+        }
+        setCoverSrcs(newSrcs)
+      }
+    })
+    return () => { controller.abort() }
+  }, [deletedBooks])
 
   /** 恢复单个作品 */
   async function handleRestore(book: Book) {
@@ -129,9 +155,9 @@ export default function TrashModal({ onClose, onChanged }: TrashModalProps) {
                 >
                   {/* 封面缩略图 */}
                   <div className="w-9 h-12 rounded bg-gradient-to-br from-muted-foreground/10 to-muted-foreground/5 flex-shrink-0 flex items-center justify-center overflow-hidden">
-                    {book.coverImage ? (
+                    {coverSrcs[book.id] ? (
                       <img
-                        src={book.coverImage}
+                        src={coverSrcs[book.id]}
                         alt={book.title}
                         className="w-full h-full object-cover"
                       />
