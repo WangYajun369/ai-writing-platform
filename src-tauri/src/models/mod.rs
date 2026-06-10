@@ -68,6 +68,11 @@ pub struct Chapter {
     pub updated_at: String,
     #[serde(rename = "deletedAt")]
     pub deleted_at: Option<String>,
+    /// AI 章节总结内容
+    pub summary: Option<String>,
+    /// 上次总结时间 ISO
+    #[serde(rename = "summaryAt")]
+    pub summary_at: Option<String>,
 }
 
 /// 版本快照 — 对应 `snapshots` 表，type 为 auto 或 milestone

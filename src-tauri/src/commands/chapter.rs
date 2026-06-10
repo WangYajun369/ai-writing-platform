@@ -18,7 +18,7 @@ fn now() -> String { Utc::now().to_rfc3339() }
 pub async fn list_chapters(db: State<'_, AppDb>, book_id: String) -> Result<Vec<Chapter>, String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     let mut stmt = conn.prepare(
-        "SELECT id,book_id,volume_id,title,word_count,status,sort_order,created_at,updated_at,deleted_at FROM chapters WHERE book_id=?1 AND deleted_at IS NULL ORDER BY sort_order"
+        "SELECT id,book_id,volume_id,title,word_count,status,sort_order,created_at,updated_at,deleted_at,summary,summary_at FROM chapters WHERE book_id=?1 AND deleted_at IS NULL ORDER BY sort_order"
     ).map_err(|e| e.to_string())?;
     let items = stmt.query_map(params![book_id], |row| {
         Ok(Chapter {
@@ -33,6 +33,8 @@ pub async fn list_chapters(db: State<'_, AppDb>, book_id: String) -> Result<Vec<
             created_at: row.get(7)?,
             updated_at: row.get(8)?,
             deleted_at: row.get(9)?,
+            summary: row.get(10)?,
+            summary_at: row.get(11)?,
         })
     }).map_err(|e| e.to_string())?;
     items.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
@@ -83,6 +85,8 @@ pub async fn create_chapter(db: State<'_, AppDb>, params: CreateChapterParams) -
         created_at: ts.clone(),
         updated_at: ts,
         deleted_at: None,
+        summary: None,
+        summary_at: None,
     })
 }
 
@@ -157,7 +161,7 @@ pub async fn rename_chapter(db: State<'_, AppDb>, chapter_id: String, title: Str
 pub async fn list_deleted_chapters(db: State<'_, AppDb>, book_id: String) -> Result<Vec<Chapter>, String> {
     let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
     let mut stmt = conn.prepare(
-        "SELECT id,book_id,volume_id,title,word_count,status,sort_order,created_at,updated_at,deleted_at FROM chapters WHERE book_id=?1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC"
+        "SELECT id,book_id,volume_id,title,word_count,status,sort_order,created_at,updated_at,deleted_at,summary,summary_at FROM chapters WHERE book_id=?1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC"
     ).map_err(|e| e.to_string())?;
     let items = stmt.query_map(params![book_id], |row| {
         Ok(Chapter {
@@ -172,6 +176,8 @@ pub async fn list_deleted_chapters(db: State<'_, AppDb>, book_id: String) -> Res
             created_at: row.get(7)?,
             updated_at: row.get(8)?,
             deleted_at: row.get(9)?,
+            summary: row.get(10)?,
+            summary_at: row.get(11)?,
         })
     }).map_err(|e| e.to_string())?;
     items.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
@@ -307,4 +313,46 @@ pub async fn move_chapter_to_volume(
     ).map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+/// 保存章节的 AI 总结内容
+#[tauri::command]
+pub async fn save_chapter_summary(
+    db: State<'_, AppDb>,
+    chapter_id: String,
+    summary: String,
+) -> Result<(), String> {
+    let ts = now();
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
+    conn.execute(
+        "UPDATE chapters SET summary=?1, summary_at=?2 WHERE id=?3",
+        params![summary, ts, chapter_id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 获取章节的总结信息（summary 和 summary_at）
+#[derive(serde::Serialize)]
+pub struct ChapterSummaryInfo {
+    pub summary: Option<String>,
+    #[serde(rename = "summaryAt")]
+    pub summary_at: Option<String>,
+}
+
+#[tauri::command]
+pub async fn get_chapter_summary(
+    db: State<'_, AppDb>,
+    chapter_id: String,
+) -> Result<ChapterSummaryInfo, String> {
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
+    conn.query_row(
+        "SELECT summary, summary_at FROM chapters WHERE id=?1",
+        params![chapter_id],
+        |row| {
+            Ok(ChapterSummaryInfo {
+                summary: row.get(0)?,
+                summary_at: row.get(1)?,
+            })
+        },
+    ).map_err(|e| e.to_string())
 }

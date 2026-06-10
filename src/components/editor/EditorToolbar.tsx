@@ -17,6 +17,7 @@ import {
   SidebarIcon,
   BotIcon,
   BookMarkedIcon,
+  BookOpenIcon,
   ClockIcon,
   ZapIcon,
   LayoutIcon,
@@ -40,13 +41,14 @@ import {
   ArrowLeftToLineIcon,
   ArrowRightToLineIcon,
   ChevronDownIcon,
+  WrenchIcon,
 } from 'lucide-react'
 import {
-    sidebarOpenAtom,
-    zenModeAtom,
-    aiPanelOpenAtom,
-    isSavingAtom, lastSavedAtom,
-    editorInstanceAtom,
+  sidebarOpenAtom,
+  zenModeAtom,
+  aiPanelOpenAtom,
+  isSavingAtom, lastSavedAtom,
+  editorInstanceAtom,
 } from '@/stores/uiAtoms.ts'
 import { useCurrentBook, useCurrentChapter, useAppStore } from '@/stores/appStore.ts'
 import { cn } from '@/lib/utils.ts'
@@ -65,6 +67,8 @@ export default function EditorToolbar() {
   const [aiPanelOpen, setAiPanelOpen] = useAtom(aiPanelOpenAtom)
   const [historyWindowOpen, setHistoryWindowOpen] = useState(false)
   const [worldWindowOpen, setWorldWindowOpen] = useState(false)
+  const [summaryWindowOpen, setSummaryWindowOpen] = useState(false)
+  const [aiToolboxWindowOpen, setAiToolboxWindowOpen] = useState(false)
   const currentBook = useCurrentBook()
   const currentChapter = useCurrentChapter()
   const { fontSize, setFontSize } = useAppStore()
@@ -215,6 +219,49 @@ export default function EditorToolbar() {
     }
   }
 
+  async function handleToggleSummaryWindow() {
+    if (summaryWindowOpen) {
+      try {
+        await invoke('close_summary_window')
+      } catch (e) {
+        console.error('关闭章节总结窗口失败', e)
+      }
+      setSummaryWindowOpen(false)
+    } else {
+      if (!currentChapter) return
+      try {
+        await invoke('open_summary_window', {
+          chapterId: currentChapter.id,
+          bookId: currentChapter.bookId,
+          chapterTitle: currentChapter.title,
+        })
+      } catch (e) {
+        console.error('打开章节总结窗口失败', e)
+        return
+      }
+      setSummaryWindowOpen(true)
+    }
+  }
+
+  async function handleToggleAiToolboxWindow() {
+    if (aiToolboxWindowOpen) {
+      try {
+        await invoke('close_ai_toolbox_window')
+      } catch (e) {
+        console.error('关闭 AI 工具箱窗口失败', e)
+      }
+      setAiToolboxWindowOpen(false)
+    } else {
+      try {
+        await invoke('open_ai_toolbox_window')
+      } catch (e) {
+        console.error('打开 AI 工具箱窗口失败', e)
+        return
+      }
+      setAiToolboxWindowOpen(true)
+    }
+  }
+
   // 监听章节切换，若版本历史窗口已打开则自动跟随到新章节
   useEffect(() => {
     if (!historyWindowOpen || !currentChapter) return
@@ -235,6 +282,24 @@ export default function EditorToolbar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentChapter?.id])
 
+  // 监听章节切换，若章节总结窗口已打开则自动跟随到新章节
+  useEffect(() => {
+    if (!summaryWindowOpen || !currentChapter) return
+    invoke('open_summary_window', {
+      chapterId: currentChapter.id,
+      bookId: currentChapter.bookId,
+      chapterTitle: currentChapter.title,
+    })
+      .then(() => {
+        setSummaryWindowOpen(true)
+      })
+      .catch((e) => {
+        console.error('切换章节总结窗口失败', e)
+        setSummaryWindowOpen(false)
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentChapter?.id])
+
   // 监听 world 窗口被用户主动关闭（点 X），同步按钮状态
   useEffect(() => {
     const unlistenWorld = listen('world-window-closed', () => {
@@ -243,9 +308,17 @@ export default function EditorToolbar() {
     const unlistenHistory = listen('history-window-closed', () => {
       setHistoryWindowOpen(false)
     })
+    const unlistenSummary = listen('summary-window-closed', () => {
+      setSummaryWindowOpen(false)
+    })
+    const unlistenAiToolbox = listen('ai-toolbox-window-closed', () => {
+      setAiToolboxWindowOpen(false)
+    })
     return () => {
       unlistenWorld.then((fn) => fn())
       unlistenHistory.then((fn) => fn())
+      unlistenSummary.then((fn) => fn())
+      unlistenAiToolbox.then((fn) => fn())
     }
   }, [])
 
@@ -469,6 +542,13 @@ export default function EditorToolbar() {
       <div className="w-px h-5 bg-border mx-1" />
 
       <ToolbarBtn
+        active={summaryWindowOpen}
+        onClick={handleToggleSummaryWindow}
+        title="章节总结"
+        icon={<BookOpenIcon className="w-4 h-4" />}
+      />
+
+      <ToolbarBtn
         active={historyWindowOpen}
         onClick={handleToggleHistoryWindow}
         title="版本历史"
@@ -480,6 +560,14 @@ export default function EditorToolbar() {
         onClick={handleToggleWorldWindow}
         title="世界观资料库"
         icon={<BookMarkedIcon className="w-4 h-4" />}
+      />
+
+      <ToolbarBtn
+        active={aiToolboxWindowOpen}
+        onClick={handleToggleAiToolboxWindow}
+        title="AI 工具箱"
+        icon={<WrenchIcon className="w-4 h-4" />}
+        className="text-primary"
       />
 
       <ToolbarBtn

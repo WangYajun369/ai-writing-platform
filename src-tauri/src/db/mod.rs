@@ -97,7 +97,9 @@ impl AppDb {
                 sort_order   INTEGER NOT NULL DEFAULT 0,
                 deleted_at   TEXT,
                 created_at   TEXT NOT NULL,
-                updated_at   TEXT NOT NULL
+                updated_at   TEXT NOT NULL,
+                summary      TEXT,
+                summary_at   TEXT
             );
 
             CREATE TABLE IF NOT EXISTS snapshots (
@@ -139,6 +141,9 @@ impl AppDb {
         let _ = conn.execute("ALTER TABLE volumes ADD COLUMN deleted_at TEXT", []);
         let _ = conn.execute("ALTER TABLE chapters ADD COLUMN deleted_at TEXT", []);
         let _ = conn.execute("ALTER TABLE books ADD COLUMN deleted_at TEXT", []);
+        // 迁移：为 chapters 表添加 summary 和 summary_at 列
+        let _ = conn.execute("ALTER TABLE chapters ADD COLUMN summary TEXT", []);
+        let _ = conn.execute("ALTER TABLE chapters ADD COLUMN summary_at TEXT", []);
 
         // 关键字段索引（提升查询性能）
         conn.execute_batch(r#"

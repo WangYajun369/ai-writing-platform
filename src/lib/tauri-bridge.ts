@@ -147,6 +147,16 @@ export const chapterApi = {
   async moveToVolume(chapterId: string, volumeId: string | null): Promise<void> {
     return invoke<void>('move_chapter_to_volume', { chapterId, volumeId })
   },
+
+  /** 保存章节的 AI 总结内容 */
+  async saveSummary(chapterId: string, summary: string): Promise<void> {
+    return invoke<void>('save_chapter_summary', { chapterId, summary })
+  },
+
+  /** 获取章节的总结信息 */
+  async getSummary(chapterId: string): Promise<{ summary: string | null; summaryAt: string | null }> {
+    return invoke<{ summary: string | null; summaryAt: string | null }>('get_chapter_summary', { chapterId })
+  },
 }
 
 // ==================== 版本快照 ====================
@@ -279,6 +289,8 @@ export interface SummarizeArgs {
   chapterTitle: string
   chapterContent: string
   thinkingEnabled?: boolean
+  /** 用户自定义 system prompt，为空时使用后端默认提示 */
+  systemPrompt?: string
 }
 
 export const aiApi = {

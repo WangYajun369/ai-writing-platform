@@ -54,6 +54,10 @@ export interface Chapter {
   updatedAt: string
   /** 软删除 */
   deletedAt?: string
+  /** AI 章节总结内容 */
+  summary?: string
+  /** 上次总结时间 ISO */
+  summaryAt?: string
 }
 
 /** 版本快照 */
@@ -129,6 +133,28 @@ export function getRagApiKey(config: RagConfig): string | undefined {
 export interface AiConfig {
   chat: AiChatConfig
   rag: RagConfig
+}
+
+/** AI 工具箱中的单个提示词 */
+export interface AiToolPrompt {
+  id: string
+  /** 工具名称，如"章节总结""小说大纲"等 */
+  name: string
+  /** 工具简短描述，说明该工具的用途 */
+  description: string
+  /** 自定义 System Prompt，留空则使用后端默认提示词 */
+  systemPrompt: string
+}
+
+/** AI 工具箱提示词分类 */
+export interface AiToolCategory {
+  id: string
+  /** 分类名称，如"常用工具""描写辅助""世界设定"等 */
+  name: string
+  /** 分类主题色（CSS 渐变字符串），用于卡片头部背景 */
+  color: string
+  /** 该分类下的提示词列表 */
+  tools: AiToolPrompt[]
 }
 
 /** RAG 检索结果 */

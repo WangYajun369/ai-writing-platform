@@ -10,7 +10,9 @@
  */
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { PlusIcon, SearchIcon, GridIcon, ListIcon, SettingsIcon, BookOpenIcon, Trash2Icon } from 'lucide-react'
+import { PlusIcon, SearchIcon, GridIcon, ListIcon, SettingsIcon, BookOpenIcon, Trash2Icon, WrenchIcon } from 'lucide-react'
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { useAppStore } from '@/stores/appStore'
 import { bookApi } from '@/lib/tauri-bridge'
 import { cn, formatWordCount } from '@/lib/utils'
@@ -56,6 +58,7 @@ export default function LibraryPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [showNewBookDialog, setShowNewBookDialog] = useState(false)
   const [showTrashModal, setShowTrashModal] = useState(false)
+  const [aiToolboxWindowOpen, setAiToolboxWindowOpen] = useState(false)
 
   // 虚拟化滚动容器 ref
   const parentRef = useRef<HTMLDivElement>(null)
@@ -108,6 +111,23 @@ export default function LibraryPage() {
     loadTrashCount()
   }, [loadBooks, loadTrashCount])
 
+  async function handleToggleAiToolboxWindow() {
+    if (aiToolboxWindowOpen) {
+      try {
+        await invoke('close_ai_toolbox_window')
+      } catch (e) {
+        console.error('关闭 AI 工具箱窗口失败', e)
+      }
+    } else {
+      try {
+        await invoke('open_ai_toolbox_window')
+        setAiToolboxWindowOpen(true)
+      } catch (e) {
+        console.error('打开 AI 工具箱窗口失败', e)
+      }
+    }
+  }
+
   function handleOpenBook(book: Book) {
     setCurrentBookId(book.id)
     navigate(`/editor/${book.id}`)
@@ -141,6 +161,14 @@ export default function LibraryPage() {
   useEffect(() => {
     loadBooks()
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 监听 AI 工具箱窗口关闭事件
+  useEffect(() => {
+    const unlisten = listen('ai-toolbox-window-closed', () => {
+      setAiToolboxWindowOpen(false)
+    })
+    return () => { unlisten.then((fn) => fn()) }
   }, [])
 
   // 动态计算网格行高：基于实际列宽计算，而非固定预估值
@@ -262,6 +290,18 @@ export default function LibraryPage() {
               {trashCount > 99 ? '99+' : trashCount}
             </span>
           )}
+        </button>
+
+        {/* AI 工具箱 */}
+        <button
+          onClick={handleToggleAiToolboxWindow}
+          className={cn(
+            'p-2 rounded-lg transition-colors',
+            aiToolboxWindowOpen ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-muted-foreground',
+          )}
+          title="AI 工具箱"
+        >
+          <WrenchIcon className="w-5 h-5" />
         </button>
 
         <button

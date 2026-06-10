@@ -78,11 +78,12 @@ export default function EditorPage() {
     }
   }, [setContentRefresh])
 
-  // 组件卸载（离开编辑页返回书库）时关闭世界观和版本历史独立窗口
+  // 组件卸载（离开编辑页返回书库）时关闭世界观、版本历史、AI 工具箱独立窗口
   useEffect(() => {
     return () => {
       invoke('close_world_window').catch(() => {})
       invoke('close_history_window').catch(() => {})
+      invoke('close_ai_toolbox_window').catch(() => {})
     }
   }, [])
 
@@ -164,7 +165,7 @@ export default function EditorPage() {
           </EditorLayout>
         </main>
 
-        {/* 拖拽手柄 + 右侧 AI 面板 */}
+        {/* 拖拽手柄 + 右侧 AI 助手面板 */}
         {aiPanelOpen && !zenMode && (
           <>
             {/* 可拖拽分界线 */}

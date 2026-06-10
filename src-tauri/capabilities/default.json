@@ -1,7 +1,7 @@
 {
   "identifier": "default",
   "description": "Default capability for TimeWrite",
-  "windows": ["main", "world"],
+  "windows": ["main", "world", "history", "summary", "ai-toolbox"],
   "permissions": [
     "core:default",
     "shell:allow-open",

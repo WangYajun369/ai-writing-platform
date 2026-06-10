@@ -10,18 +10,20 @@
  */
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeftIcon, BotIcon, PaletteIcon, DatabaseIcon, ArrowUpCircleIcon, PenLineIcon } from 'lucide-react'
+import { ArrowLeftIcon, BotIcon, PaletteIcon, DatabaseIcon, ArrowUpCircleIcon, PenLineIcon, WrenchIcon } from 'lucide-react'
 import { useAppStore } from '@/stores/appStore'
 import { AiConfigSection } from './AiConfigSection'
+import { AiToolboxSection } from './AiToolboxSection'
 import { AppearanceSection } from './AppearanceSection'
 import { EditorConfigSection } from './EditorConfigSection'
 import { StorageSection } from './StorageSection'
 import { VersionSection } from './VersionSection'
 
-type Tab = 'ai' | 'appearance' | 'editor' | 'storage' | 'version'
+type Tab = 'ai' | 'toolbox' | 'appearance' | 'editor' | 'storage' | 'version'
 
 const TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }> }[] = [
   { id: 'ai', label: 'AI 配置', icon: BotIcon },
+  { id: 'toolbox', label: 'AI 工具箱', icon: WrenchIcon },
   { id: 'appearance', label: '外观', icon: PaletteIcon },
   { id: 'editor', label: '编辑', icon: PenLineIcon },
   { id: 'storage', label: '存储', icon: DatabaseIcon },
@@ -88,6 +90,7 @@ export default function SettingsPage() {
                 }}
               />
             )}
+            {activeTab === 'toolbox' && <AiToolboxSection />}
             {activeTab === 'appearance' && (
               <AppearanceSection
                 theme={theme}

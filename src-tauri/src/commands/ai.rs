@@ -1036,6 +1036,8 @@ pub struct SummarizeArgs {
     pub chapter_title: String,
     pub chapter_content: String,
     pub thinking_enabled: Option<bool>,
+    /// 用户自定义 system prompt，为空时使用默认提示
+    pub system_prompt: Option<String>,
 }
 
 /// 总结章节内容（非流式，返回完整总结）
@@ -1044,7 +1046,9 @@ pub async fn summarize_chapter(
     app: AppHandle,
     args: SummarizeArgs,
 ) -> Result<ChapterSummary, String> {
-    let system_prompt = "你是一位专业的小说创作助手。请仔细阅读以下章节内容，然后进行简洁的总结。\n\n总结要求：\n1. 提炼出章节的主要情节、关键事件和重要人物\n2. 保留故事的核心脉络和转折点\n3. 字数控制在300字以内\n4. 使用流畅的段落形式，不要使用列表格式\n\n请直接输出总结内容，不需要任何前缀说明。";
+    let system_prompt = args.system_prompt.unwrap_or_else(|| {
+        "你是一位专业的小说创作助手。请仔细阅读以下章节内容，然后进行简洁的总结。\n\n总结要求：\n1. 提炼出章节的主要情节、关键事件和重要人物\n2. 保留故事的核心脉络和转折点\n3. 字数控制在300字以内\n4. 使用流畅的段落形式，不要使用列表格式\n\n请直接输出总结内容，不需要任何前缀说明。".to_string()
+    });
 
     let user_content = format!("章节标题：{}\n\n章节内容：\n{}", args.chapter_title, args.chapter_content);
 

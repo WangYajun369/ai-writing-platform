@@ -64,6 +64,8 @@ pub fn run() {
             commands::chapter::hard_delete_chapter,
             commands::chapter::reorder_chapters,
             commands::chapter::move_chapter_to_volume,
+            commands::chapter::save_chapter_summary,
+            commands::chapter::get_chapter_summary,
             // 快照
             commands::snapshot::list_snapshots,
             commands::snapshot::create_snapshot,
@@ -92,6 +94,10 @@ pub fn run() {
             commands::window::close_world_window,
             commands::window::open_history_window,
             commands::window::close_history_window,
+            commands::window::open_summary_window,
+            commands::window::close_summary_window,
+            commands::window::open_ai_toolbox_window,
+            commands::window::close_ai_toolbox_window,
         ])
         .run(tauri::generate_context!())
         .expect("启动 Tauri 应用失败");

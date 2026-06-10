@@ -10,6 +10,8 @@ import AppRouter from './router'
 import { useAppStore } from './stores/appStore'
 import WorldbuildingPanel from './components/worldbuilding/WorldbuildingPanel'
 import SnapshotPanel from './components/editor/SnapshotPanel'
+import { ChapterSummaryPanel } from './components/editor/ChapterSummaryHeader'
+import AiToolboxPanel from './components/ai/AiToolboxPanel'
 
 const STORAGE_KEY_THEME = 'timewrite-theme'
 const STORAGE_KEY_EYECARE = 'timewrite-eyecare'
@@ -65,6 +67,29 @@ function AppInit() {
       }
     }
     return { isHistory: false, chapterId: null, bookId: null, chapterTitle: null }
+  })()
+
+  // 检测是否为章节总结独立窗口
+  const summaryWindowInfo = (() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('summarywin') === '1') {
+      return {
+        isSummary: true,
+        chapterId: params.get('chapterId'),
+        bookId: params.get('bookId'),
+        chapterTitle: params.get('chapterTitle'),
+      }
+    }
+    return { isSummary: false, chapterId: null, bookId: null, chapterTitle: null }
+  })()
+
+  // 检测是否为 AI 工具箱独立窗口
+  const aiToolboxWindowInfo = (() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('aitoolboxwin') === '1') {
+      return { isAiToolbox: true }
+    }
+    return { isAiToolbox: false }
   })()
 
   // 启动时从 localStorage 恢复偏好
@@ -148,6 +173,34 @@ function AppInit() {
           bookId={historyWindowInfo.bookId}
           chapterTitle={historyWindowInfo.chapterTitle ?? undefined}
         />
+      </div>
+    )
+  }
+
+  // 章节总结独立窗口模式
+  if (summaryWindowInfo.isSummary && summaryWindowInfo.chapterId && summaryWindowInfo.bookId) {
+    return (
+      <div
+        className="h-screen flex flex-col overflow-hidden bg-background"
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        <ChapterSummaryPanel
+          chapterId={summaryWindowInfo.chapterId}
+          bookId={summaryWindowInfo.bookId}
+          chapterTitle={summaryWindowInfo.chapterTitle ?? undefined}
+        />
+      </div>
+    )
+  }
+
+  // AI 工具箱独立窗口模式
+  if (aiToolboxWindowInfo.isAiToolbox) {
+    return (
+      <div
+        className="h-screen flex flex-col overflow-hidden bg-background"
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        <AiToolboxPanel initialToolId="outline-generation" />
       </div>
     )
   }
