@@ -21,18 +21,21 @@ fn urlencoding(s: &str) -> String {
 ///
 /// 如果已存在 world 窗口则先关闭再以新 bookId 重新打开。
 /// 窗口设为 always_on_top，始终浮于主窗口之上。
+/// `tab` 参数可指定初始标签页（"cards" / "outline"），省略则默认 "cards"。
 #[tauri::command]
-pub async fn open_world_window(app: AppHandle, book_id: String) -> Result<(), String> {
+pub async fn open_world_window(app: AppHandle, book_id: String, tab: Option<String>) -> Result<(), String> {
     // 若已存在则先关闭
     if let Some(w) = app.get_webview_window("world") {
         w.close().map_err(|e| e.to_string())?;
     }
 
+    let tab_param = tab.map(|t| format!("&tab={}", t)).unwrap_or_default();
+
     // 开发/生产环境 URL 区分
     #[cfg(debug_assertions)]
-    let url_str = format!("http://localhost:1420?worldwin=1&bookId={}", book_id);
+    let url_str = format!("http://localhost:1420?worldwin=1&bookId={}{}", book_id, tab_param);
     #[cfg(not(debug_assertions))]
-    let url_str = format!("tauri://localhost?worldwin=1&bookId={}", book_id);
+    let url_str = format!("tauri://localhost?worldwin=1&bookId={}{}", book_id, tab_param);
 
     let url = tauri::Url::parse(&url_str).map_err(|e| format!("URL 解析失败: {}", e))?;
 

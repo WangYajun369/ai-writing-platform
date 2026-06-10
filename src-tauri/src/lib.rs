@@ -65,6 +65,7 @@ pub fn run() {
             commands::chapter::reorder_chapters,
             commands::chapter::move_chapter_to_volume,
             commands::chapter::save_chapter_summary,
+            commands::chapter::clear_chapter_summary,
             commands::chapter::get_chapter_summary,
             commands::chapter::save_chapter_outline,
             // 快照

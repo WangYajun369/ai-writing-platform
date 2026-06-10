@@ -153,6 +153,11 @@ export const chapterApi = {
     return invoke<void>('save_chapter_summary', { chapterId, summary })
   },
 
+  /** 清除章节的 AI 总结内容 */
+  async clearSummary(chapterId: string): Promise<void> {
+    return invoke<void>('clear_chapter_summary', { chapterId })
+  },
+
   /** 获取章节的总结信息 */
   async getSummary(chapterId: string): Promise<{ summary: string | null; summaryAt: string | null }> {
     return invoke<{ summary: string | null; summaryAt: string | null }>('get_chapter_summary', { chapterId })

@@ -232,6 +232,8 @@ export interface AiMessage {
   } | null
   /** 提交给 AI 的原始请求载荷（仅助手消息，供详情查看） */
   requestPayload?: ChatRequestPayload
+  /** 消息附带的前置操作（如校验失败时引导用户打开特定面板） */
+  action?: 'open-world-outline'
 }
 
 /** Diff 对比视图模式 */

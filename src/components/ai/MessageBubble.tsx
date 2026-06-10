@@ -3,21 +3,23 @@
  */
 import { memo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAtomValue } from 'jotai'
-import { Loader2Icon, ClipboardPasteIcon, InfoIcon, Trash2Icon, SettingsIcon, ChevronDownIcon } from 'lucide-react'
+import { useAtomValue, useSetAtom } from 'jotai'
+import { invoke } from '@tauri-apps/api/core'
+import { Loader2Icon, ClipboardPasteIcon, InfoIcon, Trash2Icon, SettingsIcon, ChevronDownIcon, BookOpenIcon } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { cn } from '@/lib/utils'
-import { editorInstanceAtom } from '@/stores/uiAtoms'
+import { editorInstanceAtom, worldWindowOpenAtom } from '@/stores/uiAtoms'
 import type { AiMessage, ChatRequestPayload } from '@/types'
 
 interface MessageBubbleProps {
   message: AiMessage
   onDelete: (id: string) => void
   onShowDetail: (payload: ChatRequestPayload) => void
+  bookId?: string
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, onDelete, onShowDetail }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, onDelete, onShowDetail, bookId }: MessageBubbleProps) {
   const isUser = message.role === 'user'
   const [thinkingExpanded, setThinkingExpanded] = useState(false)
   const [confirming, setConfirming] = useState(false)
@@ -28,6 +30,7 @@ export const MessageBubble = memo(function MessageBubble({ message, onDelete, on
   const hasChapterSummary = message.requestPayload?.chapterSummary
   const navigate = useNavigate()
   const editor = useAtomValue(editorInstanceAtom)
+  const setWorldWindowOpen = useSetAtom(worldWindowOpenAtom)
 
   // 计算有效用量
   const contentCharCount = message.content.length
@@ -111,14 +114,34 @@ export const MessageBubble = memo(function MessageBubble({ message, onDelete, on
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
         ) : null}
 
-        {/* 错误提示操作按钮 */}
+        {/* 错误/提示操作按钮 */}
         {isError && (
           <button
-            onClick={() => navigate('/settings')}
+            onClick={async () => {
+              if (message.action === 'open-world-outline' && bookId) {
+                try {
+                  await invoke('open_world_window', { bookId, tab: 'outline' })
+                  setWorldWindowOpen(true)
+                } catch {
+                  // 静默忽略
+                }
+              } else {
+                navigate('/settings')
+              }
+            }}
             className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 text-xs font-medium transition-colors"
           >
-            <SettingsIcon className="w-3.5 h-3.5" />
-            前往设置检查
+            {message.action === 'open-world-outline' && bookId ? (
+              <>
+                <BookOpenIcon className="w-3.5 h-3.5" />
+                打开世界观资料库
+              </>
+            ) : (
+              <>
+                <SettingsIcon className="w-3.5 h-3.5" />
+                前往设置检查
+              </>
+            )}
           </button>
         )}
 

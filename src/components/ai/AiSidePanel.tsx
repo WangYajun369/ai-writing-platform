@@ -88,7 +88,7 @@ export default function AiSidePanel() {
       />
 
       {/* 消息列表 */}
-      <MessageList messages={messages} bottomRef={bottomRef} onDelete={handleDeleteMessage} onShowDetail={setDetailPayload} />
+      <MessageList messages={messages} bottomRef={bottomRef} onDelete={handleDeleteMessage} onShowDetail={setDetailPayload} bookId={currentBookId ?? undefined} />
 
       {/* 快捷提示词 */}
       {messages.length === 0 && <QuickHints onSelect={setInput} />}
@@ -169,11 +169,13 @@ function MessageList({
   bottomRef,
   onDelete,
   onShowDetail,
+  bookId,
 }: {
   messages: ReturnType<typeof useCurrentAiMessages>
   bottomRef: React.RefObject<HTMLDivElement | null>
   onDelete: (id: string) => void
   onShowDetail: (payload: ChatRequestPayload) => void
+  bookId?: string
 }) {
   return (
     <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 space-y-3 min-w-0">
@@ -185,7 +187,7 @@ function MessageList({
         </div>
       )}
       {messages.map((msg) => (
-        <MessageBubble key={msg.id} message={msg} onDelete={onDelete} onShowDetail={onShowDetail} />
+        <MessageBubble key={msg.id} message={msg} onDelete={onDelete} onShowDetail={onShowDetail} bookId={bookId} />
       ))}
       <div ref={bottomRef} />
     </div>

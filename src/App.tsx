@@ -207,12 +207,14 @@ function AppInit() {
 
   // 世界观独立窗口模式
   if (worldWindowInfo.isWorld && worldWindowInfo.bookId) {
+    const params = new URLSearchParams(window.location.search)
+    const initialTab = (params.get('tab') === 'outline' ? 'outline' : undefined) as 'outline' | undefined
     return (
       <div
         className="h-screen flex flex-col overflow-hidden bg-background"
         onContextMenu={(e) => e.preventDefault()}
       >
-        <WorldbuildingPanel bookId={worldWindowInfo.bookId} />
+        <WorldbuildingPanel bookId={worldWindowInfo.bookId} initialTab={initialTab} />
       </div>
     )
   }

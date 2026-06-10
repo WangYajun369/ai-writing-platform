@@ -360,6 +360,20 @@ pub async fn get_chapter_summary(
     ).map_err(|e| e.to_string())
 }
 
+/// 清除章节的 AI 总结内容（将 summary/summary_at 置为 null）
+#[tauri::command]
+pub async fn clear_chapter_summary(
+    db: State<'_, AppDb>,
+    chapter_id: String,
+) -> Result<(), String> {
+    let conn = db.pool.get().map_err(|e| format!("获取连接失败: {}", e))?;
+    conn.execute(
+        "UPDATE chapters SET summary=NULL, summary_at=NULL WHERE id=?1",
+        params![chapter_id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// 保存章节大纲内容
 #[tauri::command]
 pub async fn save_chapter_outline(

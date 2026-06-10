@@ -4,9 +4,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useAppStore, useCurrentChapter, useCurrentAiMessages } from '@/stores/appStore'
-import { aiApi, type StreamEvent, type UsageInfo, type EmbeddingStatus, type ChapterSummary } from '@/lib/tauri-bridge'
+import { aiApi, bookApi, chapterApi, type StreamEvent, type UsageInfo, type EmbeddingStatus, type ChapterSummary } from '@/lib/tauri-bridge'
 import { getChatApiKey, getRagApiKey } from '@/types'
-import type { AiMessage, AiConfig, ConversationSummary } from '@/types'
+import type { AiMessage, AiConfig, ConversationSummary, Chapter } from '@/types'
 import type { ChatMessage } from '@/lib/tauri-bridge'
 
 /** 将 AI 异常信息转换为用户友好的提示 */
@@ -327,32 +327,99 @@ export function useAiChat(options: UseAiChatOptions): UseAiChatReturn {
     addAiMessage(bookId, assistantMsg)
     setStreaming(true)
 
+    /** 前置校验不通过时：提示并标记消息为大纲缺失类型 */
+    const stopWithOutlineHint = async (hint: string) => {
+      updateAssistant(assistantId, hint, undefined, 'done')
+      updateAiMessage(bookId, assistantId, { action: 'open-world-outline' })
+      setStreaming(false)
+      persistAiConversation(bookId)
+    }
     try {
-      const chapterContent = getCurrentChapterContent()
-      const originalCharCount = getCurrentChapterRawCharCount()
-      const needSummary = originalCharCount > 300
-      let chapterSummaryInfo: ChapterSummary | null = null
-      let finalChapterContent = chapterContent
+      // ==================== 阶段 0：前置校验 ====================
 
-      // 章节总结
-      if (needSummary && currentChapter) {
-        updateAssistant(assistantId, '正在总结章节内容…', undefined, 'summarizing')
-        try {
-          chapterSummaryInfo = await aiApi.summarizeChapter({
-            endpoint: aiConfig.chat.endpoint,
-            model: aiConfig.chat.model,
-            apiKey: chatApiKey,
-            temperature: 0.7,
-            maxTokens: 2000,
-            chapterTitle: currentChapter.title,
-            chapterContent: getCurrentChapterRawText(),
-            thinkingEnabled: aiConfig.chat.thinkingEnabled,
-          })
-          finalChapterContent = `\n\n当前编辑章节「${currentChapter.title}」的总结（原文${chapterSummaryInfo.originalChars}字）：\n${chapterSummaryInfo.summary}`
-        } catch {
-          finalChapterContent = chapterContent
+      // 0.1 检查作品大纲是否存在
+      const book = await bookApi.getById(bookId).catch(() => null)
+      if (!book?.outline?.trim()) {
+        await stopWithOutlineHint('⚠️ 尚未填写**作品大纲**。\n\n已自动打开「世界观资料库 → 大纲」窗口，请在此为当前作品补充大纲，让 AI 更好地理解你的创作方向。')
+        return
+      }
+
+      // 0.2 检查当前章节大纲是否存在（从 DB 实时读取，避免 Zustand store 数据滞后）
+      if (currentChapter) {
+        const freshChapters = await chapterApi.listByBook(bookId).catch(() => [] as Chapter[])
+        const freshChapter = freshChapters.find((c: Chapter) => c.id === currentChapter.id)
+        if (!freshChapter?.outline?.trim()) {
+          await stopWithOutlineHint(`⚠️ 当前章节「${currentChapter.title}」尚未填写**章节大纲**。\n\n请打开「世界观资料库 → 大纲」，在窗口中为对应章节补充大纲后重试。`)
+          return
         }
       }
+
+      // ==================== 阶段 1：章节内容处理 ====================
+
+      const chapterContent = getCurrentChapterContent()
+      const originalCharCount = getCurrentChapterRawCharCount()
+      let chapterSummaryInfo: ChapterSummary | null = null
+      let finalChapterContent: string
+
+      if (originalCharCount === 0) {
+        // 章节无内容，不提交章节正文
+        finalChapterContent = ''
+      } else if (originalCharCount <= 300) {
+        // 内容较短，直接提交原始内容
+        finalChapterContent = chapterContent
+      } else {
+        // 内容 > 300 字 → 需要总结
+        if (!currentChapter) {
+          finalChapterContent = chapterContent
+        } else {
+          // 1）尝试从已有缓存中读取
+          let cachedSummary: { summary: string | null; summaryAt: string | null } | null = null
+          if (currentChapter.summary) {
+            cachedSummary = { summary: currentChapter.summary, summaryAt: currentChapter.summaryAt ?? null }
+          } else {
+            cachedSummary = await chapterApi.getSummary(currentChapter.id).catch(() => null)
+          }
+
+          if (cachedSummary?.summary) {
+            // 已有缓存，直接复用
+            const rawText = getCurrentChapterRawText()
+            chapterSummaryInfo = {
+              summary: cachedSummary.summary,
+              originalChars: rawText.length,
+              summaryChars: cachedSummary.summary.length,
+              thinking: '',
+            }
+            finalChapterContent = `\n\n当前编辑章节「${currentChapter.title}」的总结（原文${chapterSummaryInfo.originalChars}字）：\n${chapterSummaryInfo.summary}`
+          } else {
+            // 无缓存 → 先调用 AI 总结，再继续
+            updateAssistant(assistantId, '正在总结章节内容…', undefined, 'summarizing')
+            try {
+              chapterSummaryInfo = await aiApi.summarizeChapter({
+                endpoint: aiConfig.chat.endpoint,
+                model: aiConfig.chat.model,
+                apiKey: chatApiKey,
+                temperature: 0.7,
+                maxTokens: 2000,
+                chapterTitle: currentChapter.title,
+                chapterContent: getCurrentChapterRawText(),
+                thinkingEnabled: aiConfig.chat.thinkingEnabled,
+              })
+              finalChapterContent = `\n\n当前编辑章节「${currentChapter.title}」的总结（原文${chapterSummaryInfo.originalChars}字）：\n${chapterSummaryInfo.summary}`
+              // 持久化总结，下次直接复用
+              chapterApi.saveSummary(currentChapter.id, chapterSummaryInfo.summary).catch(() => {})
+              useAppStore.getState().updateChapter(currentChapter.id, {
+                summary: chapterSummaryInfo.summary,
+                summaryAt: new Date().toISOString(),
+              })
+            } catch {
+              // 总结失败，回退到原始内容
+              finalChapterContent = chapterContent
+            }
+          }
+        }
+      }
+
+      // ==================== 阶段 2：思考 + RAG + 流式对话 ====================
 
       // 思考阶段
       updateAssistant(assistantId, '', undefined, 'thinking')
