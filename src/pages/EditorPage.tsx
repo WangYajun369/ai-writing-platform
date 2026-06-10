@@ -23,8 +23,8 @@ import AiSidePanel from '@/components/ai/AiSidePanel'
 import EditorToolbar from '@/components/editor/EditorToolbar'
 import StatusBar from '@/components/layout/StatusBar'
 
-/** AI 面板宽度本地持久化 */
-const aiPanelStorage = createStorage('mirageink-ai-panel-width', { width: 384 })
+/** AI 面板比例本地持久化（0-1） */
+const aiPanelStorage = createStorage('mirageink-ai-panel-ratio', { ratio: 0.3 })
 
 export default function EditorPage() {
   const { bookId } = useParams<{ bookId: string }>()
@@ -42,6 +42,8 @@ export default function EditorPage() {
     addChapter,
   } = useAppStore()
   const loadedBookIdRef = useRef<string | null>(null)
+  /** 主编辑区容器 ref，用于比例模式计算 */
+  const editorAreaRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!bookId) {
@@ -59,13 +61,29 @@ export default function EditorPage() {
 
   const [, setContentRefresh] = useAtom(contentRefreshAtom)
 
-  // AI 面板可拖拽调整宽度
+  // 迁移旧版像素宽度 → 新版比例存储
+  useEffect(() => {
+    try {
+      const oldRaw = localStorage.getItem('mirageink-ai-panel-width')
+      const newRaw = localStorage.getItem('mirageink-ai-panel-ratio')
+      if (oldRaw && !newRaw) {
+        const { width } = JSON.parse(oldRaw) as { width: number }
+        const ratio = window.innerWidth > 0 ? width / window.innerWidth : 0.3
+        aiPanelStorage.patch({ ratio: Math.min(0.5, Math.max(0.15, ratio)) })
+        localStorage.removeItem('mirageink-ai-panel-width')
+      }
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // AI 面板可拖拽调整宽度（比例模式：随窗口自动缩放）
   const { width: aiPanelWidth, resizeHandleProps, isResizing: aiResizing } = useResizeHandle({
-    initialWidth: aiPanelStorage.load().width,
-    minWidth: 240,
-    maxWidth: 720,
+    initialRatio: aiPanelStorage.load().ratio,
+    minWidth: 0.15,
+    maxWidth: 0.5,
+    containerRef: editorAreaRef,
     direction: 'right',
-    onResizeEnd: (w) => aiPanelStorage.patch({ width: w }),
+    onResizeEnd: (ratio) => aiPanelStorage.patch({ ratio }),
   })
 
   // 监听版本历史窗口恢复快照后刷新编辑器内容
@@ -150,7 +168,7 @@ export default function EditorPage() {
       )}
 
       {/* 主编辑区 */}
-      <div className="flex-1 flex overflow-hidden">
+      <div ref={editorAreaRef} className="flex-1 flex overflow-hidden">
         {/* 左侧目录树 */}
         {sidebarOpen && !zenMode && (
           <aside className="sidebar w-64 border-r bg-card flex-shrink-0 flex flex-col overflow-hidden">
