@@ -7,11 +7,11 @@
  * 支持修改封面（网格模式悬停显示编辑按钮）。
  */
 import { useState, useRef, useEffect } from 'react'
-import { MoreVerticalIcon, EditIcon, Trash2Icon, CalendarIcon, ImageIcon, PencilIcon } from 'lucide-react'
-import { open } from '@tauri-apps/plugin-dialog'
+import { MoreVerticalIcon, EditIcon, Trash2Icon, CalendarIcon, ImageIcon, PencilIcon, UploadIcon } from 'lucide-react'
+import { open, save } from '@tauri-apps/plugin-dialog'
 import { stat } from '@tauri-apps/plugin-fs'
 import type { Book } from '@/types'
-import { bookApi } from '@/lib/tauri-bridge.ts'
+import { bookApi, importExportApi } from '@/lib/tauri-bridge.ts'
 import { formatWordCount, formatRelativeTime } from '@/lib/utils'
 import { useAppStore } from '@/stores/appStore'
 import { resolveCoverSrc } from './CoverPicker'
@@ -34,6 +34,7 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
   const [coverChanging, setCoverChanging] = useState(false)
   const [coverSrc, setCoverSrc] = useState<string | undefined>(undefined)
   const [showEditDialog, setShowEditDialog] = useState(false)
+  const [isExportingBook, setIsExportingBook] = useState(false)
   const prevCoverSrcRef = useRef<string | undefined>(undefined)
   const { updateBook } = useAppStore()
 
@@ -66,12 +67,53 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
     ? Math.min((book.todayCount / book.dailyTarget) * 100, 100)
     : 0
 
+  /** 导出单个作品完整数据为加密 .tw 文件 */
+  async function handleExportSingleBook() {
+    if (isExportingBook) return
+    setIsExportingBook(true)
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+      const filePath = await save({
+        title: '导出作品数据',
+        defaultPath: `TimeWrite-${book.title}-${timestamp}.tw`,
+        filters: [{ name: 'TimeWrite 备份', extensions: ['tw'] }],
+      })
+      if (!filePath) { setIsExportingBook(false); return }
+
+      // 收集该作品相关的 localStorage 缓存
+      const cacheData: Record<string, unknown> = {}
+      const cacheKeys = [
+        'time-write-ai-config',
+        'time-write-preferences',
+        'time-write-editor-state',
+        `time-write-ai-conversations-${book.id}`,
+        `time-write-ai-summaries-${book.id}`,
+      ]
+      for (const key of cacheKeys) {
+        const raw = localStorage.getItem(key)
+        if (raw) {
+          try { cacheData[key] = JSON.parse(raw) } catch { cacheData[key] = raw }
+        }
+      }
+
+      await importExportApi.exportSingleBook(book.id, filePath, JSON.stringify(cacheData))
+      alert(`《${book.title}》导出成功！`)
+    } catch (err) {
+      console.error('导出作品失败', err)
+      alert(`导出失败：${err}`)
+    } finally {
+      setIsExportingBook(false)
+    }
+  }
+
   // 右键菜单（grid / list 共用）
   const { onContextMenu, openMenu, contextMenu } = useContextMenu({
     items: [
       { label: '打开编辑', icon: EditIcon, onClick: () => onOpen(book) },
       { label: '编辑信息', icon: PencilIcon, onClick: () => setShowEditDialog(true) },
       { label: '修改封面', icon: ImageIcon, onClick: handleChangeCover, disabled: coverChanging },
+      { type: 'divider' as const },
+      { label: '导出作品', icon: UploadIcon, onClick: handleExportSingleBook, disabled: isExportingBook },
       { type: 'divider' as const },
       { label: '删除', icon: Trash2Icon, onClick: handleDelete, danger: true },
     ],

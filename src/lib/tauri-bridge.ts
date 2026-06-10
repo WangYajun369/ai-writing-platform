@@ -385,4 +385,19 @@ export const importExportApi = {
   async importTxt(bookId: string, filePath: string): Promise<{ chaptersCreated: number }> {
     return invoke<{ chaptersCreated: number }>('import_txt', { bookId, filePath })
   },
+
+  /** 导出全部数据（数据库 + localStorage 缓存）到 JSON 文件 */
+  async exportAllData(outputPath: string, cacheJson: string): Promise<void> {
+    return invoke<void>('export_all_data', { outputPath, cacheJson })
+  },
+
+  /** 导出单个作品的完整数据（数据库 + localStorage 缓存）到加密 .tw 文件 */
+  async exportSingleBook(bookId: string, outputPath: string, cacheJson: string): Promise<void> {
+    return invoke<void>('export_single_book', { bookId, outputPath, cacheJson })
+  },
+
+  /** 统一导入备份文件（自动根据 backupType 选择全量/单作品导入），返回 { cache, backupType } */
+  async importBackup(filePath: string): Promise<{ cache: unknown; backupType: string }> {
+    return invoke<{ cache: unknown; backupType: string }>('import_backup', { filePath })
+  },
 }

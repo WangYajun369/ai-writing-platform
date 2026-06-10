@@ -92,6 +92,9 @@ pub fn run() {
             // 导入导出
             commands::io::export_book,
             commands::io::import_txt,
+            commands::io::export_all_data,
+            commands::io::export_single_book,
+            commands::io::import_backup,
             // 窗口管理
             commands::window::open_world_window,
             commands::window::close_world_window,

@@ -11,12 +11,13 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAtom } from 'jotai'
-import { PlusIcon, SearchIcon, GridIcon, ListIcon, SettingsIcon, BookOpenIcon, Trash2Icon, WrenchIcon } from 'lucide-react'
+import { PlusIcon, SearchIcon, GridIcon, ListIcon, SettingsIcon, BookOpenIcon, Trash2Icon, WrenchIcon, UploadIcon, DownloadIcon } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { save, open } from '@tauri-apps/plugin-dialog'
 import { useAppStore } from '@/stores/appStore'
 import { aiToolboxWindowOpenAtom } from '@/stores/uiAtoms'
-import { bookApi } from '@/lib/tauri-bridge'
+import { bookApi, importExportApi } from '@/lib/tauri-bridge'
 import { cn, formatWordCount } from '@/lib/utils'
 import type { Book } from '@/types'
 import BookCard from '@/components/library/BookCard'
@@ -112,6 +113,97 @@ export default function LibraryPage() {
     loadBooks()
     loadTrashCount()
   }, [loadBooks, loadTrashCount])
+
+  /** 导出全部数据（数据库 + localStorage 缓存） */
+  const [isExporting, setIsExporting] = useState(false)
+  const handleExportAll = useCallback(async () => {
+    if (isExporting) return
+    setIsExporting(true)
+    try {
+      // 选择保存路径
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+      const filePath = await save({
+        title: '导出全部数据',
+        defaultPath: `TimeWrite-全量备份-${timestamp}.tw`,
+        filters: [{ name: 'TimeWrite 备份', extensions: ['tw'] }],
+      })
+      if (!filePath) { setIsExporting(false); return }
+
+      // 收集 localStorage 缓存数据
+      const cacheData: Record<string, unknown> = {}
+      const cacheKeys = [
+        'time-write-ai-config',
+        'time-write-preferences',
+        'time-write-editor-state',
+        'time-write-ai-conversations',
+        'time-write-ai-summaries',
+        'time-write-ai-tool-categories',
+      ]
+      for (const key of cacheKeys) {
+        const raw = localStorage.getItem(key)
+        if (raw) {
+          try { cacheData[key] = JSON.parse(raw) } catch { cacheData[key] = raw }
+        }
+      }
+
+      await importExportApi.exportAllData(filePath, JSON.stringify(cacheData))
+      alert('数据导出成功！')
+    } catch (err) {
+      console.error('导出数据失败', err)
+      alert(`导出失败：${err}`)
+    } finally {
+      setIsExporting(false)
+    }
+  }, [isExporting])
+
+  /** 统一导入备份文件（自动识别全量/单作品备份） */
+  const [isImporting, setIsImporting] = useState(false)
+  const handleImportBackup = useCallback(async () => {
+    if (isImporting) return
+    setIsImporting(true)
+    try {
+      // 选择备份文件
+      const filePath = await open({
+        title: '选择备份文件',
+        filters: [{ name: 'TimeWrite 备份', extensions: ['tw'] }],
+        multiple: false,
+      })
+      if (!filePath) { setIsImporting(false); return }
+
+      const filePathStr = typeof filePath === 'string' ? filePath : filePath[0]
+      if (!filePathStr) { setIsImporting(false); return }
+
+      // 二次确认
+      if (!confirm('确认导入此备份文件？')) {
+        setIsImporting(false)
+        return
+      }
+
+      // 调用后端统一导入，返回 { cache, backupType }
+      const result = await importExportApi.importBackup(filePathStr)
+
+      // 恢复 localStorage 缓存数据
+      if (result.cache) {
+        const cacheData = result.cache as Record<string, unknown>
+        for (const [key, value] of Object.entries(cacheData)) {
+          localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value))
+        }
+      }
+
+      // 刷新书籍列表
+      await loadBooks()
+
+      const msg = result.backupType === 'single'
+        ? '单作品数据导入成功！'
+        : '全量数据导入成功！'
+      alert(msg)
+    } catch (err) {
+      console.error('导入数据失败', err)
+      alert(`导入失败：${err}`)
+    } finally {
+      setIsImporting(false)
+    }
+  }, [isImporting, loadBooks])
 
   async function handleToggleAiToolboxWindow() {
     if (aiToolboxWindowOpen) {
@@ -293,6 +385,26 @@ export default function LibraryPage() {
               {trashCount > 99 ? '99+' : trashCount}
             </span>
           )}
+        </button>
+
+        {/* 导出数据 */}
+        <button
+          onClick={handleExportAll}
+          disabled={isExporting}
+          className="p-2 rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
+          title="导出全部数据"
+        >
+          <UploadIcon className={`w-5 h-5 text-muted-foreground ${isExporting ? 'animate-pulse' : ''}`} />
+        </button>
+
+        {/* 导入数据 */}
+        <button
+          onClick={handleImportBackup}
+          disabled={isImporting}
+          className="p-2 rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
+          title="导入数据备份"
+        >
+          <DownloadIcon className={`w-5 h-5 text-muted-foreground ${isImporting ? 'animate-pulse' : ''}`} />
         </button>
 
         {/* AI 工具箱 */}
