@@ -404,6 +404,7 @@ export default function WorldbuildingPanel({ bookId, initialTab }: Worldbuilding
                     <div
                       key={card.id}
                       ref={virtualizer.measureElement}
+                      data-index={vItem.index}
                       style={{
                         position: 'absolute',
                         top: 0,

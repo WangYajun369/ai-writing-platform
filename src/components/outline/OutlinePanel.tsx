@@ -916,6 +916,7 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
                   <div
                     key={dndId(item)}
                     ref={virtualizer.measureElement}
+                    data-index={vItem.index}
                     style={{
                       position: 'absolute',
                       top: 0,

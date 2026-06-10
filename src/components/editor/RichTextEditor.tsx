@@ -14,13 +14,11 @@ import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
 import { createLowlight, common } from 'lowlight'
 
 const lowlight = createLowlight(common)
-import Underline from '@tiptap/extension-underline'
 import { TextStyle } from '@tiptap/extension-text-style'
 import Color from '@tiptap/extension-color'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
 import { ResizableImage } from './ResizableImageExtension'
-import { TrailingNode } from './TrailingNodeExtension'
 import { Table } from '@tiptap/extension-table'
 import TableRow from '@tiptap/extension-table-row'
 import TableHeader from '@tiptap/extension-table-header'
@@ -122,7 +120,6 @@ export default function RichTextEditor() {
         lowlight,
         defaultLanguage: null,
       }),
-      Underline,
       TextStyle,
       Color,
       ResizableImage.configure({ inline: false, allowBase64: true }),
@@ -133,7 +130,6 @@ export default function RichTextEditor() {
       TableHeader,
       TableCell,
       CharacterCount,
-      TrailingNode,
     ],
     content: currentChapter?.contentHtml ?? '<p></p>',
     editorProps: {
