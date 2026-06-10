@@ -153,8 +153,11 @@ export default function CoverPicker({ value, onChange, className }: CoverPickerP
 
 /**
  * 将本地文件路径读取为可渲染的 URL
- * 优先使用 readFile + Blob URL，失败时回退到 Tauri asset 协议
- * 返回的 blob URL 需要在使用完毕后调用 URL.revokeObjectURL 释放
+ *
+ * 使用 readFile + data: URL（base64）方式，与编辑器内嵌图片保持一致。
+ * data: URL 是纯字符串，不受协议/CSP/WebView2 跨域限制，在所有平台均可可靠渲染。
+ *
+ * 注意：返回的 data URL 不需要手动释放。
  */
 export async function resolveCoverSrc(path: string | undefined | null): Promise<string | undefined> {
   if (!path) return undefined
@@ -165,7 +168,6 @@ export async function resolveCoverSrc(path: string | undefined | null): Promise<
     return path
   }
 
-  // 方案一：readFile + Blob URL（最可靠，适用于所有环境）
   try {
     const data = await readFile(path)
     const ext = path.split('.').pop()?.toLowerCase() ?? 'png'
@@ -174,18 +176,18 @@ export async function resolveCoverSrc(path: string | undefined | null): Promise<
       : ext === 'webp'
         ? 'image/webp'
         : 'image/png'
-    const blob = new Blob([data], { type: mimeType })
-    return URL.createObjectURL(blob)
+    // 使用 Blob + FileReader 生成 data: URL（base64），
+    // 与编辑器图片插入方案一致，避免跨平台协议兼容性问题
+    const blob = new Blob([data as BlobPart], { type: mimeType })
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = () => reject(reader.error)
+      reader.readAsDataURL(blob)
+    })
+    return dataUrl
   } catch (e) {
-    console.warn('readFile 加载封面失败，回退 convertFileSrc:', (e as Error).message)
-  }
-
-  // 方案二：回退到 Tauri asset 协议
-  try {
-    const { convertFileSrc } = await import('@tauri-apps/api/core')
-    return convertFileSrc(path)
-  } catch (e) {
-    console.error('convertFileSrc 也失败:', (e as Error).message)
+    console.error('加载封面图片失败:', (e as Error).message)
     return undefined
   }
 }

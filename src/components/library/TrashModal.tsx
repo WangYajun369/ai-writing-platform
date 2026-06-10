@@ -40,10 +40,9 @@ export default function TrashModal({ onClose, onChanged }: TrashModalProps) {
     loadDeleted()
   }, [loadDeleted])
 
-  // 异步解析封面为可渲染的 Blob URL
+  // 异步解析封面为 data URL
   useEffect(() => {
     const controller = new AbortController()
-    const prevBlobUrls = new Set(Object.values(coverSrcs).filter((s): s is string => typeof s === 'string' && s.startsWith('blob:')))
     const newSrcs: Record<string, string | undefined> = {}
     Promise.all(
       deletedBooks.map(async (book) => {
@@ -52,12 +51,6 @@ export default function TrashModal({ onClose, onChanged }: TrashModalProps) {
       })
     ).then(() => {
       if (!controller.signal.aborted) {
-        // 释放不在新列表中的旧 Blob URL
-        for (const url of prevBlobUrls) {
-          if (!Object.values(newSrcs).includes(url)) {
-            URL.revokeObjectURL(url)
-          }
-        }
         setCoverSrcs(newSrcs)
       }
     })

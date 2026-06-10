@@ -6,7 +6,7 @@
  * 列表模式展示缩略图、书名、作者、字数及操作菜单。
  * 支持修改封面（网格模式悬停显示编辑按钮）。
  */
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { MoreVerticalIcon, EditIcon, Trash2Icon, CalendarIcon, ImageIcon, PencilIcon, UploadIcon } from 'lucide-react'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { stat } from '@tauri-apps/plugin-fs'
@@ -35,32 +35,16 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
   const [coverSrc, setCoverSrc] = useState<string | undefined>(undefined)
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [isExportingBook, setIsExportingBook] = useState(false)
-  const prevCoverSrcRef = useRef<string | undefined>(undefined)
   const { updateBook } = useAppStore()
 
-  // 异步加载封面为 blob URL
+  // 异步加载封面为 data URL
   useEffect(() => {
     let cancelled = false
     resolveCoverSrc(book.coverImage).then((src) => {
-      if (cancelled) return
-      // 释放前一个 blob URL
-      if (prevCoverSrcRef.current?.startsWith('blob:')) {
-        URL.revokeObjectURL(prevCoverSrcRef.current)
-      }
-      prevCoverSrcRef.current = src
-      setCoverSrc(src)
+      if (!cancelled) setCoverSrc(src)
     })
     return () => { cancelled = true }
   }, [book.coverImage])
-
-  // 组件卸载时释放 blob URL
-  useEffect(() => {
-    return () => {
-      if (prevCoverSrcRef.current?.startsWith('blob:')) {
-        URL.revokeObjectURL(prevCoverSrcRef.current)
-      }
-    }
-  }, [])
 
   // 日更进度百分比
   const dailyProgress = book.dailyTarget > 0
