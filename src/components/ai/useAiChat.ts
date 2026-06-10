@@ -85,12 +85,23 @@ export function useAiChat(options: UseAiChatOptions): UseAiChatReturn {
   const streamErrorRef = useRef(false)
   const summarizingRef = useRef(false) // 防止并发总结
 
-  // 清理事件监听
+  // 流式数据缓冲：避免逐 token 更新 Zustand 导致高频重渲染
+  const streamBufferRef = useRef<{ content: string; thinking: string; phase?: string; usage: UsageInfo | null }>({
+    content: '', thinking: '', phase: undefined, usage: null,
+  })
+  const streamRafRef = useRef<number | null>(null)
+  const currentAssistantIdRef = useRef<string>('')
+
+  // 清理事件监听和流式缓冲
   useEffect(() => {
     return () => {
       if (unlistenRef.current) {
         unlistenRef.current()
         unlistenRef.current = null
+      }
+      if (streamRafRef.current) {
+        cancelAnimationFrame(streamRafRef.current)
+        streamRafRef.current = null
       }
     }
   }, [])
@@ -445,15 +456,35 @@ export function useAiChat(options: UseAiChatOptions): UseAiChatReturn {
         }
       }
 
-      // 注册流式监听
+      // 注册流式监听（RAF 批量刷新，避免逐 token 高频重渲染）
       if (unlistenRef.current) {
         unlistenRef.current()
         unlistenRef.current = null
       }
+      // 取消上一轮残留的 RAF
+      if (streamRafRef.current) {
+        cancelAnimationFrame(streamRafRef.current)
+        streamRafRef.current = null
+      }
       streamErrorRef.current = false
+      currentAssistantIdRef.current = assistantId
+
+      /** 将缓冲区的流式数据刷新到 Zustand */
+      const flushStreamBuffer = () => {
+        const buffered = streamBufferRef.current
+        const aid = currentAssistantIdRef.current
+        if (!aid) return
+        updateAssistant(aid, buffered.content, buffered.thinking, buffered.phase)
+        if (buffered.usage) updateAssistantUsage(aid, buffered.usage)
+      }
+
       unlistenRef.current = await listen<StreamEvent>('ai-stream-chunk', (event) => {
         const { content, thinking, phase, done, error, usage } = event.payload
         if (error) {
+          if (streamRafRef.current) {
+            cancelAnimationFrame(streamRafRef.current)
+            streamRafRef.current = null
+          }
           streamErrorRef.current = true
           const friendly = getFriendlyAiError(error)
           updateAssistant(assistantId, `⚠️ ${friendly}\n\n> 错误详情：${error}`, thinking, 'done')
@@ -461,9 +492,25 @@ export function useAiChat(options: UseAiChatOptions): UseAiChatReturn {
           persistAiConversation(bookId)
           return
         }
-        updateAssistant(assistantId, content, thinking, phase)
-        if (usage) updateAssistantUsage(assistantId, usage)
+
+        // 写入缓冲区
+        streamBufferRef.current = { content, thinking, phase, usage: usage ?? null }
+
+        // 仅在没有待执行 RAF 时调度新的
+        if (streamRafRef.current === null) {
+          streamRafRef.current = requestAnimationFrame(() => {
+            flushStreamBuffer()
+            streamRafRef.current = null
+          })
+        }
+
         if (done) {
+          // done 时立即刷新，不等待下一帧
+          if (streamRafRef.current) {
+            cancelAnimationFrame(streamRafRef.current)
+            streamRafRef.current = null
+          }
+          flushStreamBuffer()
           setStreaming(false)
           persistAiConversation(bookId)
           // 后台触发对话历史总结（不阻塞 UI）
@@ -512,6 +559,10 @@ export function useAiChat(options: UseAiChatOptions): UseAiChatReturn {
       if (bookId) persistAiConversation(bookId)
     } finally {
       setStreaming(false)
+      if (streamRafRef.current) {
+        cancelAnimationFrame(streamRafRef.current)
+        streamRafRef.current = null
+      }
       if (unlistenRef.current) {
         unlistenRef.current()
         unlistenRef.current = null

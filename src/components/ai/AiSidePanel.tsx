@@ -8,7 +8,7 @@
  * 对话记录以当前作品（bookId）为维度持久化到 localStorage，
  * 切换作品时自动加载对应对话历史。
  */
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback, memo } from 'react'
 import {
   SendIcon, BotIcon, Trash2Icon, Loader2Icon, CircleCheckIcon,
   CircleAlertIcon, CircleIcon, DatabaseZapIcon, RefreshCwIcon,
@@ -52,9 +52,24 @@ export default function AiSidePanel() {
   const statusColor = STATUS_CONFIG[aiConnectionStatus].color
   const statusLabel = STATUS_CONFIG[aiConnectionStatus].label
 
-  // 自动滚动到底部（使用 requestAnimationFrame 限流）
+  // 稳定回调引用，避免子组件 memo 失效
+  const onShowDetail = useCallback((payload: ChatRequestPayload) => {
+    setDetailPayload(payload)
+  }, [])
+  const onCloseDetail = useCallback(() => {
+    setDetailPayload(null)
+  }, [])
+
+  // 自动滚动到底部：仅当流式进行中且用户在底部附近时滚动
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
+    if (!streaming || !scrollContainerRef.current) return
     if (scrollRafRef.current) return
+    const container = scrollContainerRef.current
+    // 用户手动上滚超过 200px 则停止自动滚动
+    const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    if (distFromBottom > 200) return
+
     scrollRafRef.current = requestAnimationFrame(() => {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
       scrollRafRef.current = null
@@ -65,7 +80,7 @@ export default function AiSidePanel() {
         scrollRafRef.current = null
       }
     }
-  }, [messages])
+  }, [messages, streaming])
 
   const onSend = () => {
     if (input.trim() && !streaming && currentBookId) {
@@ -88,7 +103,7 @@ export default function AiSidePanel() {
       />
 
       {/* 消息列表 */}
-      <MessageList messages={messages} bottomRef={bottomRef} onDelete={handleDeleteMessage} onShowDetail={setDetailPayload} bookId={currentBookId ?? undefined} />
+      <MessageList messages={messages} bottomRef={bottomRef} scrollContainerRef={scrollContainerRef} onDelete={handleDeleteMessage} onShowDetail={onShowDetail} bookId={currentBookId ?? undefined} />
 
       {/* 快捷提示词 */}
       {messages.length === 0 && <QuickHints onSelect={setInput} />}
@@ -109,13 +124,13 @@ export default function AiSidePanel() {
       />
 
       {/* 请求详情弹窗 */}
-      {detailPayload && <RequestDetailModal payload={detailPayload} onClose={() => setDetailPayload(null)} />}
+      {detailPayload && <RequestDetailModal payload={detailPayload} onClose={onCloseDetail} />}
     </div>
   )
 }
 
 /** 头部组件 */
-function Header({
+const Header = memo(function Header({
   providerLabel,
   StatusIcon,
   statusColor,
@@ -161,24 +176,26 @@ function Header({
       </button>
     </div>
   )
-}
+})
 
 /** 消息列表组件 */
-function MessageList({
+const MessageList = memo(function MessageList({
   messages,
   bottomRef,
+  scrollContainerRef,
   onDelete,
   onShowDetail,
   bookId,
 }: {
   messages: ReturnType<typeof useCurrentAiMessages>
   bottomRef: React.RefObject<HTMLDivElement | null>
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>
   onDelete: (id: string) => void
   onShowDetail: (payload: ChatRequestPayload) => void
   bookId?: string
 }) {
   return (
-    <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 space-y-3 min-w-0">
+    <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 space-y-3 min-w-0">
       {messages.length === 0 && (
         <div className="text-center py-12 text-muted-foreground">
           <BotIcon className="w-8 h-8 mx-auto mb-3 opacity-30" />
@@ -192,10 +209,10 @@ function MessageList({
       <div ref={bottomRef} />
     </div>
   )
-}
+})
 
 /** 快捷提示词组件 */
-function QuickHints({ onSelect }: { onSelect: (hint: string) => void }) {
+const QuickHints = memo(function QuickHints({ onSelect }: { onSelect: (hint: string) => void }) {
   return (
     <div className="px-3 pb-2 flex gap-1.5 flex-wrap">
       {QUICK_HINTS.map((hint) => (
@@ -209,10 +226,10 @@ function QuickHints({ onSelect }: { onSelect: (hint: string) => void }) {
       ))}
     </div>
   )
-}
+})
 
 /** 输入区域组件 */
-function InputArea({
+const InputArea = memo(function InputArea({
   input,
   onChange,
   onSend,
@@ -266,7 +283,7 @@ function InputArea({
         模型：{modelName}
         {/* Embedding 状态（仅 RAG 启用时显示） */}
         {currentBookId && ragEnabled && (
-          <EmbeddingStatus
+          <EmbeddingStatusCmp
             generating={embeddingGenerating}
             loading={embeddingStatusLoading}
             status={embeddingStatus}
@@ -276,10 +293,10 @@ function InputArea({
       </p>
     </div>
   )
-}
+})
 
 /** Embedding 状态指示器 */
-function EmbeddingStatus({
+const EmbeddingStatusCmp = memo(function EmbeddingStatus({
   generating,
   loading,
   status,
@@ -335,4 +352,4 @@ function EmbeddingStatus({
       )}
     </span>
   )
-}
+})
