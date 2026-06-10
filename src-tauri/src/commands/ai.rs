@@ -1,6 +1,7 @@
 use tauri::{AppHandle, Emitter, State};
 use serde::{Deserialize, Serialize};
 use futures_util::StreamExt;
+use tokio::time::timeout;
 use crate::db::AppDb;
 
 // ---- RAG & Embedding 公共结构 ----
@@ -92,6 +93,21 @@ fn snippet(text: &str, max_chars: usize) -> String {
         cleaned
     } else {
         cleaned.chars().take(max_chars).chain(['…']).collect()
+    }
+}
+
+/// 截断文本以适应 Embedding API 的 token 限制
+///
+/// embedding-3 单条最多 3072 tokens，中文约 1.5 token/字，
+/// 保守截断到 1800 字符以留有余量。
+const EMBEDDING_MAX_CHARS: usize = 1800;
+
+fn truncate_for_embedding(text: &str) -> String {
+    if text.chars().count() <= EMBEDDING_MAX_CHARS {
+        text.to_string()
+    } else {
+        // 截取前 1800 个字符，确保不超 token 限制
+        text.chars().take(EMBEDDING_MAX_CHARS).collect()
     }
 }
 
@@ -233,7 +249,19 @@ async fn call_embedding_api(
     if !resp.status().is_success() {
         let status = resp.status();
         let err_text = resp.text().await.unwrap_or_default();
-        return Err(format!("Embedding API 返回错误 ({}): {}", status, err_text));
+
+        // 尝试解析 BigModel 错误码，提供友好提示
+        let hint = if let Ok(err_json) = serde_json::from_str::<serde_json::Value>(&err_text) {
+            if let Some(code) = err_json["error"]["code"].as_str() {
+                match code {
+                    "1210" | "1214" => "（可能原因：单条文本超过了 3072 tokens 限制，已自动截断到 1800 字符；如仍报错请检查 API Key 是否有 Embedding 模型权限）",
+                    "1211" => "（模型不存在，请检查 Embedding 模型名称配置）",
+                    "1213" => "（缺少必填参数，可能是请求体格式异常）",
+                    _ => "",
+                }
+            } else { "" }
+        } else { "" };
+        return Err(format!("Embedding API 返回错误 ({}): {} {}", status, err_text, hint));
     }
 
     let data: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
@@ -592,7 +620,7 @@ pub async fn trigger_embedding(
                 Ok(SourceItem {
                     source_type: "chapter".into(),
                     source_id: id,
-                    plain_text: strip_html(&html),
+                    plain_text: truncate_for_embedding(&strip_html(&html)),
                 })
             })
             .map_err(|e| e.to_string())?
@@ -615,7 +643,7 @@ pub async fn trigger_embedding(
                 Ok(SourceItem {
                     source_type: "world_card".into(),
                     source_id: id,
-                    plain_text: strip_html(&html),
+                    plain_text: truncate_for_embedding(&strip_html(&html)),
                 })
             })
             .map_err(|e| e.to_string())?
@@ -767,6 +795,9 @@ pub struct StreamEvent {
 ///
 /// 通过 reqwest 发起流式 HTTP 请求，将增量文本通过 Tauri 事件
 /// `ai-stream-chunk` 实时推送到前端。返回最终的完整文本。
+///
+/// 内置自动重试机制：当流请求因网络抖动、连接中断等可恢复错误
+/// 失败（且未收到任何生成内容）时，最多自动重试 2 次，采用指数退避。
 #[tauri::command]
 pub async fn stream_ai_chat(
     app: AppHandle,
@@ -788,7 +819,75 @@ pub async fn stream_ai_chat(
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
 
-    stream_sse(app, client, args).await
+    const MAX_RETRIES: u32 = 2;
+    let mut last_error = String::new();
+
+    for attempt in 0..=MAX_RETRIES {
+        if attempt > 0 {
+            let delay_ms = 1000 * 2u64.pow(attempt - 1);
+            eprintln!(
+                "AI 流式对话失败（{}），{}ms 后第 {} 次重试（共 {} 次）",
+                last_error, delay_ms, attempt, MAX_RETRIES
+            );
+            let _ = app.emit("ai-stream-chunk", StreamEvent {
+                content: String::new(),
+                thinking: String::new(),
+                phase: "retrying".into(),
+                done: false,
+                error: Some(format!(
+                    "网络波动，正在自动重试 ({}/{})...",
+                    attempt, MAX_RETRIES
+                )),
+                usage: None,
+            });
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+        }
+
+        match stream_sse(app.clone(), client.clone(), args.clone()).await {
+            // 成功拿到内容（含网络中断后保留的部分内容）
+            Ok(content) if !content.is_empty() => {
+                return Ok(content);
+            }
+            // 空内容（服务端连接成功但无输出），值得重试
+            Ok(_) => {
+                last_error = "AI 返回空内容".to_string();
+            }
+            // 流请求失败，根据错误类型决定是否重试
+            Err(e) => {
+                last_error = e;
+                if !is_retryable_error(&last_error) {
+                    return Err(last_error);
+                }
+            }
+        }
+    }
+
+    Err(last_error)
+}
+
+/// 判断流式请求错误是否可重试（网络抖动/临时性错误），排除认证、权限等永久性错误
+fn is_retryable_error(error: &str) -> bool {
+    let lower = error.to_lowercase();
+    // 网络相关：超时、连接中断、EOF、管道断裂
+    lower.contains("timeout")
+    || lower.contains("超时")
+    || lower.contains("connection")
+    || lower.contains("connect")
+    || lower.contains("network")
+    || lower.contains("eof")
+    || lower.contains("reset")
+    || lower.contains("broken pipe")
+    || lower.contains("unexpected eof")
+    // 服务端临时错误
+    || lower.contains("500") || lower.contains("502")
+    || lower.contains("503") || lower.contains("504")
+    || lower.contains("temporary")
+    || lower.contains("unavailable")
+    || lower.contains("too many requests")
+    || lower.contains("429")
+    // 业务层：空内容
+    || lower.contains("空内容")
+    || lower.contains("读取超时")
 }
 
 /// 刷新 SSE buffer 中的残留数据（流中断或正常结束时调用）
@@ -887,11 +986,19 @@ async fn stream_sse(
     let mut sse_usage: Option<(u32, u32)> = None; // (prompt_tokens, completion_tokens)
     let mut phase: &str = "thinking"; // 初始阶段为 thinking，收到第一个 content 后切换为 answering
 
+    // SSE 流读取超时：若超过 60 秒无任何数据到达，
+    // 判定为网络抖动导致连接中断（半开连接），尝试保留已生成内容
+    const SSE_READ_TIMEOUT_SECS: u64 = 60;
+
     loop {
-        let chunk = match stream.next().await {
-            Some(Ok(c)) => c,
-            Some(Err(e)) => {
-                // 先尝试刷出 buffer 中残留的半行 SSE 数据
+        let chunk = match timeout(
+            std::time::Duration::from_secs(SSE_READ_TIMEOUT_SECS),
+            stream.next()
+        ).await {
+            // 正常收到数据块
+            Ok(Some(Ok(c))) => c,
+            // 流读取错误（网络中断、连接重置等）
+            Ok(Some(Err(e))) => {
                 flush_sse_buffer(&mut accumulated, &mut accumulated_thinking, &mut buffer, &mut sse_usage, &app);
                 let has_content = !accumulated.is_empty() || !accumulated_thinking.is_empty();
                 if has_content {
@@ -901,14 +1008,36 @@ async fn stream_sse(
                         thinking: accumulated_thinking.clone(),
                         phase: "done".into(),
                         done: true,
-                        error: Some(format!("AI 服务连接中断，已保留部分生成内容（可检查网络或切换更稳定的 API）")),
+                        error: Some("AI 服务连接中断，已保留部分生成内容（可检查网络或切换更稳定的 API）".into()),
                         usage: None,
                     });
                     return Ok(accumulated);
                 }
                 return Err(format!("无法连接 AI 服务流式响应: {}. 请检查网络或 API 地址后重试", e));
             }
-            None => break,
+            // 流正常结束
+            Ok(None) => break,
+            // 读取超时：超过 60 秒无数据，判定网络抖动导致连接中断
+            Err(_elapsed) => {
+                flush_sse_buffer(&mut accumulated, &mut accumulated_thinking, &mut buffer, &mut sse_usage, &app);
+                let has_content = !accumulated.is_empty() || !accumulated_thinking.is_empty();
+                if has_content {
+                    eprintln!("SSE 读取超时（{}s 无数据），已保留部分生成内容", SSE_READ_TIMEOUT_SECS);
+                    let _ = app.emit("ai-stream-chunk", StreamEvent {
+                        content: accumulated.clone(),
+                        thinking: accumulated_thinking.clone(),
+                        phase: "done".into(),
+                        done: true,
+                        error: Some("AI 服务响应超时（网络抖动导致连接中断），已保留部分生成内容".into()),
+                        usage: None,
+                    });
+                    return Ok(accumulated);
+                }
+                return Err(format!(
+                    "AI 服务读取超时（{} 秒无数据响应），请检查网络连接是否稳定",
+                    SSE_READ_TIMEOUT_SECS
+                ));
+            }
         };
 
         buffer.push_str(&String::from_utf8_lossy(&chunk));

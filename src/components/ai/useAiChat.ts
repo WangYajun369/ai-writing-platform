@@ -23,14 +23,14 @@ export function getFriendlyAiError(rawError: string): string {
   if (/429|rate limit|too many/.test(lower)) {
     return '请求过于频繁，请稍后重试'
   }
-  if (/timeout|timed out/.test(lower)) {
-    return 'AI 服务响应超时，请检查网络连接后重试'
+  if (/timeout|timed out|超时/.test(lower)) {
+    return 'AI 服务响应超时（网络抖动），已自动重试，若持续失败请检查网络连接'
   }
-  if (/connection|connect|network|econnrefused/.test(lower)) {
-    return '无法连接到 AI 服务，请检查网络连接并在**设置**中确认 API 地址正确'
+  if (/connection|connect|network|econnrefused|eof|reset|broken pipe/.test(lower)) {
+    return '网络连接不稳定，已自动重试，若持续失败请检查网络并在**设置**中确认 API 地址正确'
   }
-  if (/500|503|internal server/.test(lower)) {
-    return 'AI 服务暂时不可用，请稍后重试'
+  if (/500|502|503|504|internal server|unavailable/.test(lower)) {
+    return 'AI 服务暂时不可用，已自动重试，请稍后'
   }
   return 'AI 响应异常，请在**设置**中检查 AI 是否可用'
 }
@@ -174,6 +174,14 @@ export function useAiChat(options: UseAiChatOptions): UseAiChatReturn {
   // 更新助手消息
   const updateAssistant = useCallback((assistantId: string, content: string, thinking?: string, phase?: string) => {
     if (!bookId) return
+    // retrying 阶段：不覆盖已有内容，仅更新阶段和 loading 状态
+    if (phase === 'retrying') {
+      updateAiMessage(bookId, assistantId, {
+        phase: 'retrying',
+        loading: true,
+      })
+      return
+    }
     updateAiMessage(bookId, assistantId, {
       content,
       thinking: thinking ?? undefined,
@@ -215,7 +223,9 @@ export function useAiChat(options: UseAiChatOptions): UseAiChatReturn {
       await aiApi.triggerEmbedding(bookId, aiConfig.rag.endpoint, ragApiKey, aiConfig.rag.embeddingModel)
       await refreshEmbeddingStatus()
     } catch (err) {
-      alert(`Embedding 生成失败: ${String(err)}`)
+      const msg = String(err)
+      // 提取友好提示
+      alert(`Embedding 生成失败\n\n${msg}\n\n排查建议：\n1. 检查 API Key 是否有 Embedding 模型（embedding-3）的调用权限\n2. 单条文本过长可能超过 3072 tokens 限制（已自动截断）\n3. 检查 Endpoint 地址是否正确（默认 https://open.bigmodel.cn/api/paas/v4）`)
     } finally {
       setEmbeddingGenerating(false)
     }

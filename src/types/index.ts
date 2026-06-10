@@ -202,7 +202,7 @@ export interface AiMessage {
   /** 深度思考过程（智谱/DeepSeek 推理模型） */
   thinking: string
   /** 当前生成阶段 */
-  phase: 'thinking' | 'answering' | 'done' | 'summarizing'
+  phase: 'thinking' | 'answering' | 'done' | 'summarizing' | 'retrying'
   /** 是否处于章节总结阶段 */
   isSummarizing?: boolean
   loading?: boolean
