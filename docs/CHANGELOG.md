@@ -1,5 +1,26 @@
 # 更新日志
 
+## v0.7.0 (2026-06-10)
+
+### 新增
+- 通用 ContextMenu 组件：新增右键菜单系统，支持全局上下文操作
+- AI 请求详情面板：新增 RequestDetailModal 组件，支持查看 AI 请求详情与消息删除
+- AI 工具箱面板：新增 AiToolboxPanel，集成章末总结/续写/扩写等 AI 写作辅助工具
+- 章节摘要头部：新增 ChapterSummaryHeader 组件，展示章节摘要信息
+- AI 对话增强：新增 MessageBubble、useAiChat hook，重构 AiSidePanel 对话流程
+- 回收站管理：新增 TrashModal 组件，支持软删除数据的恢复与永久删除
+- 设置页面全面重构：新增独立配置组件（外观/编辑器/存储/AI/RAG/聊天/工具箱/版本），实现模块化设置管理
+- 版本信息展示：新增 VersionSection，运行时动态展示应用版本与更新信息
+- AI 服务商预设：新增 ChatConfigSection 和 RAGConfigSection，预设常用模型配置
+
+### 优化
+- 拆分 SettingsPage 为独立配置组件，提取 useResizeHandle 通用 hook
+- 重构快照面板布局与窗口管理，优化编辑器工具栏交互
+- 书籍管理增强：BookCard 右键菜单支持编辑/删除，EditBookDialog 和 NewBookDialog 功能完善
+- AI 后端命令增强：ai.rs 扩展多项 IPC 命令，支持工具箱 API 调用
+- Tauri 窗口管理扩展：window.rs 新增辅助窗口创建与管理能力
+- 状态管理扩展：appStore 新增回收站、AI 配置、章节摘要等状态字段
+
 ## v0.6.0 (2026-06-09)
 
 ### 新增
