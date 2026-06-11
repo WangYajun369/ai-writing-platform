@@ -16,7 +16,9 @@
     "check": "node scripts/check.mjs",
     "check-versions": "npx tsx scripts/check-versions.ts",
     "check-rust-versions": "npx tsx scripts/check-rust-versions.ts",
-    "node": "npx tsx scripts/node-manager.ts"
+    "node": "npx tsx scripts/node-manager.ts",
+    "clean": "npx tsx scripts/clean.ts",
+    "clean:all": "npx tsx scripts/clean.ts --all"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -8,6 +8,7 @@
  */
 import { useEffect, useState, useCallback } from 'react'
 import { Trash2Icon, RotateCcwIcon, XIcon, AlertTriangleIcon, BookOpenIcon } from 'lucide-react'
+import { confirm } from '@tauri-apps/plugin-dialog'
 import { bookApi } from '@/lib/tauri-bridge'
 import { formatWordCount, formatRelativeTime } from '@/lib/utils'
 import { resolveCoverSrc } from '@/lib/image-utils.ts'
@@ -73,7 +74,11 @@ export default function TrashModal({ onClose, onChanged }: TrashModalProps) {
 
   /** 彻底删除单个作品 */
   async function handleHardDelete(book: Book) {
-    if (!confirm(`确定彻底删除《${book.title}》？\n\n此操作将删除该作品的全部数据（卷、章节、快照、世界观卡片、AI 对话等），不可恢复！`)) return
+    const ok = await confirm(
+      `确定彻底删除《${book.title}》？\n\n此操作将删除该作品的全部数据（卷、章节、快照、世界观卡片、AI 对话等），不可恢复！`,
+      { title: '彻底删除', kind: 'warning' },
+    )
+    if (!ok) return
     setActioning(book.id)
     try {
       await bookApi.hardDelete(book.id)
@@ -89,7 +94,11 @@ export default function TrashModal({ onClose, onChanged }: TrashModalProps) {
   /** 一键清空回收站 */
   async function handleClearAll() {
     if (deletedBooks.length === 0) return
-    if (!confirm(`确定清空回收站？\n\n将彻底删除全部 ${deletedBooks.length} 个作品及其所有数据，此操作不可恢复！`)) return
+    const ok = await confirm(
+      `确定清空回收站？\n\n将彻底删除全部 ${deletedBooks.length} 个作品及其所有数据，此操作不可恢复！`,
+      { title: '清空回收站', kind: 'warning' },
+    )
+    if (!ok) return
     setActioning('__clear__')
     try {
       await bookApi.clearTrash()

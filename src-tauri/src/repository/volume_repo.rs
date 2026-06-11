@@ -71,18 +71,35 @@ pub fn update_title(conn: &Connection, id: &str, title: &str) -> Result<usize> {
     conn.execute("UPDATE volumes SET title=?1 WHERE id=?2", params![title, id])
 }
 
-/// 软删除卷（设置 deleted_at），同时解除下属未删除章节的卷关联
+/// 软删除卷（事务包装）：标记卷为已删除 + 解除所有下属章节的卷关联。
+///
+/// 关键：同时解除已删除章节的 volume_id，避免后续硬删除卷时
+/// `ON DELETE SET NULL` 级联触发 `chapters_fts_au` 对大文本重新分词导致 SQL logic error。
 pub fn soft_delete(conn: &Connection, id: &str, ts: &str) -> Result<()> {
-    conn.execute(
-        "UPDATE volumes SET deleted_at=?1 WHERE id=?2",
-        params![ts, id],
-    )?;
-    // 将下属未删除章节的 volume_id 置 NULL
-    conn.execute(
-        "UPDATE chapters SET volume_id=NULL WHERE volume_id=?1 AND deleted_at IS NULL",
-        params![id],
-    )?;
-    Ok(())
+    // 使用显式事务保证两步操作的原子性
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    let result = (|| -> Result<()> {
+        conn.execute(
+            "UPDATE volumes SET deleted_at=?1 WHERE id=?2",
+            params![ts, id],
+        )?;
+        // 解除所有章节的卷关联（含已软删除的），避免硬删除卷时的 FTS 触发器级联
+        conn.execute(
+            "UPDATE chapters SET volume_id=NULL WHERE volume_id=?1",
+            params![id],
+        )?;
+        Ok(())
+    })();
+    match result {
+        Ok(()) => {
+            conn.execute_batch("COMMIT")?;
+            Ok(())
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(e)
+        }
+    }
 }
 
 /// 恢复已软删除的卷

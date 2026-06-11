@@ -18,11 +18,13 @@ pub struct SaveChapterResult {
     pub book_word_count: i64,
 }
 
-/// 恢复章节返回结果（包含恢复后所在卷）
+/// 恢复章节返回结果（包含恢复后所在卷 + 更新后的全书字数）
 #[derive(Serialize)]
 pub struct RestoreChapterResult {
     #[serde(rename = "volumeId")]
     pub volume_id: Option<String>,
+    #[serde(rename = "bookWordCount")]
+    pub book_word_count: i64,
 }
 
 /// 章节总结信息
@@ -98,10 +100,11 @@ pub async fn list_deleted_chapters(app: AppHandle, db: State<'_, AppDb>, book_id
     chapter_service::list_deleted_chapters(&app, &db, &book_id)
 }
 
-/// 软删除章节（设置 deleted_at），同步更新全书字数
+/// 软删除章节（设置 deleted_at），同步更新全书字数，返回更新后的书籍信息
 #[tauri::command]
-pub async fn delete_chapter(app: AppHandle, db: State<'_, AppDb>, chapter_id: String) -> Result<(), AppError> {
-    chapter_service::delete_chapter(&app, &db, &chapter_id)
+pub async fn delete_chapter(app: AppHandle, db: State<'_, AppDb>, chapter_id: String) -> Result<SaveChapterResult, AppError> {
+    let book_wc = chapter_service::delete_chapter(&app, &db, &chapter_id)?;
+    Ok(SaveChapterResult { word_count: 0, book_word_count: book_wc })
 }
 
 /// 恢复已软删除的章节（清除 deleted_at）
@@ -110,10 +113,11 @@ pub async fn restore_chapter(app: AppHandle, db: State<'_, AppDb>, chapter_id: S
     chapter_service::restore_chapter(&app, &db, &chapter_id)
 }
 
-/// 硬删除章节
+/// 硬删除章节，返回更新后的书籍字数
 #[tauri::command]
-pub async fn hard_delete_chapter(app: AppHandle, db: State<'_, AppDb>, chapter_id: String) -> Result<(), AppError> {
-    chapter_service::hard_delete_chapter(&app, &db, &chapter_id)
+pub async fn hard_delete_chapter(app: AppHandle, db: State<'_, AppDb>, chapter_id: String) -> Result<SaveChapterResult, AppError> {
+    let book_wc = chapter_service::hard_delete_chapter(&app, &db, &chapter_id)?;
+    Ok(SaveChapterResult { word_count: 0, book_word_count: book_wc })
 }
 
 /// 重新排序章节

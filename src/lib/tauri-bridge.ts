@@ -105,12 +105,13 @@ export const chapterApi = {
     return invoke<Chapter[]>('list_deleted_chapters', { bookId })
   },
 
-  async restore(chapterId: string): Promise<{ volumeId: string | null }> {
-    return invoke<{ volumeId: string | null }>('restore_chapter', { chapterId })
+  async restore(chapterId: string): Promise<{ volumeId: string | null; bookWordCount: number }> {
+    return invoke<{ volumeId: string | null; bookWordCount: number }>('restore_chapter', { chapterId })
   },
 
-  async hardDelete(chapterId: string): Promise<void> {
-    return invoke<void>('hard_delete_chapter', { chapterId })
+  /** 彻底删除章节，返回更新后的全书字数 */
+  async hardDelete(chapterId: string): Promise<{ bookWordCount: number }> {
+    return invoke<{ bookWordCount: number }>('hard_delete_chapter', { chapterId })
   },
 
   async getContent(chapterId: string): Promise<string> {
@@ -138,8 +139,9 @@ export const chapterApi = {
     return invoke<void>('rename_chapter', { chapterId, title })
   },
 
-  async delete(chapterId: string): Promise<void> {
-    return invoke<void>('delete_chapter', { chapterId })
+  /** 软删除章节，返回更新后的全书字数 */
+  async delete(chapterId: string): Promise<{ bookWordCount: number }> {
+    return invoke<{ bookWordCount: number }>('delete_chapter', { chapterId })
   },
 
   async reorder(chapterIds: string[]): Promise<void> {

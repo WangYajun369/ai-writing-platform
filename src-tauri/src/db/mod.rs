@@ -19,7 +19,11 @@ impl ManageConnection for SqliteConnectionManager {
     type Error = rusqlite::Error;
 
     fn connect(&self) -> Result<Self::Connection, Self::Error> {
-        Connection::open(&self.path)
+        let conn = Connection::open(&self.path)?;
+        // 每个连接必须启用外键约束和 WAL 模式
+        // foreign_keys 是每连接级别的设置，不会持久化到数据库文件
+        let _ = conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;");
+        Ok(conn)
     }
 
     fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
@@ -189,9 +193,9 @@ impl AppDb {
                 INSERT OR REPLACE INTO chapters_fts(rowid, title, content)
                     VALUES (new.rowid, new.title, new.content_html);
             END;
+            -- 使用 DELETE 直接移除 FTS 索引项，无需经过分词器
             CREATE TRIGGER chapters_fts_ad AFTER DELETE ON chapters BEGIN
-                INSERT OR REPLACE INTO chapters_fts(chapters_fts, rowid, title, content)
-                    VALUES('delete', old.rowid, old.title, old.content_html);
+                DELETE FROM chapters_fts WHERE rowid = old.rowid;
             END;
             CREATE TRIGGER chapters_fts_au AFTER UPDATE ON chapters BEGIN
                 INSERT OR REPLACE INTO chapters_fts(rowid, title, content)
@@ -203,9 +207,9 @@ impl AppDb {
                 INSERT OR REPLACE INTO world_cards_fts(rowid, title, content)
                     VALUES (new.rowid, new.title, new.content || ' ' || new.content_html);
             END;
+            -- 使用 DELETE 直接移除 FTS 索引项，无需经过分词器
             CREATE TRIGGER world_cards_fts_ad AFTER DELETE ON world_cards BEGIN
-                INSERT OR REPLACE INTO world_cards_fts(world_cards_fts, rowid, title, content)
-                    VALUES('delete', old.rowid, old.title, old.content || ' ' || old.content_html);
+                DELETE FROM world_cards_fts WHERE rowid = old.rowid;
             END;
             CREATE TRIGGER world_cards_fts_au AFTER UPDATE ON world_cards BEGIN
                 INSERT OR REPLACE INTO world_cards_fts(rowid, title, content)

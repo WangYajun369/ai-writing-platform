@@ -1,4 +1,4 @@
-# TimeWrite 版本号分布位置
+# MirageInk (TimeWrite) 版本号分布位置
 
 版本号在项目中分布在以下 **5 个文件**中（发版时 `bump_version.py` 会自动更新），另有 2 个自动同步来源无需手动操作：
 

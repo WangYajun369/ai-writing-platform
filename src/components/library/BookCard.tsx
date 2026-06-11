@@ -8,7 +8,7 @@
  */
 import { useState, useEffect } from 'react'
 import { MoreVerticalIcon, EditIcon, Trash2Icon, CalendarIcon, ImageIcon, PencilIcon, UploadIcon } from 'lucide-react'
-import { open, save } from '@tauri-apps/plugin-dialog'
+import { open, save, confirm } from '@tauri-apps/plugin-dialog'
 import { stat } from '@tauri-apps/plugin-fs'
 import type { Book } from '@/types'
 import { bookApi, importExportApi } from '@/lib/tauri-bridge.ts'
@@ -142,7 +142,11 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
   }
 
   async function handleDelete() {
-    if (!confirm(`确认将《${book.title}》移入回收站？可在回收站中恢复或彻底删除。`)) return
+    const ok = await confirm(
+      `确认将《${book.title}》移入回收站？可在回收站中恢复或彻底删除。`,
+      { title: '删除作品', kind: 'warning' },
+    )
+    if (!ok) return
     try {
       await bookApi.delete(book.id)
       onRefresh()

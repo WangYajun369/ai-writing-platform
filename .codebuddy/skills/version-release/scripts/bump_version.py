@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-TimeWrite 版本号自动化更新脚本
+MirageInk (TimeWrite) 版本号自动化更新脚本
 用法:
   python3 .codebuddy/skills/version-release/scripts/bump_version.py major       # 大版本 0.1.0 → 1.0.0
   python3 .codebuddy/skills/version-release/scripts/bump_version.py minor       # 新功能 0.1.0 → 0.2.0
