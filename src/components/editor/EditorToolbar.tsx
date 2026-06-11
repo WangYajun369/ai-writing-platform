@@ -284,13 +284,14 @@ export default function EditorToolbar() {
   return (
     <header className="toolbar border-b bg-card px-4 py-2 flex items-center gap-2 flex-shrink-0 h-12">
       {/* 返回 */}
-      <button
-        onClick={() => navigate('/')}
-        className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground"
-        title="返回书库"
-      >
-        <ArrowLeftIcon className="w-4 h-4" />
-      </button>
+      <TooltipWrap title="返回书库">
+        <button
+          onClick={() => navigate('/')}
+          className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground"
+        >
+          <ArrowLeftIcon className="w-4 h-4" />
+        </button>
+      </TooltipWrap>
 
       {/* 书名 */}
       <span className="text-sm font-medium truncate max-w-32">{currentBook?.title ?? '未命名'}</span>
@@ -310,23 +311,25 @@ export default function EditorToolbar() {
       {/* 字体大小 */}
       <div className="flex items-center gap-1">
         <TypeIcon className="w-3.5 h-3.5 text-muted-foreground" />
-        <button
-          onClick={() => setFontSize(Math.max(12, fontSize - 1))}
-          disabled={fontSize <= 12}
-          className="p-0.5 rounded hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-          title="缩小字体"
-        >
-          <MinusIcon className="w-3.5 h-3.5" />
-        </button>
+        <TooltipWrap title="缩小字体">
+          <button
+            onClick={() => setFontSize(Math.max(12, fontSize - 1))}
+            disabled={fontSize <= 12}
+            className="p-0.5 rounded hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <MinusIcon className="w-3.5 h-3.5" />
+          </button>
+        </TooltipWrap>
         <span className="text-xs text-muted-foreground w-7 text-center tabular-nums">{fontSize}px</span>
-        <button
-          onClick={() => setFontSize(Math.min(24, fontSize + 1))}
-          disabled={fontSize >= 24}
-          className="p-0.5 rounded hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-          title="放大字体"
-        >
-          <PlusIcon className="w-3.5 h-3.5" />
-        </button>
+        <TooltipWrap title="放大字体">
+          <button
+            onClick={() => setFontSize(Math.min(24, fontSize + 1))}
+            disabled={fontSize >= 24}
+            className="p-0.5 rounded hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <PlusIcon className="w-3.5 h-3.5" />
+          </button>
+        </TooltipWrap>
       </div>
 
       <div className="w-px h-5 bg-border mx-1" />
@@ -374,30 +377,33 @@ export default function EditorToolbar() {
         {isInTable && !tablePickerOpen && (
           <>
             <span className="w-px h-4 bg-border mx-0.5" />
-            <button
-              onClick={() => editor?.chain().focus().deleteRow().run()}
-              className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-              title="删除当前行"
-            >
-              <MinusIcon className="w-3 h-3" />
-              <span>删行</span>
-            </button>
-            <button
-              onClick={() => editor?.chain().focus().deleteColumn().run()}
-              className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-              title="删除当前列"
-            >
-              <MinusIcon className="w-3 h-3" />
-              <span>删列</span>
-            </button>
-            <button
-              onClick={() => editor?.chain().focus().deleteTable().run()}
-              className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-              title="删除整个表格"
-            >
-              <Trash2Icon className="w-3 h-3" />
-              <span>删表</span>
-            </button>
+            <TooltipWrap title="删除当前行">
+              <button
+                onClick={() => editor?.chain().focus().deleteRow().run()}
+                className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+              >
+                <MinusIcon className="w-3 h-3" />
+                <span>删行</span>
+              </button>
+            </TooltipWrap>
+            <TooltipWrap title="删除当前列">
+              <button
+                onClick={() => editor?.chain().focus().deleteColumn().run()}
+                className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+              >
+                <MinusIcon className="w-3 h-3" />
+                <span>删列</span>
+              </button>
+            </TooltipWrap>
+            <TooltipWrap title="删除整个表格">
+              <button
+                onClick={() => editor?.chain().focus().deleteTable().run()}
+                className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+              >
+                <Trash2Icon className="w-3 h-3" />
+                <span>删表</span>
+              </button>
+            </TooltipWrap>
           </>
         )}
       </div>
@@ -521,21 +527,41 @@ export default function EditorToolbar() {
         icon={<BookMarkedIcon className="w-4 h-4" />}
       />
 
-      <ToolbarBtn
-        active={aiToolboxWindowOpen}
-        onClick={handleToggleAiToolboxWindow}
-        title="AI 工具箱"
-        icon={<WrenchIcon className="w-4 h-4" />}
-        className="text-primary"
-      />
+      <TooltipWrap title="AI 工具箱">
+        <button
+          onClick={handleToggleAiToolboxWindow}
+          className={cn(
+            'relative flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold transition-all duration-300',
+            aiToolboxWindowOpen
+              ? 'bg-gradient-to-r from-primary/90 to-primary text-primary-foreground shadow-md shadow-primary/25'
+              : 'bg-gradient-to-r from-primary/15 via-primary/10 to-primary/15 text-primary border border-primary/20 hover:border-primary/40 hover:shadow-sm hover:shadow-primary/10',
+          )}
+        >
+          <WrenchIcon className="w-3.5 h-3.5" />
+          <span className="tracking-wide">AI 工具箱</span>
+          {!aiToolboxWindowOpen && (
+            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+          )}
+        </button>
+      </TooltipWrap>
 
-      <ToolbarBtn
-        active={aiPanelOpen}
-        onClick={() => setAiPanelOpen((v) => !v)}
-        title="AI 助手"
-        icon={<BotIcon className="w-4 h-4" />}
-        className="text-primary"
-      />
+      <TooltipWrap title="AI 助手">
+        <button
+          onClick={() => setAiPanelOpen((v) => !v)}
+          className={cn(
+            'relative flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold transition-all duration-300',
+            aiPanelOpen
+              ? 'bg-gradient-to-r from-primary/90 to-primary text-primary-foreground shadow-md shadow-primary/25'
+              : 'bg-gradient-to-r from-primary/15 via-primary/10 to-primary/15 text-primary border border-primary/20 hover:border-primary/40 hover:shadow-sm hover:shadow-primary/10',
+          )}
+        >
+          <BotIcon className="w-3.5 h-3.5" />
+          <span className="tracking-wide">AI 助手</span>
+          {!aiPanelOpen && (
+            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+          )}
+        </button>
+      </TooltipWrap>
 
       {/* 快速保存提示 */}
       <SaveIndicator />
@@ -547,6 +573,7 @@ export default function EditorToolbar() {
  * 工具栏按钮子组件
  *
  * 高亮当前激活状态，支持自定义图标与文字提示。
+ * 使用自定义 tooltip 替代原生 title，悬停即刻显示，无需等待。
  */
 function ToolbarBtn({
   active,
@@ -561,18 +588,54 @@ function ToolbarBtn({
   icon: React.ReactNode
   className?: string
 }) {
+  const [show, setShow] = useState(false)
+  const timeoutRef = useRef<number>(0)
+
   return (
-    <button
-      onClick={onClick}
-      title={title}
-      className={cn(
-        'p-1.5 rounded transition-colors',
-        active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-        className
-      )}
+    <div className="relative flex items-center"
+      onMouseEnter={() => { timeoutRef.current = window.setTimeout(() => setShow(true), 150) }}
+      onMouseLeave={() => { clearTimeout(timeoutRef.current); setShow(false) }}
     >
-      {icon}
-    </button>
+      <button
+        onClick={onClick}
+        className={cn(
+          'p-1.5 rounded transition-colors',
+          active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+          className
+        )}
+      >
+        {icon}
+      </button>
+      {show && (
+        <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 z-50 px-2 py-0.5 rounded bg-popover border shadow text-xs text-muted-foreground whitespace-nowrap pointer-events-none">
+          {title}
+        </span>
+      )}
+    </div>
+  )
+}
+
+/**
+ * 工具提示包装器
+ *
+ * 为任意内联按钮添加即时悬停提示，替代原生 title 属性。
+ */
+function TooltipWrap({ title, children }: { title: string; children: React.ReactNode }) {
+  const [show, setShow] = useState(false)
+  const timeoutRef = useRef<number>(0)
+
+  return (
+    <span className="relative inline-flex items-center"
+      onMouseEnter={() => { timeoutRef.current = window.setTimeout(() => setShow(true), 150) }}
+      onMouseLeave={() => { clearTimeout(timeoutRef.current); setShow(false) }}
+    >
+      {children}
+      {show && (
+        <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 z-50 px-2 py-0.5 rounded bg-popover border shadow text-xs text-muted-foreground whitespace-nowrap pointer-events-none">
+          {title}
+        </span>
+      )}
+    </span>
   )
 }
 
@@ -886,14 +949,15 @@ function CodeLanguageSelect({ editor }: { editor: import('@tiptap/core').Editor 
 
   return (
     <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-        title="选择代码语言"
-      >
-        <span>{currentLabel}</span>
-        <ChevronDownIcon className="w-3 h-3" />
-      </button>
+      <TooltipWrap title="选择代码语言">
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+        >
+          <span>{currentLabel}</span>
+          <ChevronDownIcon className="w-3 h-3" />
+        </button>
+      </TooltipWrap>
       {open && (
         <div className="absolute top-full left-0 mt-1 z-30 bg-popover border rounded-lg shadow-lg py-1 max-h-64 overflow-y-auto min-w-36">
           {CODE_LANGUAGES.map((lang) => (

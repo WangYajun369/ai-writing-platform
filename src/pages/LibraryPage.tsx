@@ -397,18 +397,22 @@ export default function LibraryPage() {
 
         {/* 视图切换 */}
         <div className="flex rounded-lg overflow-hidden border">
-          <button
-            onClick={() => setLibraryViewMode('grid')}
-            className={cn('p-2 transition-colors', viewMode === 'grid' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
-          >
-            <GridIcon className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setLibraryViewMode('list')}
-            className={cn('p-2 transition-colors', viewMode === 'list' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
-          >
-            <ListIcon className="w-4 h-4" />
-          </button>
+          <TooltipWrap title="网格视图">
+            <button
+              onClick={() => setLibraryViewMode('grid')}
+              className={cn('p-2 transition-colors', viewMode === 'grid' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
+            >
+              <GridIcon className="w-4 h-4" />
+            </button>
+          </TooltipWrap>
+          <TooltipWrap title="列表视图">
+            <button
+              onClick={() => setLibraryViewMode('list')}
+              className={cn('p-2 transition-colors', viewMode === 'list' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
+            >
+              <ListIcon className="w-4 h-4" />
+            </button>
+          </TooltipWrap>
         </div>
 
         {/* 新建书籍 */}
@@ -421,69 +425,82 @@ export default function LibraryPage() {
         </button>
 
         {/* 回收站 */}
-        <button
-          onClick={() => setShowTrashModal(true)}
-          className="relative p-2 rounded-lg hover:bg-muted transition-colors"
-          title="作品回收站"
-        >
-          <Trash2Icon className="w-5 h-5 text-muted-foreground" />
-          {trashCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full px-1">
-              {trashCount > 99 ? '99+' : trashCount}
-            </span>
-          )}
-        </button>
+        <TooltipWrap title="作品回收站">
+          <button
+            onClick={() => setShowTrashModal(true)}
+            className="relative p-2 rounded-lg hover:bg-muted transition-colors"
+          >
+            <Trash2Icon className="w-5 h-5 text-muted-foreground" />
+            {trashCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full px-1">
+                {trashCount > 99 ? '99+' : trashCount}
+              </span>
+            )}
+          </button>
+        </TooltipWrap>
 
         {/* 导出数据 */}
-        <button
-          onClick={handleExportAll}
-          disabled={isExporting}
-          className="p-2 rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
-          title="导出全部数据"
-        >
-          <UploadIcon className={`w-5 h-5 text-muted-foreground ${isExporting ? 'animate-pulse' : ''}`} />
-        </button>
+        <TooltipWrap title="导出全部数据">
+          <button
+            onClick={handleExportAll}
+            disabled={isExporting}
+            className="p-2 rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
+          >
+            <UploadIcon className={`w-5 h-5 text-muted-foreground ${isExporting ? 'animate-pulse' : ''}`} />
+          </button>
+        </TooltipWrap>
 
         {/* 导入数据 */}
-        <button
-          onClick={handleImportBackup}
-          disabled={isImporting}
-          className="p-2 rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
-          title="导入数据备份"
-        >
-          <DownloadIcon className={`w-5 h-5 text-muted-foreground ${isImporting ? 'animate-pulse' : ''}`} />
-        </button>
+        <TooltipWrap title="导入数据备份">
+          <button
+            onClick={handleImportBackup}
+            disabled={isImporting}
+            className="p-2 rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
+          >
+            <DownloadIcon className={`w-5 h-5 text-muted-foreground ${isImporting ? 'animate-pulse' : ''}`} />
+          </button>
+        </TooltipWrap>
 
         {/* AI 工具箱 */}
-        <button
-          onClick={handleToggleAiToolboxWindow}
-          className={cn(
-            'p-2 rounded-lg transition-colors',
-            aiToolboxWindowOpen ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-muted-foreground',
-          )}
-          title="AI 工具箱"
-        >
-          <WrenchIcon className="w-5 h-5" />
-        </button>
+        <TooltipWrap title="AI 工具箱">
+          <button
+            onClick={handleToggleAiToolboxWindow}
+            className={cn(
+              'relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-300',
+              aiToolboxWindowOpen
+                ? 'bg-gradient-to-r from-primary/90 to-primary text-primary-foreground shadow-md shadow-primary/25'
+                : 'bg-gradient-to-r from-primary/15 via-primary/10 to-primary/15 text-primary border border-primary/20 hover:border-primary/40 hover:shadow-sm hover:shadow-primary/10',
+            )}
+          >
+            <WrenchIcon className="w-4 h-4" />
+            <span className="text-xs font-semibold tracking-wide">AI 工具箱</span>
+            {!aiToolboxWindowOpen && (
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary animate-pulse" />
+            )}
+          </button>
+        </TooltipWrap>
 
         {/* 调试控制台 */}
-        <button
-          onClick={handleToggleDebugWindow}
-          className={cn(
-            'p-2 rounded-lg transition-colors',
-            debugWindowOpen ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-muted-foreground',
-          )}
-          title="调试控制台"
-        >
-          <BugIcon className="w-5 h-5" />
-        </button>
+        <TooltipWrap title="调试控制台">
+          <button
+            onClick={handleToggleDebugWindow}
+            className={cn(
+              'p-2 rounded-lg transition-colors',
+              debugWindowOpen ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-muted-foreground',
+            )}
+          >
+            <BugIcon className="w-5 h-5" />
+          </button>
+        </TooltipWrap>
 
-        <button
-          onClick={() => navigate('/settings')}
-          className="p-2 rounded-lg hover:bg-muted transition-colors"
-        >
-          <SettingsIcon className="w-5 h-5 text-muted-foreground" />
-        </button>
+        <TooltipWrap title="设置">
+          <button
+            onClick={() => navigate('/settings')}
+            className="p-2 rounded-lg hover:bg-muted transition-colors"
+          >
+            <SettingsIcon className="w-5 h-5 text-muted-foreground" />
+          </button>
+        </TooltipWrap>
       </header>
 
       {/* 主体内容（虚拟化滚动容器） */}
@@ -595,6 +612,30 @@ function EmptyLibrary({ onNew }: { onNew: () => void }) {
         新建作品
       </button>
     </div>
+  )
+}
+
+/**
+ * 工具提示包装器
+ *
+ * 为任意内联按钮添加即时悬停提示（150ms），替代原生 title 属性。
+ */
+function TooltipWrap({ title, children }: { title: string; children: React.ReactNode }) {
+  const [show, setShow] = useState(false)
+  const timeoutRef = useRef<number>(0)
+
+  return (
+    <span className="relative inline-flex items-center"
+      onMouseEnter={() => { timeoutRef.current = window.setTimeout(() => setShow(true), 150) }}
+      onMouseLeave={() => { clearTimeout(timeoutRef.current); setShow(false) }}
+    >
+      {children}
+      {show && (
+        <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 z-50 px-2 py-0.5 rounded bg-popover border shadow text-xs text-muted-foreground whitespace-nowrap pointer-events-none">
+          {title}
+        </span>
+      )}
+    </span>
   )
 }
 
