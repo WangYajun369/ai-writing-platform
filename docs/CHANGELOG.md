@@ -1,5 +1,14 @@
 # 更新日志
 
+## v0.9.1 (2026-06-11)
+
+### 优化
+- 大纲面板(OutlinePanel)模块化拆分：抽取 DraggableChapter/DraggableVolume/OutlineDialogs/OutlineDragDrop/OutlineRecycleBin 子组件及 types/utils 工具模块
+- 后端 delete_chapter/hard_delete_chapter 增强返回全书字数，RestoreChapterResult 增加 bookWordCount 字段
+- 数据库连接健壮性增强：每个连接启用 PRAGMA foreign_keys=ON 和 journal_mode=WAL
+- 章节删除/恢复 API 前端适配（tauri-bridge 返回类型更新，BookCard/TrashModal 适配）
+- 新增 clean.ts 清理脚本，check.mjs 检测脚本优化
+
 ## v0.9.0 (2026-06-11)
 
 ### 新增
