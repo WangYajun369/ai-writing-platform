@@ -5,7 +5,7 @@
  */
 import { useAtom } from 'jotai'
 import { wordCountAtom, isSavingAtom, lastSavedAtom } from '@/stores/uiAtoms.ts'
-import { useCurrentChapter } from '@/stores/appStore.ts'
+import { useCurrentChapter, useCurrentBook } from '@/stores/appStore.ts'
 import { formatWordCount } from '@/lib/utils.ts'
 import { format } from 'date-fns'
 
@@ -14,6 +14,11 @@ export default function StatusBar() {
   const [isSaving] = useAtom(isSavingAtom)
   const [lastSaved] = useAtom(lastSavedAtom)
   const currentChapter = useCurrentChapter()
+  const currentBook = useCurrentBook()
+
+  // 全书字数优先从 Zustand book store 读取（删除/恢复章节时立即更新），
+  // 打字过程中的实时估算回退到 Jotai atom
+  const totalWordCount = currentBook?.wordCount ?? wordCount.total
 
   return (
     <footer className="border-t bg-card px-4 py-1.5 flex items-center gap-4 text-xs text-muted-foreground flex-shrink-0">
@@ -26,7 +31,7 @@ export default function StatusBar() {
       )}
 
       {/* 全书字数 */}
-      <span>全书 {formatWordCount(wordCount.total)}</span>
+      <span>全书 {formatWordCount(totalWordCount)}</span>
 
       <div className="flex-1" />
 
