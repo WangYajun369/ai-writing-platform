@@ -1,5 +1,21 @@
 # 更新日志
 
+## v0.9.4 (2026-06-11)
+
+### 新增
+- 新增 ImageCropperDialog 图片裁剪对话框，支持拖拽选区精确裁剪并替换编辑器图片
+- 新增 ImageViewerDialog 图片查看器对话框，支持放大/缩小/拖拽查看高清原图
+- 新增 image-utils.ts 图片处理工具模块，封装裁剪、压缩与 Base64 编码能力
+- 后端新增 process_image_cropped 命令，支持前端传入裁剪参数直接处理图片
+- 后端新增 set_book_cover_data 命令，支持前端直传 Base64 data URL 作为封面，略过后端重复解码
+
+### 优化
+- 后端 process_image 重构，拆分为 validate_source + encode_image 独立函数，新增 crop_and_encode 裁剪编码函数
+- EditorToolbar 新增图片查看和裁剪快捷按钮入口
+- ImageResizeNodeView 图片节点增强交互体验
+- BookCard/CoverPicker/EditBookDialog/NewBookDialog 全面适配封面直传功能
+- tauri-bridge.ts 新增 setBookCoverData 和 processImageCropped API 函数
+
 ## v0.9.3 (2026-06-11)
 
 ### 优化
