@@ -1,5 +1,14 @@
 # 更新日志
 
+## v0.9.0 (2026-06-11)
+
+### 新增
+- 新增调试面板(DebugPanel)及调试控制台，增强窗口管理命令（debug/dump/validate）
+
+### 优化
+- 架构重构：引入 Repository/Service 分层，拆分单例模块（ai/io/window 拆为子模块）
+- 移除 TrailingNodeExtension，优化编辑器和大纲/世界观面板
+
 ## v0.8.3 (2026-06-10)
 
 ### 新增
