@@ -61,6 +61,19 @@ pub async fn set_book_cover(
     book_service::set_book_cover(&app, &db, &id, &source_path)
 }
 
+/// 直接保存预处理过的 Base64 data URL 作为封面
+///
+/// 前端已完成裁剪 + 压缩 + Base64 编码，后端仅校验格式并入库。
+#[tauri::command]
+pub async fn set_book_cover_data(
+    app: AppHandle,
+    db: State<'_, AppDb>,
+    id: String,
+    data_url: String,
+) -> Result<Book, AppError> {
+    book_service::set_book_cover_data(&app, &db, &id, &data_url)
+}
+
 /// 删除书籍（软删除：标记 deleted_at，放入回收站）
 #[tauri::command]
 pub async fn delete_book(app: AppHandle, db: State<'_, AppDb>, id: String) -> Result<(), AppError> {

@@ -157,6 +157,32 @@ pub fn set_book_cover(app: &AppHandle, db: &AppDb, id: &str, source_path: &str) 
     get_book(app, db, id)
 }
 
+/// 直接保存 Base64 data URL 作为封面（前端已处理完裁剪/压缩）
+pub fn set_book_cover_data(app: &AppHandle, db: &AppDb, id: &str, data_url: &str) -> Result<Book, AppError> {
+    if data_url.trim().is_empty() {
+        let ts = now();
+        {
+            let conn = db.pool.get()?;
+            emit_sql_log(app, "UPDATE", "books", &format!("id={id}, clear cover_image"), file!(), line!());
+            book_repo::clear_cover(&conn, id, &ts)?;
+        }
+        return get_book(app, db, id);
+    }
+
+    // 校验 data URL 格式
+    if !data_url.starts_with("data:image/") {
+        return Err(AppError::Business("无效的图片 data URL 格式".into()));
+    }
+
+    let ts = now();
+    {
+        let conn = db.pool.get()?;
+        emit_sql_log(app, "UPDATE", "books", &format!("id={id}, set cover_image from data URL"), file!(), line!());
+        book_repo::update_cover(&conn, id, data_url, &ts)?;
+    }
+    get_book(app, db, id)
+}
+
 /// 软删除书籍
 pub fn delete_book(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
     let conn = db.pool.get()?;

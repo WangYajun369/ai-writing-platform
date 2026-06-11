@@ -107,6 +107,9 @@ importers:
       react-dom:
         specifier: ^19.2.7
         version: 19.2.7(react@19.2.7)
+      react-easy-crop:
+        specifier: ^6.0.1
+        version: 6.0.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       react-markdown:
         specifier: ^10.1.0
         version: 10.1.0(@types/react@19.2.17)(react@19.2.7)
@@ -1515,6 +1518,9 @@ packages:
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
+  normalize-wheel@1.0.1:
+    resolution: {integrity: sha512-1OnlAPZ3zgrk8B91HyRj+eVv+kS5u+Z0SCsak6Xil/kmgEia50ga7zfkumayonZrImffAxPU/5WcyGhzetHNPA==}
+
   orderedmap@2.1.1:
     resolution: {integrity: sha512-TvAWxi0nDe1j/rtMcWcIj94+Ffe6n7zhow33h40SKxmsmozs6dz/e+EajymfoFcHd7sxNn8yHM8839uixMOV6g==}
 
@@ -1604,6 +1610,12 @@ packages:
     resolution: {integrity: sha512-t0BRVXvbiE/o20Hfw669rLbMCDWtYZLvmJigy2f0MxsXF+71pxhR3xOkspmsO8h3ZlNzyibAmtCa3l4lYKk6gQ==}
     peerDependencies:
       react: ^19.2.7
+
+  react-easy-crop@6.0.1:
+    resolution: {integrity: sha512-fq0BkQf0A4NcTsKnv458BUSFXDdhkdL6pB9qRjM7KBKnrhgUhvxQbfyULWjMXt+ZQSypwQASlowh3vCm6R20/Q==}
+    peerDependencies:
+      react: '>=16.4.0'
+      react-dom: '>=16.4.0'
 
   react-is@16.13.1:
     resolution: {integrity: sha512-24e6ynE2H+OKt4kqsOvNd8kBpV65zoxbA4BVsEOB3ARVWQki/DHzaUoC5KuON/BiccDaCCTZBuOcfZs70kR8bQ==}
@@ -3228,6 +3240,8 @@ snapshots:
 
   nanoid@3.3.12: {}
 
+  normalize-wheel@1.0.1: {}
+
   orderedmap@2.1.1: {}
 
   parent-module@1.0.1:
@@ -3364,6 +3378,12 @@ snapshots:
     dependencies:
       react: 19.2.7
       scheduler: 0.27.0
+
+  react-easy-crop@6.0.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
+    dependencies:
+      normalize-wheel: 1.0.1
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
 
   react-is@16.13.1: {}
 

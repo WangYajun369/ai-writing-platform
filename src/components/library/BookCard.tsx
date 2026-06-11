@@ -14,7 +14,9 @@ import type { Book } from '@/types'
 import { bookApi, importExportApi } from '@/lib/tauri-bridge.ts'
 import { formatWordCount, formatRelativeTime } from '@/lib/utils'
 import { useAppStore } from '@/stores/appStore'
-import { resolveCoverSrc } from '@/lib/image-utils.ts'
+import { resolveCoverSrc, processCroppedCoverImage, COVER_ASPECT } from '@/lib/image-utils.ts'
+import type { CropArea } from '@/lib/image-utils'
+import ImageCropperDialog from '@/components/editor/ImageCropperDialog'
 import EditBookDialog from './EditBookDialog'
 import { useContextMenu } from '@/components/common/ContextMenu'
 
@@ -35,6 +37,7 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
   const [coverSrc, setCoverSrc] = useState<string | undefined>(undefined)
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [isExportingBook, setIsExportingBook] = useState(false)
+  const [cropperFile, setCropperFile] = useState<string | null>(null)
   const { updateBook } = useAppStore()
 
   // 异步加载封面为 data URL
@@ -103,7 +106,7 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
     ],
   })
 
-  /** 选择并上传封面 */
+  /** 选择并裁剪封面 */
   async function handleChangeCover() {
     setCoverChanging(true)
     try {
@@ -113,13 +116,14 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
         multiple: false,
         directory: false,
       })
-      if (!selected) return
+      if (!selected) { setCoverChanging(false); return }
       const filePath = selected as string
 
       // 校验扩展名
       const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
       if (!ALLOWED_COVER_EXTS.includes(ext)) {
         alert(`不支持的图片格式 .${ext}，仅支持 jpg、png、webp`)
+        setCoverChanging(false)
         return
       }
 
@@ -128,17 +132,38 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
       if (fileStat.size > MAX_COVER_SIZE) {
         const sizeMB = (fileStat.size / (1024 * 1024)).toFixed(1)
         alert(`图片过大（${sizeMB} MB），封面不能超过 5 MB`)
+        setCoverChanging(false)
         return
       }
 
-      const updated = await bookApi.setCover(book.id, filePath)
-      updateBook(book.id, updated)
+      // 打开裁剪弹窗
+      setCropperFile(filePath)
     } catch (err) {
       console.error('修改封面失败', err)
       alert('修改封面失败，请重试')
+      setCoverChanging(false)
+    }
+  }
+
+  /** 裁剪确认：处理并保存封面 */
+  async function handleCropConfirm(crop: CropArea) {
+    const filePath = cropperFile!
+    setCropperFile(null)
+    try {
+      const dataUrl = await processCroppedCoverImage(filePath, crop)
+      const updated = await bookApi.setCoverData(book.id, dataUrl)
+      updateBook(book.id, updated)
+    } catch (err) {
+      console.error('裁剪封面失败', err)
+      alert('裁剪封面失败，请重试')
     } finally {
       setCoverChanging(false)
     }
+  }
+
+  function handleCropClose() {
+    setCropperFile(null)
+    setCoverChanging(false)
   }
 
   async function handleDelete() {
@@ -202,6 +227,16 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
               setShowEditDialog(false)
               onRefresh()
             }}
+          />
+        )}
+
+        {/* 封面裁剪弹窗 */}
+        {cropperFile && (
+          <ImageCropperDialog
+            filePath={cropperFile}
+            aspectRatio={COVER_ASPECT}
+            onConfirm={handleCropConfirm}
+            onClose={handleCropClose}
           />
         )}
       </div>
@@ -277,6 +312,16 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
             setShowEditDialog(false)
             onRefresh()
           }}
+        />
+      )}
+
+      {/* 封面裁剪弹窗 */}
+      {cropperFile && (
+        <ImageCropperDialog
+          filePath={cropperFile}
+          aspectRatio={COVER_ASPECT}
+          onConfirm={handleCropConfirm}
+          onClose={handleCropClose}
         />
       )}
     </div>

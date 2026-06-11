@@ -10,7 +10,7 @@ import { XIcon } from 'lucide-react'
 import { bookApi } from '@/lib/tauri-bridge'
 import { useAppStore } from '@/stores/appStore'
 import CoverPicker from './CoverPicker'
-import { resolveCoverSrc } from '@/lib/image-utils.ts'
+import { isRenderableSrc } from '@/lib/image-utils.ts'
 import type { Book } from '@/types'
 
 interface NewBookDialogProps {
@@ -23,19 +23,15 @@ export default function NewBookDialog({ onClose, onCreated }: NewBookDialogProps
   const [author, setAuthor] = useState('')
   const [description, setDescription] = useState('')
   const [dailyTarget, setDailyTarget] = useState(1000)
-  const [coverPath, setCoverPath] = useState('') // 本地文件绝对路径
+  const [coverDataUrl, setCoverDataUrl] = useState('') // 裁剪后的 Base64 data URL
   const [coverPreview, setCoverPreview] = useState<string | undefined>(undefined)
   const [submitting, setSubmitting] = useState(false)
   const { addBook } = useAppStore()
 
-  // 异步加载封面预览
+  // 同步预览：data URL 可直接渲染
   useEffect(() => {
-    let cancelled = false
-    resolveCoverSrc(coverPath || null).then((src) => {
-      if (!cancelled) setCoverPreview(src)
-    })
-    return () => { cancelled = true }
-  }, [coverPath])
+    setCoverPreview(coverDataUrl && isRenderableSrc(coverDataUrl) ? coverDataUrl : undefined)
+  }, [coverDataUrl])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -50,9 +46,9 @@ export default function NewBookDialog({ onClose, onCreated }: NewBookDialogProps
         tags: [],
       })
 
-      // 如果选择了封面，创建后再设置封面
-      if (coverPath) {
-        const updated = await bookApi.setCover(book.id, coverPath)
+      // 如果选择了封面，通过 setCoverData 直接保存 data URL
+      if (coverDataUrl) {
+        const updated = await bookApi.setCoverData(book.id, coverDataUrl)
         addBook(updated)
         onCreated(updated)
       } else {
@@ -87,7 +83,7 @@ export default function NewBookDialog({ onClose, onCreated }: NewBookDialogProps
             <label className="text-sm font-medium">封面（可选）</label>
             <CoverPicker
               value={coverPreview}
-              onChange={setCoverPath}
+              onChange={setCoverDataUrl}
             />
           </div>
 

@@ -37,6 +37,11 @@ export const bookApi = {
     return invoke<Book>('set_book_cover', { id, sourcePath })
   },
 
+  /** 直接保存已处理的 Base64 data URL 作为封面（前端已完成裁剪/压缩） */
+  async setCoverData(id: string, dataUrl: string): Promise<Book> {
+    return invoke<Book>('set_book_cover_data', { id, dataUrl })
+  },
+
   /** 列出回收站中已删除的作品 */
   async listDeleted(): Promise<Book[]> {
     return invoke<Book[]>('list_deleted_books')
@@ -440,6 +445,27 @@ export const imageApi = {
   /** 处理图片：压缩 + 缩放 + Base64 编码，返回 data: URL */
   async process(sourcePath: string, maxWidth = 1200, quality = 80): Promise<string> {
     return invoke<string>('process_image', { sourcePath, maxWidth, quality })
+  },
+
+  /** 裁剪图片：裁剪 + 压缩 + 缩放 + Base64 编码，返回 data: URL */
+  async processCropped(
+    sourcePath: string,
+    cropX: number,
+    cropY: number,
+    cropW: number,
+    cropH: number,
+    maxWidth = 1200,
+    quality = 80,
+  ): Promise<string> {
+    return invoke<string>('process_image_cropped', {
+      sourcePath,
+      cropX: Math.round(cropX),
+      cropY: Math.round(cropY),
+      cropW: Math.round(cropW),
+      cropH: Math.round(cropH),
+      maxWidth,
+      quality,
+    })
   },
 }
 

@@ -23,6 +23,7 @@ import {
   MinusIcon,
   PlusIcon,
   ImageIcon,
+  CropIcon,
   ListIcon,
   ListOrderedIcon,
   ListTodoIcon,
@@ -54,8 +55,9 @@ import {
 } from '@/stores/uiAtoms.ts'
 import { useCurrentBook, useCurrentChapter, useAppStore } from '@/stores/appStore.ts'
 import { cn } from '@/lib/utils.ts'
-import { processEditorImage } from '@/lib/image-utils.ts'
+import { processEditorImage, processCroppedEditorImage } from '@/lib/image-utils.ts'
 import { windowApi } from '@/lib/tauri-bridge'
+import ImageCropperDialog from './ImageCropperDialog'
 
 /** 预设字体颜色 */
 const PRESET_COLORS = [
@@ -87,6 +89,10 @@ export default function EditorToolbar() {
   const tablePickerRef = useRef<HTMLDivElement>(null)
   const [gridHover, setGridHover] = useState({ rows: 3, cols: 3 })
   const [isInTable, setIsInTable] = useState(false)
+
+  // 图片裁剪器
+  const [cropperOpen, setCropperOpen] = useState(false)
+  const [cropperFilePath, setCropperFilePath] = useState('')
 
   // 监听编辑器选区变化，实时更新 isInTable 状态，
   // 确保点击表格时工具栏显示删行/删列/删表按钮，点击其他地方时隐藏
@@ -149,6 +155,40 @@ export default function EditorToolbar() {
       console.error('插入图片失败', err)
     }
   }, [editor])
+
+  /** 裁切插入图片：选择 → 裁剪 → 压缩 → 插入 */
+  const handleInsertCroppedImage = useCallback(async () => {
+    if (!editor) return
+    try {
+      const selected = await open({
+        title: '选择图片',
+        multiple: false,
+        filters: [{
+          name: '图片文件',
+          extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'],
+        }],
+      })
+      if (!selected) return
+      setCropperFilePath(selected as string)
+      setCropperOpen(true)
+    } catch (err) {
+      console.error('选择图片失败', err)
+    }
+  }, [editor])
+
+  /** 裁剪确认：将裁剪参数传给 Rust 处理 → 插入编辑器 */
+  const handleCropperConfirm = useCallback(async (crop: { x: number; y: number; width: number; height: number }) => {
+    if (!editor || !cropperFilePath) return
+    try {
+      const dataUrl = await processCroppedEditorImage(cropperFilePath, crop)
+      editor.chain().focus().setImage({ src: dataUrl }).run()
+    } catch (err) {
+      console.error('裁剪图片失败', err)
+    } finally {
+      setCropperOpen(false)
+      setCropperFilePath('')
+    }
+  }, [editor, cropperFilePath])
 
   async function handleToggleWorldWindow() {
     if (worldWindowOpen) {
@@ -340,6 +380,14 @@ export default function EditorToolbar() {
         onClick={handleInsertImage}
         title="插入图片"
         icon={<ImageIcon className="w-4 h-4" />}
+      />
+
+      {/* 裁切插入图片 */}
+      <ToolbarBtn
+        active={cropperOpen}
+        onClick={handleInsertCroppedImage}
+        title="裁切插入图片"
+        icon={<CropIcon className="w-4 h-4" />}
       />
 
       {/* 代码块 */}
@@ -565,6 +613,18 @@ export default function EditorToolbar() {
 
       {/* 快速保存提示 */}
       <SaveIndicator />
+
+      {/* 图片裁剪弹窗 */}
+      {cropperOpen && cropperFilePath && (
+        <ImageCropperDialog
+          filePath={cropperFilePath}
+          onConfirm={handleCropperConfirm}
+          onClose={() => {
+            setCropperOpen(false)
+            setCropperFilePath('')
+          }}
+        />
+      )}
     </header>
   )
 }

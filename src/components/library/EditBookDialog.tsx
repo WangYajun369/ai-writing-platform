@@ -10,7 +10,7 @@ import { XIcon } from 'lucide-react'
 import { bookApi } from '@/lib/tauri-bridge'
 import { useAppStore } from '@/stores/appStore'
 import CoverPicker from './CoverPicker'
-import { resolveCoverSrc } from '@/lib/image-utils.ts'
+import { isRenderableSrc } from '@/lib/image-utils.ts'
 import type { Book } from '@/types'
 
 interface EditBookDialogProps {
@@ -24,35 +24,23 @@ export default function EditBookDialog({ book, onClose, onSaved }: EditBookDialo
   const [author, setAuthor] = useState(book.author)
   const [description, setDescription] = useState(book.description)
   const [dailyTarget, setDailyTarget] = useState(book.dailyTarget)
-  const [coverPath, setCoverPath] = useState('') // 本地文件绝对路径（替换为新封面时使用）
+  const [coverDataUrl, setCoverDataUrl] = useState('') // 新选择的封面 data URL
   const [coverRemoved, setCoverRemoved] = useState(false) // 是否明确移除了封面
   const [currentCoverPreview, setCurrentCoverPreview] = useState<string | undefined>(undefined)
-  const [newCoverPreview, setNewCoverPreview] = useState<string | undefined>(undefined)
   const [submitting, setSubmitting] = useState(false)
   const { updateBook } = useAppStore()
 
-  // 加载当前封面预览
+  // 加载当前封面预览（book.coverImage 已是 data URL）
   useEffect(() => {
-    let cancelled = false
-    resolveCoverSrc(book.coverImage || null).then((src) => {
-      if (!cancelled) setCurrentCoverPreview(src)
-    })
-    return () => { cancelled = true }
+    setCurrentCoverPreview(
+      book.coverImage && isRenderableSrc(book.coverImage) ? book.coverImage : undefined,
+    )
   }, [book.coverImage])
-
-  // 加载新选封面预览
-  useEffect(() => {
-    let cancelled = false
-    resolveCoverSrc(coverPath || null).then((src) => {
-      if (!cancelled) setNewCoverPreview(src)
-    })
-    return () => { cancelled = true }
-  }, [coverPath])
 
   /** 显示的封面预览：优先展示新选的，其次当前封面 */
   const displayCoverPreview = coverRemoved
     ? undefined
-    : newCoverPreview ?? currentCoverPreview
+    : coverDataUrl || currentCoverPreview
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -71,11 +59,9 @@ export default function EditBookDialog({ book, onClose, onSaved }: EditBookDialo
 
       // 处理封面变更
       if (coverRemoved) {
-        // 移除封面：传入空字符串
-        finalBook = await bookApi.setCover(book.id, '')
-      } else if (coverPath) {
-        // 更换为新封面
-        finalBook = await bookApi.setCover(book.id, coverPath)
+        finalBook = await bookApi.setCoverData(book.id, '')
+      } else if (coverDataUrl) {
+        finalBook = await bookApi.setCoverData(book.id, coverDataUrl)
       }
 
       updateBook(book.id, finalBook)
@@ -88,14 +74,13 @@ export default function EditBookDialog({ book, onClose, onSaved }: EditBookDialo
     }
   }
 
-  function handleCoverChange(filePath: string) {
-    if (filePath) {
-      setCoverPath(filePath)
+  function handleCoverChange(dataUrl: string) {
+    if (dataUrl) {
+      setCoverDataUrl(dataUrl)
       setCoverRemoved(false)
     } else {
       // CoverPicker 内部点击了"移除"按钮
-      setCoverPath('')
-      setNewCoverPreview(undefined)
+      setCoverDataUrl('')
       setCoverRemoved(true)
     }
   }

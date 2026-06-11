@@ -88,12 +88,12 @@ export const CHAPTER_STATUS_CONFIG = {
 
 /** 世界观卡片类型配置 */
 export const WORLD_CARD_TYPE_CONFIG = {
-  character: { label: '人物', icon: '👤', color: 'bg-purple-100 text-purple-700' },
-  location: { label: '地点', icon: '🗺️', color: 'bg-teal-100 text-teal-700' },
-  timeline: { label: '时间线', icon: '📅', color: 'bg-blue-100 text-blue-700' },
-  faction: { label: '势力', icon: '⚔️', color: 'bg-red-100 text-red-700' },
-  item: { label: '物品', icon: '💎', color: 'bg-yellow-100 text-yellow-700' },
-  misc: { label: '其他', icon: '📝', color: 'bg-gray-100 text-gray-700' },
+  character: { label: '人物', icon: '👥', color: 'bg-purple-100 text-purple-700' },
+  location: { label: '地点', icon: '📍', color: 'bg-teal-100 text-teal-700' },
+  timeline: { label: '时间线', icon: '⏰', color: 'bg-blue-100 text-blue-700' },
+  faction: { label: '势力', icon: '🛡️', color: 'bg-red-100 text-red-700' },
+  item: { label: '物品', icon: '📦', color: 'bg-yellow-100 text-yellow-700' },
+  misc: { label: '其他', icon: '📋', color: 'bg-gray-100 text-gray-700' },
 } as const
 
 /**

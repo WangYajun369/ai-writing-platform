@@ -58,6 +58,7 @@ pub fn run() {
             commands::book::create_book,
             commands::book::update_book,
             commands::book::set_book_cover,
+            commands::book::set_book_cover_data,
             commands::book::delete_book,
             commands::book::list_deleted_books,
             commands::book::restore_book,
@@ -123,6 +124,7 @@ pub fn run() {
             commands::io::backup::import_backup,
             // 图片处理
             commands::image::process_image,
+            commands::image::process_image_cropped,
             // 窗口管理 — 独立窗口
             commands::window::manager::open_world_window,
             commands::window::manager::close_world_window,
