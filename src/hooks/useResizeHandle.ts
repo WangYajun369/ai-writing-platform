@@ -61,7 +61,16 @@ export function useResizeHandle({
   // 初始像素宽度：比例模式首次运行时需要从比例计算
   const initialPx = isRatioMode ? ratioToPx(initialRatio) : initialWidth
 
-  const [ratio, setRatio] = useState(isRatioMode ? initialRatio : 0)
+  // 比例模式下 minWidth/maxWidth 本身即为比例值（如 0.15、0.5），直接使用
+  const clampRatioInBounds = useCallback(
+    (r: number): number => {
+      if (!isRatioMode) return r
+      return Math.min(maxWidth, Math.max(minWidth, r))
+    },
+    [isRatioMode, minWidth, maxWidth],
+  )
+
+  const [ratio, setRatio] = useState(isRatioMode ? clampRatioInBounds(initialRatio) : 0)
 
   const [width, setWidth] = useState(initialPx)
   const [isResizing, setIsResizing] = useState(false)
@@ -96,7 +105,7 @@ export function useResizeHandle({
           : e.clientX - stateRef.current.startX
 
       if (isRatioMode) {
-        // 比例模式：将像素 delta 转换为比例 delta
+        // 比例模式：将像素 delta 转换为比例 delta，minWidth/maxWidth 本身即为比例值
         const containerWidth = getContainerWidth()
         if (containerWidth <= 0) return
         const ratioDelta = pixelDelta / containerWidth

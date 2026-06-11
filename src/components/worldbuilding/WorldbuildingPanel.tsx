@@ -10,7 +10,7 @@ import { PlusIcon, SearchIcon, XIcon, ChevronDownIcon, ChevronRightIcon, GripHor
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { worldCardApi, chapterApi, volumeApi, bookApi, aiApi } from '@/lib/tauri-bridge'
 import type { SummarizeArgs } from '@/lib/tauri-bridge'
-import type { WorldCard, WorldCardType, Chapter, Volume, Book } from '@/types'
+import type { WorldCard, WorldCardType, Chapter, Volume } from '@/types'
 import { WORLD_CARD_TYPE_CONFIG, cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/appStore'
 import { getChatApiKey } from '@/types'
@@ -35,14 +35,37 @@ export default function WorldbuildingPanel({ bookId, initialTab }: Worldbuilding
   const [cards, setCards] = useState<WorldCard[]>([])
   const [filterType, setFilterType] = useState<WorldCardType | 'all'>('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const [ftsResults, setFtsResults] = useState<WorldCard[] | null>(null)
   const [editingCard, setEditingCard] = useState<WorldCard | null>(null)
   const [showNewCard, setShowNewCard] = useState(false)
 
   const parentRef = useRef<HTMLDivElement>(null)
 
-  const filtered = cards
+  // 搜索时优先使用后端 FTS5 全文搜索，无搜索词时本地过滤
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFtsResults(null)
+      return
+    }
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      try {
+        const results = await worldCardApi.search(bookId, searchQuery.trim())
+        if (!cancelled) setFtsResults(results)
+      } catch {
+        // FTS5 搜索失败，降级为客户端过滤
+        if (!cancelled) setFtsResults(null)
+      }
+    }, 200)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [searchQuery, bookId])
+
+  const baseCards = ftsResults ?? cards
+  const filtered = baseCards
     .filter((c) => filterType === 'all' || c.type === filterType)
-    .filter((c) => c.title.includes(searchQuery) || c.content.includes(searchQuery))
 
   const virtualizer = useVirtualizer({
     count: filtered.length,
@@ -114,7 +137,7 @@ export default function WorldbuildingPanel({ bookId, initialTab }: Worldbuilding
     setBookOutline(value)
     setBookOutlineSaving(true)
     try {
-      await bookApi.update(bookId, { outline: value } as Partial<Book>)
+      await bookApi.update(bookId, { outline: value })
     } catch (err) {
       console.error('保存作品大纲失败', err)
     } finally {

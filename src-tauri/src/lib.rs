@@ -4,7 +4,11 @@
 
 mod commands;
 mod db;
+mod error;
 mod models;
+mod repository;
+mod service;
+mod utils;
 
 use tauri::Manager;
 use db::AppDb;
@@ -22,10 +26,15 @@ pub fn run() {
             let app_dir = app
                 .path()
                 .app_data_dir()
-                .expect("无法获取 AppData 目录");
-            std::fs::create_dir_all(&app_dir)?;
+                .map_err(|e| format!("无法获取 AppData 目录: {e}"))?;
+            std::fs::create_dir_all(&app_dir)
+                .map_err(|e| format!("创建数据目录失败: {e}"))?;
             let db_path = app_dir.join("time_write.db");
-            let db = AppDb::new(db_path.to_str().unwrap()).expect("数据库初始化失败");
+            let db_path_str = db_path
+                .to_str()
+                .ok_or("数据库路径包含非 UTF-8 字符，无法启动")?;
+            let db = AppDb::new(db_path_str)
+                .map_err(|e| format!("数据库初始化失败: {e}"))?;
             app.manage(db);
 
             // 主窗口关闭时自动关闭调试窗口
@@ -92,39 +101,46 @@ pub fn run() {
             commands::world_card::update_world_card,
             commands::world_card::delete_world_card,
             commands::world_card::search_world_cards,
-            // AI
-            commands::ai::rag_search,
-            commands::ai::trigger_embedding,
-            commands::ai::check_embedding_status,
-            commands::ai::stream_ai_chat,
-            commands::ai::test_ai_connection,
-            commands::ai::test_rag_connection,
-            commands::ai::summarize_chapter,
-            commands::ai::summarize_conversation,
-            // 导入导出
-            commands::io::export_book,
-            commands::io::import_txt,
-            commands::io::export_all_data,
-            commands::io::export_single_book,
-            commands::io::import_backup,
+            // AI — 连接测试
+            commands::ai::test::test_ai_connection,
+            // AI — RAG / Embedding
+            commands::ai::embedding::rag_search,
+            commands::ai::embedding::trigger_embedding,
+            commands::ai::embedding::check_embedding_status,
+            commands::ai::embedding::test_rag_connection,
+            // AI — 流式对话
+            commands::ai::chat::stream_ai_chat,
+            // AI — 内容总结
+            commands::ai::summarize::summarize_chapter,
+            commands::ai::summarize::summarize_conversation,
+            // 导入导出 — 格式导出
+            commands::io::export::export_book,
+            // 导入导出 — TXT 导入
+            commands::io::import_txt::import_txt,
+            // 导入导出 — 加密备份
+            commands::io::backup::export_all_data,
+            commands::io::backup::export_single_book,
+            commands::io::backup::import_backup,
             // 图片处理
             commands::image::process_image,
-            // 窗口管理
-            commands::window::open_world_window,
-            commands::window::close_world_window,
-            commands::window::open_history_window,
-            commands::window::close_history_window,
-            commands::window::open_summary_window,
-            commands::window::close_summary_window,
-            commands::window::open_ai_toolbox_window,
-            commands::window::close_ai_toolbox_window,
-            commands::window::open_debug_window,
-            commands::window::close_debug_window,
-            commands::window::log_message,
-            commands::window::get_debug_logs,
-            commands::window::clear_debug_logs,
-            commands::window::validate_database,
+            // 窗口管理 — 独立窗口
+            commands::window::manager::open_world_window,
+            commands::window::manager::close_world_window,
+            commands::window::manager::open_history_window,
+            commands::window::manager::close_history_window,
+            commands::window::manager::open_summary_window,
+            commands::window::manager::close_summary_window,
+            commands::window::manager::open_ai_toolbox_window,
+            commands::window::manager::close_ai_toolbox_window,
+            // 窗口管理 — 调试控制台
+            commands::window::debug::open_debug_window,
+            commands::window::debug::close_debug_window,
+            commands::window::debug::log_message,
+            commands::window::debug::get_debug_logs,
+            commands::window::debug::clear_debug_logs,
+            // 窗口管理 — 数据库校验
+            commands::window::validate::validate_database,
         ])
         .run(tauri::generate_context!())
-        .expect("启动 Tauri 应用失败");
+        .expect("启动 Tauri 应用失败——可能是系统资源不足或配置文件损坏");
 }

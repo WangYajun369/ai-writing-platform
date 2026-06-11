@@ -13,7 +13,6 @@
  */
 import { useState, useEffect } from 'react'
 import { useAtom } from 'jotai'
-import { invoke } from '@tauri-apps/api/core'
 import {
   PlusIcon,
   Trash2Icon,
@@ -23,7 +22,7 @@ import {
   XIcon,
   LoaderIcon,
 } from 'lucide-react'
-import { snapshotApi } from '@/lib/tauri-bridge'
+import { snapshotApi, windowApi } from '@/lib/tauri-bridge'
 import { contentRefreshAtom } from '@/stores/uiAtoms'
 import { cn, formatWordCount, formatRelativeTime } from '@/lib/utils'
 import type { Snapshot } from '@/types'
@@ -90,7 +89,7 @@ export default function SnapshotPanel({ chapterId, chapterTitle }: SnapshotPanel
       // 通知主窗口刷新（Rust 端已 emit 事件）
       setContentRefresh((v) => v + 1)
       // 关闭独立窗口
-      invoke('close_history_window').catch(() => {})
+      windowApi.closeHistory().catch(() => {})
     } catch (err) {
       console.error('恢复快照失败', err)
     } finally {

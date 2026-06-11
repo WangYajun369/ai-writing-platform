@@ -8,6 +8,7 @@ use image::GenericImageView;
 use image::codecs::jpeg::JpegEncoder;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
+use crate::error::AppError;
 
 const ALLOWED_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"];
 const MAX_SOURCE_SIZE: u64 = 20 * 1024 * 1024; // 20 MB
@@ -22,7 +23,7 @@ pub fn process_image_data(
     source_path: &str,
     max_width: u32,
     quality: u8,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let src = std::path::Path::new(source_path);
 
     // 校验扩展名
@@ -32,19 +33,19 @@ pub fn process_image_data(
         .map(|e| e.to_lowercase())
         .unwrap_or_default();
     if !ALLOWED_EXTENSIONS.contains(&ext.as_str()) {
-        return Err(format!("不支持的图片格式：.{ext}"));
+        return Err(AppError::Business(format!("不支持的图片格式：.{ext}")));
     }
 
     // 校验文件大小
     let metadata =
-        std::fs::metadata(src).map_err(|e| format!("无法读取图片文件: {e}"))?;
+        std::fs::metadata(src).map_err(|e| AppError::Business(format!("无法读取图片文件: {e}")))?;
     if metadata.len() > MAX_SOURCE_SIZE {
         let size_mb = metadata.len() as f64 / (1024.0 * 1024.0);
-        return Err(format!("图片文件过大（{:.1} MB），最大 20 MB", size_mb));
+        return Err(AppError::Business(format!("图片文件过大（{:.1} MB），最大 20 MB", size_mb)));
     }
 
     // 解码图片
-    let img = image::open(src).map_err(|e| format!("解码图片失败: {e}"))?;
+    let img = image::open(src).map_err(|e| AppError::Business(format!("解码图片失败: {e}")))?;
     let (w, h) = img.dimensions();
     let quality = quality.clamp(1, 100);
 
@@ -61,7 +62,7 @@ pub fn process_image_data(
     let encoder = JpegEncoder::new_with_quality(&mut bytes, quality);
     processed
         .write_with_encoder(encoder)
-        .map_err(|e| format!("图片编码失败: {e}"))?;
+        .map_err(|e| AppError::Business(format!("图片编码失败: {e}")))?;
 
     // Base64 编码
     let b64 = STANDARD.encode(&bytes);
@@ -76,6 +77,6 @@ pub async fn process_image(
     source_path: String,
     max_width: Option<u32>,
     quality: Option<u8>,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     process_image_data(&source_path, max_width.unwrap_or(1200), quality.unwrap_or(80))
 }

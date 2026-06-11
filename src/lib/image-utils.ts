@@ -4,7 +4,7 @@
  * 统一的图片处理入口：读取本地文件 → Rust 端压缩/缩放/Base64 编码 →
  * 返回 data: URL 内嵌到 HTML。确保导出/导入完全自包含。
  */
-import { invoke } from '@tauri-apps/api/core'
+import { imageApi } from '@/lib/tauri-bridge'
 
 /** 编辑器图片：最大宽度 1200px，JPEG 质量 80% */
 const EDITOR_MAX_WIDTH = 1200
@@ -17,36 +17,17 @@ const COVER_QUALITY = 85
 /**
  * 处理编辑器图片：压缩 + 返回 Base64 data URL
  *
- * 用于编辑器插入/替换图片。
- * 通过 Rust 端 process_image 命令完成：
- *  - 格式校验（png/jpg/jpeg/gif/webp/bmp/svg）
- *  - 等比缩放（宽 ≤ 1200px）
- *  - JPEG 编码（质量 80%）
- *  - Base64 编码
- *
  * @returns `data:image/jpeg;base64,...` 格式字符串
  */
 export async function processEditorImage(filePath: string): Promise<string> {
-  return invoke<string>('process_image', {
-    sourcePath: filePath,
-    maxWidth: EDITOR_MAX_WIDTH,
-    quality: EDITOR_QUALITY,
-  })
+  return imageApi.process(filePath, EDITOR_MAX_WIDTH, EDITOR_QUALITY)
 }
 
 /**
  * 处理封面图片：压缩 + 返回 Base64 data URL
- *
- * 封面使用更小的尺寸和更高的质量：
- *  - 等比缩放（宽 ≤ 800px）
- *  - JPEG 编码（质量 85%）
  */
 export async function processCoverImage(filePath: string): Promise<string> {
-  return invoke<string>('process_image', {
-    sourcePath: filePath,
-    maxWidth: COVER_MAX_WIDTH,
-    quality: COVER_QUALITY,
-  })
+  return imageApi.process(filePath, COVER_MAX_WIDTH, COVER_QUALITY)
 }
 
 /**

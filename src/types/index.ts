@@ -241,3 +241,25 @@ export type DiffViewMode = 'side-by-side' | 'inline'
 
 /** 导入导出格式（当前仅支持 txt/md/html） */
 export type ExportFormat = 'txt' | 'md' | 'html'
+
+// ==================== 后端 DTO 对齐 ====================
+
+/** 创建书籍参数（对齐 Rust CreateBookParams） */
+export interface CreateBookParams {
+  title: string
+  author: string
+  description: string
+  dailyTarget: number
+  tags: string[]
+}
+
+/** 更新书籍参数（对齐 Rust UpdateBookParams，仅允许更新这些字段） */
+export interface UpdateBookParams {
+  title?: string
+  author?: string
+  description?: string
+  coverImage?: string
+  outline?: string
+  dailyTarget?: number
+  tags?: string[]
+}

@@ -5,13 +5,12 @@
  * 窗口内可执行更新总结、自定义要求、查看请求详情等操作。
  */
 import { useState, useEffect, useCallback } from 'react'
-import { invoke } from '@tauri-apps/api/core'
 import { RefreshCwIcon, Loader2Icon, CheckCircleIcon, AlertCircleIcon, InfoIcon, XIcon, BookOpenIcon } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { cn } from '@/lib/utils'
 import { useAppStore, useCurrentChapter } from '@/stores/appStore'
-import { chapterApi, aiApi } from '@/lib/tauri-bridge'
+import { chapterApi, aiApi, windowApi } from '@/lib/tauri-bridge'
 import { getChatApiKey } from '@/types'
 import type { SummarizeArgs } from '@/lib/tauri-bridge'
 
@@ -209,11 +208,7 @@ export default function ChapterSummaryToolbar() {
   const handleOpen = useCallback(async () => {
     if (!currentChapter) return
     try {
-      await invoke('open_summary_window', {
-        chapterId: currentChapter.id,
-        bookId: currentChapter.bookId,
-        chapterTitle: currentChapter.title,
-      })
+      await windowApi.openSummary(currentChapter.id, currentChapter.bookId, currentChapter.title)
     } catch (e) {
       console.error('打开章节总结窗口失败', e)
     }

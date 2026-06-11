@@ -1,0 +1,18 @@
+{
+  "name": "mirageink-fix",
+  "leadAgentId": "34c5491b670241d3a88c2668a47e1453",
+  "workspacePath": "/Users/wangyajun/Documents/公众号文章/时光智读-个人/MirageInk",
+  "createdAt": "2026-06-11T03:24:46.610Z",
+  "options": {
+    "workspacePath": "/Users/wangyajun/Documents/公众号文章/时光智读-个人/MirageInk",
+    "isAutoTeam": false
+  },
+  "members": [
+    {
+      "memberId": "team-lead@mirageink-fix",
+      "name": "team-lead",
+      "role": "Team Lead - coordinates the team and interacts with the user"
+    }
+  ],
+  "isAutoTeam": false
+}

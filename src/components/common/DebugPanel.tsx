@@ -10,8 +10,8 @@
  */
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { listen } from '@tauri-apps/api/event'
-import { invoke } from '@tauri-apps/api/core'
 import { Trash2Icon, BugIcon, DatabaseIcon, CheckCircle2Icon, AlertTriangleIcon, XIcon, Loader2Icon } from 'lucide-react'
+import { debugApi } from '@/lib/tauri-bridge'
 import type { LogEntry, ValidationResult } from '@/lib/tauri-bridge'
 
 /** 日志级别对应的颜色样式 */
@@ -45,7 +45,7 @@ export default function DebugPanel() {
   useEffect(() => {
     let cancelled = false
 
-    invoke<LogEntry[]>('get_debug_logs').then((data) => {
+    debugApi.getLogs().then((data) => {
       if (!cancelled) setLogs(data)
     }).catch(console.error)
 
@@ -80,7 +80,7 @@ export default function DebugPanel() {
   // 清空日志
   const handleClear = useCallback(async () => {
     try {
-      await invoke('clear_debug_logs')
+      await debugApi.clear()
       setLogs([])
     } catch (e) {
       console.error('清空日志失败', e)
@@ -92,7 +92,7 @@ export default function DebugPanel() {
     setValidating(true)
     setShowValidation(true)
     try {
-      const result = await invoke<ValidationResult>('validate_database')
+      const result = await debugApi.validateDatabase()
       console.log('[validate_database] 返回结果:', JSON.stringify(result, null, 2))
       setValidationResult(result)
     } catch (e) {

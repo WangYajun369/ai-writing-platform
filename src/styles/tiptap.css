@@ -1,0 +1,343 @@
+/**
+ * TipTap 富文本编辑器样式
+ *
+ * 适用于中文长文写作场景，包含段落缩进、标题层级、列表、
+ * 待办事项、图片、代码块、表格、语法高亮等全部编辑器 UI 样式。
+ */
+
+/* ===== 编辑器容器 ===== */
+.editor-font {
+  font-family: var(--font-editor, 'Microsoft YaHei', 'Noto Sans SC', sans-serif);
+}
+
+.tiptap-editor {
+  @apply prose prose-neutral dark:prose-invert max-w-none;
+  font-size: var(--font-editor-size, 16px);
+  line-height: 2;
+  letter-spacing: 0.02em;
+}
+
+/* 段落首行缩进 */
+.tiptap-editor p {
+  text-indent: 2em;
+  margin-bottom: 0.25em;
+}
+
+/* ===== 标题 ===== */
+.tiptap-editor h1 {
+  text-indent: 0;
+  font-size: 1.5em;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 1.2em 0 0.4em;
+  color: hsl(var(--foreground));
+}
+.tiptap-editor h2 {
+  text-indent: 0;
+  font-size: 1.3em;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 1em 0 0.35em;
+  color: hsl(var(--foreground));
+}
+.tiptap-editor h3 {
+  text-indent: 0;
+  font-size: 1.15em;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0.85em 0 0.3em;
+  color: hsl(var(--foreground) / 0.85);
+}
+/* 列表项内标题不缩进 */
+.tiptap-editor ol li > h1,
+.tiptap-editor ol li > h2,
+.tiptap-editor ol li > h3,
+.tiptap-editor ul li > h1,
+.tiptap-editor ul li > h2,
+.tiptap-editor ul li > h3 {
+  text-indent: 0;
+}
+
+/* ===== 列表 ===== */
+.tiptap-editor ol,
+.tiptap-editor ul {
+  padding-left: 1.25em;
+}
+.tiptap-editor ol li,
+.tiptap-editor ul li {
+  padding-left: 0 !important;
+}
+.tiptap-editor ol li > p,
+.tiptap-editor ul li > p {
+  text-indent: 0;
+}
+
+/* ===== 待办事项 (Task List) ===== */
+.tiptap-editor ul[data-type="taskList"] {
+  list-style: none !important;
+  padding-left: 0 !important;
+  margin: 0.5em 0 !important;
+}
+.tiptap-editor ul[data-type="taskList"] > li {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  list-style: none !important;
+  padding: 0 !important;
+  margin: 0.15em 0 !important;
+}
+.tiptap-editor ul[data-type="taskList"] > li::marker,
+.tiptap-editor ul[data-type="taskList"] > li::before {
+  display: none !important;
+  content: none !important;
+}
+.tiptap-editor ul[data-type="taskList"] > li > label {
+  display: inline-flex !important;
+  flex-shrink: 0 !important;
+  align-items: center !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+.tiptap-editor ul[data-type="taskList"] > li > label input[type="checkbox"] {
+  width: 1em;
+  height: 1em;
+  margin: 0 0.25em 0 0 !important;
+  accent-color: hsl(var(--primary));
+  cursor: pointer;
+}
+.tiptap-editor ul[data-type="taskList"] > li > div {
+  flex: 1 !important;
+  min-width: 0 !important;
+}
+.tiptap-editor ul[data-type="taskList"] > li p {
+  text-indent: 0 !important;
+  margin: 0 !important;
+}
+.tiptap-editor ul[data-type="taskList"] > li[data-checked="true"] > div {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+
+/* ===== 颜色继承修复 ===== */
+.tiptap-editor [style*="color:"] strong,
+.tiptap-editor [style*="color:"] em,
+.tiptap-editor [style*="color:"] u,
+.tiptap-editor [style*="color:"] s,
+.tiptap-editor [style*="color:"] code,
+.tiptap-editor [style*="color:"] a {
+  color: inherit;
+}
+.dark .tiptap-editor [style*="color:"] strong,
+.dark .tiptap-editor [style*="color:"] em,
+.dark .tiptap-editor [style*="color:"] u,
+.dark .tiptap-editor [style*="color:"] s,
+.dark .tiptap-editor [style*="color:"] code,
+.dark .tiptap-editor [style*="color:"] a {
+  color: inherit;
+}
+
+/* ===== 图片 ===== */
+.tiptap-editor .image-node-wrapper {
+  display: block;
+  margin: 1em auto;
+}
+.tiptap-editor .image-node-container {
+  position: relative;
+  margin: 0 auto;
+  transition: width 0.15s ease;
+}
+.tiptap-editor .image-node-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+.tiptap-editor .image-node-wrapper.ProseMirror-selectednode .image-node-img {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+}
+
+/* 图片缩放工具栏 */
+.image-resize-toolbar {
+  position: absolute;
+  top: -32px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  white-space: nowrap;
+  z-index: 10;
+  opacity: 0;
+  animation: fadeInToolbar 0.15s ease forwards;
+}
+@keyframes fadeInToolbar {
+  to { opacity: 1; }
+}
+.image-resize-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.image-resize-btn:hover {
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+.image-resize-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.image-resize-label {
+  font-size: 11px;
+  min-width: 32px;
+  text-align: center;
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+.image-toolbar-divider {
+  width: 1px;
+  height: 16px;
+  background: hsl(var(--border));
+  margin: 0 2px;
+  align-self: center;
+}
+.image-resize-btn-danger:hover {
+  background: hsl(var(--destructive));
+  color: hsl(var(--destructive-foreground));
+}
+
+/* ===== 代码块 ===== */
+.tiptap-editor pre {
+  background: hsl(var(--muted) / 0.6) !important;
+  color: hsl(var(--foreground) / 0.85) !important;
+  border: 1px solid hsl(var(--border)) !important;
+  border-radius: 0.5rem !important;
+  padding: 1rem !important;
+  margin: 1rem 0 !important;
+  overflow-x: auto !important;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace !important;
+  font-size: 0.875em !important;
+  line-height: 1.6 !important;
+  white-space: pre !important;
+  text-indent: 0 !important;
+}
+.tiptap-editor pre code {
+  background: transparent !important;
+  color: inherit !important;
+  padding: 0 !important;
+  font-family: inherit !important;
+  font-size: inherit !important;
+  white-space: inherit !important;
+  border: none !important;
+  border-radius: 0 !important;
+  font-weight: 400 !important;
+}
+.dark .tiptap-editor pre {
+  background: hsl(var(--muted-foreground) / 0.15) !important;
+}
+
+/* ===== 代码语法高亮 ===== */
+.tiptap-editor .hljs-comment,
+.tiptap-editor .hljs-quote { color: hsl(var(--muted-foreground) / 0.75); font-style: italic; }
+.tiptap-editor .hljs-keyword,
+.tiptap-editor .hljs-selector-tag,
+.tiptap-editor .hljs-type { color: #c678dd; }
+.tiptap-editor .hljs-string,
+.tiptap-editor .hljs-addition { color: #98c379; }
+.tiptap-editor .hljs-number,
+.tiptap-editor .hljs-literal { color: #d19a66; }
+.tiptap-editor .hljs-function .hljs-title,
+.tiptap-editor .hljs-title.function_,
+.tiptap-editor .hljs-title.class_ { color: #61afef; }
+.tiptap-editor .hljs-title,
+.tiptap-editor .hljs-name,
+.tiptap-editor .hljs-section { color: #e5c07b; }
+.tiptap-editor .hljs-variable,
+.tiptap-editor .hljs-template-variable { color: #e06c75; }
+.tiptap-editor .hljs-attr,
+.tiptap-editor .hljs-attribute,
+.tiptap-editor .hljs-selector-attr,
+.tiptap-editor .hljs-selector-class,
+.tiptap-editor .hljs-selector-id,
+.tiptap-editor .hljs-selector-pseudo { color: #d19a66; }
+.tiptap-editor .hljs-built_in,
+.tiptap-editor .hljs-symbol { color: #e5c07b; }
+.tiptap-editor .hljs-regexp { color: #56b6c2; }
+.tiptap-editor .hljs-link { color: #61afef; text-decoration: underline; }
+.tiptap-editor .hljs-deletion { color: #e06c75; }
+.tiptap-editor .hljs-meta,
+.tiptap-editor .hljs-params { color: #abb2bf; }
+.tiptap-editor .hljs-tag,
+.tiptap-editor .hljs-doctag { color: #e06c75; }
+.tiptap-editor .hljs-operator,
+.tiptap-editor .hljs-punctuation { color: hsl(var(--foreground) / 0.65); }
+.tiptap-editor .hljs-property { color: #abb2bf; }
+.tiptap-editor .hljs-emphasis { font-style: italic; }
+.tiptap-editor .hljs-strong { font-weight: 700; }
+.tiptap-editor .hljs-formula { color: #56b6c2; }
+.tiptap-editor .hljs-bullet { color: #61afef; }
+.tiptap-editor .hljs-code { color: #abb2bf; }
+.tiptap-editor .hljs-subst { color: hsl(var(--foreground) / 0.85); }
+
+/* 编辑器占位文本 */
+.tiptap-editor p.is-editor-empty:first-child::before {
+  @apply text-muted-foreground;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* ===== 表格 ===== */
+.tiptap-editor table {
+  @apply w-full border-collapse my-4;
+  font-size: 0.9375em;
+  line-height: 1.6;
+}
+.tiptap-editor table p {
+  text-indent: 0 !important;
+  margin: 0 !important;
+  padding: 0.25em 0 !important;
+}
+.tiptap-editor th {
+  @apply bg-muted/80 border border-border px-3 py-2 text-left font-semibold;
+  min-width: 2.5em;
+}
+.tiptap-editor td {
+  @apply border border-border px-3 py-2;
+  min-width: 2.5em;
+}
+.tiptap-editor .selectedCell { @apply bg-primary/10; }
+.tiptap-editor .column-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -2px;
+  width: 4px;
+  background-color: hsl(var(--primary) / 0.3);
+  cursor: col-resize;
+  z-index: 5;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.tiptap-editor .column-resize-handle:hover,
+.tiptap-editor th:hover .column-resize-handle { opacity: 1; }
+.tiptap-editor td strong,
+.tiptap-editor th strong,
+.tiptap-editor td em,
+.tiptap-editor th em { color: inherit; }

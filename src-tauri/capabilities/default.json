@@ -1,7 +1,7 @@
 {
   "identifier": "default",
-  "description": "Default capability for TimeWrite",
-  "windows": ["main", "world", "history", "summary", "ai-toolbox", "debug"],
+  "description": "Default capability for TimeWrite main and feature windows",
+  "windows": ["main", "world", "history", "summary", "ai-toolbox"],
   "permissions": [
     "core:default",
     "shell:allow-open",
@@ -27,7 +27,6 @@
     {
       "identifier": "http:allow-fetch",
       "allow": [
-        { "url": "http://**" },
         { "url": "https://**" }
       ]
     }

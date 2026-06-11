@@ -12,12 +12,11 @@ import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAtom } from 'jotai'
 import { PlusIcon, SearchIcon, GridIcon, ListIcon, SettingsIcon, BookOpenIcon, Trash2Icon, WrenchIcon, UploadIcon, DownloadIcon, BugIcon } from 'lucide-react'
-import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { save, open } from '@tauri-apps/plugin-dialog'
 import { useAppStore } from '@/stores/appStore'
 import { aiToolboxWindowOpenAtom, debugWindowOpenAtom } from '@/stores/uiAtoms'
-import { bookApi, importExportApi } from '@/lib/tauri-bridge'
+import { bookApi, importExportApi, windowApi, debugApi } from '@/lib/tauri-bridge'
 import { cn, formatWordCount } from '@/lib/utils'
 import type { Book } from '@/types'
 import BookCard from '@/components/library/BookCard'
@@ -209,14 +208,14 @@ export default function LibraryPage() {
   async function handleToggleAiToolboxWindow() {
     if (aiToolboxWindowOpen) {
       try {
-        await invoke('close_ai_toolbox_window')
+        await windowApi.closeAiToolbox()
       } catch (e) {
         console.error('关闭 AI 工具箱窗口失败', e)
       }
       setAiToolboxWindowOpen(false)
     } else {
       try {
-        await invoke('open_ai_toolbox_window')
+        await windowApi.openAiToolbox()
         setAiToolboxWindowOpen(true)
       } catch (e) {
         console.error('打开 AI 工具箱窗口失败', e)
@@ -227,14 +226,14 @@ export default function LibraryPage() {
   async function handleToggleDebugWindow() {
     if (debugWindowOpen) {
       try {
-        await invoke('close_debug_window')
+        await debugApi.close()
       } catch (e) {
         console.error('关闭调试控制台失败', e)
       }
       setDebugWindowOpen(false)
     } else {
       try {
-        await invoke('open_debug_window')
+        await debugApi.open()
         setDebugWindowOpen(true)
       } catch (e) {
         console.error('打开调试控制台失败', e)

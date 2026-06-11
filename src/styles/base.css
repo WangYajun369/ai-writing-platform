@@ -1,0 +1,54 @@
+/**
+ * 全局基础样式
+ *
+ * 包含通用元素样式重置、专注模式、自定义滚动条。
+ */
+
+/* ==================== 全局基础 ==================== */
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* ==================== 专注模式 ==================== */
+.zen-mode .sidebar,
+.zen-mode .toolbar,
+.zen-mode .titlebar {
+  @apply hidden;
+}
+
+/* ==================== 自定义滚动条 ==================== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-muted-foreground/30 rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-muted-foreground/50;
+}
+
+/* ==================== Toast 动画 ==================== */
+@keyframes slide-in-right {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+.animate-slide-in-right {
+  animation: slide-in-right 0.25s ease-out;
+}
+.animate-fade-out {
+  animation: fade-out 0.2s ease-out forwards;
+}

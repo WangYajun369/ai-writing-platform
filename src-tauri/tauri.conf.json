@@ -25,7 +25,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost https:; img-src 'self' asset: https: data: blob:; font-src 'self' data:",
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' asset: https:; font-src 'self'",
       "assetProtocol": {
         "enable": true,
         "scope": [
@@ -69,7 +69,7 @@
       "endpoints": [
         "https://github.com/WangYajun369/ai-writing-platform/releases/latest/download/latest.json"
       ],
-      "pubkey": ""
+      "pubkey": "TODO: 生成密钥对并填入公钥。步骤：1. 运行 `pnpm tauri signer generate -w ~/.tauri/myapp.key` 生成密钥对；2. 将生成的公钥填入此处；3. 在 CI 中使用私钥对更新包签名。当前空值意味着更新签名校验被禁用，存在安全风险。"
     },
     "deep-link": {
       "desktop": {

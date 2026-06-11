@@ -8,7 +8,6 @@
 import { useAtom, useAtomValue } from 'jotai'
 import { useNavigate } from 'react-router-dom'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
 import {
@@ -56,6 +55,7 @@ import {
 import { useCurrentBook, useCurrentChapter, useAppStore } from '@/stores/appStore.ts'
 import { cn } from '@/lib/utils.ts'
 import { processEditorImage } from '@/lib/image-utils.ts'
+import { windowApi } from '@/lib/tauri-bridge'
 
 /** 预设字体颜色 */
 const PRESET_COLORS = [
@@ -153,7 +153,7 @@ export default function EditorToolbar() {
   async function handleToggleWorldWindow() {
     if (worldWindowOpen) {
       try {
-        await invoke('close_world_window')
+        await windowApi.closeWorld()
       } catch (e) {
         console.error('关闭世界观窗口失败', e)
       }
@@ -161,7 +161,7 @@ export default function EditorToolbar() {
     } else {
       if (!currentBook?.id) return
       try {
-        await invoke('open_world_window', { bookId: currentBook.id })
+        await windowApi.openWorld(currentBook.id)
       } catch (e) {
         console.error('打开世界观窗口失败', e)
         return
@@ -173,7 +173,7 @@ export default function EditorToolbar() {
   async function handleToggleHistoryWindow() {
     if (historyWindowOpen) {
       try {
-        await invoke('close_history_window')
+        await windowApi.closeHistory()
       } catch (e) {
         console.error('关闭版本历史窗口失败', e)
       }
@@ -181,11 +181,7 @@ export default function EditorToolbar() {
     } else {
       if (!currentChapter) return
       try {
-        await invoke('open_history_window', {
-          chapterId: currentChapter.id,
-          bookId: currentChapter.bookId,
-          chapterTitle: currentChapter.title,
-        })
+        await windowApi.openHistory(currentChapter.id, currentChapter.bookId, currentChapter.title)
       } catch (e) {
         console.error('打开版本历史窗口失败', e)
         return
@@ -197,7 +193,7 @@ export default function EditorToolbar() {
   async function handleToggleSummaryWindow() {
     if (summaryWindowOpen) {
       try {
-        await invoke('close_summary_window')
+        await windowApi.closeSummary()
       } catch (e) {
         console.error('关闭章节总结窗口失败', e)
       }
@@ -205,11 +201,7 @@ export default function EditorToolbar() {
     } else {
       if (!currentChapter) return
       try {
-        await invoke('open_summary_window', {
-          chapterId: currentChapter.id,
-          bookId: currentChapter.bookId,
-          chapterTitle: currentChapter.title,
-        })
+        await windowApi.openSummary(currentChapter.id, currentChapter.bookId, currentChapter.title)
       } catch (e) {
         console.error('打开章节总结窗口失败', e)
         return
@@ -221,14 +213,14 @@ export default function EditorToolbar() {
   async function handleToggleAiToolboxWindow() {
     if (aiToolboxWindowOpen) {
       try {
-        await invoke('close_ai_toolbox_window')
+        await windowApi.closeAiToolbox()
       } catch (e) {
         console.error('关闭 AI 工具箱窗口失败', e)
       }
       setAiToolboxWindowOpen(false)
     } else {
       try {
-        await invoke('open_ai_toolbox_window')
+        await windowApi.openAiToolbox()
       } catch (e) {
         console.error('打开 AI 工具箱窗口失败', e)
         return
@@ -240,11 +232,7 @@ export default function EditorToolbar() {
   // 监听章节切换，若版本历史窗口已打开则自动跟随到新章节
   useEffect(() => {
     if (!historyWindowOpen || !currentChapter) return
-    invoke('open_history_window', {
-      chapterId: currentChapter.id,
-      bookId: currentChapter.bookId,
-      chapterTitle: currentChapter.title,
-    })
+    windowApi.openHistory(currentChapter.id, currentChapter.bookId, currentChapter.title)
       .then(() => {
         // Rust 端关闭旧窗口再创建新窗口，中间可能短暂触发
         // history-window-closed 把按钮复位，这里显式恢复为激活状态
@@ -260,11 +248,7 @@ export default function EditorToolbar() {
   // 监听章节切换，若章节总结窗口已打开则自动跟随到新章节
   useEffect(() => {
     if (!summaryWindowOpen || !currentChapter) return
-    invoke('open_summary_window', {
-      chapterId: currentChapter.id,
-      bookId: currentChapter.bookId,
-      chapterTitle: currentChapter.title,
-    })
+    windowApi.openSummary(currentChapter.id, currentChapter.bookId, currentChapter.title)
       .then(() => {
         setSummaryWindowOpen(true)
       })

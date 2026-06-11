@@ -38,6 +38,7 @@ import {
 import { useAppStore,  useCurrentChapter, getEditorState } from '@/stores/appStore.ts'
 import { chapterApi } from '@/lib/tauri-bridge.ts'
 import { countWordsFromHtml, calcBookWordCount } from '@/lib/utils.ts'
+import { toast } from '@/lib/toast.ts'
 
 const AUTOSAVE_DEBOUNCE_MS = 300
 const AUTOSAVE_INTERVAL_MS = 3 * 60 * 1000 // 3 分钟
@@ -79,17 +80,24 @@ export default function RichTextEditor() {
   const saveContent = useCallback(
     async (html: string) => {
       const chapter = currentChapterRef.current
-      if (!chapter) return
+      if (!chapter) {
+        console.warn('[自动保存] 跳过：当前章节为空')
+        return
+      }
+      console.log('[自动保存] 开始保存章节', chapter.id, '字数:', countWordsFromHtml(html))
       setIsSaving(true)
       try {
         const frontendCount = countWordsFromHtml(html)
         const result = await chapterApi.save(chapter.id, html, frontendCount)
+        console.log('[自动保存] 保存成功，后端返回:', result)
         updateChapter(chapter.id, { contentHtml: html, wordCount: frontendCount, updatedAt: new Date().toISOString() })
         updateBook(chapter.bookId, { wordCount: result.bookWordCount })
         setWordCount({ chapter: frontendCount, total: result.bookWordCount })
         setLastSaved(new Date())
       } catch (err) {
-        console.error('保存失败', err)
+        const msg = err instanceof Error ? err.message : String(err)
+        console.error('[自动保存] 保存失败', msg)
+        toast.error(`保存失败：${msg}`)
       } finally {
         setIsSaving(false)
       }
@@ -289,6 +297,21 @@ export default function RichTextEditor() {
   useEffect(() => {
     positionRestoredRef.current = false
   }, [currentChapter?.id])
+
+  // Ctrl+S / Cmd+S 手动保存快捷键
+  useEffect(() => {
+    if (!editor) return
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault()
+        const html = editor.getHTML()
+        console.log('[手动保存] Ctrl+S 触发')
+        saveContent(html)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [editor, saveContent])
 
   // 章节标题编辑
   const [titleValue, setTitleValue] = useState(currentChapter?.title ?? '')

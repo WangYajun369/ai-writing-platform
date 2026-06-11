@@ -1,9 +1,12 @@
 /**
  * Tauri IPC 桥接层
- * 封装所有 invoke 调用，提供统一的类型安全接口
+ * 封装所有 invoke 调用，提供统一的类型安全接口。
+ *
+ * 禁止在其他文件中直接 import { invoke } from '@tauri-apps/api/core'。
+ * 所有 IPC 调用必须通过此模块的 API 对象进行。
  */
 import { invoke } from '@tauri-apps/api/core'
-import type { Book, Chapter, Volume, Snapshot, WorldCard } from '@/types'
+import type { Book, Chapter, Volume, Snapshot, WorldCard, CreateBookParams, UpdateBookParams } from '@/types'
 
 // ==================== 书籍管理 ====================
 
@@ -12,11 +15,11 @@ export const bookApi = {
     return invoke<Book[]>('list_books')
   },
 
-  async create(params: Omit<Book, 'id' | 'createdAt' | 'updatedAt' | 'wordCount' | 'todayCount'>): Promise<Book> {
+  async create(params: CreateBookParams): Promise<Book> {
     return invoke<Book>('create_book', { params })
   },
 
-  async update(id: string, params: Partial<Book>): Promise<Book> {
+  async update(id: string, params: UpdateBookParams): Promise<Book> {
     return invoke<Book>('update_book', { id, params })
   },
 
@@ -212,8 +215,62 @@ export const worldCardApi = {
     return invoke<void>('delete_world_card', { id })
   },
 
+  /** FTS5 全文搜索世界观卡片 */
   async search(bookId: string, query: string): Promise<WorldCard[]> {
     return invoke<WorldCard[]>('search_world_cards', { bookId, query })
+  },
+}
+
+// ==================== 窗口管理 ====================
+
+export interface WindowOpenOptions {
+  /** 世界观窗口可选 tab */
+  tab?: string
+  /** 版本历史/章节总结窗口参数 */
+  chapterId?: string
+  bookId?: string
+  chapterTitle?: string
+}
+
+export const windowApi = {
+  /** 打开世界观资料库独立窗口 */
+  async openWorld(bookId: string, tab?: string): Promise<void> {
+    return invoke<void>('open_world_window', { bookId, tab: tab ?? null })
+  },
+
+  /** 关闭世界观资料库独立窗口 */
+  async closeWorld(): Promise<void> {
+    return invoke<void>('close_world_window')
+  },
+
+  /** 打开版本历史独立窗口 */
+  async openHistory(chapterId: string, bookId: string, chapterTitle: string): Promise<void> {
+    return invoke<void>('open_history_window', { chapterId, bookId, chapterTitle })
+  },
+
+  /** 关闭版本历史独立窗口 */
+  async closeHistory(): Promise<void> {
+    return invoke<void>('close_history_window')
+  },
+
+  /** 打开章节总结独立窗口 */
+  async openSummary(chapterId: string, bookId: string, chapterTitle: string): Promise<void> {
+    return invoke<void>('open_summary_window', { chapterId, bookId, chapterTitle })
+  },
+
+  /** 关闭章节总结独立窗口 */
+  async closeSummary(): Promise<void> {
+    return invoke<void>('close_summary_window')
+  },
+
+  /** 打开 AI 工具箱独立窗口 */
+  async openAiToolbox(): Promise<void> {
+    return invoke<void>('open_ai_toolbox_window')
+  },
+
+  /** 关闭 AI 工具箱独立窗口 */
+  async closeAiToolbox(): Promise<void> {
+    return invoke<void>('close_ai_toolbox_window')
   },
 }
 
@@ -417,11 +474,8 @@ export interface LogEntry {
   timestamp: string
   level: string
   message: string
-  /** 源文件完整路径 */
   file?: string
-  /** 文件名 */
   fileName?: string
-  /** 行号 */
   line?: number
 }
 
@@ -429,7 +483,6 @@ export interface LogEntry {
 export interface ValidationIssue {
   table: string
   column?: string
-  /** missing_table | missing_column | integrity_error | orphan_record */
   issueType: string
   detail: string
 }
@@ -465,5 +518,10 @@ export const debugApi = {
   /** 校验本地 SQLite 数据库表结构和数据完整性 */
   async validateDatabase(): Promise<ValidationResult> {
     return invoke<ValidationResult>('validate_database')
+  },
+
+  /** 将前端日志汇入后端日志系统 */
+  async logMessage(entries: { level: string; message: string; file?: string | null; fileName?: string | null; line?: number | null }[]): Promise<void> {
+    return invoke<void>('log_message', { entries })
   },
 }

@@ -5,15 +5,14 @@
  * 负责加载书籍的卷章树数据，管理专注模式 Esc 退出。
  * 世界观资料库与版本历史均为独立窗口，离开编辑器时自动关闭。
  */
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, Component, type ErrorInfo, type ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAtom } from 'jotai'
-import { XIcon } from 'lucide-react'
-import { invoke } from '@tauri-apps/api/core'
+import { XIcon, AlertTriangleIcon, RefreshCwIcon } from 'lucide-react'
 import { listen } from '@tauri-apps/api/event'
 import { sidebarOpenAtom, zenModeAtom, aiPanelOpenAtom, contentRefreshAtom } from '@/stores/uiAtoms'
 import { useAppStore, getEditorState } from '@/stores/appStore'
-import { chapterApi, volumeApi } from '@/lib/tauri-bridge'
+import { chapterApi, volumeApi, windowApi } from '@/lib/tauri-bridge'
 import { cn, createStorage } from '@/lib/utils'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
 import EditorLayout from '@/components/layout/EditorLayout'
@@ -22,6 +21,44 @@ import RichTextEditor from '@/components/editor/RichTextEditor'
 import AiSidePanel from '@/components/ai/AiSidePanel'
 import EditorToolbar from '@/components/editor/EditorToolbar'
 import StatusBar from '@/components/layout/StatusBar'
+
+/** AI 面板局部错误边界：防止 AiSidePanel 崩溃导致整个编辑器页面白屏 */
+class AiPanelErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error }
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[AiPanelErrorBoundary] AI 面板渲染异常:', error, info.componentStack)
+  }
+  handleReset = () => {
+    this.setState({ hasError: false, error: null })
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full p-4 text-center">
+          <AlertTriangleIcon className="w-8 h-8 text-red-500 mb-3" />
+          <p className="text-sm font-medium mb-2">AI 助手加载失败</p>
+          <p className="text-xs text-muted-foreground mb-4 max-w-xs break-all">
+            {this.state.error?.message || '未知错误'}
+          </p>
+          <button
+            onClick={this.handleReset}
+            className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs hover:opacity-90 transition-opacity"
+          >
+            <RefreshCwIcon className="w-3 h-3" />
+            重试
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 /** AI 面板比例本地持久化（0-1） */
 const aiPanelStorage = createStorage('mirageink-ai-panel-ratio', { ratio: 0.3 })
@@ -115,8 +152,8 @@ export default function EditorPage() {
   // 注意：AI 工具箱不依赖当前作品/章节上下文，不在此自动关闭
   useEffect(() => {
     return () => {
-      invoke('close_world_window').catch(() => {})
-      invoke('close_history_window').catch(() => {})
+      windowApi.closeWorld().catch(() => {})
+      windowApi.closeHistory().catch(() => {})
     }
   }, [])
 
@@ -224,9 +261,11 @@ export default function EditorPage() {
             />
             <aside
               className="border-l bg-card shrink-0 overflow-hidden"
-              style={{ width: aiPanelWidth }}
+              style={{ width: Math.max(200, aiPanelWidth) }}
             >
-              <AiSidePanel />
+              <AiPanelErrorBoundary>
+                <AiSidePanel />
+              </AiPanelErrorBoundary>
             </aside>
           </>
         )}

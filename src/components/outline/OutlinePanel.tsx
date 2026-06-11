@@ -955,6 +955,12 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
                                 item.volume.title,
                               )
                             }
+                            onRename={async (newTitle) => {
+                              await volumeApi.update(item.volume.id, newTitle)
+                              setVolumes(volumes.map((v) =>
+                                v.id === item.volume.id ? { ...v, title: newTitle } : v,
+                              ))
+                            }}
                           />
                         )
                       }
@@ -989,6 +995,13 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
                                 item.chapter.title,
                               )
                             }
+                            onStatusChange={async (newStatus) => {
+                              await chapterApi.updateStatus(
+                                item.chapter.id,
+                                newStatus,
+                              )
+                              updateChapter(item.chapter.id, { status: newStatus })
+                            }}
                           />
                         )
                       }
@@ -1045,6 +1058,7 @@ function DraggableVolume({
   onToggle,
   onAddChapter,
   onDelete,
+  onRename,
 }: {
   item: FlatItem & { type: 'volume' }
   isOver: boolean
@@ -1054,10 +1068,13 @@ function DraggableVolume({
   onToggle: () => void
   onAddChapter: () => void
   onDelete: () => void
+  onRename: (newTitle: string) => Promise<void>
 }) {
   const id = dndId(item)
   const { attributes, listeners, setNodeRef: setDraggableRef, isDragging } = useDraggable({ id })
   const { setNodeRef: setDroppableRef } = useDroppable({ id })
+  const [editing, setEditing] = useState(false)
+  const [editValue, setEditValue] = useState(item.volume.title)
 
   const ref = useCallback(
     (node: HTMLDivElement | null) => {
@@ -1066,6 +1083,13 @@ function DraggableVolume({
     },
     [setDraggableRef, setDroppableRef],
   )
+
+  async function handleRename() {
+    if (editValue.trim() && editValue !== item.volume.title) {
+      await onRename(editValue.trim())
+    }
+    setEditing(false)
+  }
 
   return (
     <div className="relative">
@@ -1084,7 +1108,13 @@ function DraggableVolume({
           isChapterOver && 'ring-2 ring-primary/50 bg-primary/10 text-primary',
           !isChapterOver && isOver && 'bg-accent/50',
         )}
-      onClick={onToggle}
+      onClick={() => {
+        if (!editing) onToggle()
+      }}
+      onDoubleClick={() => {
+        setEditValue(item.volume.title)
+        setEditing(true)
+      }}
       {...attributes}
     >
       <button
@@ -1099,7 +1129,22 @@ function DraggableVolume({
         <ChevronDownIcon className="w-3 h-3 flex-shrink-0" />
       )}
       <FolderIcon className="w-3 h-3 flex-shrink-0" />
-      <span className="flex-1 truncate">{item.volume.title}</span>
+      {editing ? (
+        <input
+          autoFocus
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onBlur={handleRename}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleRename()
+            if (e.key === 'Escape') setEditing(false)
+          }}
+          onClick={(e) => e.stopPropagation()}
+          className="flex-1 bg-transparent outline-none border-b border-primary text-foreground text-xs"
+        />
+      ) : (
+        <span className="flex-1 truncate">{item.volume.title}</span>
+      )}
       <button
         onClick={(e) => {
           e.stopPropagation()
@@ -1144,6 +1189,7 @@ function DraggableChapter({
   onSelect,
   onRename,
   onDelete,
+  onStatusChange,
 }: {
   item: FlatItem & { type: 'chapter' }
   isActive: boolean
@@ -1154,6 +1200,7 @@ function DraggableChapter({
   onSelect: () => void
   onRename: (title: string) => Promise<void>
   onDelete: () => void
+  onStatusChange: (newStatus: Chapter['status']) => Promise<void>
 }) {
   const id = dndId(item)
   const { attributes, listeners, setNodeRef: setDraggableRef, isDragging } = useDraggable({ id })
@@ -1161,6 +1208,15 @@ function DraggableChapter({
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState(item.chapter.title)
   const statusCfg = CHAPTER_STATUS_CONFIG[item.chapter.status]
+
+  /** 点击状态标签循环切换 */
+  const cycleStatus = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    const STATUS_ORDER: Chapter['status'][] = ['outline', 'draft', 'polishing', 'finished']
+    const currentIdx = STATUS_ORDER.indexOf(item.chapter.status)
+    const nextStatus = STATUS_ORDER[(currentIdx + 1) % STATUS_ORDER.length]
+    await onStatusChange(nextStatus)
+  }
 
   const ref = useCallback(
     (node: HTMLDivElement | null) => {
@@ -1230,8 +1286,10 @@ function DraggableChapter({
       )}
 
       <span
+        onClick={cycleStatus}
+        title="点击切换章节状态（大纲/草稿/精修/定稿）"
         className={cn(
-          'text-xs px-1.5 py-0.5 rounded-full flex-shrink-0',
+          'text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity',
           statusCfg.color,
         )}
       >

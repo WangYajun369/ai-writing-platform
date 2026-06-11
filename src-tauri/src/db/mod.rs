@@ -3,6 +3,8 @@
 //! 基于 rusqlite + r2d2 连接池，WAL 模式 + 外键约束。
 //! 管理 6 张表：books / volumes / chapters / snapshots / world_cards / embeddings。
 
+pub mod schema;
+
 use r2d2::{Pool, ManageConnection};
 use rusqlite::{Connection, Result};
 use anyhow::Context as _;
@@ -29,6 +31,25 @@ impl ManageConnection for SqliteConnectionManager {
     }
 }
 
+/// 执行 ALTER TABLE ADD COLUMN，若列已存在则跳过，其他错误向上传播
+fn safe_add_column(conn: &Connection, table: &str, column: &str, column_def: &str) -> anyhow::Result<()> {
+    let sql = format!("ALTER TABLE {} ADD COLUMN {} {}", table, column, column_def);
+    match conn.execute(&sql, []) {
+        Ok(_) => {
+            eprintln!("[SQL] ALTER TABLE → {}.{} 添加成功", table, column);
+            Ok(())
+        }
+        Err(e) => {
+            if e.to_string().contains("duplicate column name") {
+                eprintln!("[SQL] ALTER TABLE → {}.{} 已存在，跳过", table, column);
+                Ok(())
+            } else {
+                Err(e).with_context(|| format!("ALTER TABLE {}.{} 失败", table, column))
+            }
+        }
+    }
+}
+
 /// 应用级数据库（连接池版本）
 pub struct AppDb {
     pub pool: Pool<SqliteConnectionManager>,
@@ -40,6 +61,9 @@ impl AppDb {
         let manager = SqliteConnectionManager { path: db_path.to_string() };
         let pool = Pool::builder()
             .max_size(10)
+            .connection_timeout(std::time::Duration::from_secs(10))
+            .idle_timeout(Some(std::time::Duration::from_secs(300)))
+            .max_lifetime(Some(std::time::Duration::from_secs(1800)))
             .build(manager)
             .map_err(|e| anyhow::anyhow!("创建连接池失败: {}", e))?;
 
@@ -141,18 +165,69 @@ impl AppDb {
             );
         "#).context("创建数据表失败")?;
 
-        // 迁移现有数据库：为旧表添加 deleted_at 列（如果不存在）
+        // FTS5 全文搜索虚拟表（章节 + 世界观卡片）
+        eprintln!("[SQL] CREATE VIRTUAL TABLE → chapters_fts, world_cards_fts");
+        conn.execute_batch(r#"
+            CREATE VIRTUAL TABLE IF NOT EXISTS chapters_fts USING fts5(
+                title, content, tokenize='unicode61'
+            );
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS world_cards_fts USING fts5(
+                title, content, tokenize='unicode61'
+            );
+
+            -- 先删除旧版触发器（如有），确保总是使用最新定义
+            DROP TRIGGER IF EXISTS chapters_fts_ai;
+            DROP TRIGGER IF EXISTS chapters_fts_ad;
+            DROP TRIGGER IF EXISTS chapters_fts_au;
+            DROP TRIGGER IF EXISTS world_cards_fts_ai;
+            DROP TRIGGER IF EXISTS world_cards_fts_ad;
+            DROP TRIGGER IF EXISTS world_cards_fts_au;
+
+            -- chapters FTS 同步触发器（使用 INSERT OR REPLACE 避免行冲突）
+            CREATE TRIGGER chapters_fts_ai AFTER INSERT ON chapters BEGIN
+                INSERT OR REPLACE INTO chapters_fts(rowid, title, content)
+                    VALUES (new.rowid, new.title, new.content_html);
+            END;
+            CREATE TRIGGER chapters_fts_ad AFTER DELETE ON chapters BEGIN
+                INSERT OR REPLACE INTO chapters_fts(chapters_fts, rowid, title, content)
+                    VALUES('delete', old.rowid, old.title, old.content_html);
+            END;
+            CREATE TRIGGER chapters_fts_au AFTER UPDATE ON chapters BEGIN
+                INSERT OR REPLACE INTO chapters_fts(rowid, title, content)
+                    VALUES (new.rowid, new.title, new.content_html);
+            END;
+
+            -- world_cards FTS 同步触发器（使用 INSERT OR REPLACE 避免行冲突）
+            CREATE TRIGGER world_cards_fts_ai AFTER INSERT ON world_cards BEGIN
+                INSERT OR REPLACE INTO world_cards_fts(rowid, title, content)
+                    VALUES (new.rowid, new.title, new.content || ' ' || new.content_html);
+            END;
+            CREATE TRIGGER world_cards_fts_ad AFTER DELETE ON world_cards BEGIN
+                INSERT OR REPLACE INTO world_cards_fts(world_cards_fts, rowid, title, content)
+                    VALUES('delete', old.rowid, old.title, old.content || ' ' || old.content_html);
+            END;
+            CREATE TRIGGER world_cards_fts_au AFTER UPDATE ON world_cards BEGIN
+                INSERT OR REPLACE INTO world_cards_fts(rowid, title, content)
+                    VALUES (new.rowid, new.title, new.content || ' ' || new.content_html);
+            END;
+
+            -- 为已有数据重建 FTS 索引（INSERT OR REPLACE 确保幂等）
+            INSERT OR REPLACE INTO chapters_fts(rowid, title, content)
+                SELECT rowid, title, content_html FROM chapters WHERE deleted_at IS NULL;
+            INSERT OR REPLACE INTO world_cards_fts(rowid, title, content)
+                SELECT rowid, title, content || ' ' || content_html FROM world_cards;
+        "#).context("创建 FTS5 全文搜索表失败")?;
+
+        // 迁移现有数据库：为旧表添加字段（列已存在时跳过，其他错误则报错）
         // 注意：必须在索引创建之前执行，否则旧库会因列不存在而创建索引失败
-        eprintln!("[SQL] ALTER TABLE → volumes,chapters,books ADD COLUMN deleted_at / summary / outline");
-        let _ = conn.execute("ALTER TABLE volumes ADD COLUMN deleted_at TEXT", []);
-        let _ = conn.execute("ALTER TABLE chapters ADD COLUMN deleted_at TEXT", []);
-        let _ = conn.execute("ALTER TABLE books ADD COLUMN deleted_at TEXT", []);
-        // 迁移：为 chapters 表添加 summary 和 summary_at 列
-        let _ = conn.execute("ALTER TABLE chapters ADD COLUMN summary TEXT", []);
-        let _ = conn.execute("ALTER TABLE chapters ADD COLUMN summary_at TEXT", []);
-        // 迁移：添加大纲字段
-        let _ = conn.execute("ALTER TABLE books ADD COLUMN outline TEXT NOT NULL DEFAULT ''", []);
-        let _ = conn.execute("ALTER TABLE chapters ADD COLUMN outline TEXT NOT NULL DEFAULT ''", []);
+        safe_add_column(&conn, "volumes", "deleted_at", "TEXT")?;
+        safe_add_column(&conn, "chapters", "deleted_at", "TEXT")?;
+        safe_add_column(&conn, "books", "deleted_at", "TEXT")?;
+        safe_add_column(&conn, "chapters", "summary", "TEXT")?;
+        safe_add_column(&conn, "chapters", "summary_at", "TEXT")?;
+        safe_add_column(&conn, "books", "outline", "TEXT NOT NULL DEFAULT ''")?;
+        safe_add_column(&conn, "chapters", "outline", "TEXT NOT NULL DEFAULT ''")?;
 
         // 关键字段索引（提升查询性能）
         eprintln!("[SQL] CREATE INDEX → volumes, chapters, books, snapshots, world_cards, embeddings");
@@ -160,6 +235,7 @@ impl AppDb {
             CREATE INDEX IF NOT EXISTS idx_volumes_book_id ON volumes(book_id);
             CREATE INDEX IF NOT EXISTS idx_volumes_deleted_at ON volumes(deleted_at);
             CREATE INDEX IF NOT EXISTS idx_chapters_book_id ON chapters(book_id);
+            CREATE INDEX IF NOT EXISTS idx_chapters_book_sort ON chapters(book_id, sort_order);
             CREATE INDEX IF NOT EXISTS idx_chapters_volume_id ON chapters(volume_id);
             CREATE INDEX IF NOT EXISTS idx_chapters_deleted_at ON chapters(deleted_at);
             CREATE INDEX IF NOT EXISTS idx_books_deleted_at ON books(deleted_at);

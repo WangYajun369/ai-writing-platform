@@ -48,7 +48,6 @@ export default function NewBookDialog({ onClose, onCreated }: NewBookDialogProps
         description: description.trim(),
         dailyTarget,
         tags: [],
-        dbPath: '',
       })
 
       // 如果选择了封面，创建后再设置封面

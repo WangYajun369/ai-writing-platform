@@ -4,12 +4,12 @@
 import { memo, useState, useRef, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { invoke } from '@tauri-apps/api/core'
 import { Loader2Icon, ClipboardPasteIcon, InfoIcon, Trash2Icon, SettingsIcon, ChevronDownIcon, BookOpenIcon, CheckIcon } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { cn, markdownToHtml } from '@/lib/utils'
 import { editorInstanceAtom, worldWindowOpenAtom } from '@/stores/uiAtoms'
+import { windowApi } from '@/lib/tauri-bridge'
 import type { AiMessage, ChatRequestPayload } from '@/types'
 
 interface MessageBubbleProps {
@@ -175,7 +175,7 @@ export const MessageBubble = memo(function MessageBubble({ message, onDelete, on
             onClick={async () => {
               if (message.action === 'open-world-outline' && bookId) {
                 try {
-                  await invoke('open_world_window', { bookId, tab: 'outline' })
+                  await windowApi.openWorld(bookId, 'outline')
                   setWorldWindowOpen(true)
                 } catch {
                   // 静默忽略
