@@ -22,6 +22,10 @@ Thumbs.db
 .env.*
 !.env.example
 
+# SQLite WAL
+*.db-shm
+*.db-wal
+
 # Logs
 *.log
 npm-debug.log*

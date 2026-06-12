@@ -125,7 +125,7 @@ export function ToolboxOutputPanel({
             ref={outputRef}
             className="bg-muted rounded-2xl rounded-bl-sm px-4 py-3 min-w-0 overflow-hidden"
           >
-            <div className="markdown-body text-sm min-w-0 [overflow-wrap:anywhere] [&_pre]:!whitespace-pre-wrap [&_pre]:!break-all [&_pre]:!overflow-x-hidden [&_code]:!break-all [&_table]:!block [&_table]:!max-w-full">
+            <div className="markdown-body text-sm min-w-0 wrap-anywhere [&_pre]:whitespace-pre-wrap! [&_pre]:break-all! [&_pre]:overflow-x-hidden! [&_code]:break-all! [&_table]:block! [&_table]:max-w-full!">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
               {isGenerating && (
                 <span className="inline-block w-2 h-4 bg-primary/60 animate-pulse ml-0.5 align-text-bottom rounded-sm" />
