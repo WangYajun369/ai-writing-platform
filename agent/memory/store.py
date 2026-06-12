@@ -230,11 +230,57 @@ class MemoryStore:
         )
 
     @trace(log_args=True, log_result=False)
+    def update_memory(
+        self,
+        memory_id: int,
+        content: str | None = None,
+        keywords: str | None = None,
+        memory_type: MemoryType | None = None,
+    ):
+        """更新一条记忆的内容/关键词/类型"""
+        conn = self._get_conn()
+        fields = []
+        params: list = []
+
+        if content is not None:
+            fields.append("content = ?")
+            params.append(content.strip())
+        if keywords is not None:
+            fields.append("keywords = ?")
+            params.append(keywords.strip())
+        if memory_type is not None:
+            fields.append("memory_type = ?")
+            params.append(memory_type.value)
+
+        if not fields:
+            return
+
+        fields.append("updated_at = datetime('now', 'localtime')")
+        params.append(memory_id)
+
+        conn.execute(
+            f"UPDATE memories SET {', '.join(fields)} WHERE id = ?",
+            params,
+        )
+        conn.commit()
+        trace_event("MEMORY_UPDATE", f"id={memory_id} fields={list(zip(fields, params[:-1]))}", logging.DEBUG)
+
+    @trace(log_args=True, log_result=False)
     def delete_memory(self, memory_id: int):
         conn = self._get_conn()
         conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
         conn.commit()
         trace_event("MEMORY_DELETE", f"id={memory_id}", logging.DEBUG)
+
+    @trace(log_args=True, log_result=False)
+    def clear_all_memories(self, book_id: str):
+        """清空指定书籍的所有记忆"""
+        conn = self._get_conn()
+        cursor = conn.execute("DELETE FROM memories WHERE book_id = ?", (book_id,))
+        conn.commit()
+        count = cursor.rowcount
+        trace_event("MEMORY_CLEAR_ALL", f"book={book_id} deleted={count}条", logging.DEBUG)
+        return count
 
     @trace(log_args=True, log_result=True)
     def get_memory_count(self, book_id: str | None = None) -> int:

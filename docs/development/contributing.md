@@ -8,8 +8,9 @@
 
 | 工具 | 版本 |
 |------|------|
-| Node.js | ≥ 20 |
-| pnpm | ≥ 9 |
+| Node.js | ≥ 22 |
+| pnpm | ≥ 11 |
+| Python | ≥ 3.10（Agent 服务） |
 | Rust | 最新稳定版 |
 | macOS / Windows / Linux | - |
 

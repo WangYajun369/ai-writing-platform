@@ -242,6 +242,14 @@ fn start_bridge_server(db_path: PathBuf, config: BridgeConfig) {
 
         let result = handle_bridge(&pool, endpoint, &params);
 
+        // 记录错误详情到控制台，方便排查
+        if let Err(ref e) = result {
+            eprintln!(
+                "[Bridge] ❌ /agent/{} 失败: {} (params={})",
+                endpoint, e, params
+            );
+        }
+
         let response_body = match &result {
             Ok(data) => serde_json::json!({
                 "data": data,

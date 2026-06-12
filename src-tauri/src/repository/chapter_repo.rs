@@ -62,7 +62,10 @@ pub fn find_content(conn: &Connection, chapter_id: &str) -> Result<String> {
     conn.query_row(
         "SELECT content_html FROM chapters WHERE id=?1",
         params![chapter_id],
-        |row| row.get(0),
+        |row| {
+            let val: Option<String> = row.get(0)?;
+            Ok(val.unwrap_or_default())
+        },
     )
 }
 

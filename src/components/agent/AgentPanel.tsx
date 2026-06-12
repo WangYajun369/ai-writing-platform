@@ -5,10 +5,12 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react'
+import { BrainIcon } from 'lucide-react'
 import { useAgent } from './useAgent'
 import { SKILLS, type SkillType } from './types'
 import { useCurrentBook } from '@/stores/appStore'
 import { AgentMessageBubble } from './AgentMessageBubble'
+import { AgentMemoryPanel } from './AgentMemoryPanel'
 import { getAgentQuickActions } from '@/components/ai/panel/constants'
 import '@/styles/AgentPanel.css'
 
@@ -32,6 +34,7 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ onClose }) => {
 
   const [input, setInput] = useState('')
   const [selectedSkill, setSelectedSkill] = useState<SkillType>('writing')
+  const [showMemory, setShowMemory] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -100,6 +103,14 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ onClose }) => {
               停止
             </button>
           )}
+          <button
+            className={`agent-btn ${showMemory ? 'agent-btn-primary' : 'agent-btn-ghost'}`}
+            onClick={() => setShowMemory(!showMemory)}
+            title="Agent 记忆管理"
+          >
+            <BrainIcon className="w-3.5 h-3.5 mr-1 inline" />
+            记忆
+          </button>
           <button className="agent-btn agent-btn-ghost" onClick={clearMessages} title="清空对话">
             清空
           </button>
@@ -111,99 +122,106 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ onClose }) => {
         </div>
       </div>
 
-      {/* Skill Selector */}
-      <div className="agent-skills">
-        {SKILLS.map((skill) => (
-          <button
-            key={skill.type}
-            className={`agent-skill-btn ${selectedSkill === skill.type ? 'active' : ''}`}
-            onClick={() => setSelectedSkill(skill.type)}
-            style={{
-              '--skill-color': skill.color,
-            } as React.CSSProperties}
-            title={skill.description}
-          >
-            <span className="agent-skill-icon">{getSkillIcon(skill.type)}</span>
-            <span className="agent-skill-label">{skill.label}</span>
-          </button>
-        ))}
-      </div>
+      {/* 记忆管理面板 / 主界面切换 */}
+      {showMemory ? (
+        <AgentMemoryPanel bookId={book?.id} onClose={() => setShowMemory(false)} />
+      ) : (
+        <>
+          {/* Skill Selector */}
+          <div className="agent-skills">
+            {SKILLS.map((skill) => (
+              <button
+                key={skill.type}
+                className={`agent-skill-btn ${selectedSkill === skill.type ? 'active' : ''}`}
+                onClick={() => setSelectedSkill(skill.type)}
+                style={{
+                  '--skill-color': skill.color,
+                } as React.CSSProperties}
+                title={skill.description}
+              >
+                <span className="agent-skill-icon">{getSkillIcon(skill.type)}</span>
+                <span className="agent-skill-label">{skill.label}</span>
+              </button>
+            ))}
+          </div>
 
-      {/* Messages */}
-      <div className="agent-messages">
-        {messages.length === 0 && status === 'running' && (
-          <div className="agent-welcome">
-            <div className="agent-welcome-icon">✨</div>
-            <h4>你好，我是你的 AI 写作助手</h4>
-            <p>
-              当前模式：
-              <strong style={{ color: selectedSkillMeta?.color }}>
-                {selectedSkillMeta?.label}
-              </strong>
-            </p>
-            <p>{selectedSkillMeta?.description}</p>
-            <div className="agent-quick-actions">
-              {getAgentQuickActions(selectedSkill).map((action, i) => (
-                <button
-                  key={i}
-                  className="agent-quick-btn"
-                  onClick={() => setInput(action)}
-                >
-                  {action}
-                </button>
-              ))}
+          {/* Messages */}
+          <div className="agent-messages">
+            {messages.length === 0 && status === 'running' && (
+              <div className="agent-welcome">
+                <div className="agent-welcome-icon">✨</div>
+                <h4>你好，我是你的 AI 写作助手</h4>
+                <p>
+                  当前模式：
+                  <strong style={{ color: selectedSkillMeta?.color }}>
+                    {selectedSkillMeta?.label}
+                  </strong>
+                </p>
+                <p>{selectedSkillMeta?.description}</p>
+                <div className="agent-quick-actions">
+                  {getAgentQuickActions(selectedSkill).map((action, i) => (
+                    <button
+                      key={i}
+                      className="agent-quick-btn"
+                      onClick={() => setInput(action)}
+                    >
+                      {action}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {messages.map((msg) => (
+              <AgentMessageBubble key={msg.id} message={msg} />
+            ))}
+
+            {error && (
+              <div className="agent-error-banner">
+                ⚠️ {error}
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Input */}
+          <div className="agent-input-area">
+            <textarea
+              ref={inputRef}
+              className="agent-input"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                status !== 'running'
+                  ? '请先启动 Agent 服务...'
+                  : `输入指令，${selectedSkillMeta?.label}模式...`
+              }
+              rows={2}
+              disabled={status !== 'running'}
+            />
+            <div className="agent-input-actions">
+              <span className="agent-input-hint">Enter 发送 · Shift+Enter 换行</span>
+              <div>
+                {isStreaming ? (
+                  <button className="agent-btn agent-btn-danger" onClick={cancelSkill}>
+                    停止生成
+                  </button>
+                ) : (
+                  <button
+                    className="agent-btn agent-btn-primary"
+                    onClick={handleSubmit}
+                    disabled={!input.trim() || status !== 'running'}
+                  >
+                    发送
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-        )}
-
-        {messages.map((msg) => (
-          <AgentMessageBubble key={msg.id} message={msg} />
-        ))}
-
-        {error && (
-          <div className="agent-error-banner">
-            ⚠️ {error}
-          </div>
-        )}
-
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Input */}
-      <div className="agent-input-area">
-        <textarea
-          ref={inputRef}
-          className="agent-input"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={
-            status !== 'running'
-              ? '请先启动 Agent 服务...'
-              : `输入指令，${selectedSkillMeta?.label}模式...`
-          }
-          rows={2}
-          disabled={status !== 'running'}
-        />
-        <div className="agent-input-actions">
-          <span className="agent-input-hint">Enter 发送 · Shift+Enter 换行</span>
-          <div>
-            {isStreaming ? (
-              <button className="agent-btn agent-btn-danger" onClick={cancelSkill}>
-                停止生成
-              </button>
-            ) : (
-              <button
-                className="agent-btn agent-btn-primary"
-                onClick={handleSubmit}
-                disabled={!input.trim() || status !== 'running'}
-              >
-                发送
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   )
 }

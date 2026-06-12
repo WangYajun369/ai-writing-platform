@@ -5,17 +5,17 @@
 | 层级 | 技术 | 版本 |
 |------|------|------|
 | **桌面框架** | Tauri | v2 |
-| **前端框架** | React | 18 |
-| **语言** | TypeScript | 5 |
+| **前端框架** | React | 19 |
+| **语言** | TypeScript | 6 |
 | **构建工具** | Vite | 8 |
-| **样式方案** | TailwindCSS | 3.4 |
-| **富文本编辑器** | TipTap | 2.10 |
-| **状态管理** | Zustand + Jotai | 4.5 / 2.10 |
+| **样式方案** | TailwindCSS | 4 |
+| **富文本编辑器** | TipTap | 3.26 |
+| **状态管理** | Zustand + Jotai | 5 / 2.20 |
 | **路由** | React Router | v7 |
 | **后端语言** | Rust | 2021 Edition |
 | **数据库** | SQLite (rusqlite bundled) | WAL 模式 |
 | **连接池** | r2d2 | - |
-| **包管理** | pnpm | ≥ 9 |
+| **包管理** | pnpm | ≥ 11 |
 
 ## 前端依赖
 
@@ -57,8 +57,7 @@
 | 依赖 | 说明 |
 |------|------|
 | `date-fns` | 日期处理 |
-| `lodash-es` | 通用工具 |
-| `uuid` | ID 生成 |
+| `react-markdown` + `remark-gfm` | Markdown 渲染 |
 | `katex` | LaTeX 公式渲染 |
 
 ## Tauri 插件

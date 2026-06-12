@@ -133,6 +133,15 @@ async def _call_rust(endpoint: str, params: dict) -> dict:
         except httpx.HTTPError as e:
             last_error = e
 
+            # 尝试从 Bridge 响应体中提取详细错误信息
+            bridge_error_detail: str | None = None
+            if hasattr(e, "response") and e.response is not None:
+                try:
+                    body = e.response.json()
+                    bridge_error_detail = body.get("error")
+                except Exception:
+                    pass
+
             if _is_bridge_connection_error(e):
                 # Bridge 未就绪 → 重试
                 if attempt < _BRIDGE_MAX_RETRIES:
@@ -161,14 +170,15 @@ async def _call_rust(endpoint: str, params: dict) -> dict:
                         f"原始错误: {e}"
                     ) from e
             else:
-                # Bridge 业务错误（如 404、500）→ 不重试
+                # Bridge 业务错误（如 404、500）→ 不重试，输出详细错误
+                detail = bridge_error_detail or str(e)
                 trace_event(
                     "HTTP_ERROR",
-                    f"POST /agent/{endpoint} → {e}",
+                    f"POST /agent/{endpoint} → {detail}",
                     level=logging.ERROR,
                 )
                 raise RuntimeError(
-                    f"数据桥接服务返回错误 ({endpoint}): {e}"
+                    f"数据桥接服务返回错误 ({endpoint}): {detail}"
                 ) from e
 
         except Exception as e:

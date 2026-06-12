@@ -5,7 +5,7 @@
  */
 import { memo } from 'react'
 import {
-  BotIcon, Trash2Icon, MessageSquareIcon, SparklesIcon,
+  BotIcon, Trash2Icon, MessageSquareIcon, SparklesIcon, BrainIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { SkillType, AgentStatus } from '@/components/agent/types'
@@ -28,6 +28,9 @@ interface HeaderProps {
   agentStatus: AgentStatus
   onStartAgent: () => void
   onStopAgent: () => void
+  /** Agent 记忆面板相关 */
+  showMemory: boolean
+  onToggleMemory: () => void
 }
 
 export const Header = memo(function Header({
@@ -37,6 +40,7 @@ export const Header = memo(function Header({
   statusKey,
   selectedSkill, onSkillChange,
   onClear, agentStatus, onStartAgent, onStopAgent,
+  showMemory, onToggleMemory,
 }: HeaderProps) {
   const StatusIcon = STATUS_CONFIG[statusKey].icon
   const statusColor = STATUS_CONFIG[statusKey].color
@@ -115,6 +119,22 @@ export const Header = memo(function Header({
                 停止
               </button>
             )
+          )}
+          {/* Agent 模式下的记忆按钮 */}
+          {mode === 'agent' && (
+            <button
+              onClick={onToggleMemory}
+              title="Agent 记忆管理"
+              className={cn(
+                'flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors',
+                showMemory
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-muted',
+              )}
+            >
+              <BrainIcon className="w-3 h-3" />
+              <span>记忆</span>
+            </button>
           )}
           <button
             onClick={onClear}

@@ -199,3 +199,173 @@ pub async fn cancel_skill(manager: Arc<AgentManager>) -> Result<(), AppError> {
 
     Ok(())
 }
+
+// ─── Rust → Python: 记忆管理 ───
+
+/// 记忆信息（来自 Python Agent）
+/// 字段命名与 Python 端 snake_case 保持一致，前端 TS 接口也使用 snake_case
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct MemoryInfo {
+    pub id: i64,
+    pub book_id: String,
+    pub skill_type: String,
+    pub memory_type: String,
+    pub content: String,
+    pub keywords: String,
+    pub relevance_score: f64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// 记忆列表响应
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct MemoryListResponse {
+    pub memories: Vec<MemoryInfo>,
+    pub total: usize,
+}
+
+/// 列出指定书籍的记忆
+pub async fn list_memories(manager: Arc<AgentManager>, book_id: &str, skill_type: Option<&str>) -> Result<MemoryListResponse, AppError> {
+    let client = reqwest::Client::new();
+    let mut url = format!("{}/memory/list?book_id={}", manager.base_url(), book_id);
+    if let Some(st) = skill_type {
+        url.push_str(&format!("&skill_type={}", st));
+    }
+
+    let response = client
+        .get(&url)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| AppError::Business(format!("获取记忆列表失败: {}", e)))?;
+
+    if !response.status().is_success() {
+        return Err(AppError::Business(format!(
+            "获取记忆列表返回错误 ({}): {}",
+            response.status(),
+            response.text().await.unwrap_or_default()
+        )));
+    }
+
+    // 先读取原始文本，便于解码失败时排查
+    let raw_body = response.text().await.map_err(|e| {
+        AppError::Business(format!("读取记忆列表响应失败: {}", e))
+    })?;
+
+    serde_json::from_str::<MemoryListResponse>(&raw_body).map_err(|e| {
+        // 打印原始响应到控制台以便排查
+        let preview: String = if raw_body.len() > 500 {
+            format!("{}... [截断，共 {} 字符]", &raw_body[..500], raw_body.len())
+        } else {
+            raw_body.clone()
+        };
+        eprintln!(
+            "[Memory] ❌ JSON 解析失败: {}\n原始响应: {}",
+            e, preview
+        );
+        AppError::Business(format!(
+            "解析记忆列表失败: {}（响应预览: {}）",
+            e, preview
+        ))
+    })
+}
+
+/// 更新一条记忆
+pub async fn update_memory(
+    manager: Arc<AgentManager>,
+    memory_id: i64,
+    content: Option<&str>,
+    keywords: Option<&str>,
+    memory_type: Option<&str>,
+) -> Result<(), AppError> {
+    let client = reqwest::Client::new();
+    let url = format!("{}/memory/{}", manager.base_url(), memory_id);
+
+    #[derive(Serialize)]
+    struct UpdateBody<'a> {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        content: Option<&'a str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        keywords: Option<&'a str>,
+        #[serde(skip_serializing_if = "Option::is_none", rename = "memory_type")]
+        memory_type: Option<&'a str>,
+    }
+
+    let body = UpdateBody { content, keywords, memory_type };
+
+    let response = client
+        .put(&url)
+        .json(&body)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| AppError::Business(format!("更新记忆失败: {}", e)))?;
+
+    if !response.status().is_success() {
+        return Err(AppError::Business(format!(
+            "更新记忆返回错误 ({}): {}",
+            response.status(),
+            response.text().await.unwrap_or_default()
+        )));
+    }
+
+    Ok(())
+}
+
+/// 删除一条记忆
+pub async fn delete_memory(manager: Arc<AgentManager>, memory_id: i64) -> Result<(), AppError> {
+    let client = reqwest::Client::new();
+    let url = format!("{}/memory/{}", manager.base_url(), memory_id);
+
+    let response = client
+        .delete(&url)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| AppError::Business(format!("删除记忆失败: {}", e)))?;
+
+    if !response.status().is_success() {
+        return Err(AppError::Business(format!(
+            "删除记忆返回错误 ({}): {}",
+            response.status(),
+            response.text().await.unwrap_or_default()
+        )));
+    }
+
+    Ok(())
+}
+
+/// 清空指定书籍的所有记忆
+pub async fn clear_memories(manager: Arc<AgentManager>, book_id: &str) -> Result<i64, AppError> {
+    let client = reqwest::Client::new();
+    let url = format!("{}/memory/clear?book_id={}", manager.base_url(), book_id);
+
+    let response = client
+        .delete(&url)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| AppError::Business(format!("清空记忆失败: {}", e)))?;
+
+    if !response.status().is_success() {
+        return Err(AppError::Business(format!(
+            "清空记忆返回错误 ({}): {}",
+            response.status(),
+            response.text().await.unwrap_or_default()
+        )));
+    }
+
+    #[derive(Deserialize)]
+    struct ClearResponse {
+        deleted_count: i64,
+    }
+
+    let resp = response
+        .json::<ClearResponse>()
+        .await
+        .map_err(|e| AppError::Business(format!("解析清空响应失败: {}", e)))?;
+
+    Ok(resp.deleted_count)
+}

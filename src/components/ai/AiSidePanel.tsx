@@ -32,12 +32,15 @@ import { QuickHints } from './panel/QuickHints'
 import { InputArea } from './panel/InputArea'
 import { AgentMessageList } from './panel/AgentMessageList'
 import { AgentInputArea } from './panel/AgentInputArea'
+import { AgentMemoryPanel } from '@/components/agent/AgentMemoryPanel'
+import '@/styles/AgentPanel.css'
 import { mapAgentStatus } from './panel/constants'
 
 type PanelMode = 'chat' | 'agent'
 
 export default function AiSidePanel() {
   const [mode, setMode] = useState<PanelMode>('chat')
+  const [showMemory, setShowMemory] = useState(false)
   const messages = useCurrentAiMessages()
   const [input, setInput] = useState('')
   const [selectedSkill, setSelectedSkill] = useState<SkillType>('writing')
@@ -188,10 +191,14 @@ export default function AiSidePanel() {
         agentStatus={agentStatus}
         onStartAgent={startAgent}
         onStopAgent={stopAgent}
+        showMemory={showMemory}
+        onToggleMemory={() => setShowMemory((v) => !v)}
       />
 
-      {/* 消息列表 */}
-      {mode === 'chat' ? (
+      {/* 消息列表 — 记忆面板切换 */}
+      {mode === 'agent' && showMemory ? (
+        <AgentMemoryPanel bookId={book?.id} onClose={() => setShowMemory(false)} />
+      ) : mode === 'chat' ? (
         <MessageList
           messages={messages}
           bottomRef={bottomRef}
@@ -215,8 +222,9 @@ export default function AiSidePanel() {
       {/* 快捷提示词（仅聊天模式） */}
       {mode === 'chat' && messages.length === 0 && <QuickHints onSelect={setInput} />}
 
-      {/* 输入框 */}
-      {mode === 'chat' ? (
+      {/* 输入框（记忆面板显示时隐藏） */}
+      {!(mode === 'agent' && showMemory) && (
+        mode === 'chat' ? (
         <InputArea
           input={input}
           onChange={setInput}
@@ -240,6 +248,7 @@ export default function AiSidePanel() {
           selectedSkill={selectedSkill}
           onCancel={cancelSkill}
         />
+      )
       )}
 
       {/* 请求详情弹窗 */}

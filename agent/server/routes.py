@@ -5,9 +5,11 @@
 """
 
 import logging
+import math
 from pydantic import BaseModel, Field
 
 from ..config import SkillType, config
+from ..memory.store import MemoryType
 from ..tracer import trace, trace_event, get_request_id
 from .sse import create_sse_response
 
@@ -31,6 +33,13 @@ class SkillExecuteRequest(BaseModel):
         default=None,
         description="前端已生成的对话摘要（超出窗口的旧消息压缩结果）",
     )
+
+
+class MemoryUpdateRequest(BaseModel):
+    """更新记忆的请求体"""
+    content: str | None = Field(default=None, description="记忆内容")
+    keywords: str | None = Field(default=None, description="逗号分隔的关键词")
+    memory_type: str | None = Field(default=None, description="记忆类型: preference / decision / lesson")
 
 
 class HealthResponse(BaseModel):
@@ -117,3 +126,111 @@ def register_routes(app):
         """取消当前任务（预留，后续实现任务管理）"""
         trace_event("HTTP_REQUEST", "POST /skills/cancel", logging.DEBUG)
         return {"status": "cancelled"}
+
+    # ─── 记忆管理 API ───
+
+    def _sanitize_memory(id, book_id, skill_type, memory_type, content, keywords, relevance_score, created_at, updated_at) -> dict:
+        """防御 NaN/Infinity，确保响应体为合法 JSON"""
+        score = relevance_score
+        if isinstance(score, float) and (math.isnan(score) or math.isinf(score)):
+            score = 1.0  # NaN/Inf 降级为默认值
+        return {
+            "id": id,
+            "book_id": book_id,
+            "skill_type": skill_type,
+            "memory_type": memory_type,
+            "content": content,
+            "keywords": keywords,
+            "relevance_score": score,
+            "created_at": created_at,
+            "updated_at": updated_at,
+        }
+
+    @app.get("/memory/list")
+    async def list_memories(book_id: str, skill_type: str | None = None):
+        """列出指定书籍的记忆
+
+        GET /memory/list?book_id=xxx&skill_type=writing
+        """
+        from ..memory import MemoryStore
+        try:
+            store = MemoryStore()
+            memories = store.get_memories(
+                book_id=book_id,
+                skill_type=skill_type,
+                limit=200,
+            )
+            result = {
+                "memories": [
+                    _sanitize_memory(
+                        id=m.id,
+                        book_id=m.book_id,
+                        skill_type=m.skill_type,
+                        memory_type=m.memory_type.value,
+                        content=m.content,
+                        keywords=m.keywords,
+                        relevance_score=m.relevance_score,
+                        created_at=m.created_at,
+                        updated_at=m.updated_at,
+                    )
+                    for m in memories
+                ],
+                "total": len(memories),
+            }
+            trace_event(
+                "HTTP_RESPONSE",
+                f"GET /memory/list → {len(memories)} 条记忆",
+                logging.DEBUG,
+            )
+            return result
+        except Exception as e:
+            logger.error(f"获取记忆列表异常: {e}", exc_info=True)
+            return {"memories": [], "total": 0, "error": str(e)}
+
+    @app.put("/memory/{memory_id}")
+    async def update_memory(memory_id: int, req: MemoryUpdateRequest):
+        """更新指定记忆
+
+        PUT /memory/123
+        Body: { "content": "新内容", "keywords": "关键词", "memory_type": "preference" }
+        """
+        from ..memory import MemoryStore
+        store = MemoryStore()
+        mem_type = None
+        if req.memory_type:
+            try:
+                mem_type = MemoryType(req.memory_type)
+            except ValueError:
+                return {"error": f"无效的记忆类型: {req.memory_type}"}, 400
+
+        store.update_memory(
+            memory_id=memory_id,
+            content=req.content,
+            keywords=req.keywords,
+            memory_type=mem_type,
+        )
+        return {"status": "updated", "memory_id": memory_id}
+
+    @app.delete("/memory/clear")
+    async def clear_memories(book_id: str):
+        """清空指定书籍的所有记忆
+
+        DELETE /memory/clear?book_id=xxx
+        注意：此路由必须在 /memory/{memory_id} 之前定义，
+        否则 FastAPI 会将 "clear" 匹配为 memory_id 导致 int 解析失败
+        """
+        from ..memory import MemoryStore
+        store = MemoryStore()
+        count = store.clear_all_memories(book_id)
+        return {"status": "cleared", "deleted_count": count}
+
+    @app.delete("/memory/{memory_id}")
+    async def delete_memory(memory_id: int):
+        """删除指定记忆
+
+        DELETE /memory/123
+        """
+        from ..memory import MemoryStore
+        store = MemoryStore()
+        store.delete_memory(memory_id)
+        return {"status": "deleted", "memory_id": memory_id}

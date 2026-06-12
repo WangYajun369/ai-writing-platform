@@ -514,3 +514,319 @@
 .agent-messages::-webkit-scrollbar-thumb:hover {
   background: var(--text-tertiary, #6b7280);
 }
+
+/* ─── Memory Panel ─── */
+.agent-memory-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-primary, #1a1a2e);
+}
+
+.agent-memory-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color, #2a2a4a);
+  flex-shrink: 0;
+}
+
+.agent-memory-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #e0e0e0);
+}
+
+.agent-memory-count {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-tertiary, #6b7280);
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.05));
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.agent-memory-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.agent-memory-refresh-btn,
+.agent-memory-close-btn {
+  padding: 4px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary, #9ca3af);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.agent-memory-refresh-btn:hover,
+.agent-memory-close-btn:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+  color: var(--text-primary, #e0e0e0);
+}
+
+/* Empty State */
+.agent-memory-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  text-align: center;
+}
+
+/* Error */
+.agent-memory-error {
+  margin: 8px 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Loading */
+.agent-memory-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+}
+
+.agent-memory-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-color, #2a2a4a);
+  border-top-color: var(--accent-color, #6366f1);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Memory List */
+.agent-memory-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Memory Item */
+.agent-memory-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border-color, #2a2a4a);
+}
+
+.agent-memory-item-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.agent-memory-type-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.agent-memory-skill-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-primary, rgba(255, 255, 255, 0.03));
+  color: var(--text-tertiary, #6b7280);
+  font-weight: 500;
+}
+
+.agent-memory-relevance {
+  font-size: 10px;
+  color: var(--text-tertiary, #6b7280);
+  margin-left: auto;
+}
+
+.agent-memory-item-actions {
+  display: flex;
+  gap: 2px;
+  margin-left: 4px;
+}
+
+.agent-memory-action-btn {
+  padding: 3px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary, #6b7280);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.agent-memory-action-btn:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+  color: var(--text-primary, #e0e0e0);
+}
+
+.agent-memory-action-btn.save:hover {
+  color: #10b981;
+}
+
+.agent-memory-action-btn.danger:hover {
+  color: #ef4444;
+}
+
+/* Memory Content */
+.agent-memory-content {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-primary, #e0e0e0);
+  margin: 0 0 6px;
+  word-break: break-all;
+}
+
+/* Keywords */
+.agent-memory-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.agent-memory-keyword {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
+}
+
+/* Time */
+.agent-memory-time {
+  font-size: 10px;
+  color: var(--text-tertiary, #6b7280);
+}
+
+/* Edit Area */
+.agent-memory-edit-area {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.agent-memory-edit-input {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--accent-color, #6366f1);
+  background: var(--bg-primary, rgba(255, 255, 255, 0.03));
+  color: var(--text-primary, #e0e0e0);
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  outline: none;
+}
+
+.agent-memory-keywords-input {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, #2a2a4a);
+  background: var(--bg-primary, rgba(255, 255, 255, 0.03));
+  color: var(--text-primary, #e0e0e0);
+  font-size: 12px;
+  outline: none;
+}
+
+.agent-memory-keywords-input:focus {
+  border-color: var(--accent-color, #6366f1);
+}
+
+/* Footer */
+.agent-memory-footer {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border-color, #2a2a4a);
+  flex-shrink: 0;
+}
+
+.agent-memory-clear-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: none;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.agent-memory-clear-btn.danger {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+.agent-memory-clear-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.agent-memory-clear-btn:not(.danger) {
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.03));
+  color: var(--text-secondary, #9ca3af);
+}
+
+.agent-memory-clear-btn:not(.danger):hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+  color: var(--text-primary, #e0e0e0);
+}
+
+.agent-memory-clear-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Scrollbar for memory list */
+.agent-memory-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.agent-memory-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.agent-memory-list::-webkit-scrollbar-thumb {
+  background: var(--border-color, #2a2a4a);
+  border-radius: 2px;
+}
+
+.agent-memory-list::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary, #6b7280);
+}

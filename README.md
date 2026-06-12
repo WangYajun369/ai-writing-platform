@@ -18,7 +18,9 @@
 | **路由** | React Router v7（懒加载 Editor/Settings 页面） |
 | **后端** | Rust 2021 + SQLite（WAL 模式）+ rusqlite（bundled）+ r2d2 连接池 |
 | **AI 通信** | SSE 流式对话，reqwest stream + tokio 异步 |
-| **包管理** | pnpm >= 9，Node >= 20 |
+| **Agent 服务** | Python ≥ 3.10 + FastAPI + LangGraph ReAct Agent，端口 9877，独立子进程管理 |
+| **Agent 记忆** | SQLite 持久化（跨会话偏好/决策/经验记忆，相关性检索 + 时间衰减） |
+| **包管理** | pnpm >= 11，Node >= 22 |
 | **深度链接** | com.ukcoder.timewrite 协议（`com.ukcoder.timewrite://`），支持外部应用唤起与参数传递 |
 
 ## 功能特性
@@ -59,6 +61,25 @@
 - 请求详情面板：查看完整 AI 请求/响应内容
 - 默认对话模型：`glm-5.1`，Embedding：`embedding-3`
 
+### Agent 自动化（Python FastAPI 服务）
+Agent 系统基于 LangGraph ReAct 架构，调用 AI 模型 + 数据库工具链完成复杂的多步写作任务：
+
+- **4 个核心技能（Skill）**：
+  - 写作辅助（WRITING）—— 大纲生成、情节建议、角色对话模拟、冲突设计
+  - 文学分析（ANALYSIS）—— 文风分析、连贯性检查、伏笔追踪、角色弧光、节奏评估
+  - 设定研究（RESEARCH）—— 资料检索、世界观一致性校验、设定扩展、关系图谱
+  - 文字润色（POLISH）—— 语法纠错、文笔润色、风格统一、冗余精简
+- **独立子进程管理**：Python FastAPI 服务（端口 9877）、Rust AgentManager 全生命周期管控
+- **看门狗自动恢复**：异常崩溃检测 + 自动重启（最多 3 次），优雅关闭（SIGTERM → 10s 等待 → SIGKILL）
+- **LangGraph ReAct 执行引擎**：动态 Prompt 注入、多步推理、选择性工具集加载（每 Skill 不同工具子集）
+- **6 个数据库工具链**：读取章节/摘要/分页、列出章节、搜索世界观卡片、获取整书上下文 — 全部通过 Rust Bridge（端口 9876）回调访问 SQLite
+- **记忆体系统**：三层记忆（偏好/决策/经验）、SQLite 持久化、关键词匹配 + 时间衰减排序、Token 预算控制（600 tokens）
+- **对话压缩**：超 6 轮自动触发本地 Ollama 模型压缩，保留最近 4 轮完整对话
+- **双模型路由**：本地 Ollama（qwen2.5:7b，处理润色）+ 云端 DeepSeek（处理写作/分析/研究），按任务复杂度自动选择
+- **DeepSeek 思考模式适配**：KV Cache 友好 Prompt 结构、reasoning_content 剥离、首 Token 延迟监控
+- **SSE 流式输出**：React Agent Panel → Rust HTTP Client → Python Agent → LangGraph ReAct → Rust Bridge → SQLite → 流式回传
+- **前端 RAF 缓冲优化**：requestAnimationFrame 合并高频 SSE chunk，避免过多重渲染
+
 ### 版本管理
 - 章节 HTML 内容快照（auto/milestone 类型）
 - 支持预览、恢复到历史版本、删除快照
@@ -79,6 +100,7 @@
 
 ### 独立窗口系统
 - 5 种独立悬浮窗口：世界观资料库 / 版本历史 / 章节总结 / AI 工具箱 / 调试控制台
+- Agent 侧边面板：内嵌 AI 侧栏，Skill 选择器 + 消息列表 + 流式输出，无需独立窗口即可交互
 - 窗口状态通过 Jotai 原子跨页面共享，支持多窗口协作
 
 ### 调试与诊断

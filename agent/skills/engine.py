@@ -18,7 +18,9 @@ import logging
 from typing import AsyncIterator
 from datetime import datetime
 
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+import uuid
+
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver as LangGraphMemorySaver
 
 from ..config import config, SkillType
@@ -71,17 +73,16 @@ def _clean_history_for_context(history: list[dict]) -> list[dict]:
     参考：https://api-docs.deepseek.com/zh-cn/guides/multi_round_chat
 
     规则：
-    - 无工具调用时：DeepSeek 会自动忽略上一轮的 reasoning_content，
-      但为节省 token 和避免潜在问题，我们主动剥离 reasoning_content 和 tool_calls 字段
-    - 有工具调用时：LangGraph 的 checkpointer 会在 Agent 内部自行管理消息状态，
-      我们不需要在传入的历史消息中保留这些字段
-    - 仅保留 role 和 content 两个核心字段
+    - 剥离 reasoning_content（DeepSeek 特有字段，不应传给 LLM）
+    - 保留 role、content、tool_calls、tool_call_id、name 等所有其他字段
+    - tool_calls 和 tool role 消息必须保留，否则 LangGraph 校验
+      历史消息时会报 INVALID_CHAT_HISTORY（AIMessage 有 tool_calls
+      但缺少对应 ToolMessage）
     """
     cleaned = []
     for msg in history:
-        role = msg.get("role", "user")
-        content = msg.get("content", "")
-        cleaned.append({"role": role, "content": content})
+        cleaned_msg = {k: v for k, v in msg.items() if k != "reasoning_content"}
+        cleaned.append(cleaned_msg)
     return cleaned
 
 
@@ -190,9 +191,8 @@ async def execute_skill_stream(
         messages = [SystemMessage(content=system_prompt)]
 
         if conversation_history:
-            # 清理历史消息：剥离 reasoning_content 和 tool_calls，遵循 DeepSeek 最佳实践
+            # 清理历史消息：剥离 reasoning_content（DeepSeek 特有字段）
             # 参考：https://api-docs.deepseek.com/zh-cn/guides/thinking_mode
-            # 无工具调用时 DeepSeek 会自动忽略 reasoning_content，主动剥离可节省 token
             cleaned_history = _clean_history_for_context(conversation_history)
             history_total_chars = 0
             for msg in cleaned_history[-10:]:
@@ -204,7 +204,15 @@ async def execute_skill_stream(
                 if role == "user":
                     messages.append(HumanMessage(content=content))
                 elif role == "assistant":
-                    messages.append(AIMessage(content=content))
+                    tool_calls = msg.get("tool_calls")
+                    if tool_calls:
+                        messages.append(AIMessage(content=content, tool_calls=tool_calls))
+                    else:
+                        messages.append(AIMessage(content=content))
+                elif role == "tool":
+                    tool_call_id = msg.get("tool_call_id", "")
+                    name = msg.get("name", "")
+                    messages.append(ToolMessage(content=content, tool_call_id=tool_call_id, name=name))
             trace_event(
                 "HISTORY_LOAD",
                 f"加载 {len(cleaned_history)} 条历史消息 "
@@ -236,17 +244,22 @@ async def execute_skill_stream(
             trace_event("COMPRESS_DISABLED", "历史压缩已禁用", logging.DEBUG)
             compressed_messages = messages
 
-        # 配置
+        # 配置：每次请求使用唯一 thread_id，避免 Checkpointer 跨请求状态冲突
+        # 使用 uuid4 确保同一 book+skill 的多次请求互不干扰
+        # Checkpointer 仅在单次请求内管理 tool-call 循环，跨请求上下文由
+        # conversation_history 手动注入管理
+        request_thread_id = f"{book_id}_{skill.value}_{uuid.uuid4().hex[:8]}"
+
         agent_config = {
             "configurable": {
-                "thread_id": f"{book_id}_{skill.value}",
+                "thread_id": request_thread_id,
             },
             "recursion_limit": config.max_iterations,
         }
 
         trace_event(
             "AGENT_START",
-            f"thread_id={book_id}_{skill.value} "
+            f"thread_id={request_thread_id} "
             f"max_iterations={config.max_iterations} "
             f"total_messages={len(compressed_messages)}",
         )

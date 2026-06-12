@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
 use crate::error::AppError;
-use crate::python::{self, client::SkillRequest, client::AiModelConfig, manager::AgentManager, AgentState};
+use crate::python::{self, client::SkillRequest, client::AiModelConfig, client::MemoryListResponse, manager::AgentManager, AgentState};
 
 /// Agent 状态信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,4 +144,58 @@ pub async fn cancel_agent_skill(
     agent: State<'_, Arc<AgentManager>>,
 ) -> Result<(), AppError> {
     python::client::cancel_skill(agent.inner().clone()).await
+}
+
+// ══════ 记忆管理命令 ══════
+
+/// 列出指定书籍的记忆
+#[tauri::command]
+pub async fn list_agent_memories(
+    agent: State<'_, Arc<AgentManager>>,
+    book_id: String,
+    skill_type: Option<String>,
+) -> Result<MemoryListResponse, AppError> {
+    python::client::list_memories(
+        agent.inner().clone(),
+        &book_id,
+        skill_type.as_deref(),
+    )
+    .await
+}
+
+/// 更新一条记忆
+#[tauri::command]
+pub async fn update_agent_memory(
+    agent: State<'_, Arc<AgentManager>>,
+    memory_id: i64,
+    content: Option<String>,
+    keywords: Option<String>,
+    memory_type: Option<String>,
+) -> Result<(), AppError> {
+    python::client::update_memory(
+        agent.inner().clone(),
+        memory_id,
+        content.as_deref(),
+        keywords.as_deref(),
+        memory_type.as_deref(),
+    )
+    .await
+}
+
+/// 删除一条记忆
+#[tauri::command]
+pub async fn delete_agent_memory(
+    agent: State<'_, Arc<AgentManager>>,
+    memory_id: i64,
+) -> Result<(), AppError> {
+    python::client::delete_memory(agent.inner().clone(), memory_id).await
+}
+
+/// 清空指定书籍的所有记忆
+#[tauri::command]
+pub async fn clear_agent_memories(
+    agent: State<'_, Arc<AgentManager>>,
+    book_id: String,
+) -> Result<i64, AppError> {
+    python::client::clear_memories(agent.inner().clone(), &book_id).await
 }

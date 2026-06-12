@@ -20,7 +20,8 @@
 │                       │                                  │
 │              src-tauri/src/commands/                     │
 │  book.rs | volume.rs | chapter.rs | snapshot.rs          │
-│  world_card.rs | ai.rs | io.rs | window.rs               │
+│  world_card.rs | ai/ | io/ | window/ | image.rs         │
+│  agent/ (Agent 管理：技能执行/状态同步)                   │
 │                       │                                  │
 │              db/mod.rs (r2d2 连接池)                      │
 │                       │                                  │
@@ -73,9 +74,12 @@ Rust 命令 → app.emit('ai-stream-chunk') → 前端 listen() → 更新 UI
 | `chapterApi` | `commands/chapter.rs` | 章节 CRUD + 自动保存 |
 | `snapshotApi` | `commands/snapshot.rs` | 版本快照 |
 | `worldCardApi` | `commands/world_card.rs` | 世界观卡片 |
-| `aiApi` | `commands/ai.rs` | AI 对话（智谱/DeepSeek）+ RAG 检索 + Embedding 索引 |
-| `importExportApi` | `commands/io.rs` | 导入导出 |
-| `windowApi` | `commands/window.rs` | 世界观独立窗口 |
+| `aiApi` | `commands/ai/` | AI 对话（智谱/DeepSeek/自定义）+ RAG 检索 + Embedding 索引 + 章节/对话总结 |
+| `importExportApi` | `commands/io/` | 导入导出 + 加密备份 |
+| `windowApi` | `commands/window/` | 独立窗口管理（世界观/历史/总结/AI 工具箱/调试控制台） |
+| `debugApi` | `commands/window/debug.rs` | 调试控制台 + 日志管理 + 数据库校验 |
+| `imageApi` | `commands/image.rs` | 图片处理与裁剪 |
+| `agentApi` | `commands/agent/` | Agent 服务管理（启停/技能/状态） |
 
 ## Tauri 插件
 

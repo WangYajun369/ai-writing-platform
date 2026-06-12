@@ -1,6 +1,6 @@
 # TimeWrite（智写时光）Wiki
 
-> 跨平台桌面端小说写作软件 —— Tauri v2 + React 18 + TipTap
+> 跨平台桌面端小说写作软件 —— Tauri v2 + React 19 + TipTap
 
 欢迎来到 TimeWrite 的官方文档！TimeWrite 是一款面向网络小说作者和文学创作者的桌面写作工具，提供从书库管理、章节编辑到 AI 辅助创作的完整写作工作流。
 
@@ -22,8 +22,8 @@
 | 层级 | 技术 |
 |------|------|
 | 桌面框架 | Tauri v2 |
-| 前端 | React 18 + TypeScript 5 + Vite 8 |
-| 样式 | TailwindCSS 3 + HSL CSS 变量（六套主题组合） |
+| 前端 | React 19 + TypeScript 6 + Vite 8 |
+| 样式 | TailwindCSS 4 + HSL CSS 变量（四套主题模式） |
 | 富文本 | TipTap |
 | 状态管理 | Zustand + Jotai |
 | 后端 | Rust 2021 + SQLite（WAL 模式） |
@@ -34,7 +34,7 @@
 |------|-----|
 | 应用名称 | TimeWrite（智写时光） |
 | 应用标识 | `com.ukcoder.timewrite` |
-| 当前版本 | 0.4.0 |
+| 当前版本 | 0.9.4 |
 | 许可证 | MIT |
 | 仓库地址 | [github.com/WangYajun369/ai-writing-platform](https://github.com/WangYajun369/ai-writing-platform) |
 

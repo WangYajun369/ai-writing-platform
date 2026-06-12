@@ -1,6 +1,6 @@
 # 智写时光 (TimeWrite) — 项目目录结构说明
 
-> **版本**: `0.8.3` | **架构**: Tauri v2 (Rust + React) | **语言**: Rust 2021 / TypeScript 5.7 | **包管理**: pnpm 9
+> **版本**: `0.9.4` | **架构**: Tauri v2 (Rust + React) | **语言**: Rust 2021 / TypeScript 6 | **包管理**: pnpm 11
 
 ---
 
@@ -51,9 +51,9 @@ MirageInk/
 ├── LICENSE                   # MIT 许可证
 ├── README.md                 # 项目说明
 ├── CODEBUDDY.md              # AI 编码助手指导文件
-├── PROJECT_STRUCTURE.md      # 📄 本文件 — 目录结构说明
 ├── src/                      # 🔵 前端源码 (React + TypeScript)
 ├── src-tauri/                # 🟠 Rust 后端源码 (Tauri v2)
+├── agent/                    # 🐍 Python Agent 服务 (FastAPI, 端口 9877)
 ├── scripts/                  # 🔧 构建/检查工具脚本
 ├── docs/                     # 📖 项目文档 (同步到 GitHub Wiki)
 ├── product/                  # 🏠 产品落地页
@@ -111,12 +111,14 @@ src/
 | `MessageBubble.tsx` | ~400 行 | 单条消息气泡：Markdown 渲染、操作按钮（重试/复制/加入参考等） |
 | `RequestDetailModal.tsx` | ~250 行 | 请求详情弹窗：查看完整 System/User Prompt |
 | `useAiChat.ts` | ~590 行 | AI 对话核心 Hook：流式 SSE、RAG 检索、会话压缩、自动总结 |
+| `panel/` | — | AI 面板子组件：消息列表、输入区、工具箱侧栏、输出面板等 |
 
 #### `app/` — 应用级初始化
 
 | 文件 | 大小 | 说明 |
 |------|------|------|
 | `AppInit.tsx` | ~80 行 | 应用启动初始化：加载持久化状态、注册全局事件 |
+| `AppClosingOverlay.tsx` | ~35 行 | 关闭退出遮罩：显示关闭中进度，等待 Agent 停止 |
 | `windowDetection.ts` | ~70 行 | 窗口类型检测：通过 URL 参数判断窗口类型（world/history/summary/debug） |
 
 #### `common/` — 通用组件
@@ -136,7 +138,10 @@ src/
 | `ChapterSummaryHeader.tsx` | ~350 行 | 章节总结头部：展开/折叠总结内容区域 |
 | `SnapshotPanel.tsx` | ~320 行 | 快照管理面板：创建、预览、恢复、删除快照 |
 | `ImageResizeNodeView.tsx` | ~120 行 | 图片拖拽缩放 NodeView（TipTap 扩展） |
+| `ImageCropperDialog.tsx` | ~320 行 | 图片裁剪对话框：拖拽选区精确裁剪并替换编辑器图片 |
+| `ImageViewerDialog.tsx` | ~230 行 | 图片查看器：放大/缩小/拖拽查看高清原图 |
 | `ResizableImageExtension.ts` | ~50 行 | 可缩放图片的 TipTap 扩展定义 |
+| `toolbar/` | — | 工具栏子组件：颜色选择器、表格弹窗、代码语言选择、保存指示器 |
 
 #### `layout/` — 布局组件
 
@@ -189,6 +194,13 @@ src/
 | 文件 | 说明 |
 |------|------|
 | `ErrorBoundary.tsx` | React Error Boundary：捕获渲染错误，显示故障恢复界面 |
+
+#### `agent/` — Agent 交互
+
+| 文件 | 大小 | 说明 |
+|------|------|------|
+| `AgentPanel.tsx` | ~170 行 | Agent 交互面板：技能选择、任务执行、结果展示 |
+| `AgentMessageBubble.tsx` | ~150 行 | Agent 消息气泡：技能执行状态与结果展示 |
 
 > **注**: `diff/` 和 `ui/` 目录当前为空，预留给对比视图和通用 UI 基元组件。
 
@@ -435,6 +447,13 @@ src-tauri/
 | `summarize.rs` | ~200 行 | **内容总结**：章节总结、对话摘要（滑动窗口压缩） |
 | `test.rs` | ~80 行 | **连接测试**：验证 API Key / Base URL 可用性 |
 
+#### `commands/agent/` — Agent 管理
+
+| 子模块 | 文件 | 说明 |
+|--------|------|------|
+| `mod.rs` | ~80 行 | Agent 模块入口，状态查询 |
+| `skills.rs` | ~180 行 | **技能管理**：列出可用技能、执行技能、取消任务 |
+
 #### `commands/io/` — 导入导出
 
 | 子模块 | 文件 | 说明 |
@@ -564,6 +583,8 @@ ExportFormat / BackupMeta / ChatRequest
 | `check-versions.ts` | **前端依赖版本检查**：对比 `package.json` vs `pnpm-lock.yaml` |
 | `check-rust-versions.ts` | **Rust 版本检查**：对比 `Cargo.toml` vs `Cargo.lock` |
 | `node-manager.ts` | **Node 版本管理**：检查/切换/安装 Node.js 版本 |
+| `setup-agent.ts` | **Agent 环境初始化**：配置 Python 虚拟环境、安装依赖、下载模型 |
+| `clean.ts` | **清理脚本**：清除构建产物、临时文件和缓存 |
 
 ---
 
@@ -576,6 +597,8 @@ docs/
 ├── _Footer.md               # Wiki 页脚
 ├── CHANGELOG.md             # 版本更新日志
 ├── FAQ.md                   # 常见问题
+├── PROJECT_STRUCTURE.md     # 📄 本文件 — 目录结构说明
+├── 深度优化分析报告.md        # 项目优化分析报告
 ├── architecture/            # 架构文档
 │   ├── overview.md          # 系统架构概览
 │   └── AI-architecture.md   # AI 子系统架构
@@ -604,6 +627,29 @@ docs/
 
 ---
 
+### Agent 服务 `agent/`
+
+```
+agent/
+├── main.py                  # FastAPI 入口，端口 9877
+├── requirements.txt         # Python 依赖
+├── models/                  # 模型适配器
+│   └── __init__.py          # 模型工厂函数
+├── skills/                  # Agent 技能实现
+│   ├── __init__.py
+│   ├── writing.py           # 写作辅助技能（续写/润色/扩写）
+│   └── analysis.py          # 分析技能（角色/剧情/总结）
+├── core/                    # 核心基础设施
+│   ├── config.py            # 配置管理
+│   ├── tracer.py            # 日志与追踪
+│   └── bridge.py            # Bridge 客户端（与 Rust 端通信）
+└── data/                    # 运行时数据缓存
+```
+
+Agent 服务由 Rust 后端通过 `src-tauri/src/python/` 模块自动启动和管理，支持健康检查与异常自动重启。Python 环境自动检测（`which python`），uvicorn 作为 ASGI 服务器。
+
+---
+
 ### 产品页面 `product/`
 
 | 文件 | 说明 |
@@ -627,19 +673,20 @@ docs/
 
 ## IPC 命令速查
 
-共 **55 个** IPC 命令，全部在 `src-tauri/src/lib.rs` 中注册，前端通过 `src/lib/tauri-bridge.ts` 调用：
+共 **60+ 个** IPC 命令，全部在 `src-tauri/src/lib.rs` 中注册，前端通过 `src/lib/tauri-bridge.ts` 调用：
 
 | 模块 | 命令数 | 命令列表 |
 |------|--------|----------|
 | **书籍** | 10 | list_books, get_book, create_book, update_book, set_book_cover, delete_book, list_deleted_books, restore_book, hard_delete_book, clear_book_trash |
 | **卷** | 8 | list_volumes, list_deleted_volumes, create_volume, update_volume, delete_volume, restore_volume, hard_delete_volume, reorder_volumes |
-| **章节** | 15 | list_chapters, list_deleted_chapters, get_chapter_content, create_chapter, save_chapter, update_chapter_status, rename_chapter, delete_chapter, restore_chapter, hard_delete_chapter, reorder_chapters, move_chapter_to_volume, save_chapter_summary, clear_chapter_summary, get_chapter_summary, save_chapter_outline |
+| **章节** | 16 | list_chapters, list_deleted_chapters, get_chapter_content, create_chapter, save_chapter, update_chapter_status, rename_chapter, delete_chapter, restore_chapter, hard_delete_chapter, reorder_chapters, move_chapter_to_volume, save_chapter_summary, clear_chapter_summary, get_chapter_summary, save_chapter_outline |
 | **快照** | 5 | list_snapshots, create_snapshot, get_snapshot_content, restore_snapshot, delete_snapshot |
 | **世界观** | 5 | list_world_cards, create_world_card, update_world_card, delete_world_card, search_world_cards |
-| **AI** | 7 | test_ai_connection, rag_search, trigger_embedding, check_embedding_status, test_rag_connection, stream_ai_chat, summarize_chapter, summarize_conversation |
-| **导入导出** | 3 | export_book, import_txt, export_all_data, export_single_book, import_backup |
-| **图片** | 1 | process_image |
+| **AI** | 8 | test_ai_connection, rag_search, trigger_embedding, check_embedding_status, test_rag_connection, stream_ai_chat, summarize_chapter, summarize_conversation |
+| **导入导出** | 5 | export_book, import_txt, export_all_data, export_single_book, import_backup |
+| **图片** | 2 | process_image, process_image_cropped |
 | **窗口** | 10 | open/close_world_window, open/close_history_window, open/close_summary_window, open/close_ai_toolbox_window, open/close_debug_window, log_message, get_debug_logs, clear_debug_logs, validate_database |
+| **Agent** | 5 | get_agent_status, start_agent, stop_agent, execute_skill, cancel_skill |
 
 ---
 
@@ -668,4 +715,4 @@ docs/
 
 ---
 
-> 📅 生成日期: 2025-06-11 | 基于 MirageInk v0.8.3 (dev 分支)
+> 📅 生成日期: 2025-06-11 | 更新日期: 2026-06-12 | 基于 MirageInk v0.9.4 (agent-dev 分支)

@@ -88,3 +88,41 @@ export const SKILLS: SkillMeta[] = [
     color: '#ec4899',
   },
 ]
+
+// ─── 记忆管理类型 ───
+
+/** 记忆类型 */
+export type MemoryType = 'preference' | 'decision' | 'lesson'
+
+/** 记忆类型中文标签 */
+export const MEMORY_TYPE_LABELS: Record<MemoryType, string> = {
+  preference: '用户偏好',
+  decision: '历史决策',
+  lesson: '经验教训',
+}
+
+/** 记忆条目标题颜色 */
+export const MEMORY_TYPE_COLORS: Record<MemoryType, string> = {
+  preference: '#6366f1',
+  decision: '#f59e0b',
+  lesson: '#10b981',
+}
+
+/** 单条记忆信息（来自后端） */
+export interface MemoryInfo {
+  id: number
+  book_id: string
+  skill_type: string
+  memory_type: MemoryType
+  content: string
+  keywords: string
+  relevance_score: number
+  created_at: string
+  updated_at: string
+}
+
+/** 记忆列表响应 */
+export interface MemoryListResponse {
+  memories: MemoryInfo[]
+  total: number
+}
