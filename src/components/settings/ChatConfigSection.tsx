@@ -1,10 +1,11 @@
 /**
- * Chat 配置子区块 —— 服务商 / 模型 / Temperature / API Key / 连接测试
+ * Chat 配置子区块 —— DeepSeek 服务商 / 模型 / Temperature / API Key / 连接测试
+ * 当前仅支持 DeepSeek，后期扩展其他服务商时重新开放服务商选择器
  */
 import { ZapIcon } from 'lucide-react'
 import type { AiChatConfig } from '@/types'
 import { getChatApiKey } from '@/types'
-import { BIGMODEL_MODELS, DEEPSEEK_MODELS, PROVIDER_DEFAULTS } from './constants'
+import { DEEPSEEK_MODELS } from './constants'
 import { ApiKeyField, ConnectionStatusBadge, ConnectionStatus } from './shared'
 
 interface ChatConfigSectionProps {
@@ -22,21 +23,11 @@ export function ChatConfigSection({
   connectionDetail,
   onTestConnection,
 }: ChatConfigSectionProps) {
-  const handleProviderChange = (provider: typeof config.provider) => {
-    const d = PROVIDER_DEFAULTS[provider]
-    onChange({ provider, endpoint: d.endpoint, model: d.model })
-  }
-
   const handleApiKeyChange = (value: string) => {
-    if (config.provider === 'bigmodel') {
-      onChange({ bigmodelApiKey: value || undefined })
-    } else {
-      onChange({ deepseekApiKey: value || undefined })
-    }
+    onChange({ deepseekApiKey: value || undefined })
   }
 
   const currentApiKey = getChatApiKey(config)
-  const models = config.provider === 'deepseek' ? DEEPSEEK_MODELS : BIGMODEL_MODELS
 
   return (
     <div className="space-y-4">
@@ -47,23 +38,22 @@ export function ChatConfigSection({
         <label className="text-sm font-medium">服务商</label>
         <select
           value={config.provider}
-          onChange={(e) => handleProviderChange(e.target.value as typeof config.provider)}
-          className="w-full bg-muted rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+          disabled
+          className="w-full bg-muted/50 rounded-lg px-3 py-2 text-sm outline-none cursor-not-allowed opacity-60"
         >
-          <option value="bigmodel">智谱 BigModel</option>
           <option value="deepseek">DeepSeek</option>
         </select>
+        <p className="text-xs text-muted-foreground">当前仅支持 DeepSeek，后续将扩展更多服务商</p>
       </div>
 
       {/* API 地址 */}
       <div className="space-y-1">
         <label className="text-sm font-medium">API 地址</label>
-        <p className="text-xs text-muted-foreground mb-1">根据所选服务商自动填充，暂不支持修改</p>
         <input
           value={config.endpoint}
           readOnly
           className="w-full bg-muted/50 rounded-lg px-3 py-2 text-sm outline-none cursor-not-allowed opacity-60"
-          placeholder={PROVIDER_DEFAULTS[config.provider]?.endpoint}
+          placeholder="https://api.deepseek.com"
         />
       </div>
 
@@ -75,36 +65,34 @@ export function ChatConfigSection({
           onChange={(e) => onChange({ model: e.target.value })}
           className="w-full bg-muted rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
         >
-          {models.map((m) => (
+          {DEEPSEEK_MODELS.map((m) => (
             <option key={m} value={m}>{m}</option>
           ))}
         </select>
       </div>
 
-      {/* 思考模式（仅 DeepSeek） */}
-      {config.provider === 'deepseek' && (
-        <div className="space-y-1">
-          <label className="text-sm font-medium">思考模式</label>
-          <p className="text-xs text-muted-foreground">
-            启用后，模型会先进行深度推理再输出回答，思考过程可在 AI 助手中查看
-          </p>
-          <div className="flex gap-3 mt-1">
-            {([true, false] as const).map((value) => (
-              <button
-                key={String(value)}
-                onClick={() => onChange({ thinkingEnabled: value })}
-                className={`px-4 py-2 rounded-lg text-sm transition-colors ${
-                  config.thinkingEnabled === value
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted hover:bg-muted/80'
-                }`}
-              >
-                {value ? '启用' : '禁用'}
-              </button>
-            ))}
-          </div>
+      {/* 思考模式 */}
+      <div className="space-y-1">
+        <label className="text-sm font-medium">思考模式</label>
+        <p className="text-xs text-muted-foreground">
+          启用后，模型会先进行深度推理再输出回答，思考过程可在 AI 助手中查看
+        </p>
+        <div className="flex gap-3 mt-1">
+          {([true, false] as const).map((value) => (
+            <button
+              key={String(value)}
+              onClick={() => onChange({ thinkingEnabled: value })}
+              className={`px-4 py-2 rounded-lg text-sm transition-colors ${
+                config.thinkingEnabled === value
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted hover:bg-muted/80'
+              }`}
+            >
+              {value ? '启用' : '禁用'}
+            </button>
+          ))}
         </div>
-      )}
+      </div>
 
       {/* Temperature */}
       <div className="space-y-1">
@@ -142,7 +130,7 @@ export function ChatConfigSection({
           type="range"
           min={1} max={50} step={1}
           value={config.contextWindowSize ?? 10}
-          onChange={(e) => onChange({ contextWindowSize: parseInt(e.target.value) || 10 })}
+          onChange={(e) => onChange({ contextWindowSize: Math.max(1, parseInt(e.target.value) || 10) })}
           className="w-full"
         />
         <p className="text-xs text-muted-foreground">
@@ -153,9 +141,9 @@ export function ChatConfigSection({
       {/* API Key */}
       <ApiKeyField
         label="API Key"
-        hint="每个服务商的 API Key 独立保存，切换服务商不会丢失"
+        hint="使用 DeepSeek API Key，可在 https://platform.deepseek.com 获取"
         value={currentApiKey}
-        placeholder={config.provider === 'bigmodel' ? '填写智谱 API Key' : '填写 DeepSeek API Key'}
+        placeholder="填写 DeepSeek API Key"
         onChange={handleApiKeyChange}
       />
 

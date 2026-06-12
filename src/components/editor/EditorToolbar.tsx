@@ -4,6 +4,14 @@
  * 提供返回书库、目录树折叠、专注模式切换、
  * 版本历史/世界观/AI 面板开关等功能按钮。
  * 世界观资料库打开为独立悬浮窗口。
+ *
+ * 子组件拆分到 ./toolbar/ 目录：
+ *  - ToolbarBtn / TooltipWrap → 通用按钮与提示
+ *  - SaveIndicator       → 保存状态指示器
+ *  - ColorPickerPopover  → 字体颜色选择器弹窗
+ *  - TablePopover        → 表格网格弹窗（内化 gridHover）
+ *  - CodeLanguageSelect  → 代码块语言切换
+ *  - constants           → 预设颜色 / 代码语言列表
  */
 import { useAtom, useAtomValue } from 'jotai'
 import { useNavigate } from 'react-router-dom'
@@ -17,36 +25,29 @@ import {
   BookMarkedIcon,
   BookOpenIcon,
   ClockIcon,
-  ZapIcon,
   LayoutIcon,
   TypeIcon,
   MinusIcon,
   PlusIcon,
   ImageIcon,
   CropIcon,
+  Code2Icon,
+  BoldIcon,
+  PaletteIcon,
+  TableIcon,
+  Trash2Icon,
   ListIcon,
   ListOrderedIcon,
   ListTodoIcon,
   Heading1Icon,
   Heading2Icon,
   Heading3Icon,
-  Code2Icon,
-  BoldIcon,
-  PaletteIcon,
-  TableIcon,
-  Trash2Icon,
-  ArrowUpIcon,
-  ArrowDownIcon,
-  ArrowLeftToLineIcon,
-  ArrowRightToLineIcon,
-  ChevronDownIcon,
   WrenchIcon,
 } from 'lucide-react'
 import {
   sidebarOpenAtom,
   zenModeAtom,
   aiPanelOpenAtom,
-  isSavingAtom, lastSavedAtom,
   editorInstanceAtom,
   historyWindowOpenAtom,
   worldWindowOpenAtom,
@@ -58,13 +59,70 @@ import { cn } from '@/lib/utils.ts'
 import { processEditorImage, processCroppedEditorImage } from '@/lib/image-utils.ts'
 import { windowApi } from '@/lib/tauri-bridge'
 import ImageCropperDialog from './ImageCropperDialog'
+import { ToolbarBtn, TooltipWrap } from './toolbar/ToolbarBtn'
+import { SaveIndicator } from './toolbar/SaveIndicator'
+import { ColorPickerPopover } from './toolbar/ColorPickerPopover'
+import { TablePopover } from './toolbar/TablePopover'
+import { CodeLanguageSelect } from './toolbar/CodeLanguageSelect'
 
-/** 预设字体颜色 */
-const PRESET_COLORS = [
-  '#1a1a1a', '#4a4a4a', '#8c8c8c', '#bfbfbf',
-  '#e03131', '#e8590c', '#f08c00', '#2f9e44',
-  '#1971c2', '#7048e8', '#9c36b5', '#c2255c',
-]
+/**
+ * 统一的窗口开关处理函数
+ *
+ * 四个窗口（World / History / Summary / AiToolbox）拥有相同的开关模式：
+ *   open → 调用 windowApi.close*() → setOpen(false)
+ *   close → 前置条件检查 → windowApi.open*() → setOpen(true)
+ */
+async function toggleWindow(
+  isOpen: boolean,
+  setOpen: (v: boolean) => void,
+  closeFn: () => Promise<void>,
+  openFn: () => Promise<boolean | void>,
+  labels: { open: string; close: string },
+) {
+  if (isOpen) {
+    try {
+      await closeFn()
+    } catch (e) {
+      console.error(`关闭${labels.close}失败`, e)
+    }
+    setOpen(false)
+  } else {
+    const ok = await openFn()
+    if (ok === false) return // 前置条件不满足，不改变状态
+    setOpen(true)
+  }
+}
+
+/** AI Toolbox / AI 助手渐变按钮 */
+function GradientButton({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean
+  onClick: () => void
+  icon: React.ReactNode
+  label: string
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'relative flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold transition-all duration-300',
+        active
+          ? 'bg-gradient-to-r from-primary/90 to-primary text-primary-foreground shadow-md shadow-primary/25'
+          : 'bg-gradient-to-r from-primary/15 via-primary/10 to-primary/15 text-primary border border-primary/20 hover:border-primary/40 hover:shadow-sm hover:shadow-primary/10',
+      )}
+    >
+      {icon}
+      <span className="tracking-wide">{label}</span>
+      {!active && (
+        <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+      )}
+    </button>
+  )
+}
 
 export default function EditorToolbar() {
   const navigate = useNavigate()
@@ -76,31 +134,29 @@ export default function EditorToolbar() {
   const [summaryWindowOpen, setSummaryWindowOpen] = useAtom(summaryWindowOpenAtom)
   const [aiToolboxWindowOpen, setAiToolboxWindowOpen] = useAtom(aiToolboxWindowOpenAtom)
   const currentBook = useCurrentBook()
+  const currentBookId = useAppStore((s) => s.currentBookId)
   const currentChapter = useCurrentChapter()
   const { fontSize, setFontSize } = useAppStore()
   const editor = useAtomValue(editorInstanceAtom)
+
+  // --- 颜色选择器 ---
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
   const colorPickerRef = useRef<HTMLDivElement>(null)
-  // 保存打开颜色选择器前的编辑器选区，防止选区丢失导致无法应用颜色
   const savedColorTargetRef = useRef<{ from: number; to: number } | null>(null)
 
-  // 表格选择器
+  // --- 表格 ---
   const [tablePickerOpen, setTablePickerOpen] = useState(false)
   const tablePickerRef = useRef<HTMLDivElement>(null)
-  const [gridHover, setGridHover] = useState({ rows: 3, cols: 3 })
   const [isInTable, setIsInTable] = useState(false)
 
-  // 图片裁剪器
+  // --- 图片裁剪 ---
   const [cropperOpen, setCropperOpen] = useState(false)
   const [cropperFilePath, setCropperFilePath] = useState('')
 
-  // 监听编辑器选区变化，实时更新 isInTable 状态，
-  // 确保点击表格时工具栏显示删行/删列/删表按钮，点击其他地方时隐藏
+  // 监听编辑器选区变化，实时更新 isInTable 状态
   useEffect(() => {
     if (!editor) return
-    function updateTableState() {
-      setIsInTable(editor?.isActive('table') ?? false)
-    }
+    const updateTableState = () => setIsInTable(editor.isActive('table'))
     updateTableState()
     editor.on('selectionUpdate', updateTableState)
     editor.on('transaction', updateTableState)
@@ -111,15 +167,15 @@ export default function EditorToolbar() {
   }, [editor])
 
   /** 打开/关闭颜色选择器，保存当前选区 */
-  function handleToggleColorPicker() {
-    if (editor && !colorPickerOpen) {
+  const handleToggleColorPicker = useCallback(() => {
+    if (!colorPickerOpen && editor) {
       const { from, to } = editor.state.selection
       savedColorTargetRef.current = { from, to }
     }
     setColorPickerOpen((v) => !v)
-  }
+  }, [colorPickerOpen, editor])
 
-  // 点击外部关闭颜色选择器/表格选择器
+  // 点击外部关闭颜色/表格选择器
   useEffect(() => {
     if (!colorPickerOpen && !tablePickerOpen) return
     function handleClick(e: MouseEvent) {
@@ -141,15 +197,10 @@ export default function EditorToolbar() {
       const selected = await open({
         title: '选择图片',
         multiple: false,
-        filters: [{
-          name: '图片文件',
-          extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'],
-        }],
+        filters: [{ name: '图片文件', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'] }],
       })
-      if (!selected) return // 用户取消
-
-      const filePath = selected as string
-      const dataUrl = await processEditorImage(filePath)
+      if (!selected) return
+      const dataUrl = await processEditorImage(selected as string)
       editor.chain().focus().setImage({ src: dataUrl }).run()
     } catch (err) {
       console.error('插入图片失败', err)
@@ -163,10 +214,7 @@ export default function EditorToolbar() {
       const selected = await open({
         title: '选择图片',
         multiple: false,
-        filters: [{
-          name: '图片文件',
-          extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'],
-        }],
+        filters: [{ name: '图片文件', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] }],
       })
       if (!selected) return
       setCropperFilePath(selected as string)
@@ -176,7 +224,7 @@ export default function EditorToolbar() {
     }
   }, [editor])
 
-  /** 裁剪确认：将裁剪参数传给 Rust 处理 → 插入编辑器 */
+  /** 裁剪确认 */
   const handleCropperConfirm = useCallback(async (crop: { x: number; y: number; width: number; height: number }) => {
     if (!editor || !cropperFilePath) return
     try {
@@ -190,94 +238,60 @@ export default function EditorToolbar() {
     }
   }, [editor, cropperFilePath])
 
-  async function handleToggleWorldWindow() {
-    if (worldWindowOpen) {
-      try {
-        await windowApi.closeWorld()
-      } catch (e) {
-        console.error('关闭世界观窗口失败', e)
-      }
-      setWorldWindowOpen(false)
-    } else {
-      if (!currentBook?.id) return
-      try {
-        await windowApi.openWorld(currentBook.id)
-      } catch (e) {
-        console.error('打开世界观窗口失败', e)
-        return
-      }
-      setWorldWindowOpen(true)
-    }
-  }
+  // ----- 窗口切换（使用统一的 toggleWindow）-----
 
-  async function handleToggleHistoryWindow() {
-    if (historyWindowOpen) {
-      try {
-        await windowApi.closeHistory()
-      } catch (e) {
-        console.error('关闭版本历史窗口失败', e)
-      }
-      setHistoryWindowOpen(false)
-    } else {
-      if (!currentChapter) return
-      try {
+  const handleToggleWorldWindow = useCallback(async () => {
+    await toggleWindow(
+      worldWindowOpen, setWorldWindowOpen,
+      () => windowApi.closeWorld(),
+      async () => {
+        if (!currentBookId) return false
+        await windowApi.openWorld(currentBookId)
+      },
+      { open: '世界观窗口', close: '世界观窗口' },
+    )
+  }, [worldWindowOpen, currentBookId, setWorldWindowOpen])
+
+  const handleToggleHistoryWindow = useCallback(async () => {
+    await toggleWindow(
+      historyWindowOpen, setHistoryWindowOpen,
+      () => windowApi.closeHistory(),
+      async () => {
+        if (!currentChapter) return false
         await windowApi.openHistory(currentChapter.id, currentChapter.bookId, currentChapter.title)
-      } catch (e) {
-        console.error('打开版本历史窗口失败', e)
-        return
-      }
-      setHistoryWindowOpen(true)
-    }
-  }
+      },
+      { open: '版本历史窗口', close: '版本历史窗口' },
+    )
+  }, [historyWindowOpen, currentChapter, setHistoryWindowOpen])
 
-  async function handleToggleSummaryWindow() {
-    if (summaryWindowOpen) {
-      try {
-        await windowApi.closeSummary()
-      } catch (e) {
-        console.error('关闭章节总结窗口失败', e)
-      }
-      setSummaryWindowOpen(false)
-    } else {
-      if (!currentChapter) return
-      try {
+  const handleToggleSummaryWindow = useCallback(async () => {
+    await toggleWindow(
+      summaryWindowOpen, setSummaryWindowOpen,
+      () => windowApi.closeSummary(),
+      async () => {
+        if (!currentChapter) return false
         await windowApi.openSummary(currentChapter.id, currentChapter.bookId, currentChapter.title)
-      } catch (e) {
-        console.error('打开章节总结窗口失败', e)
-        return
-      }
-      setSummaryWindowOpen(true)
-    }
-  }
+      },
+      { open: '章节总结窗口', close: '章节总结窗口' },
+    )
+  }, [summaryWindowOpen, currentChapter, setSummaryWindowOpen])
 
-  async function handleToggleAiToolboxWindow() {
-    if (aiToolboxWindowOpen) {
-      try {
-        await windowApi.closeAiToolbox()
-      } catch (e) {
-        console.error('关闭 AI 工具箱窗口失败', e)
-      }
-      setAiToolboxWindowOpen(false)
-    } else {
-      try {
+  const handleToggleAiToolboxWindow = useCallback(async () => {
+    await toggleWindow(
+      aiToolboxWindowOpen, setAiToolboxWindowOpen,
+      () => windowApi.closeAiToolbox(),
+      async () => {
         await windowApi.openAiToolbox()
-      } catch (e) {
-        console.error('打开 AI 工具箱窗口失败', e)
-        return
-      }
-      setAiToolboxWindowOpen(true)
-    }
-  }
+      },
+      { open: 'AI 工具箱窗口', close: 'AI 工具箱窗口' },
+    )
+  }, [aiToolboxWindowOpen, setAiToolboxWindowOpen])
 
-  // 监听章节切换，若版本历史窗口已打开则自动跟随到新章节
+  // 章节切换时，已打开的版本历史/总结窗口自动跟随
   useEffect(() => {
     if (!historyWindowOpen || !currentChapter) return
     windowApi.openHistory(currentChapter.id, currentChapter.bookId, currentChapter.title)
-      .then(() => {
-        // Rust 端关闭旧窗口再创建新窗口，中间可能短暂触发
-        // history-window-closed 把按钮复位，这里显式恢复为激活状态
-        setHistoryWindowOpen(true)
-      })
+      .then(() => setHistoryWindowOpen(true))
       .catch((e) => {
         console.error('切换版本历史窗口失败', e)
         setHistoryWindowOpen(false)
@@ -285,13 +299,10 @@ export default function EditorToolbar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentChapter?.id])
 
-  // 监听章节切换，若章节总结窗口已打开则自动跟随到新章节
   useEffect(() => {
     if (!summaryWindowOpen || !currentChapter) return
     windowApi.openSummary(currentChapter.id, currentChapter.bookId, currentChapter.title)
-      .then(() => {
-        setSummaryWindowOpen(true)
-      })
+      .then(() => setSummaryWindowOpen(true))
       .catch((e) => {
         console.error('切换章节总结窗口失败', e)
         setSummaryWindowOpen(false)
@@ -299,25 +310,16 @@ export default function EditorToolbar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentChapter?.id])
 
-  // 监听 world 窗口被用户主动关闭（点 X），同步按钮状态
+  // 监听窗口被用户手动关闭（点 X），同步按钮状态
   useEffect(() => {
-    const unlistenWorld = listen('world-window-closed', () => {
-      setWorldWindowOpen(false)
-    })
-    const unlistenHistory = listen('history-window-closed', () => {
-      setHistoryWindowOpen(false)
-    })
-    const unlistenSummary = listen('summary-window-closed', () => {
-      setSummaryWindowOpen(false)
-    })
-    const unlistenAiToolbox = listen('ai-toolbox-window-closed', () => {
-      setAiToolboxWindowOpen(false)
-    })
+    const listeners: Promise<() => void>[] = [
+      listen('world-window-closed', () => setWorldWindowOpen(false)),
+      listen('history-window-closed', () => setHistoryWindowOpen(false)),
+      listen('summary-window-closed', () => setSummaryWindowOpen(false)),
+      listen('ai-toolbox-window-closed', () => setAiToolboxWindowOpen(false)),
+    ]
     return () => {
-      unlistenWorld.then((fn) => fn())
-      unlistenHistory.then((fn) => fn())
-      unlistenSummary.then((fn) => fn())
-      unlistenAiToolbox.then((fn) => fn())
+      listeners.forEach((p) => p.then((fn) => fn()).catch(() => {}))
     }
   }, [])
 
@@ -375,20 +377,10 @@ export default function EditorToolbar() {
       <div className="w-px h-5 bg-border mx-1" />
 
       {/* 插入图片 */}
-      <ToolbarBtn
-        active={false}
-        onClick={handleInsertImage}
-        title="插入图片"
-        icon={<ImageIcon className="w-4 h-4" />}
-      />
+      <ToolbarBtn active={false} onClick={handleInsertImage} title="插入图片" icon={<ImageIcon className="w-4 h-4" />} />
 
       {/* 裁切插入图片 */}
-      <ToolbarBtn
-        active={cropperOpen}
-        onClick={handleInsertCroppedImage}
-        title="裁切插入图片"
-        icon={<CropIcon className="w-4 h-4" />}
-      />
+      <ToolbarBtn active={cropperOpen} onClick={handleInsertCroppedImage} title="裁切插入图片" icon={<CropIcon className="w-4 h-4" />} />
 
       {/* 代码块 */}
       <ToolbarBtn
@@ -397,7 +389,6 @@ export default function EditorToolbar() {
         title="代码块"
         icon={<Code2Icon className="w-4 h-4" />}
       />
-      {/* 代码语言选择器（仅在代码块内显示） */}
       {(editor?.isActive('codeBlock') ?? false) && <CodeLanguageSelect editor={editor} />}
 
       {/* 表格 */}
@@ -415,8 +406,6 @@ export default function EditorToolbar() {
           <TablePopover
             ref={tablePickerRef}
             editor={editor}
-            gridHover={gridHover}
-            onGridHover={setGridHover}
             onClose={() => setTablePickerOpen(false)}
           />
         )}
@@ -480,7 +469,6 @@ export default function EditorToolbar() {
             currentColor={editor?.getAttributes('textStyle').color ?? null}
             onSelectColor={(color) => {
               if (editor) {
-                // 恢复打开选择器前保存的选区
                 const target = savedColorTargetRef.current
                 if (target && target.from !== target.to) {
                   editor.commands.setTextSelection({ from: target.from, to: target.to })
@@ -576,39 +564,21 @@ export default function EditorToolbar() {
       />
 
       <TooltipWrap title="AI 工具箱">
-        <button
+        <GradientButton
+          active={aiToolboxWindowOpen}
           onClick={handleToggleAiToolboxWindow}
-          className={cn(
-            'relative flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold transition-all duration-300',
-            aiToolboxWindowOpen
-              ? 'bg-gradient-to-r from-primary/90 to-primary text-primary-foreground shadow-md shadow-primary/25'
-              : 'bg-gradient-to-r from-primary/15 via-primary/10 to-primary/15 text-primary border border-primary/20 hover:border-primary/40 hover:shadow-sm hover:shadow-primary/10',
-          )}
-        >
-          <WrenchIcon className="w-3.5 h-3.5" />
-          <span className="tracking-wide">AI 工具箱</span>
-          {!aiToolboxWindowOpen && (
-            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-          )}
-        </button>
+          icon={<WrenchIcon className="w-3.5 h-3.5" />}
+          label="AI 工具箱"
+        />
       </TooltipWrap>
 
       <TooltipWrap title="AI 助手">
-        <button
+        <GradientButton
+          active={aiPanelOpen}
           onClick={() => setAiPanelOpen((v) => !v)}
-          className={cn(
-            'relative flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold transition-all duration-300',
-            aiPanelOpen
-              ? 'bg-gradient-to-r from-primary/90 to-primary text-primary-foreground shadow-md shadow-primary/25'
-              : 'bg-gradient-to-r from-primary/15 via-primary/10 to-primary/15 text-primary border border-primary/20 hover:border-primary/40 hover:shadow-sm hover:shadow-primary/10',
-          )}
-        >
-          <BotIcon className="w-3.5 h-3.5" />
-          <span className="tracking-wide">AI 助手</span>
-          {!aiPanelOpen && (
-            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-          )}
-        </button>
+          icon={<BotIcon className="w-3.5 h-3.5" />}
+          label="AI 助手"
+        />
       </TooltipWrap>
 
       {/* 快速保存提示 */}
@@ -626,419 +596,5 @@ export default function EditorToolbar() {
         />
       )}
     </header>
-  )
-}
-
-/**
- * 工具栏按钮子组件
- *
- * 高亮当前激活状态，支持自定义图标与文字提示。
- * 使用自定义 tooltip 替代原生 title，悬停即刻显示，无需等待。
- */
-function ToolbarBtn({
-  active,
-  onClick,
-  title,
-  icon,
-  className,
-}: {
-  active: boolean
-  onClick: () => void
-  title: string
-  icon: React.ReactNode
-  className?: string
-}) {
-  const [show, setShow] = useState(false)
-  const timeoutRef = useRef<number>(0)
-
-  return (
-    <div className="relative flex items-center"
-      onMouseEnter={() => { timeoutRef.current = window.setTimeout(() => setShow(true), 150) }}
-      onMouseLeave={() => { clearTimeout(timeoutRef.current); setShow(false) }}
-    >
-      <button
-        onClick={onClick}
-        className={cn(
-          'p-1.5 rounded transition-colors',
-          active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-          className
-        )}
-      >
-        {icon}
-      </button>
-      {show && (
-        <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 z-50 px-2 py-0.5 rounded bg-popover border shadow text-xs text-muted-foreground whitespace-nowrap pointer-events-none">
-          {title}
-        </span>
-      )}
-    </div>
-  )
-}
-
-/**
- * 工具提示包装器
- *
- * 为任意内联按钮添加即时悬停提示，替代原生 title 属性。
- */
-function TooltipWrap({ title, children }: { title: string; children: React.ReactNode }) {
-  const [show, setShow] = useState(false)
-  const timeoutRef = useRef<number>(0)
-
-  return (
-    <span className="relative inline-flex items-center"
-      onMouseEnter={() => { timeoutRef.current = window.setTimeout(() => setShow(true), 150) }}
-      onMouseLeave={() => { clearTimeout(timeoutRef.current); setShow(false) }}
-    >
-      {children}
-      {show && (
-        <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 z-50 px-2 py-0.5 rounded bg-popover border shadow text-xs text-muted-foreground whitespace-nowrap pointer-events-none">
-          {title}
-        </span>
-      )}
-    </span>
-  )
-}
-
-/**
- * 保存状态指示器
- *
- * 显示当前是"保存中…"动画还是"已保存"状态。
- */
-function SaveIndicator() {
-  const [isSaving] = useAtom(isSavingAtom)
-  const [lastSaved] = useAtom(lastSavedAtom)
-
-  if (isSaving) {
-    return (
-      <span className="flex items-center gap-1 text-xs text-muted-foreground ml-2">
-        <ZapIcon className="w-3 h-3 animate-pulse" />
-        保存中…
-      </span>
-    )
-  }
-  if (lastSaved) {
-    return (
-      <span className="text-xs text-muted-foreground ml-2">
-        已保存
-      </span>
-    )
-  }
-  return null
-}
-
-/**
- * 字体颜色选择器弹窗
- *
- * 展示预设色块网格 + 自定义颜色输入 + 清除颜色按钮。
- */
-function ColorPickerPopover({
-  currentColor,
-  onSelectColor,
-  ref,
-}: {
-  currentColor: string | null
-  onSelectColor: (color: string | null) => void
-  ref: React.Ref<HTMLDivElement>
-}) {
-  const [customColor, setCustomColor] = useState('#000000')
-
-  return (
-    <div
-      ref={ref}
-      className="absolute top-full right-0 mt-1 z-30 bg-popover border rounded-lg shadow-lg p-3 min-w-52"
-    >
-      {/* 标题栏 */}
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-medium text-muted-foreground">字体颜色</span>
-        <button
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => onSelectColor(null)}
-          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-          title="清除颜色"
-        >
-          还原默认
-        </button>
-      </div>
-
-      {/* 当前颜色指示 */}
-      {currentColor && (
-        <div className="flex items-center gap-1.5 mb-2 text-xs text-muted-foreground">
-          <span>当前：</span>
-          <span
-            className="inline-block w-4 h-4 rounded border border-border"
-            style={{ backgroundColor: currentColor }}
-          />
-          <span className="font-mono">{currentColor}</span>
-        </div>
-      )}
-
-      {/* 预设颜色网格 */}
-      <div className="grid grid-cols-6 gap-1.5 mb-2">
-        {PRESET_COLORS.map((color) => (
-          <button
-            key={color}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => onSelectColor(color)}
-            className="w-7 h-7 rounded border border-border hover:scale-110 transition-transform"
-            style={{ backgroundColor: color }}
-            title={color}
-          />
-        ))}
-      </div>
-
-      {/* 分隔线 */}
-      <div className="h-px bg-border mb-2" />
-
-      {/* 自定义颜色 */}
-      <div className="flex items-center gap-2">
-        <input
-          type="color"
-          value={customColor}
-          onChange={(e) => setCustomColor(e.target.value)}
-          className="w-8 h-8 rounded border border-border cursor-pointer p-0 bg-transparent"
-        />
-        <span className="text-xs text-muted-foreground font-mono flex-1">{customColor}</span>
-        <button
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => onSelectColor(customColor)}
-          className="px-2 py-1 text-xs rounded bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
-        >
-          应用
-        </button>
-      </div>
-    </div>
-  )
-}
-
-/**
- * 表格操作弹窗
- *
- * 提供表格网格尺寸选择器和行/列添加操作。
- * 删除行/列/表格操作已移至工具栏直接显示。
- */
-function TablePopover({
-  editor,
-  gridHover,
-  onGridHover,
-  onClose,
-  ref,
-}: {
-  editor: import('@tiptap/core').Editor | null
-  gridHover: { rows: number; cols: number }
-  onGridHover: (dim: { rows: number; cols: number }) => void
-  onClose: () => void
-  ref: React.Ref<HTMLDivElement>
-}) {
-  const MAX_ROWS = 6
-  const MAX_COLS = 6
-  const isInTable = editor?.isActive('table') ?? false
-
-  function handleInsertTable() {
-    editor
-      ?.chain()
-      .focus()
-      .insertTable({ rows: gridHover.rows, cols: gridHover.cols, withHeaderRow: true })
-      .run()
-    onClose()
-  }
-
-  return (
-    <div
-      ref={ref}
-      className="absolute top-full right-0 mt-1 z-30 bg-popover border rounded-lg shadow-lg p-3 min-w-52"
-    >
-      {/* --- 表格内行/列添加操作 --- */}
-      {isInTable && (
-        <>
-          <span className="text-xs font-medium text-muted-foreground block mb-2">添加行/列</span>
-
-          <div className="flex items-center gap-1 mb-1.5">
-            <span className="text-xs text-muted-foreground w-8">行：</span>
-            <button
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => editor?.chain().focus().addRowBefore().run()}
-              className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-muted transition-colors"
-              title="在上方插入行"
-            >
-              <ArrowUpIcon className="w-3 h-3" />
-              <PlusIcon className="w-2.5 h-2.5" />
-            </button>
-            <button
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => editor?.chain().focus().addRowAfter().run()}
-              className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-muted transition-colors"
-              title="在下方插入行"
-            >
-              <ArrowDownIcon className="w-3 h-3" />
-              <PlusIcon className="w-2.5 h-2.5" />
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1 mb-2">
-            <span className="text-xs text-muted-foreground w-8">列：</span>
-            <button
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => editor?.chain().focus().addColumnBefore().run()}
-              className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-muted transition-colors"
-              title="在左侧插入列"
-            >
-              <ArrowLeftToLineIcon className="w-3 h-3" />
-              <PlusIcon className="w-2.5 h-2.5" />
-            </button>
-            <button
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => editor?.chain().focus().addColumnAfter().run()}
-              className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-muted transition-colors"
-              title="在右侧插入列"
-            >
-              <ArrowRightToLineIcon className="w-3 h-3" />
-              <PlusIcon className="w-2.5 h-2.5" />
-            </button>
-          </div>
-
-          <div className="h-px bg-border my-2" />
-        </>
-      )}
-
-      {/* --- 网格尺寸选择器 --- */}
-      <span className="text-xs font-medium text-muted-foreground block mb-2">插入表格</span>
-
-      <div className="flex justify-center mb-2">
-        <div
-          className="inline-grid gap-0.5"
-          style={{ gridTemplateColumns: `repeat(${MAX_COLS}, 1.5rem)` }}
-        >
-          {Array.from({ length: MAX_ROWS }, (_, row) =>
-            Array.from({ length: MAX_COLS }, (_, col) => {
-              const isActive = row < gridHover.rows && col < gridHover.cols
-              return (
-                <div
-                  key={`${row}-${col}`}
-                  onMouseEnter={() => onGridHover({ rows: row + 1, cols: col + 1 })}
-                  onClick={handleInsertTable}
-                  className={cn(
-                    'w-6 h-6 rounded-sm border cursor-pointer transition-colors',
-                    isActive
-                      ? 'bg-primary/30 border-primary/50'
-                      : 'border-border hover:border-muted-foreground/40'
-                  )}
-                />
-              )
-            })
-          )}
-        </div>
-      </div>
-
-      <p className="text-center text-xs text-muted-foreground mb-2">
-        {gridHover.rows} × {gridHover.cols}
-      </p>
-
-      {/* 取消按钮 */}
-      <button
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={onClose}
-        className="w-full py-1.5 text-xs rounded text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-      >
-        取消
-      </button>
-    </div>
-  )
-}
-
-/** 代码块支持的语言列表 */
-const CODE_LANGUAGES: { value: string; label: string }[] = [
-  { value: 'plaintext', label: '纯文本' },
-  { value: 'javascript', label: 'JavaScript' },
-  { value: 'typescript', label: 'TypeScript' },
-  { value: 'python', label: 'Python' },
-  { value: 'rust', label: 'Rust' },
-  { value: 'java', label: 'Java' },
-  { value: 'go', label: 'Go' },
-  { value: 'c', label: 'C' },
-  { value: 'cpp', label: 'C++' },
-  { value: 'csharp', label: 'C#' },
-  { value: 'ruby', label: 'Ruby' },
-  { value: 'php', label: 'PHP' },
-  { value: 'swift', label: 'Swift' },
-  { value: 'kotlin', label: 'Kotlin' },
-  { value: 'scala', label: 'Scala' },
-  { value: 'bash', label: 'Bash' },
-  { value: 'shell', label: 'Shell' },
-  { value: 'sql', label: 'SQL' },
-  { value: 'json', label: 'JSON' },
-  { value: 'xml', label: 'XML' },
-  { value: 'html', label: 'HTML' },
-  { value: 'css', label: 'CSS' },
-  { value: 'scss', label: 'SCSS' },
-  { value: 'less', label: 'Less' },
-  { value: 'markdown', label: 'Markdown' },
-  { value: 'yaml', label: 'YAML' },
-  { value: 'toml', label: 'TOML' },
-  { value: 'dockerfile', label: 'Dockerfile' },
-  { value: 'nginx', label: 'Nginx' },
-  { value: 'makefile', label: 'Makefile' },
-  { value: 'graphql', label: 'GraphQL' },
-  { value: 'ini', label: 'INI' },
-  { value: 'diff', label: 'Diff' },
-  { value: 'powershell', label: 'PowerShell' },
-]
-
-/**
- * 代码块语言选择器
- *
- * 在光标位于代码块内时显示，允许切换代码块的语言以实现语法高亮。
- */
-function CodeLanguageSelect({ editor }: { editor: import('@tiptap/core').Editor | null }) {
-  const currentLang = (editor?.getAttributes('codeBlock').language ?? 'plaintext') as string
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  // 点击外部关闭
-  useEffect(() => {
-    if (!open) return
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [open])
-
-  const currentLabel = CODE_LANGUAGES.find((l) => l.value === currentLang)?.label ?? currentLang
-
-  return (
-    <div ref={ref} className="relative">
-      <TooltipWrap title="选择代码语言">
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-        >
-          <span>{currentLabel}</span>
-          <ChevronDownIcon className="w-3 h-3" />
-        </button>
-      </TooltipWrap>
-      {open && (
-        <div className="absolute top-full left-0 mt-1 z-30 bg-popover border rounded-lg shadow-lg py-1 max-h-64 overflow-y-auto min-w-36">
-          {CODE_LANGUAGES.map((lang) => (
-            <button
-              key={lang.value}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                editor?.chain().focus().updateAttributes('codeBlock', { language: lang.value }).run()
-                setOpen(false)
-              }}
-              className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
-                currentLang === lang.value
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-foreground hover:bg-muted'
-              }`}
-            >
-              {lang.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
   )
 }

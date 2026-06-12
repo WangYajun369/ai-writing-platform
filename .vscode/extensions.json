@@ -1,0 +1,35 @@
+{
+  "recommendations": [
+    // ── Rust / Tauri ──
+    "rust-lang.rust-analyzer",           // Rust 语言支持：智能提示、代码补全、跳转定义
+    "vadimcn.vscode-lldb",               // CodeLLDB：Rust/C++ 原生调试器（断点、变量查看、调用栈）
+    "tamasfe.even-better-toml",          // TOML 语法高亮与格式化（Cargo.toml / tauri.conf.json 等）
+    "tauri-apps.tauri-vscode",           // Tauri 官方扩展：命令自动补全、配置校验、调试支持
+
+    // ── TypeScript / React ──
+    "dbaeumer.vscode-eslint",            // ESLint 集成（需配合 eslint 配置文件）
+    "dsznajder.es7-react-js-snippets",   // React/TypeScript 常用代码片段，加速组件开发
+
+    // ── Tailwind CSS v4 ──
+    "bradlc.vscode-tailwindcss",         // Tailwind CSS 类名补全、悬停预览、lint 检查
+
+    // ── 样式 / 格式化 ──
+    "esbenp.prettier-vscode",            // Prettier 代码格式化，保持代码风格统一
+
+    // ── 通用增强 ──
+    "usernamehw.errorlens",              // 内联显示错误/警告信息，提升排查效率
+    "formulahendry.auto-rename-tag",     // 自动同步重命名 HTML/JSX 标签对
+    "mikestead.dotenv",                  // .env 文件语法高亮
+    "gruntfuggly.todo-tree",             // 扫描并树状展示 TODO / FIXME 注释
+
+    // ── Markdown ──
+    "yzhang.markdown-all-in-one",        // Markdown 编辑增强：快捷键、目录、预览
+    "bierner.markdown-mermaid",          // 在 Markdown 预览中渲染 Mermaid 图表
+
+    // ── Python ──
+    "ms-python.python",                  // Python 语言支持：智能提示、调试、测试、虚拟环境管理
+    "ms-python.black-formatter",         // Black 代码格式化器（Python）
+    "charliermarsh.ruff",                // Ruff：极速 Python linter + formatter（替代 flake8/isort）
+    "ms-python.mypy-type-checker"        // Mypy 类型检查：静态类型检查，提升代码健壮性
+  ]
+}

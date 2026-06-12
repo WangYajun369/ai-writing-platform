@@ -25,7 +25,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost https://asset.localhost; img-src 'self' asset: https: data:; font-src 'self'",
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost https://asset.localhost http://127.0.0.1:9877 http://127.0.0.1:9876; img-src 'self' asset: https: data:; font-src 'self'",
       "assetProtocol": {
         "enable": true,
         "scope": [
@@ -47,6 +47,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": {
+      "../agent/**/*": "agent/"
+    },
     "windows": {
       "nsis": {
         "installMode": "currentUser",

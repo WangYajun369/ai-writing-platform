@@ -21,6 +21,7 @@ import { ChapterSummaryPanel } from '@/components/editor/ChapterSummaryHeader'
 import AiToolboxPanel from '@/components/ai/AiToolboxPanel'
 import DebugPanel from '@/components/common/DebugPanel'
 import ToastContainer from '@/components/common/ToastContainer'
+import AppClosingOverlay from './AppClosingOverlay'
 
 /** 独立窗口容器包装 */
 function WindowShell({ children }: { children: React.ReactNode }) {
@@ -106,6 +107,7 @@ export default function AppInit() {
     >
       <AppRouter />
       <ToastContainer />
+      <AppClosingOverlay />
     </div>
   )
 }

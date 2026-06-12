@@ -1,0 +1,40 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    // ═══════════════════════════════════════════════════
+    // 方案 A：LLDB 启动调试（推荐，可断点所有代码路径）
+    // ═══════════════════════════════════════════════════
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "🦀 调试 Tauri (LLDB Launch)",
+      "cargo": {
+        "args": [
+          "build",
+          "--manifest-path",
+          "${workspaceFolder}/src-tauri/Cargo.toml",
+          "--no-default-features"
+        ]
+      },
+      // 启动编译产物（Tauri 桌面应用）
+      "program": "${workspaceFolder}/src-tauri/target/debug/time-write",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "sourceMap": {
+        "/rustc/<hash>": "${env:HOME}/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/src/rust"
+      }
+    },
+    // ═══════════════════════════════════════════════════
+    // 方案 B：Attach 到已运行的 Tauri 进程
+    // 适用场景：先用 pnpm tauri dev 启动，再附加调试器
+    // ═══════════════════════════════════════════════════
+    {
+      "type": "lldb",
+      "request": "attach",
+      "name": "🦀 Attach 到 Tauri 进程",
+      "pid": "${command:pickProcess}",
+      "program": "${workspaceFolder}/src-tauri/target/debug/time-write",
+      "stopOnEntry": false
+    }
+  ]
+}

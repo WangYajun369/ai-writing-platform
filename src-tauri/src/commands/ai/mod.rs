@@ -104,18 +104,9 @@ pub struct SummarizeConversationArgs {
     pub messages: Vec<ChatMessage>,
     pub previous_summary: Option<String>,
     pub thinking_enabled: Option<bool>,
+    /// DeepSeek 思考强度：high（默认）或 max
+    pub reasoning_effort: Option<String>,
 }
-
-/// 对话总结结果
-#[derive(Debug, Clone, Serialize)]
-pub struct ConversationSummary {
-    pub summary: String,
-    pub covered_count: usize,
-    pub summary_chars: usize,
-    pub thinking: String,
-}
-
-// ---- 章节总结相关类型 ----
 
 /// 章节总结请求参数
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -130,6 +121,17 @@ pub struct SummarizeArgs {
     pub chapter_content: String,
     pub thinking_enabled: Option<bool>,
     pub system_prompt: Option<String>,
+    /// DeepSeek 思考强度：high（默认）或 max
+    pub reasoning_effort: Option<String>,
+}
+
+/// 对话总结结果
+#[derive(Debug, Clone, Serialize)]
+pub struct ConversationSummary {
+    pub summary: String,
+    pub covered_count: usize,
+    pub summary_chars: usize,
+    pub thinking: String,
 }
 
 /// 章节总结结果

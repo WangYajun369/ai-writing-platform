@@ -1,5 +1,6 @@
 /**
- * RAG Embedding 配置子区块 —— 独立开关、服务商、模型、API Key、连接测试
+ * RAG Embedding 配置子区块 —— 使用智谱 BigModel Embeddings API
+ * DeepSeek 不提供 Embeddings API，RAG 检索使用智谱 BigModel
  */
 import { useState } from 'react'
 import { BrainIcon } from 'lucide-react'
@@ -58,13 +59,15 @@ export function RagConfigSection({ config, onChange }: RagConfigSectionProps) {
           ? '开启后 AI 对话将自动检索相关上下文，提升回答质量。'
           : '关闭后 AI 对话不检索章节背景。'}
       </p>
+      <p className="text-xs text-muted-foreground">
+        DeepSeek 不提供 Embeddings API，RAG 检索使用智谱 BigModel
+      </p>
 
       {config.enabled && (
         <>
           {/* 服务商 */}
           <div className="space-y-1">
             <label className="text-sm font-medium">服务商</label>
-            <p className="text-xs text-muted-foreground mb-1">DeepSeek 暂不支持 Embeddings API，目前仅提供智谱 BigModel</p>
             <select
               value={config.provider}
               onChange={(e) => handleProviderChange(e.target.value as RagProvider)}
@@ -77,7 +80,6 @@ export function RagConfigSection({ config, onChange }: RagConfigSectionProps) {
           {/* API 地址 */}
           <div className="space-y-1">
             <label className="text-sm font-medium">API 地址</label>
-            <p className="text-xs text-muted-foreground mb-1">根据所选服务商自动填充，暂不支持修改</p>
             <input
               value={config.endpoint}
               readOnly
@@ -103,9 +105,9 @@ export function RagConfigSection({ config, onChange }: RagConfigSectionProps) {
           {/* API Key */}
           <ApiKeyField
             label="API Key"
-            hint="留空则复用对话设置的智谱 API Key"
+            hint="使用智谱 BigModel API Key（用于 Embedding），可在 https://open.bigmodel.cn 获取"
             value={currentRagApiKey}
-            placeholder="填写智谱 API Key（可选，留空则复用对话 Key）"
+            placeholder="填写智谱 API Key"
             onChange={handleApiKeyChange}
           />
 

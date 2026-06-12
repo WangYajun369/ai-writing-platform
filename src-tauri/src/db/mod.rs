@@ -11,7 +11,14 @@ use anyhow::Context as _;
 
 /// SQLite 连接管理器，实现 r2d2::ManageConnection
 pub struct SqliteConnectionManager {
-    path: String,
+    pub path: String,
+}
+
+impl SqliteConnectionManager {
+    /// 创建新的连接管理器
+    pub fn new(path: String) -> Self {
+        Self { path }
+    }
 }
 
 impl ManageConnection for SqliteConnectionManager {
@@ -62,7 +69,7 @@ pub struct AppDb {
 impl AppDb {
     /// 创建数据库实例并执行自动迁移（建表 + 索引）
     pub fn new(db_path: &str) -> anyhow::Result<Self> {
-        let manager = SqliteConnectionManager { path: db_path.to_string() };
+        let manager = SqliteConnectionManager::new(db_path.to_string());
         let pool = Pool::builder()
             .max_size(10)
             .connection_timeout(std::time::Duration::from_secs(10))

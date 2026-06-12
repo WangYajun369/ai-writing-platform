@@ -22,7 +22,11 @@ pub struct StreamChatArgs {
     pub max_tokens: Option<u32>,
     pub api_key: Option<String>,
     pub messages: Vec<ChatMessage>,
+    /// DeepSeek 思考模式开关（thinking: { type: "enabled"/"disabled" }）
     pub thinking_enabled: Option<bool>,
+    /// DeepSeek 思考强度：high（默认）或 max（Agent/复杂任务推荐）
+    /// 参考：https://api-docs.deepseek.com/zh-cn/guides/thinking_mode
+    pub reasoning_effort: Option<String>,
 }
 
 /// AI 流式对话命令（SSE 流式协议，兼容智谱等 API）
@@ -208,6 +212,10 @@ async fn sse_loop_inner(
 
     if args.thinking_enabled.unwrap_or(false) {
         body["thinking"] = serde_json::json!({"type": "enabled"});
+        // reasoning_effort: DeepSeek 思考强度，默认 high，Agent 场景推荐 max
+        // 参考：https://api-docs.deepseek.com/zh-cn/guides/thinking_mode
+        let effort = args.reasoning_effort.as_deref().unwrap_or("high");
+        body["reasoning_effort"] = serde_json::json!(effort);
     }
 
     let response = req
@@ -363,6 +371,21 @@ async fn sse_loop_inner(
                             .and_then(|v| v.as_u64())
                             .unwrap_or(0) as u32;
                         sse_usage = Some((prompt_tokens, completion_tokens));
+                        // KV Cache 命中统计（DeepSeek 自动启用，无需配置）
+                        // 参考：https://api-docs.deepseek.com/zh-cn/guides/kv_cache
+                        if let (Some(hit), Some(miss)) = (
+                            u.get("prompt_cache_hit_tokens").and_then(|v| v.as_u64()),
+                            u.get("prompt_cache_miss_tokens").and_then(|v| v.as_u64()),
+                        ) {
+                            if hit > 0 {
+                                eprintln!(
+                                    "[KV Cache] 命中: {} tokens, 未命中: {} tokens, 命中率: {:.1}%",
+                                    hit,
+                                    miss,
+                                    hit as f64 / (hit + miss).max(1) as f64 * 100.0
+                                );
+                            }
+                        }
                     }
 
                     if let Some(reasoning) =

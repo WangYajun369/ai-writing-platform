@@ -24,9 +24,9 @@ export const createAiSlice: AppSlice = (set, get) => {
     appVersion: '',
     aiConfig: {
       chat: {
-        provider: 'bigmodel',
-        endpoint: 'https://open.bigmodel.cn/api/paas/v4',
-        model: 'glm-5.1',
+        provider: 'deepseek',
+        endpoint: 'https://api.deepseek.com',
+        model: 'deepseek-v4-flash',
         temperature: 0.7,
         maxTokens: 131072,
         thinkingEnabled: true,

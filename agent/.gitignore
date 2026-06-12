@@ -1,0 +1,17 @@
+# Python 虚拟环境
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+
+# 本地模型文件（体积大，不纳入版本控制）
+models/*.gguf
+models/*.bin
+models/*.safetensors
+models/*.pt
+
+# 环境变量
+.env
+.env.local

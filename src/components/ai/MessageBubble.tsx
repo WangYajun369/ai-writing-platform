@@ -111,7 +111,7 @@ export const MessageBubble = memo(function MessageBubble({ message, onDelete, on
     <div className={cn('flex gap-2', isUser ? 'flex-row-reverse' : 'flex-row')}>
       <div
         className={cn(
-          'max-w-[85%] rounded-2xl px-3 py-2 text-sm wrap',
+          'max-w-[98%] rounded-2xl px-3 py-2 text-sm wrap',
           isUser
             ? 'bg-primary text-primary-foreground rounded-br-sm whitespace-pre-wrap'
             : 'bg-muted text-foreground rounded-bl-sm markdown-body'

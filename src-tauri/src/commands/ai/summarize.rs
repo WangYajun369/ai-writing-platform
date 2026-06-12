@@ -73,6 +73,8 @@ pub async fn summarize_conversation(
 
     if args.thinking_enabled.unwrap_or(false) {
         body["thinking"] = serde_json::json!({"type": "enabled"});
+        let effort = args.reasoning_effort.as_deref().unwrap_or("high");
+        body["reasoning_effort"] = serde_json::json!(effort);
     }
 
     let response = req
@@ -163,6 +165,8 @@ pub async fn summarize_chapter(
 
     if args.thinking_enabled.unwrap_or(false) {
         body["thinking"] = serde_json::json!({"type": "enabled"});
+        let effort = args.reasoning_effort.as_deref().unwrap_or("high");
+        body["reasoning_effort"] = serde_json::json!(effort);
     }
 
     let response = req
