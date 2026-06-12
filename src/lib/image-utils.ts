@@ -101,7 +101,7 @@ export async function processCoverImage(filePath: string): Promise<string> {
  * 裁剪编辑器图片：裁剪 → 压缩 → Base64 data URL
  *
  * @param filePath 源图片本地文件路径
- * @param crop 裁剪区域（像素坐标），由 react-easy-crop 提供
+ * @param crop 裁剪区域（像素坐标），由 ImageCropperDialog 提供
  * @returns `data:image/jpeg;base64,...` 格式字符串
  */
 export async function processCroppedEditorImage(
@@ -126,7 +126,7 @@ export async function processCroppedEditorImage(
  * 裁剪后在 Rust 端执行像素级裁剪 + Lanczos3 缩放 + JPEG 编码。
  *
  * @param filePath 源图片本地文件路径
- * @param crop 裁剪区域（像素坐标），由 react-easy-crop 提供
+ * @param crop 裁剪区域（像素坐标），由 ImageCropperDialog 提供
  * @returns `data:image/jpeg;base64,...` 格式字符串
  */
 export async function processCroppedCoverImage(

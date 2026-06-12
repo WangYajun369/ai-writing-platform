@@ -54,7 +54,7 @@
     "react": "^19.2.7",
     "react-diff-viewer-continued": "^4.2.2",
     "react-dom": "^19.2.7",
-    "react-easy-crop": "^6.0.1",
+    "react-image-crop": "^11.0.10",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.17.0",
     "remark-gfm": "^4.0.1",

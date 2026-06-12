@@ -91,7 +91,7 @@ export default function ImageResizeNodeView({
         filters: [
           {
             name: '图片文件',
-            extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'],
+            extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'],
           },
         ],
       })

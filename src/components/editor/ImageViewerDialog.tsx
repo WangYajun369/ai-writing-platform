@@ -47,7 +47,7 @@ export default function ImageViewerDialog({
   const imageUrl = useMemo(() => {
     setImageError(false)
     if (imageSrc) return imageSrc
-    if (filePath) return convertFileSrc(filePath)
+    if (filePath) return convertFileSrc(filePath.replace(/\\/g, '/'))
     return ''
   }, [filePath, imageSrc])
 

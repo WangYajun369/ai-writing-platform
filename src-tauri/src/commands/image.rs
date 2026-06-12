@@ -10,7 +10,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use crate::error::AppError;
 
-const ALLOWED_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"];
+const ALLOWED_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp"];
 const MAX_SOURCE_SIZE: u64 = 20 * 1024 * 1024; // 20 MB
 
 /// 校验图片文件扩展名和大小
@@ -124,7 +124,7 @@ pub async fn process_image(
 
 /// Tauri 命令：裁剪图片并返回 Base64 data URL
 ///
-/// 用于编辑器插入裁剪后的图片。前端 react-easy-crop 获取裁剪参数，
+/// 用于编辑器插入裁剪后的图片。前端 ImageCropperDialog 获取裁剪参数，
 /// 后端执行实际的像素级裁剪 + 压缩 + Base64 编码。
 #[tauri::command]
 pub async fn process_image_cropped(

@@ -35,3 +35,7 @@ src-tauri/target/
 
 # TypeScript
 *.tsbuildinfo
+
+# AI model
+.codebuddy/
+CLAUDE.md

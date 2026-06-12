@@ -143,7 +143,7 @@ export default function EditorToolbar() {
         multiple: false,
         filters: [{
           name: '图片文件',
-          extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'],
+          extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'],
         }],
       })
       if (!selected) return // 用户取消
