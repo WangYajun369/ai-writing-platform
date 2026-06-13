@@ -42,6 +42,11 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
       - name: Setup Python Agent (relocatable venv)
         run: npx tsx scripts/setup-agent.ts --relocatable
 
@@ -135,6 +140,11 @@ jobs:
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
 
       - name: Setup Python Agent (relocatable venv)
         run: npx tsx scripts/setup-agent.ts --relocatable
