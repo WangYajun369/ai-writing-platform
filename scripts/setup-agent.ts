@@ -294,8 +294,9 @@ function syncRelocatableDependencies(): void {
   }
 
   // 验证 uvicorn 和 fastapi 可正常导入
-  execSync(`"${venvPython}" -c "import uvicorn; import fastapi; print('✅ uvicorn', uvicorn.__version__, 'fastapi', fastapi.__version__)"`, {
+  execSync(`"${venvPython}" -c "import uvicorn; import fastapi; print('OK uvicorn', uvicorn.__version__, 'fastapi', fastapi.__version__)"`, {
     stdio: 'inherit',
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
   })
 }
 
