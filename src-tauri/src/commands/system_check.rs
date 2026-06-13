@@ -159,19 +159,22 @@ fn find_venv_python() -> Option<String> {
 fn check_python() -> CheckItem {
     // 优先查找 agent/.venv 虚拟环境（与 manager.rs 启动逻辑一致）
     if let Some(venv_path_raw) = find_venv_python() {
-        let venv_path = Path::new(&venv_path_raw)
+        // ⚠️ 不使用 canonicalize() 执行 Python 命令！
+        // venv/bin/python 可能是 symlink，canonicalize 会解析到系统 Python，
+        // 导致 sys.path 不包含 venv 的 site-packages，import uvicorn 失败
+        let venv_path_display = Path::new(&venv_path_raw)
             .canonicalize()
             .map(|p| p.display().to_string())
-            .unwrap_or(venv_path_raw);
-        if let Ok(version) = run_cmd(&venv_path, &["--version"]) {
-            let raw = run_cmd(&venv_path, &["-c", "import sys; print(sys.prefix)"])
+            .unwrap_or_else(|_| venv_path_raw.clone());
+        if let Ok(version) = run_cmd(&venv_path_raw, &["--version"]) {
+            let raw = run_cmd(&venv_path_raw, &["-c", "import sys; print(sys.prefix)"])
                 .unwrap_or_else(|_| "无法获取".to_string());
             let lib_path = Path::new(raw.trim())
                 .canonicalize()
                 .map(|p| p.display().to_string())
                 .unwrap_or_else(|_| raw.trim().to_string());
-            // 验证 uvicorn 是否可用
-            let uvicorn_ok = std::process::Command::new(&venv_path)
+            // 验证 uvicorn 是否可用（使用原始 venv 路径，不能 canonicalize）
+            let uvicorn_ok = std::process::Command::new(&venv_path_raw)
                 .arg("-c")
                 .arg("import uvicorn")
                 .output()
@@ -186,7 +189,7 @@ fn check_python() -> CheckItem {
                 name: "Python".to_string(),
                 value: format!("{} {}", version, extra),
                 status: if uvicorn_ok { "ok" } else { "warning" }.to_string(),
-                detail: Some(format!("解释器: {} (agent/.venv)\n安装路径: {}", venv_path, lib_path)),
+                detail: Some(format!("解释器: {} (agent/.venv)\n安装路径: {}", venv_path_display, lib_path)),
             };
         }
     }

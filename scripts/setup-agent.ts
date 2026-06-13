@@ -15,7 +15,7 @@
  */
 
 import { execSync } from 'child_process'
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { basename, dirname, join, resolve } from 'path'
 
@@ -273,6 +273,19 @@ function syncRelocatableDependencies(): void {
     }
   }
 
+  // 5.5 复制 Python 标准库到 .venv（关键：使 venv 完全自包含）
+  copyStdlib(standaloneBase, VENV_DIR, pythonVer)
+  // 修正 pyvenv.cfg 的 home 路径，使其指向 venv 自身的 bin 目录
+  // 这样 Python 会在 .venv/lib/python3.x/ 中找到刚复制的标准库
+  {
+    const cfgPath = join(VENV_DIR, 'pyvenv.cfg')
+    const cfgContent = readFileSync(cfgPath, 'utf-8')
+    const newHome = isWin ? 'Scripts' : 'bin'
+    const updated = cfgContent.replace(/^home\s*=.*$/m, `home = ${newHome}`)
+    writeFileSync(cfgPath, updated)
+    console.log(`  修正 pyvenv.cfg: home = ${newHome}`)
+  }
+
   // 6. 在可重定位 venv 中安装 Python 依赖
   console.log('📥 安装依赖...')
   const venvPython = pythonInVenv()
@@ -298,6 +311,44 @@ function syncRelocatableDependencies(): void {
     stdio: 'inherit',
     env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
   })
+}
+
+/**
+ * 递归复制目录，跳过 excluedNames 中指定的文件/目录名
+ * 用于将 standalone Python 的标准库复制到自包含 venv 中
+ */
+function copyDirRecursive(src: string, dst: string, excludedNames: Set<string>): void {
+  mkdirSync(dst, { recursive: true })
+  for (const entry of readdirSync(src, { withFileTypes: true })) {
+    const name = entry.name
+    if (excludedNames.has(name)) continue
+    const srcPath = join(src, name)
+    const dstPath = join(dst, name)
+    if (entry.isDirectory()) {
+      copyDirRecursive(srcPath, dstPath, excludedNames)
+    } else if (entry.isSymbolicLink()) {
+      try { copyFileSync(srcPath, dstPath) } catch { /* skip broken symlinks */ }
+    } else {
+      copyFileSync(srcPath, dstPath)
+    }
+  }
+}
+
+/**
+ * 将 standalone Python 的标准库复制到 venv 的 lib 目录中
+ * 排除 site-packages（由 uv pip install 管理）和 __pycache__（缓存文件）
+ */
+function copyStdlib(standaloneBase: string, venvDir: string, pythonVer: string): void {
+  const stdlibSrc = join(standaloneBase, 'lib', `python${pythonVer}`)
+  const stdlibDst = join(venvDir, 'lib', `python${pythonVer}`)
+  if (!existsSync(stdlibSrc)) {
+    console.warn(`⚠️ 标准库不存在: ${stdlibSrc}，跳过复制`)
+    return
+  }
+  console.log('📚 复制 Python 标准库...')
+  const before = Date.now()
+  copyDirRecursive(stdlibSrc, stdlibDst, new Set(['site-packages', '__pycache__']))
+  console.log(`  完成 (${Date.now() - before}ms)`)
 }
 
 /** 通过 ollama pull 下载指定的 LLM 模型，失败时不中断流程 */
