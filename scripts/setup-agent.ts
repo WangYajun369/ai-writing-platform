@@ -280,7 +280,9 @@ function syncRelocatableDependencies(): void {
   {
     const cfgPath = join(VENV_DIR, 'pyvenv.cfg')
     const cfgContent = readFileSync(cfgPath, 'utf-8')
-    const newHome = isWin ? 'Scripts' : 'bin'
+    // macOS/Linux: home=bin → Python 找 bin/../lib/python3.14/ = lib/python3.14/
+    // Windows:     home=.   → Python 找 ./Lib/ = Lib/
+    const newHome = isWin ? '.' : 'bin'
     const updated = cfgContent.replace(/^home\s*=.*$/m, `home = ${newHome}`)
     writeFileSync(cfgPath, updated)
     console.log(`  修正 pyvenv.cfg: home = ${newHome}`)
