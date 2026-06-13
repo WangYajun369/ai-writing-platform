@@ -99,46 +99,76 @@ fn detect_os_info() -> (String, String, String) {
     (os_type.to_string(), os_version, arch.to_string())
 }
 
-/// 查找 Python 解释器并获取版本
-fn check_python() -> CheckItem {
-    // 尝试多个可能的解释器名
-    for python_bin in &["python3", "python"] {
-        if let Ok(output) = Command::new("which")
-            .arg(python_bin)
-            .output()
-        {
-            let python_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !python_path.is_empty() {
-                match run_cmd("python3", &["--version"]) {
-                    Ok(version) => {
-                        // 尝试获取安装路径
-                        let lib_path = run_cmd("python3", &["-c", "import sys; print(sys.prefix)"])
-                            .unwrap_or_else(|_| "无法获取".to_string());
-                        return CheckItem {
-                            name: "Python".to_string(),
-                            value: version,
-                            status: "ok".to_string(),
-                            detail: Some(format!("解释器: {}\n安装路径: {}", python_path, lib_path)),
-                        };
-                    }
-                    Err(_) => {
-                        // python3 在 PATH 但获取版本失败，尝试 python
-                        if let Ok(version) = run_cmd("python", &["--version"]) {
-                            let lib_path = run_cmd("python", &["-c", "import sys; print(sys.prefix)"])
-                                .unwrap_or_else(|_| "无法获取".to_string());
-                            return CheckItem {
-                                name: "Python".to_string(),
-                                value: version,
-                                status: "ok".to_string(),
-                                detail: Some(format!(
-                                    "解释器: {}\n安装路径: {}",
-                                    python_path, lib_path
-                                )),
-                            };
-                        }
-                    }
-                }
+/// 查找 agent/.venv 虚拟环境中的 Python 解释器
+fn find_venv_python() -> Option<String> {
+    // 与 manager.rs 保持一致：从项目根目录查找 agent/.venv
+    let candidates = vec![
+        std::path::PathBuf::from("agent/.venv/bin/python"),       // 从工作目录
+        std::path::PathBuf::from("../agent/.venv/bin/python"),    // 从 src-tauri
+    ];
+    for candidate in &candidates {
+        if candidate.exists() {
+            return Some(candidate.to_string_lossy().to_string());
+        }
+    }
+    // 也尝试从可执行文件同目录的 resources 查找（生产环境打包路径）
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            #[cfg(not(target_os = "windows"))]
+            let prod_python = parent.join("resources").join("agent").join(".venv").join("bin").join("python");
+            #[cfg(target_os = "windows")]
+            let prod_python = parent.join("resources").join("agent").join(".venv").join("Scripts").join("python.exe");
+            if prod_python.exists() {
+                return Some(prod_python.to_string_lossy().to_string());
             }
+        }
+    }
+    None
+}
+
+/// 查找 Python 解释器并获取版本
+///
+/// 优先级：agent/.venv > PATH 中的 python3 > PATH 中的 python
+fn check_python() -> CheckItem {
+    // 优先查找 agent/.venv 虚拟环境（与 manager.rs 启动逻辑一致）
+    if let Some(venv_path) = find_venv_python() {
+        if let Ok(version) = run_cmd(&venv_path, &["--version"]) {
+            let lib_path = run_cmd(&venv_path, &["-c", "import sys; print(sys.prefix)"])
+                .unwrap_or_else(|_| "无法获取".to_string());
+            // 验证 uvicorn 是否可用
+            let uvicorn_ok = std::process::Command::new(&venv_path)
+                .arg("-c")
+                .arg("import uvicorn")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            let extra = if uvicorn_ok {
+                " (uvicorn ✓)"
+            } else {
+                " (缺少 uvicorn，请运行 uv sync)"
+            };
+            return CheckItem {
+                name: "Python".to_string(),
+                value: format!("{} {}", version, extra),
+                status: if uvicorn_ok { "ok" } else { "warning" }.to_string(),
+                detail: Some(format!("解释器: {} (agent/.venv)\n安装路径: {}", venv_path, lib_path)),
+            };
+        }
+    }
+
+    // 回退：尝试 PATH 中的 python3 / python
+    for python_bin in &["python3", "python"] {
+        if let Ok(version) = run_cmd(python_bin, &["--version"]) {
+            let python_path = run_cmd("which", &[python_bin])
+                .unwrap_or_else(|_| python_bin.to_string());
+            let lib_path = run_cmd(python_bin, &["-c", "import sys; print(sys.prefix)"])
+                .unwrap_or_else(|_| "无法获取".to_string());
+            return CheckItem {
+                name: "Python".to_string(),
+                value: version,
+                status: "ok".to_string(),
+                detail: Some(format!("解释器: {} (系统)\n安装路径: {}", python_path, lib_path)),
+            };
         }
     }
 
