@@ -44,11 +44,72 @@ static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 /// 全局复用 SSE 流式客户端（禁用压缩 + HTTP/1.1 + TCP keepalive）
 static SSE_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
+/// 从环境变量自动探测 HTTP/HTTPS 代理配置
+///
+/// 优先级：HTTPS_PROXY > https_proxy > HTTP_PROXY > http_proxy > ALL_PROXY > all_proxy
+/// 返回 None 表示未配置代理（直连模式）。
+fn detect_proxy() -> Option<reqwest::Proxy> {
+    for var in &[
+        "HTTPS_PROXY",
+        "https_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+    ] {
+        if let Ok(val) = std::env::var(var) {
+            let val = val.trim().to_string();
+            if !val.is_empty() {
+                match reqwest::Proxy::all(&val) {
+                    Ok(proxy) => {
+                        eprintln!(
+                            "[reqwest] 自动检测到代理: {} (来自环境变量 {})",
+                            val, var
+                        );
+                        return Some(proxy);
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[reqwest] 环境变量 {} 的代理配置无效: {}",
+                            var, e
+                        );
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// 构建通用 HTTP 客户端基础配置
+fn http_client_builder() -> reqwest::ClientBuilder {
+    let mut builder = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(15));
+    if let Some(proxy) = detect_proxy() {
+        builder = builder.proxy(proxy);
+    }
+    builder
+}
+
+/// 构建 SSE 客户端基础配置
+fn sse_client_builder() -> reqwest::ClientBuilder {
+    let mut builder = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .http1_only()
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .tcp_keepalive(std::time::Duration::from_secs(120));
+    if let Some(proxy) = detect_proxy() {
+        builder = builder.proxy(proxy);
+    }
+    builder
+}
+
 /// 获取或初始化标准 HTTP 客户端（用于 Embedding / 连接测试等普通 API 调用）
 pub fn get_http_client() -> &'static reqwest::Client {
     HTTP_CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(15))
+        http_client_builder()
             .build()
             .expect("构建全局 HTTP 客户端失败")
     })
@@ -57,13 +118,7 @@ pub fn get_http_client() -> &'static reqwest::Client {
 /// 获取或初始化 SSE 流式客户端（用于 AI 流式对话/总结）
 pub fn get_sse_client() -> &'static reqwest::Client {
     SSE_CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(30))
-            .http1_only()
-            .no_gzip()
-            .no_brotli()
-            .no_deflate()
-            .tcp_keepalive(std::time::Duration::from_secs(120))
+        sse_client_builder()
             .build()
             .expect("构建全局 SSE 客户端失败")
     })

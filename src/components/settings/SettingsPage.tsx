@@ -10,7 +10,7 @@
  */
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeftIcon, BotIcon, PaletteIcon, DatabaseIcon, ArrowUpCircleIcon, PenLineIcon, WrenchIcon } from 'lucide-react'
+import { ArrowLeftIcon, BotIcon, PaletteIcon, DatabaseIcon, ArrowUpCircleIcon, PenLineIcon, WrenchIcon, MonitorCheckIcon } from 'lucide-react'
 import { useAppStore } from '@/stores/appStore'
 import { AiConfigSection } from './AiConfigSection'
 import { AiToolboxSection } from './AiToolboxSection'
@@ -18,8 +18,9 @@ import { AppearanceSection } from './AppearanceSection'
 import { EditorConfigSection } from './EditorConfigSection'
 import { StorageSection } from './StorageSection'
 import { VersionSection } from './VersionSection'
+import { SystemCheckSection } from './SystemCheckSection'
 
-type Tab = 'ai' | 'toolbox' | 'appearance' | 'editor' | 'storage' | 'version'
+type Tab = 'ai' | 'toolbox' | 'appearance' | 'editor' | 'storage' | 'version' | 'system'
 
 const TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }> }[] = [
   { id: 'ai', label: 'AI 配置', icon: BotIcon },
@@ -28,6 +29,7 @@ const TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }> }[]
   { id: 'editor', label: '编辑', icon: PenLineIcon },
   { id: 'storage', label: '存储', icon: DatabaseIcon },
   { id: 'version', label: '版本', icon: ArrowUpCircleIcon },
+  { id: 'system', label: '系统检查', icon: MonitorCheckIcon },
 ]
 
 export default function SettingsPage() {
@@ -113,6 +115,7 @@ export default function SettingsPage() {
             )}
             {activeTab === 'storage' && <StorageSection />}
             {activeTab === 'version' && <VersionSection />}
+            {activeTab === 'system' && <SystemCheckSection />}
           </div>
         </div>
       </div>

@@ -33,11 +33,24 @@ export function getFriendlyAiError(rawError: string): string {
   if (/timeout|timed out|超时/.test(lower)) {
     return 'AI 服务响应超时（网络抖动），已自动重试，若持续失败请检查网络连接'
   }
+  if (/dns|resolve|域名解析/.test(lower)) {
+    return 'DNS 解析失败，无法访问 AI 服务。请检查网络连接，或尝试在系统中设置 HTTPS_PROXY 环境变量后重启应用'
+  }
+  if (/refused|拒绝/.test(lower)) {
+    return '连接被拒绝，请确认 AI 服务地址正确且端口可访问，或检查防火墙/代理设置'
+  }
+  if (/tls|certificate|ssl|证书/.test(lower)) {
+    return 'TLS 证书验证失败，请检查系统时间是否正确。若使用代理，请设置 HTTPS_PROXY 环境变量后重启应用'
+  }
   if (/connection|connect|network|econnrefused|eof|reset|broken pipe/.test(lower)) {
     return '网络连接不稳定，已自动重试，若持续失败请检查网络并在**设置**中确认 API 地址正确'
   }
   if (/500|502|503|504|internal server|unavailable/.test(lower)) {
     return 'AI 服务暂时不可用，已自动重试，请稍后'
+  }
+  if (/诊断/.test(rawError)) {
+    // 后端已附带诊断信息，提取用户可读提示
+    return 'AI 响应异常，请在**设置**中检查 AI 是否可用'
   }
   return 'AI 响应异常，请在**设置**中检查 AI 是否可用'
 }

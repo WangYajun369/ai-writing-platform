@@ -39,6 +39,13 @@ src-tauri/target/
 # TypeScript
 *.tsbuildinfo
 
+# Python / uv
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+uv.lock
+
 # AI model
 .codebuddy/
 CLAUDE.md

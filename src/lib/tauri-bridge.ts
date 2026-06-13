@@ -553,3 +553,24 @@ export const debugApi = {
     return invoke<void>('log_message', { entries })
   },
 }
+
+// ==================== 系统检查 ====================
+
+export interface SystemCheckItem {
+  name: string
+  value: string
+  status: string // "ok" | "warning" | "error"
+  detail?: string | null
+}
+
+export interface SystemCheckResult {
+  items: SystemCheckItem[]
+  ok: boolean
+}
+
+export const systemApi = {
+  /** 执行系统环境检查（Python/Node/Rust 版本、系统信息、安装路径） */
+  async check(): Promise<SystemCheckResult> {
+    return invoke<SystemCheckResult>('system_check')
+  },
+}

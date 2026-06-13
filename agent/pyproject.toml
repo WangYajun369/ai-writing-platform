@@ -1,0 +1,28 @@
+[project]
+name = "mirageink-agent"
+version = "0.9.4"
+description = "MirageInk (TimeWrite) 智能写作 Agent Server"
+requires-python = ">=3.14"
+dependencies = [
+    # FastAPI + SSE 流式
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "sse-starlette>=2.2.0",
+    # LangChain 生态
+    "langchain>=0.3.0",
+    "langchain-core>=0.3.0",
+    "langchain-community>=0.3.0",
+    "langgraph>=0.2.0",
+    # 模型提供商
+    "langchain-openai>=0.3.0",
+    "langchain-ollama>=0.2.0",
+    # 工具
+    "pydantic>=2.0",
+    "httpx>=0.28.0",
+]
+
+[tool.uv]
+# uv 自动创建虚拟环境到 .venv
+managed = true
+
+[tool.uv.sources]

@@ -101,12 +101,43 @@ impl AgentManager {
     }
 
     /// 查找 Python 解释器路径
+    ///
+    /// 优先级：
+    /// 1. 用户指定的 python_path
+    /// 2. agent/.venv 虚拟环境中的解释器（生产环境首次运行前由用户创建）
+    /// 3. PATH 中的 python/python3（开发环境）
     fn find_python(&self) -> String {
         if let Some(ref path) = self.config.python_path {
             return path.clone();
         }
 
-        // 开发模式：优先用 which python 找到真正可用的解释器
+        // 尝试 agent/.venv 虚拟环境（生产环境）
+        if let Ok(entry) = self.find_agent_entry() {
+            if let Some(agent_dir) = entry.parent() {
+                #[cfg(target_os = "windows")]
+                let venv_python = agent_dir.join(".venv").join("Scripts").join("python.exe");
+                #[cfg(not(target_os = "windows"))]
+                let venv_python = agent_dir.join(".venv").join("bin").join("python");
+
+                if venv_python.exists() {
+                    let path = venv_python.to_string_lossy().to_string();
+                    // 验证该 python 是否有 uvicorn
+                    if let Ok(uv) = std::process::Command::new(&path)
+                        .arg("-c")
+                        .arg("import uvicorn")
+                        .output()
+                    {
+                        if uv.status.success() {
+                            eprintln!("[Agent] 使用虚拟环境 Python: {}", path);
+                            return path;
+                        }
+                    }
+                    eprintln!("[Agent] 虚拟环境 Python 存在但缺少 uvicorn: {}", path);
+                }
+            }
+        }
+
+        // 开发模式：用 which python 找到可用的解释器
         if let Ok(output) = std::process::Command::new("which")
             .arg("python")
             .output()

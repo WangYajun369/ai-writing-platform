@@ -12,3 +12,4 @@ pub mod io;
 pub mod image;
 pub mod window;
 pub mod agent;
+pub mod system_check;

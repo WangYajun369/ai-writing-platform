@@ -19,6 +19,8 @@ const DIRS_TO_REMOVE = [
   'dist',
   // 前端依赖
   'node_modules',
+  // Python 虚拟环境
+  'agent/.venv',
   // Rust 后端构建产物
   'src-tauri/target',
 ]
@@ -28,6 +30,8 @@ const FILES_TO_REMOVE = [
   // TypeScript 增量编译信息
   'tsconfig.tsbuildinfo',
   'tsconfig.node.tsbuildinfo',
+  // Python uv 锁文件
+  'agent/uv.lock',
   // Rust 锁文件（可选，clean:all 时清理）
 ]
 
@@ -196,8 +200,9 @@ async function main() {
   console.log('\n' + '='.repeat(50))
   console.log('🎉  清理完成！\n')
   console.log('📋  后续步骤：')
-  console.log('   1. pnpm install        # 重新安装依赖')
-  console.log('   2. pnpm tauri dev       # 启动开发环境\n')
+  console.log('   1. pnpm install        # 重新安装前端依赖')
+  console.log('   2. pnpm agent:setup    # 重新安装 Python 依赖（uv sync）')
+  console.log('   3. pnpm tauri dev       # 启动开发环境\n')
 }
 
 main().catch((e) => {

@@ -11,6 +11,16 @@ use crate::error::AppError;
 use crate::utils::get_sse_client;
 use super::{ChatMessage, UsageInfo, StreamEvent};
 
+/// 提取错误的原始消息，避免 AppError Display 格式带来的前缀重复
+fn get_error_message(e: &AppError) -> String {
+    match e {
+        AppError::Business(msg) => msg.clone(),
+        AppError::Http(msg) => msg.clone(),
+        AppError::General(msg) => msg.clone(),
+        _ => e.to_string(),
+    }
+}
+
 /// 流式对话请求参数
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -72,7 +82,9 @@ pub async fn stream_ai_chat(
                 last_error = "AI 返回空内容".to_string();
             }
             Err(e) => {
-                last_error = e.to_string();
+                // 提取原始错误消息，避免 AppError 双重包装
+                let err_msg = get_error_message(&e);
+                last_error = err_msg;
                 if !is_retryable_error(&last_error) {
                     return Err(AppError::Business(last_error));
                 }
@@ -222,7 +234,24 @@ async fn sse_loop_inner(
         .json(&body)
         .send()
         .await
-        .map_err(|e| AppError::Business(format!("请求失败: {}", e)))?;
+        .map_err(|e| {
+            let err_str = e.to_string();
+            // 判断错误类型，给出针对性诊断提示
+            let hint = if err_str.contains("dns") || err_str.contains("resolve") {
+                "\n诊断：DNS 解析失败，请检查网络连接或尝试配置代理"
+            } else if err_str.contains("refused") {
+                "\n诊断：连接被拒绝，请确认 API 地址正确且服务可用"
+            } else if err_str.contains("timeout") || err_str.contains("timed out") {
+                "\n诊断：连接超时，请检查网络稳定性或尝试使用代理"
+            } else if err_str.contains("tls") || err_str.contains("certificate") || err_str.contains("ssl") {
+                "\n诊断：TLS/证书验证失败，请检查系统时间是否正确，或尝试设置 HTTPS_PROXY 环境变量"
+            } else if err_str.contains("502") || err_str.contains("503") || err_str.contains("504") {
+                "\n诊断：AI 服务暂时不可用，请稍后重试"
+            } else {
+                "\n诊断：无法连接到 AI 服务（可能是代理/防火墙阻止），请在系统中设置 HTTPS_PROXY 环境变量后重启应用"
+            };
+            AppError::Business(format!("请求失败: {}{}", err_str, hint))
+        })?;
 
     if !response.status().is_success() {
         let status = response.status();

@@ -315,6 +315,8 @@ pub fn run() {
             commands::agent::skills::update_agent_memory,
             commands::agent::skills::delete_agent_memory,
             commands::agent::skills::clear_agent_memories,
+            // ══════ 系统检查 ══════
+            commands::system_check::system_check,
         ])
         .run(tauri::generate_context!())
         .expect("启动 Tauri 应用失败——可能是系统资源不足或配置文件损坏");

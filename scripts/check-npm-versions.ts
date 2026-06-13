@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 /**
- * 检测 package.json 中所有依赖的当前版本与 npm registry 最新版本
- * 用法: npx tsx scripts/check-versions.ts
+ * 检测 Node.js/npm 项目依赖的当前版本与最新版本
+ *   - Node.js 工具链 (node/pnpm/npm/tsx)
+ *   - npm 依赖 (package.json)
+ *
+ * 用法: npx tsx scripts/check-npm-versions.ts
  * 可选参数:
  *   --deps    仅检查 dependencies
  *   --dev     仅检查 devDependencies
@@ -34,6 +37,13 @@ interface VersionInfo {
   error?: string
 }
 
+interface ToolchainInfo {
+  node: { version: string; latest: string; license: string }
+  pnpm: { version: string; latest: string; license: string }
+  npm: { version: string; latest: string; license: string }
+  tsx: { version: string; latest: string; license: string }
+}
+
 // ========== 命令行参数解析 ==========
 const args = process.argv.slice(2)
 const onlyDeps = args.includes('--deps')
@@ -51,13 +61,10 @@ const c = {
   yellow: '\x1b[33m',
   blue: '\x1b[34m',
   cyan: '\x1b[36m',
-  magenta: '\x1b[35m',
 }
 
 // ========== 版本比较工具 ==========
-/** 将版本号解析为 [major, minor, patch, pre] */
 function parseSemver(version: string): [number, number, number, string] {
-  // 去除前导 v 和 ^ ~ 等前缀
   const cleaned = version.replace(/^[\^~>=<]+/, '').trim()
   const match = cleaned.match(/^(\d+)\.(\d+)\.(\d+)(?:-(.+))?/)
   if (!match) return [0, 0, 0, cleaned]
@@ -67,15 +74,6 @@ function parseSemver(version: string): [number, number, number, string] {
     parseInt(match[3], 10),
     match[4] || '',
   ]
-}
-
-function compareSemver(a: string, b: string): -1 | 0 | 1 {
-  const [aMaj, aMin, aPat] = parseSemver(a)
-  const [bMaj, bMin, bPat] = parseSemver(b)
-  if (aMaj !== bMaj) return aMaj < bMaj ? -1 : 1
-  if (aMin !== bMin) return aMin < bMin ? -1 : 1
-  if (aPat !== bPat) return aPat < bPat ? -1 : 1
-  return 0
 }
 
 function getStatus(current: string, latest: string): VersionInfo['status'] {
@@ -88,13 +86,6 @@ function getStatus(current: string, latest: string): VersionInfo['status'] {
 }
 
 // ========== Node.js 工具链版本检测 ==========
-interface ToolchainInfo {
-  node: { version: string; latest: string; license: string }
-  pnpm: { version: string; latest: string; license: string }
-  npm: { version: string; latest: string; license: string }
-  tsx: { version: string; latest: string; license: string }
-}
-
 async function getToolchainInfo(): Promise<ToolchainInfo> {
   const run = (cmd: string): string => {
     try {
@@ -119,7 +110,6 @@ async function getToolchainInfo(): Promise<ToolchainInfo> {
   const npmVer = extractVer(npmRaw)
   const tsxVer = extractVer(tsxRaw)
 
-  // 获取最新版本
   let nodeLatest = ''
   let pnpmLatest = ''
   let npmLatest = ''
@@ -139,7 +129,7 @@ async function getToolchainInfo(): Promise<ToolchainInfo> {
     }
   }
 
-  // Node.js 最新 LTS 版本（从 nodejs.org 发布列表）
+  // Node.js 最新 LTS 版本
   try {
     const releases = (await fetchJson(
       'https://nodejs.org/download/release/index.json',
@@ -150,19 +140,19 @@ async function getToolchainInfo(): Promise<ToolchainInfo> {
     }
   } catch { /* ignore */ }
 
-  // pnpm 最新版本（从 npm registry）
+  // pnpm 最新版本
   try {
     const data = await fetchJson('https://registry.npmjs.org/pnpm/latest')
     if (data?.version) pnpmLatest = data.version as string
   } catch { /* ignore */ }
 
-  // npm 最新版本（从 npm registry）
+  // npm 最新版本
   try {
     const data = await fetchJson('https://registry.npmjs.org/npm/latest')
     if (data?.version) npmLatest = data.version as string
   } catch { /* ignore */ }
 
-  // tsx 最新版本（从 npm registry）
+  // tsx 最新版本
   try {
     const data = await fetchJson('https://registry.npmjs.org/tsx/latest')
     if (data?.version) tsxLatest = data.version as string
@@ -181,26 +171,13 @@ async function getToolchainInfo(): Promise<ToolchainInfo> {
   }
 }
 
-// ========== 读取 pnpm-lock.yaml（获取实际安装版本）==========
+// ========== 读取 pnpm-lock.yaml ==========
 function readLockVersions(): Map<string, string> {
   const map = new Map<string, string>()
   try {
     const content = readFileSync(join(ROOT, 'pnpm-lock.yaml'), 'utf-8')
-    // pnpm-lock.yaml 中包的格式: /package-name/specifier_version:
-    // 实际安装版本记录在 snapshots 或 packages 中
-    // 简化方案：解析 specifiers 和 dependencies 的关系
-    const regex = /^  \/(@?[^@]+)@[\d.]+(?:\([\d.]+\))?:/gm
-    const snapshotRegex = /^  \/(@?[^/]+)\/([\d.]+(?:_\w+)?):/gm
-
-    // 尝试从 packages 字段提取
-    let match: RegExpExecArray | null
-    while ((match = regex.exec(content)) !== null) {
-      const name = match[1]
-      // 紧跟着可能有多行，找 resolution 的版本
-    }
-
-    // 更简单的方式：解析 specifiers 部分
     const specRegex = /^\s+['"]?(@?[\w@/.-]+)['"]?:\s+['"]?([\d.]+)['"]?:?$/gm
+    let match: RegExpExecArray | null
     while ((match = specRegex.exec(content)) !== null) {
       map.set(match[1], match[2])
     }
@@ -254,14 +231,12 @@ async function withConcurrency<T, R>(
 
 // ========== 主逻辑 ==========
 async function main() {
-  // 1. 读取 package.json
   const pkgJson: PkgJson = JSON.parse(
     readFileSync(join(ROOT, 'package.json'), 'utf-8'),
   )
 
   const lockVersions = readLockVersions()
 
-  // 2. 收集要检查的依赖
   const entries: { name: string; wanted: string; type: 'dep' | 'dev' }[] = []
 
   if (!onlyDev) {
@@ -276,12 +251,12 @@ async function main() {
   }
 
   if (entries.length === 0) {
-    console.log('没有需要检查的依赖。')
+    console.log('没有需要检查的 npm 依赖。')
     return
   }
 
   console.log(
-    `\n${c.bold}📦 正在检查 ${entries.length} 个依赖的最新版本...${c.reset}\n`,
+    `\n${c.bold}📦 正在检查 ${entries.length} 个 npm 依赖的最新版本...${c.reset}\n`,
   )
 
   // 打印 Node.js 工具链信息
@@ -319,7 +294,7 @@ async function main() {
 
   console.log()
 
-  // 3. 并发获取最新版本
+  // 并发获取最新版本
   const start = Date.now()
   const infos = await withConcurrency(entries, 15, async ({ name, wanted, type }) => {
     const result: VersionInfo = {
@@ -344,7 +319,7 @@ async function main() {
 
   const elapsed = ((Date.now() - start) / 1000).toFixed(1)
 
-  // 4. 筛选
+  // 筛选
   let filtered = infos
   if (majorOnly) {
     filtered = infos.filter(i => i.status === 'major')
@@ -352,7 +327,7 @@ async function main() {
     filtered = infos.filter(i => i.status === 'major' || i.status === 'minor')
   }
 
-  // 5. 输出表格
+  // 输出表格
   const maxNameLen = Math.max(...filtered.map(i => i.name.length), 6)
 
   const header = `${c.bold}${'Name'.padEnd(maxNameLen + 2)} ${'Current'.padEnd(14)} ${'Latest'.padEnd(14)} ${'Type'.padEnd(6)} ${'Status'.padEnd(10)} ${'License'.padEnd(16)}${c.reset}`
@@ -392,11 +367,11 @@ async function main() {
     counts[info.status]++
   }
 
-  // 6. 汇总
+  // 汇总
   console.log('─'.repeat(header.length - c.bold.length * 2 - c.reset.length * 2 + 10 + 21))
   const total = filtered.length
   console.log(
-    `\n${c.bold}总计: ${total}${c.reset} 个包（耗时 ${elapsed}s）`,
+    `\n${c.bold}npm 依赖总计: ${total}${c.reset} 个包（耗时 ${elapsed}s）`,
   )
   console.log(
     `  ${c.green}✅ 最新: ${counts['up-to-date']}${c.reset}  ${c.cyan}📌 补丁: ${counts.patch}${c.reset}  ${c.yellow}⬆️  次版本: ${counts.minor}${c.reset}  ${c.red}🚀 大版本: ${counts.major}${c.reset}  ${c.dim}❌ 出错: ${counts.error}${c.reset}`,
