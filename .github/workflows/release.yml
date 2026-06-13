@@ -3,13 +3,13 @@ name: Build & Release
 on:
   push:
     tags:
-      - 'v*'
+      - 'v1.*'
   workflow_dispatch:
     inputs:
       version:
-        description: '发布版本号 (e.g. 0.1.0)'
+        description: '发布版本号 (e.g. 1.0.0)'
         required: true
-        default: '0.9.4'
+        default: '1.0.0'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
