@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     // ═══════════════════════════════════════════════════
-    // 方案 A：LLDB 启动调试（推荐，可断点所有代码路径）
+    // Rust：LLDB 启动调试 Tauri 桌面应用
     // ═══════════════════════════════════════════════════
     {
       "type": "lldb",
@@ -16,7 +16,6 @@
           "--no-default-features"
         ]
       },
-      // 启动编译产物（Tauri 桌面应用）
       "program": "${workspaceFolder}/src-tauri/target/debug/time-write",
       "args": [],
       "cwd": "${workspaceFolder}",
@@ -25,16 +24,99 @@
       }
     },
     // ═══════════════════════════════════════════════════
-    // 方案 B：Attach 到已运行的 Tauri 进程
-    // 适用场景：先用 pnpm tauri dev 启动，再附加调试器
+    // Python：调试 Agent Server（推荐方式）
+    // 等同于 python -m agent.main，启动 FastAPI + SSE 服务
     // ═══════════════════════════════════════════════════
     {
-      "type": "lldb",
-      "request": "attach",
-      "name": "🦀 Attach 到 Tauri 进程",
-      "pid": "${command:pickProcess}",
-      "program": "${workspaceFolder}/src-tauri/target/debug/time-write",
-      "stopOnEntry": false
+      "type": "debugpy",
+      "request": "launch",
+      "name": "🐍 调试 Agent (python -m agent.main)",
+      "module": "agent.main",
+      "python": "${workspaceFolder}/agent/.venv/bin/python",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      }
+    },
+    // ═══════════════════════════════════════════════════
+    // Python：通过 uvicorn 直接启动调试
+    // 可加 --reload 实现热重载（需额外安装 watchfiles）
+    // ═══════════════════════════════════════════════════
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "name": "🐍 调试 Agent (uvicorn 启动)",
+      "module": "uvicorn",
+      "python": "${workspaceFolder}/agent/.venv/bin/python",
+      "args": [
+        "agent.main:app",
+        "--host", "127.0.0.1",
+        "--port", "9877",
+        "--reload"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      }
+    },
+    // ═══════════════════════════════════════════════════
+    // TypeScript：调试前端 React 应用（Chrome）
+    // 先执行 pnpm dev 启动 Vite 开发服务器，再启动此配置
+    // ═══════════════════════════════════════════════════
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "🟦 调试前端 (Chrome)",
+      "url": "http://localhost:1420",
+      "webRoot": "${workspaceFolder}/src",
+      "sourceMapPathOverrides": {
+        "webpack:///./src/*": "${webRoot}/*"
+      }
+    },
+    // ═══════════════════════════════════════════════════
+    // TypeScript：调试项目脚本（npx tsx）
+    // 启动时提示选择要调试的脚本文件
+    // ═══════════════════════════════════════════════════
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "🟦 调试 TS 脚本 (npx tsx)",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx"],
+      "args": ["${file}"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    // ═══════════════════════════════════════════════════
+    // TypeScript：调试 setup-agent.ts（完整安装）
+    // ═══════════════════════════════════════════════════
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "🟦 调试 setup-agent (完整安装)",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx"],
+      "args": ["scripts/setup-agent.ts"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    // ═══════════════════════════════════════════════════
+    // TypeScript：调试 setup-agent.ts（仅检查）
+    // ═══════════════════════════════════════════════════
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "🟦 调试 setup-agent (仅检查)",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx"],
+      "args": ["scripts/setup-agent.ts", "--check"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
     }
   ]
 }

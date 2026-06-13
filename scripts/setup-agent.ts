@@ -25,6 +25,9 @@ const MODELS_DIR = join(AGENT_DIR, 'models')
 const VENV_DIR = join(AGENT_DIR, '.venv')
 const PYTHON_VERSION_FILE = join(AGENT_DIR, '.python-version')
 
+/** 检测是否在 CI/CD 环境（GitHub Actions 等）中运行 */
+const IS_CI = process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true'
+
 /** 环境检查结果的统一数据结构 */
 interface CheckResult {
   ok: boolean
@@ -300,8 +303,24 @@ function syncRelocatableDependencies(): void {
   })
 }
 
-/** 通过 ollama pull 下载指定的 LLM 模型，失败时不中断流程 */
+/** 通过 ollama pull 下载指定的 LLM 模型，CI 环境或未安装 Ollama 时自动跳过 */
 function pullOllamaModel(modelName: string): void {
+  if (IS_CI) {
+    console.log(`⏭️  CI 环境，跳过 Ollama 模型下载: ${modelName}`)
+    return
+  }
+  // 检测 Ollama 是否已安装
+  let ollamaInstalled = false
+  try {
+    execSync('ollama --version', { stdio: 'pipe' })
+    ollamaInstalled = true
+  } catch {
+    // Ollama 未安装
+  }
+  if (!ollamaInstalled) {
+    console.log(`⏭️  未安装 Ollama，跳过模型下载: ${modelName}（云端 API 不受影响）`)
+    return
+  }
   console.log(`下载 Ollama 模型: ${modelName}...`)
   try {
     execSync(`ollama pull ${modelName}`, { stdio: 'inherit' })
@@ -328,7 +347,8 @@ async function main() {
   const downloadModels = args.includes('--download-models')
 
   console.log('═══════════════════════════════════════')
-  console.log(`  MirageInk Agent 环境初始化 (uv${devMode ? ', 开发模式' : ', 可重定位模式'})`)
+  const modeTag = IS_CI ? 'CI 云编译' : (devMode ? '开发模式' : '可重定位模式')
+  console.log(`  MirageInk Agent 环境初始化 (uv, ${modeTag})`)
   console.log('═══════════════════════════════════════\n')
 
   // 第一步：运行所有环境检查
