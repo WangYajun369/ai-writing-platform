@@ -291,9 +291,13 @@ function syncRelocatableDependencies(): void {
   }
 
   // 6. 在可重定位 venv 中安装 Python 依赖
+  //    注意：不能用 uv pip install --python，因为 pyvenv.cfg 的 home 已被改为相对路径，
+  //    uv 无法解析该路径。改用 venv Python 自带的 pip（通过 ensurepip 引导）安装。
   console.log('📥 安装依赖...')
   const venvPython = pythonInVenv()
-  execSync(`uv pip install --python "${venvPython}" -r "${join(AGENT_DIR, 'requirements.txt')}"`, {
+  // uv venv 默认不安装 pip，先用 ensurepip 引导
+  execSync(`"${venvPython}" -m ensurepip --upgrade`, { stdio: 'inherit' })
+  execSync(`"${venvPython}" -m pip install -r "${join(AGENT_DIR, 'requirements.txt')}"`, {
     cwd: AGENT_DIR,
     stdio: 'inherit',
   })
