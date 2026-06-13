@@ -365,8 +365,21 @@ async function main() {
     pullOllamaModel('qwen2.5:7b') // 默认本地模型：通义千问 2.5 7B
   }
 
+  // 第四步：安装后再次环境复查
+  console.log('\n── 安装后环境复查 ──')
+  const rechecks = [checkUv(), checkPython(), checkOllama(), checkVenv()]
+  let recheckAllOk = true
+  for (const check of rechecks) {
+    console.log(`  ${check.message}`)
+    if (!check.ok) recheckAllOk = false
+  }
+
   console.log('\n═══════════════════════════════════════')
-  console.log('  ✅ Agent 环境初始化完成')
+  if (recheckAllOk) {
+    console.log('  ✅ Agent 环境初始化完成，所有检查通过')
+  } else {
+    console.log('  ⚠️ Agent 环境初始化完成，部分复查未通过，请检查上述输出')
+  }
   console.log('  启动方式:')
   console.log('    uv run --directory agent python main.py')
   console.log('    cd agent && .venv/bin/python main.py')
