@@ -42,6 +42,9 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Setup Python Agent (relocatable venv)
+        run: npx tsx scripts/setup-agent.ts --relocatable
+
       - name: Import Apple Certificate
         if: ${{ env.APPLE_CERTIFICATE_BASE64 != '' }}
         id: import-cert
@@ -132,6 +135,9 @@ jobs:
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Setup Python Agent (relocatable venv)
+        run: npx tsx scripts/setup-agent.ts --relocatable
 
       - name: Build (Windows)
         run: pnpm tauri build
@@ -251,34 +257,7 @@ jobs:
             **macOS**: 下载 `.dmg` 文件，双击打开后将 `TimeWrite.app` 拖入 `Applications` 文件夹。如果提示"已损坏"，请在终端执行：`xattr -cr /Applications/TimeWrite.app`
             **Windows**: 下载 `.exe` 安装包，双击运行安装向导。
 
-            ---
-
-            ### ⚙️ Python 运行时要求（AI Agent 功能必需）
-
-            AI 智能写作 Agent 依赖 Python 3.14+ 运行环境，推荐使用 **uv**（比 pip 快 10-100 倍）：
-
-            **安装 uv**（如未安装）:
-            ```bash
-            # macOS
-            brew install uv
-            # 或 pip install uv
-            # Windows
-            powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-            ```
-
-            **配置 Agent 环境**:
-            ```bash
-            # macOS: 进入 App 资源目录
-            cd /Applications/TimeWrite.app/Contents/Resources/agent
-            # Windows: 进入安装目录
-            cd "%LOCALAPPDATA%\TimeWrite\resources\agent"
-
-            # uv sync 自动创建 .venv 并安装全部依赖（一步完成）
-            uv sync
-            ```
-
-            > 💡 **可选**：如需使用本地模型（离线模式），还需安装 [Ollama](https://ollama.com) 并下载模型：`ollama pull qwen2.5:7b`
-            > 不安装 Python 环境也能使用基础编辑功能，仅 AI 智能写作 Agent 不可用。
+            > 💡 **AI Agent 已内置**：Python 运行环境已随安装包内置，无需额外安装即可使用 AI 智能写作功能。如需使用本地模型（离线模式），需安装 [Ollama](https://ollama.com) 并下载模型：`ollama pull qwen2.5:7b`
           files: |
             artifacts/**/*
             latest.json

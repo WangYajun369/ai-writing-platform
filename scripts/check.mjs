@@ -54,7 +54,7 @@ console.log('\n🔍  MirageInk (TimeWrite) 项目完整性检测\n')
 console.log('='.repeat(50))
 
 // ── 0. TypeScript 类型检查 ──────────────────────────────────
-console.log('\n🔎  [0/9] TypeScript 类型检查')
+console.log('\n🔎  [0/10] TypeScript 类型检查')
 try {
   execSync('npx tsc --noEmit', { cwd: ROOT, stdio: 'pipe', timeout: 120000 })
   console.log('  ✅  tsc --noEmit 通过（0 个类型错误）')
@@ -78,7 +78,7 @@ try {
 }
 
 // ── 1. Rust 编译检查 ────────────────────────────────────────
-console.log('\n🦀  [1/9] Rust 编译检查 (cargo check)')
+console.log('\n🦀  [1/10] Rust 编译检查 (cargo check)')
 if (!cargoAvailable()) {
   console.log('  ⚠️  未检测到 Rust/Cargo 工具链，跳过 Rust 编译检查')
   warnings.push('Rust 工具链未安装，跳过 cargo check')
@@ -107,7 +107,7 @@ if (!cargoAvailable()) {
 }
 
 // ── 2. 根目录配置文件 ──────────────────────────────────────
-console.log('\n📦  [2/9] 根目录配置文件')
+console.log('\n📦  [2/10] 根目录配置文件')
 check('package.json 存在', fileExists('package.json'))
 check('package.json 含 tauri 命令', fileContains('package.json', '"tauri"'))
 check('package.json 含 pnpm 包管理器', fileContains('package.json', '"pnpm"'))
@@ -122,7 +122,7 @@ check('postcss.config.js 不存在（v4 无需 PostCSS）', !fileExists('postcss
 check('pnpm-lock.yaml 存在', fileExists('pnpm-lock.yaml'))
 
 // ── 3. 前端源码核心文件 ────────────────────────────────────
-console.log('\n⚛️   [3/9] 前端源码核心文件 (src/)')
+console.log('\n⚛️   [3/10] 前端源码核心文件 (src/)')
 const coreSrcFiles = [
   'src/main.tsx',
   'src/App.tsx',
@@ -147,7 +147,7 @@ for (const f of coreSrcFiles) check(f, fileExists(f))
 check('plugins/examples/charCounter.ts', fileExists('src/plugins/examples/charCounter.ts'))
 
 // ── 4. 状态管理 ────────────────────────────────────────────
-console.log('\n🗄️   [4/9] 状态管理 (stores/)')
+console.log('\n🗄️   [4/10] 状态管理 (stores/)')
 const storeFiles = [
   'src/stores/appStore.ts',
   'src/stores/appTypes.ts',
@@ -164,7 +164,7 @@ check('uiAtoms 含 Jotai atom', fileContains('src/stores/uiAtoms.ts', "from 'jot
 check('appTypes 含核心类型定义', fileContains('src/stores/appTypes.ts', 'Book', 'Chapter', 'Volume'))
 
 // ── 5. 页面组件 ────────────────────────────────────────────
-console.log('\n📄  [5/9] 页面组件 (pages/)')
+console.log('\n📄  [5/10] 页面组件 (pages/)')
 check('LibraryPage.tsx', fileExists('src/pages/LibraryPage.tsx'))
 check('EditorPage.tsx', fileExists('src/pages/EditorPage.tsx'))
 check('SettingsPage.tsx (settings 路由入口)', fileExists('src/pages/SettingsPage.tsx'))
@@ -172,7 +172,7 @@ check('LibraryPage 含路由导入', fileContains('src/pages/LibraryPage.tsx', '
 check('EditorPage 含 useParams', fileContains('src/pages/EditorPage.tsx', 'useParams'))
 
 // ── 6. 功能组件 ────────────────────────────────────────────
-console.log('\n🧩  [6/9] 功能组件 (components/)')
+console.log('\n🧩  [6/10] 功能组件 (components/)')
 
 // App 初始化 & 通用
 check('ErrorBoundary.tsx', fileExists('src/components/ErrorBoundary.tsx'))
@@ -215,7 +215,7 @@ check('AiSidePanel.tsx', fileExists('src/components/ai/AiSidePanel.tsx'))
 check('AiToolboxPanel.tsx', fileExists('src/components/ai/AiToolboxPanel.tsx'))
 check('MessageBubble.tsx', fileExists('src/components/ai/MessageBubble.tsx'))
 check('RequestDetailModal.tsx', fileExists('src/components/ai/RequestDetailModal.tsx'))
-check('useAiChat 含流式事件监听', fileExists('src/components/ai/useAiChat.ts') && fileContains('src/components/ai/useAiChat.ts', 'ai-stream-chunk'))
+check('useAiChat 含流式事件监听', fileExists('src/components/ai/useAiChat.ts') && fileContains('src/components/ai/useAiChat.ts', 'agent-stream-chunk'))
 
 // 设置页
 check('SettingsPage.tsx (详细设置)', fileExists('src/components/settings/SettingsPage.tsx'))
@@ -238,7 +238,7 @@ check('useResizeHandle.ts', fileExists('src/hooks/useResizeHandle.ts'))
 check('useThemeFontInit.ts', fileExists('src/hooks/useThemeFontInit.ts'))
 
 // ── 7. Rust 后端 ───────────────────────────────────────────
-console.log('\n🦀  [7/9] Rust 后端 (src-tauri/)')
+console.log('\n🦀  [7/10] Rust 后端 (src-tauri/)')
 
 // 根文件
 const rustCore = [
@@ -319,7 +319,7 @@ check('service 层实现业务逻辑', fileContains('src-tauri/src/service/book_
 check('AI 模块含流式聊天 + RAG + 总结', fileContains('src-tauri/src/commands/ai/mod.rs', 'chat', 'embedding', 'summarize'))
 
 // ── 8. 依赖与类型一致性 ─────────────────────────────────────
-console.log('\n📐  [8/9] 依赖与类型一致性')
+console.log('\n📐  [8/10] 依赖与类型一致性')
 let pkgJson
 try {
   pkgJson = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8'))
@@ -372,7 +372,7 @@ check(
 )
 
 // ── 9. GitHub Actions & CI ─────────────────────────────────
-console.log('\n🚀  [9/9] CI/CD (GitHub Actions)')
+console.log('\n🚀  [9/10] CI/CD (GitHub Actions)')
 check('.github/workflows/release.yml 存在', fileExists('.github/workflows/release.yml'))
 check('release.yml 含 Tauri 构建步骤', fileContains('.github/workflows/release.yml', 'tauri', 'build'))
 const issueTemplates = [
@@ -381,6 +381,125 @@ const issueTemplates = [
   '.github/ISSUE_TEMPLATE/config.yml',
 ]
 for (const t of issueTemplates) check(t, fileExists(t))
+
+// ── 10. Agent Python 代码检查 ────────────────────────────────
+console.log('\n🐍  [10/10] Agent Python 代码 (agent/)')
+
+function pythonAvailable() {
+  try {
+    execSync('python3 --version', { cwd: ROOT, stdio: 'pipe', timeout: 5000 })
+    return true
+  } catch {
+    try {
+      execSync('python --version', { cwd: ROOT, stdio: 'pipe', timeout: 5000 })
+      return true
+    } catch { return false }
+  }
+}
+
+function getPythonBin() {
+  try {
+    execSync('python3 --version', { cwd: ROOT, stdio: 'pipe', timeout: 5000 })
+    return 'python3'
+  } catch {
+    return 'python'
+  }
+}
+
+const hasPython = pythonAvailable()
+const pythonBin = hasPython ? getPythonBin() : 'python3'
+
+check('Python 解释器可用', hasPython)
+
+// Agent 核心文件列表
+const agentFiles = [
+  'agent/__init__.py',
+  'agent/main.py',
+  'agent/config.py',
+  'agent/tracer.py',
+  'agent/pyproject.toml',
+  'agent/requirements.txt',
+  'agent/server/__init__.py',
+  'agent/server/routes.py',
+  'agent/server/sse.py',
+  'agent/skills/__init__.py',
+  'agent/skills/engine.py',
+  'agent/skills/prompts.py',
+  'agent/models/__init__.py',
+  'agent/models/router.py',
+  'agent/tools/__init__.py',
+  'agent/tools/db_tools.py',
+  'agent/memory/__init__.py',
+  'agent/memory/store.py',
+  'agent/memory/retriever.py',
+  'agent/memory/summarizer.py',
+]
+
+// 检查所有 Agent 文件存在
+for (const f of agentFiles) check(f, fileExists(f))
+
+// pyproject.toml 依赖检查
+check('pyproject.toml 含 FastAPI + uvicorn', fileContains('agent/pyproject.toml', 'fastapi', 'uvicorn'))
+check('pyproject.toml 含 LangChain 生态', fileContains('agent/pyproject.toml', 'langchain', 'langgraph'))
+check('pyproject.toml 含 pydantic + httpx', fileContains('agent/pyproject.toml', 'pydantic', 'httpx'))
+check('pyproject.toml 含 sse-starlette', fileContains('agent/pyproject.toml', 'sse-starlette'))
+check('requirements.txt 与 pyproject.toml 同步', (() => {
+  try {
+    const pyproject = readFileSync(join(ROOT, 'agent/pyproject.toml'), 'utf-8')
+    const reqs = readFileSync(join(ROOT, 'agent/requirements.txt'), 'utf-8')
+    // 提取 pyproject.toml 中的依赖名
+    const depPattern = /"([\w-]+)==?"/g
+    const pyDeps = new Set([...pyproject.matchAll(depPattern)].map(m => m[1]))
+    const reqDeps = new Set([...reqs.matchAll(depPattern)].map(m => m[1]))
+    // 双向比较
+    const onlyPyproject = [...pyDeps].filter(d => !reqDeps.has(d))
+    const onlyReqs = [...reqDeps].filter(d => !pyDeps.has(d))
+    if (onlyPyproject.length > 0 || onlyReqs.length > 0) {
+      if (onlyPyproject.length) console.log(`     ⚠️  仅在 pyproject.toml 中：${onlyPyproject.join(', ')}`)
+      if (onlyReqs.length) console.log(`     ⚠️  仅在 requirements.txt 中：${onlyReqs.join(', ')}`)
+      return false
+    }
+    return true
+  } catch { return false }
+})())
+
+// __init__.py 导出一致性检查
+check('agent/__init__.py 导出核心组件', fileContains('agent/__init__.py',
+  'AgentConfig', 'SkillType', 'execute_skill_stream', 'MemoryStore', 'tracer'))
+check('agent/server/__init__.py 导出路由', fileContains('agent/server/__init__.py',
+  'register_routes'))
+check('agent/skills/__init__.py 导出 Skill 引擎', fileContains('agent/skills/__init__.py',
+  'execute_skill_stream', 'SKILL_PROMPTS'))
+check('agent/models/__init__.py 导出模型路由', fileContains('agent/models/__init__.py',
+  'get_model_for_skill'))
+check('agent/tools/__init__.py 导出 DB 工具', fileContains('agent/tools/__init__.py',
+  'DB_TOOLS', 'SKILL_TOOLS_MAP'))
+check('agent/memory/__init__.py 导出记忆模块', fileContains('agent/memory/__init__.py',
+  'MemoryStore', 'MemoryRetriever', 'HistorySummarizer'))
+
+// Python 语法编译检查
+check('所有 .py 文件语法正确（py_compile）', (() => {
+  if (!hasPython) {
+    console.log('     ⚠️  未检测到 Python，跳过语法检查')
+    return true  // 当作 warning 级通过
+  }
+  try {
+    const pyFiles = agentFiles.filter(f => f.endsWith('.py'))
+    const fileArgs = pyFiles.map(f => `"${join(ROOT, f)}"`).join(' ')
+    execSync(`${pythonBin} -m py_compile ${fileArgs}`, { cwd: ROOT, stdio: 'pipe', timeout: 30000 })
+    return true
+  } catch (e) {
+    const stderr = e.stderr?.toString() || ''
+    console.log('     ' + stderr.split('\n').filter(l => l.trim()).slice(0, 3).join('\n     '))
+    return false
+  }
+})())
+
+// tracer.py 关键功能检查
+check('tracer.py 含 trace 装饰器', fileContains('agent/tracer.py', 'def trace('))
+check('tracer.py 含 Traced 基类', fileContains('agent/tracer.py', 'class Traced'))
+check('config.py 含 AgentConfig dataclass', fileContains('agent/config.py', 'class AgentConfig'))
+check('config.py 含 ollama 模型配置', fileContains('agent/config.py', 'ollama_base_url'))
 
 // ── 汇总 ────────────────────────────────────────────────────
 console.log('\n' + '='.repeat(50))
@@ -400,8 +519,9 @@ if (failed === 0) {
   console.log('🎉  所有必需检查通过！项目基础代码完整。\n')
   console.log('📋  后续步骤：')
   console.log('   1. pnpm install')
-  console.log('   2. pnpm tauri dev   （需先安装 Rust + Tauri CLI）')
-  console.log('   3. 确保 AI 服务运行（Ollama 或兼容 API）')
+  console.log('   2. pnpm agent:setup   （初始化 Python Agent 环境）')
+  console.log('   3. pnpm tauri dev     （需先安装 Rust + Tauri CLI）')
+  console.log('   4. 确保 AI 服务运行（Ollama 或兼容 API）')
   console.log()
   process.exit(0)
 } else {

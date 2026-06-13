@@ -4,7 +4,7 @@
  * 在光标位于代码块内时显示，允许切换代码块的语言以实现语法高亮。
  */
 import { useState, useEffect, useRef, memo } from 'react'
-import type { Editor } from '@tiptap/core'
+import type { Editor } from '@tiptap/react'
 import { ChevronDownIcon } from 'lucide-react'
 import { TooltipWrap } from './ToolbarBtn'
 import { CODE_LANGUAGES } from './constants'

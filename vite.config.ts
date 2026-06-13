@@ -74,6 +74,8 @@ export default defineConfig(() => ({
      * 仅在调试模式下生成 Source Map 以辅助定位问题
      */
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
+    /** 提高 chunk 大小警告阈值，TipTap 等编辑器库天然较大无法拆分 */
+    chunkSizeWarningLimit: 600,
     /** Rollup 打包选项，用于精细控制输出格式与代码分割 */
     rollupOptions: {
       output: {
@@ -88,6 +90,9 @@ export default defineConfig(() => ({
          * @returns 分割后的 chunk 名称，未匹配时返回 undefined（交由 Vite 自动处理）
          */
         manualChunks(id) {
+          // React 核心库（体积大，变更频率极低，长期缓存收益高）
+          // 精确匹配 react/index.js、react-dom/index.js 等，避免误伤 react-router/react-markdown 等
+          if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || id.includes('node_modules/scheduler/')) return 'react-vendor'
           // TipTap 富文本编辑器核心库（体积较大，变更频率低）
           if (id.includes('@tiptap')) return 'tiptap'
           // Lucide 图标库（图标集合较大）
@@ -102,6 +107,14 @@ export default defineConfig(() => ({
           if (id.includes('date-fns') || id.includes('uuid')) return 'utils'
           // 虚拟滚动库（TanStack Virtual）
           if (id.includes('@tanstack/react-virtual')) return 'virtual'
+          // 代码高亮（lowlight，常配合 TipTap 使用，独立拆出减小 tiptap chunk）
+          if (id.includes('lowlight') || id.includes('highlight.js')) return 'highlight'
+          // KaTeX 数学公式渲染
+          if (id.includes('katex')) return 'katex'
+          // 拖拽库（@dnd-kit）
+          if (id.includes('@dnd-kit')) return 'dnd-kit'
+          // Tauri 插件（与业务逻辑无关，变更频率低）
+          if (id.includes('@tauri-apps')) return 'tauri-vendor'
         },
       },
     },

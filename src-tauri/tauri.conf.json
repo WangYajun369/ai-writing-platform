@@ -48,7 +48,7 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../agent/**/*": "agent/"
+      "../agent/": "agent/"
     },
     "windows": {
       "nsis": {

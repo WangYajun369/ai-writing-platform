@@ -5,7 +5,7 @@
  * gridHover 状态内化到组件内部，不再由父组件管理。
  */
 import { useState, memo } from 'react'
-import type { Editor } from '@tiptap/core'
+import type { Editor } from '@tiptap/react'
 import {
   ArrowUpIcon,
   ArrowDownIcon,

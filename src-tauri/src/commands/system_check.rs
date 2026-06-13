@@ -5,6 +5,7 @@
 //! - Python / Node / Rust 版本
 //! - 安装路径信息
 
+use std::path::Path;
 use std::process::Command;
 
 use serde::Serialize;
@@ -99,27 +100,53 @@ fn detect_os_info() -> (String, String, String) {
     (os_type.to_string(), os_version, arch.to_string())
 }
 
-/// 查找 agent/.venv 虚拟环境中的 Python 解释器
+/// 查找 .venv 虚拟环境中的 Python 解释器
+/// 优先 agent/.venv（打包位置），再项目根目录 .venv（开发备选）
 fn find_venv_python() -> Option<String> {
-    // 与 manager.rs 保持一致：从项目根目录查找 agent/.venv
-    let candidates = vec![
-        std::path::PathBuf::from("agent/.venv/bin/python"),       // 从工作目录
-        std::path::PathBuf::from("../agent/.venv/bin/python"),    // 从 src-tauri
+    // 开发模式：从项目目录查找
+    let dev_candidates = vec![
+        std::path::PathBuf::from("agent/.venv/bin/python"),        // 主位置（打包分发）
+        std::path::PathBuf::from(".venv/bin/python"),              // 项目根目录（开发备选）
+        std::path::PathBuf::from("../agent/.venv/bin/python"),     // 从 src-tauri
+        std::path::PathBuf::from("../.venv/bin/python"),           // 从 src-tauri（开发备选）
     ];
-    for candidate in &candidates {
+    for candidate in &dev_candidates {
         if candidate.exists() {
             return Some(candidate.to_string_lossy().to_string());
         }
     }
-    // 也尝试从可执行文件同目录的 resources 查找（生产环境打包路径）
+    // 也尝试从可执行文件同目录的资源路径查找（生产环境打包路径）
+    // - macOS .app bundle: Contents/Resources/ （exe/../Resources/）
+    // - 非 bundle / Linux / Windows: {exe}同目录下的 resources/
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
             #[cfg(not(target_os = "windows"))]
-            let prod_python = parent.join("resources").join("agent").join(".venv").join("bin").join("python");
+            let candidates = {
+                let mut v: Vec<std::path::PathBuf> = Vec::new();
+                // macOS .app bundle: Contents/Resources/agent/.venv/bin/python
+                if let Some(bundle_parent) = parent.parent() {
+                    v.push(bundle_parent.join("Resources").join("agent").join(".venv").join("bin").join("python"));
+                }
+                // 非 bundle 模式: {exe}/resources/agent/.venv/bin/python
+                v.push(parent.join("resources").join("agent").join(".venv").join("bin").join("python"));
+                // 直接在 {exe} 同目录找 .venv（不太可能但无害）
+                v.push(parent.join(".venv").join("bin").join("python"));
+                v
+            };
             #[cfg(target_os = "windows")]
-            let prod_python = parent.join("resources").join("agent").join(".venv").join("Scripts").join("python.exe");
-            if prod_python.exists() {
-                return Some(prod_python.to_string_lossy().to_string());
+            let candidates = {
+                let mut v: Vec<std::path::PathBuf> = Vec::new();
+                if let Some(bundle_parent) = parent.parent() {
+                    v.push(bundle_parent.join("Resources").join("agent").join(".venv").join("Scripts").join("python.exe"));
+                }
+                v.push(parent.join("resources").join("agent").join(".venv").join("Scripts").join("python.exe"));
+                v.push(parent.join(".venv").join("Scripts").join("python.exe"));
+                v
+            };
+            for prod_python in &candidates {
+                if prod_python.exists() {
+                    return Some(prod_python.to_string_lossy().to_string());
+                }
             }
         }
     }
@@ -131,10 +158,18 @@ fn find_venv_python() -> Option<String> {
 /// 优先级：agent/.venv > PATH 中的 python3 > PATH 中的 python
 fn check_python() -> CheckItem {
     // 优先查找 agent/.venv 虚拟环境（与 manager.rs 启动逻辑一致）
-    if let Some(venv_path) = find_venv_python() {
+    if let Some(venv_path_raw) = find_venv_python() {
+        let venv_path = Path::new(&venv_path_raw)
+            .canonicalize()
+            .map(|p| p.display().to_string())
+            .unwrap_or(venv_path_raw);
         if let Ok(version) = run_cmd(&venv_path, &["--version"]) {
-            let lib_path = run_cmd(&venv_path, &["-c", "import sys; print(sys.prefix)"])
+            let raw = run_cmd(&venv_path, &["-c", "import sys; print(sys.prefix)"])
                 .unwrap_or_else(|_| "无法获取".to_string());
+            let lib_path = Path::new(raw.trim())
+                .canonicalize()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| raw.trim().to_string());
             // 验证 uvicorn 是否可用
             let uvicorn_ok = std::process::Command::new(&venv_path)
                 .arg("-c")
@@ -159,10 +194,18 @@ fn check_python() -> CheckItem {
     // 回退：尝试 PATH 中的 python3 / python
     for python_bin in &["python3", "python"] {
         if let Ok(version) = run_cmd(python_bin, &["--version"]) {
-            let python_path = run_cmd("which", &[python_bin])
+            let raw_python_path = run_cmd("which", &[python_bin])
                 .unwrap_or_else(|_| python_bin.to_string());
-            let lib_path = run_cmd(python_bin, &["-c", "import sys; print(sys.prefix)"])
+            let python_path = Path::new(raw_python_path.trim())
+                .canonicalize()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| raw_python_path.trim().to_string());
+            let raw = run_cmd(python_bin, &["-c", "import sys; print(sys.prefix)"])
                 .unwrap_or_else(|_| "无法获取".to_string());
+            let lib_path = Path::new(raw.trim())
+                .canonicalize()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| raw.trim().to_string());
             return CheckItem {
                 name: "Python".to_string(),
                 value: version,
