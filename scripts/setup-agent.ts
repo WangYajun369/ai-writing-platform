@@ -337,10 +337,18 @@ function copyDirRecursive(src: string, dst: string, excludedNames: Set<string>):
 /**
  * 将 standalone Python 的标准库复制到 venv 的 lib 目录中
  * 排除 site-packages（由 uv pip install 管理）和 __pycache__（缓存文件）
+ *
+ * macOS/Linux: {standaloneBase}/lib/python3.x/  →  .venv/lib/python3.x/
+ * Windows:     {standaloneBase}/Lib/              →  .venv/Lib/
  */
 function copyStdlib(standaloneBase: string, venvDir: string, pythonVer: string): void {
-  const stdlibSrc = join(standaloneBase, 'lib', `python${pythonVer}`)
-  const stdlibDst = join(venvDir, 'lib', `python${pythonVer}`)
+  const isWin = process.platform === 'win32'
+  const stdlibSrc = isWin
+    ? join(standaloneBase, 'Lib')
+    : join(standaloneBase, 'lib', `python${pythonVer}`)
+  const stdlibDst = isWin
+    ? join(venvDir, 'Lib')
+    : join(venvDir, 'lib', `python${pythonVer}`)
   if (!existsSync(stdlibSrc)) {
     console.warn(`⚠️ 标准库不存在: ${stdlibSrc}，跳过复制`)
     return
