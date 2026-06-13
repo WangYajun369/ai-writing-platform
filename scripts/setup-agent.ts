@@ -347,7 +347,7 @@ function copyStdlib(standaloneBase: string, venvDir: string, pythonVer: string):
   }
   console.log('📚 复制 Python 标准库...')
   const before = Date.now()
-  copyDirRecursive(stdlibSrc, stdlibDst, new Set(['site-packages', '__pycache__']))
+  copyDirRecursive(stdlibSrc, stdlibDst, new Set(['site-packages', '__pycache__', 'EXTERNALLY-MANAGED']))
   console.log(`  完成 (${Date.now() - before}ms)`)
 }
 
