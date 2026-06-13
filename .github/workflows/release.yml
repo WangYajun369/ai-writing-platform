@@ -70,6 +70,39 @@ jobs:
             echo "⚠️ 签名身份未在 keychain 中找到，将跳过代码签名"
           fi
 
+      - name: Sign Python Agent binaries
+        if: ${{ env.SIGN_READY == 'true' }}
+        run: |
+          AGENT_VENV="agent/.venv"
+          SIGN_ID="${{ secrets.APPLE_SIGNING_IDENTITY }}"
+
+          echo "🔏 签名 agent/.venv 中的 Python 二进制文件..."
+          echo "   签名身份: $SIGN_ID"
+
+          # 签名 Python 可执行文件
+          if [ -d "$AGENT_VENV/bin" ]; then
+            find "$AGENT_VENV/bin" -type f -perm -100 -print0 | while IFS= read -r -d '' f; do
+              echo "  签名: $f"
+              codesign --force --sign "$SIGN_ID" --options runtime --timestamp "$f" || true
+            done
+          fi
+
+          # 签名 .dylib 动态库（包括 libpython）
+          if [ -d "$AGENT_VENV/lib" ]; then
+            find "$AGENT_VENV/lib" -name "*.dylib" -print0 | while IFS= read -r -d '' f; do
+              echo "  签名: $f"
+              codesign --force --sign "$SIGN_ID" --options runtime --timestamp "$f" || true
+            done
+          fi
+
+          # 签名 Python 包中的 .so 扩展模块
+          find "$AGENT_VENV/lib" -name "*.so" -print0 2>/dev/null | while IFS= read -r -d '' f; do
+            echo "  签名: $f"
+            codesign --force --sign "$SIGN_ID" --options runtime --timestamp "$f" || true
+          done
+
+          echo "✅ Python 二进制签名完成"
+
       - name: Build (macOS ARM64)
         run: |
           if [ "$SIGN_READY" = "true" ]; then

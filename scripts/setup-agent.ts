@@ -157,7 +157,7 @@ function syncRelocatableDependencies(): void {
   console.log(`📦 安装 Python ${pythonVer}+ (python-build-standalone)...`)
 
   // 1. 使用 uv 安装 python-build-standalone（独立可重定位的 Python）
-  execSync(`uv python install '>=${pythonVer}'`, { stdio: 'inherit' })
+  execSync(`uv python install ">=${pythonVer}"`, { stdio: 'inherit' })
 
   // 2. 找到 standalone Python 的安装目录（uv 默认存放位置）
   const uvPythonRoot = process.platform === 'win32'
