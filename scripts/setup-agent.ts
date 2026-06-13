@@ -17,7 +17,7 @@
 import { execSync } from 'child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'fs'
 import { homedir } from 'os'
-import { join, resolve } from 'path'
+import { basename, dirname, join, resolve } from 'path'
 
 const PROJECT_DIR = join(import.meta.dirname, '..')
 const AGENT_DIR = join(PROJECT_DIR, 'agent')
@@ -159,26 +159,66 @@ function syncRelocatableDependencies(): void {
   // 1. 使用 uv 安装 python-build-standalone（独立可重定位的 Python）
   execSync(`uv python install ">=${pythonVer}"`, { stdio: 'inherit' })
 
-  // 2. 找到 standalone Python 的安装目录（uv 默认存放位置）
-  const uvPythonRoot = process.platform === 'win32'
-    ? resolve(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'uv', 'python')
-    : resolve(homedir(), '.local', 'share', 'uv', 'python')
-
-  const entries = readdirSync(uvPythonRoot, { withFileTypes: true }).filter(e => e.isDirectory())
-  const match = entries.find(e => e.name.startsWith(`cpython-${pythonVer}.`))
-  if (!match) {
-    throw new Error(`未找到 standalone Python ${pythonVer}.x，请确认 uv python install 成功`)
-  }
-
+  // 2. 使用 uv python find 定位已安装的 standalone Python
   const isWin = process.platform === 'win32'
-  const standaloneBin = join(uvPythonRoot, match.name, isWin ? '' : 'bin')
-  // 根据实际安装的 Python 版本查找二进制（如 python3.11、python3.14 等）
-  const pythonBinary = isWin ? 'python.exe' : `python${pythonVer}`
-  const standalonePython = join(standaloneBin, pythonBinary)
-  if (!existsSync(standalonePython)) {
-    throw new Error(`找不到 standalone Python: ${standalonePython}`)
+  let standalonePython = ''
+  try {
+    standalonePython = execSync(`uv python find ${pythonVer}`, {
+      encoding: 'utf-8',
+    }).trim()
+  } catch {
+    // uv python find 可能会失败，回退到目录扫描
   }
+
+  // Fallback: 如果 uv python find 失败，扫描可能的安装目录
+  if (!standalonePython || !existsSync(standalonePython)) {
+    const possibleRoots = isWin
+      ? [
+          resolve(homedir(), '.local', 'share', 'uv', 'python'),
+          resolve(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'uv', 'python'),
+        ]
+      : [resolve(homedir(), '.local', 'share', 'uv', 'python')]
+
+    let found = false
+    for (const root of possibleRoots) {
+      if (!existsSync(root)) continue
+      const entries = readdirSync(root, { withFileTypes: true }).filter(e => e.isDirectory())
+      const match = entries.find(e => e.name.startsWith(`cpython-${pythonVer}.`))
+      if (match) {
+        // 尝试 Windows 路径（无 bin/ 子目录）和 Unix 路径（有 bin/ 子目录）
+        for (const binSubdir of isWin ? ['', 'bin'] : ['bin']) {
+          const binDir = join(root, match.name, binSubdir)
+          const binName = isWin ? 'python.exe' : `python${pythonVer}`
+          const candidate = join(binDir, binName)
+          if (existsSync(candidate)) {
+            standalonePython = candidate
+            found = true
+            break
+          }
+        }
+        if (found) break
+      }
+    }
+    if (!found) {
+      throw new Error(`未找到 standalone Python ${pythonVer}.x，请确认 uv python install 成功`)
+    }
+  }
+
   console.log(`🐍 独立 Python: ${standalonePython}`)
+
+  // 推导 standalone 基础目录
+  // python-build-standalone 结构:
+  //   Unix/macOS: <base>/bin/python3.x  → base = dirname(binDir)
+  //   Windows:    <base>/python.exe      → base = dirname(pythonDir)
+  // 智能检测: python 所在目录是否叫 'bin' 或 'Scripts'
+  const pythonBinDir = dirname(standalonePython)
+  const parentDirName = basename(pythonBinDir).toLowerCase()
+  let standaloneBase: string
+  if (parentDirName === 'bin' || parentDirName === 'scripts') {
+    standaloneBase = dirname(pythonBinDir)
+  } else {
+    standaloneBase = pythonBinDir
+  }
 
   // 3. 删除旧 venv（如果存在）
   if (existsSync(VENV_DIR)) {
@@ -193,7 +233,6 @@ function syncRelocatableDependencies(): void {
   // 5. 将 symlink 替换为真实文件 → venv 自包含
   console.log('🔗  替换 symlink 为真实文件...')
   const venvBin = join(VENV_DIR, isWin ? 'Scripts' : 'bin')
-  const standaloneBase = join(uvPythonRoot, match.name)
 
   /** 复制文件并输出日志，跨平台兼容 */
   const doCopy = (src: string, dst: string) => {
