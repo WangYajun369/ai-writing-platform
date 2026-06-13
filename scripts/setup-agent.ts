@@ -274,15 +274,17 @@ function syncRelocatableDependencies(): void {
   }
 
   // 5.5 复制 Python 标准库到 .venv（关键：使 venv 完全自包含）
-  copyStdlib(standaloneBase, VENV_DIR, pythonVer)
-  // 修正 pyvenv.cfg 的 home 路径，使其指向 venv 自身的 bin 目录
-  // 这样 Python 会在 .venv/lib/python3.x/ 中找到刚复制的标准库
+  // Windows: python-build-standalone 的二进制在自身所在目录查找 Lib/，
+  //   由于 python.exe 在 Scripts/ 中，需将标准库存到 Scripts/Lib/
+  // macOS/Linux: Python 通过 pyvenv.cfg home 找到 lib/python3.x/
+  copyStdlib(standaloneBase, VENV_DIR, pythonVer, isWin)
+  // 修正 pyvenv.cfg 的 home 路径
   {
     const cfgPath = join(VENV_DIR, 'pyvenv.cfg')
     const cfgContent = readFileSync(cfgPath, 'utf-8')
-    // macOS/Linux: home=bin → Python 找 bin/../lib/python3.14/ = lib/python3.14/
-    // Windows:     home=.   → Python 找 ./Lib/ = Lib/
-    const newHome = isWin ? '.' : 'bin'
+    // macOS/Linux: home=bin  → Python 找 bin/../lib/python3.14/ = lib/python3.14/
+    // Windows:     home=Scripts → Python 找 Scripts/Lib/ （与 standalone 二进制同目录）
+    const newHome = isWin ? 'Scripts' : 'bin'
     const updated = cfgContent.replace(/^home\s*=.*$/m, `home = ${newHome}`)
     writeFileSync(cfgPath, updated)
     console.log(`  修正 pyvenv.cfg: home = ${newHome}`)
@@ -341,15 +343,15 @@ function copyDirRecursive(src: string, dst: string, excludedNames: Set<string>):
  * 排除 site-packages（由 uv pip install 管理）和 __pycache__（缓存文件）
  *
  * macOS/Linux: {standaloneBase}/lib/python3.x/  →  .venv/lib/python3.x/
- * Windows:     {standaloneBase}/Lib/              →  .venv/Lib/
+ * Windows:     {standaloneBase}/Lib/              →  .venv/Scripts/Lib/
+ *              （python-build-standalone 在 exe 所在目录查找 Lib/，故放 Scripts/ 同目录）
  */
-function copyStdlib(standaloneBase: string, venvDir: string, pythonVer: string): void {
-  const isWin = process.platform === 'win32'
+function copyStdlib(standaloneBase: string, venvDir: string, pythonVer: string, isWin: boolean): void {
   const stdlibSrc = isWin
     ? join(standaloneBase, 'Lib')
     : join(standaloneBase, 'lib', `python${pythonVer}`)
   const stdlibDst = isWin
-    ? join(venvDir, 'Lib')
+    ? join(venvDir, 'Scripts', 'Lib')
     : join(venvDir, 'lib', `python${pythonVer}`)
   if (!existsSync(stdlibSrc)) {
     console.warn(`⚠️ 标准库不存在: ${stdlibSrc}，跳过复制`)
