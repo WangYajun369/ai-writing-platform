@@ -140,6 +140,27 @@ jobs:
           name: python-coverage
           path: agent/coverage.xml
 
+  # ── E2E 测试（WebDriver 多窗口场景，详见 10-测试策略） ──
+  test-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Toolchains
+        uses: ./.github/actions/setup-all
+      - name: Install WebDriver
+        run: |
+          sudo apt-get install -y chromium-chromedriver
+      - name: Build Tauri (CI mode)
+        run: pnpm tauri build --ci --debug
+      - name: Run E2E tests
+        run: pnpm test:e2e -- --reporter=verbose
+      - name: Upload E2E artifacts (screenshots on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: test-results/e2e/
+
   # ── Tauri 构建验证（仅校验编译通过，不签名） ──
   build-check:
     needs: [lint-and-type]
@@ -162,7 +183,7 @@ jobs:
 
   # ── Quality Gate ──
   quality-gate:
-    needs: [test-rust, test-frontend, test-python, security-audit, build-check]
+    needs: [test-rust, test-frontend, test-python, test-e2e, security-audit, build-check]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -589,6 +610,8 @@ exe = EXE(
 
 ### 11.5.2 Rust 侧 Agent 路径解析
 
+> **Bridge Auth Token 环境注入**：启动 Python Agent 时，Rust 侧通过环境变量 `MIRAGEINK_BRIDGE_AUTH_TOKEN` 将随机生成的认证 Token 注入子进程。Python 端必须在每次 Bridge HTTP 回调中携带 `X-Auth-Token` header（详见 05 §5.4.3 和 06 §6.4.4）。
+
 ```rust
 // python/manager.rs
 impl PythonAgentManager {
@@ -807,7 +830,7 @@ default = ["custom-protocol"]
 production = ["sqlcipher"]     # 启用数据库加密
 
 # 安全功能
-sqlcipher = []                 # SQLite AES-256 加密
+sqlcipher = []                 # SQLite AES-256 全库加密 + PBKDF2 密钥派生（详见 06）
 
 # 开发者工具
 devtools = []                  # 额外的调试端点
@@ -956,8 +979,9 @@ async function verifyUpdateManifest() {
 | Rust Unit Tests | 3 min | 1 min (cached + nextest) |
 | Frontend Tests | 2 min | 30s |
 | Python Tests | 1 min | 20s |
+| E2E Tests (WebDriver) | 4 min | 2 min (headless + parallel) |
 | PR Build Check (3 OS) | 15 min | 8 min (cached) |
-| **PR 总时间** | **~15 min** | **~8 min** |
+| **PR 总时间** | **~22 min** | **~12 min** |
 | Release Build (3 OS) | 45 min | 25 min (sccache + mold) |
 | macOS Sign + Notarize | 5 min | 5 min (Apple service) |
 | **Release 总时间** | **~50 min** | **~30 min** |
