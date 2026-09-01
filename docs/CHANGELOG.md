@@ -1,5 +1,22 @@
 # 更新日志
 
+## v1.0.1 (2026-09-01)
+
+### 新增
+- **表格合并/拆分单元格**：新增 `table-utils.ts`（`canMergeCells` / `hasSplittableCell` 检测）与 `TablePopover` 合并/拆分操作区，按选区可用性自动禁用按钮
+- **标题按钮合并为下拉菜单**：新增 `HeadingSelect` 组件，一级~四级标题统一为下拉选择，菜单项以字号体现层级，Portal 渲染避免被裁剪
+
+### 修复
+- 修复窗口缩窄时头部布局变形：顶栏设置最小宽度 `min-w-240`，各按钮与文字 `shrink-0`，窗口最小宽度 800 → 960
+- 修复表格列宽调整把手不可用：`th/td` 增加 `position: relative`，修复 `column-resize-handle` 定位错乱，优化拖拽反馈
+- 修复工具栏弹窗与提示被 overflow 容器裁剪遮挡：新增 `useAnchorPosition` 锚点定位 hook，Tooltip / 表格 / 颜色 / 代码语言弹窗统一 Portal 化
+
+### 优化
+- 首页移除列表视图，仅保留网格模式（`LibraryPage` / `BookCard` 删除 viewMode 分支）
+- 适配 Tailwind CSS v4 类名规范：`bg-gradient-to-*` → `bg-linear-to-*`、`flex-shrink-0` → `shrink-0`、`z-[60]` → `z-60`，base.css 增加 `@reference` 声明
+- 删除 `tmp/` 历史架构草案文档（RTK/MVVM 旧设想已被 `docs/` 权威文档取代）
+- 宣传页同步 v1.0.0 并新增 Agent 智能体展示
+
 ## v1.0.0 (2026-08-31)
 
 > 里程碑版本：引入 Python Agent 自动化写作子系统，架构升级为三进程模型；同步完成首轮安全加固（关闭 5 项 P0/P1 安全问题，详见 [优化报告](meta/optimization-report) 问题 7-11）。
