@@ -65,6 +65,7 @@ import { TablePopover } from './toolbar/TablePopover'
 import { CodeLanguageSelect } from './toolbar/CodeLanguageSelect'
 import { HeadingSelect } from './toolbar/HeadingSelect'
 import { canMergeCells, hasSplittableCell } from './toolbar/table-utils'
+import { isEditorUsable } from '@/lib/editor-guard'
 
 /**
  * 统一的窗口开关处理函数
@@ -139,6 +140,9 @@ export default function EditorToolbar() {
   const currentChapter = useCurrentChapter()
   const { fontSize, setFontSize } = useAppStore()
   const editor = useAtomValue(editorInstanceAtom)
+  // StrictMode 下编辑器可能已被销毁（commandManager 为 null），
+  // 渲染期所有 editor 调用统一走安全引用，避免调用已销毁实例崩溃
+  const usableEditor = isEditorUsable(editor) ? editor : null
 
   // --- 颜色选择器 ---
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
@@ -160,8 +164,11 @@ export default function EditorToolbar() {
 
   // 监听编辑器选区变化，实时更新表格状态（isInTable / 可合并 / 可拆分）
   useEffect(() => {
-    if (!editor) return
+    if (!editor || editor.isDestroyed) return
     const updateTableState = () => {
+      // StrictMode 下编辑器可能已被销毁（commandManager 为 null），
+      // 此时调用 isActive / can() 会抛异常，需跳过
+      if (editor.isDestroyed) return
       setIsInTable(editor.isActive('table'))
       setCanMerge(canMergeCells(editor))
       setCanSplit(hasSplittableCell(editor))
@@ -177,12 +184,12 @@ export default function EditorToolbar() {
 
   /** 打开/关闭颜色选择器，保存当前选区 */
   const handleToggleColorPicker = useCallback(() => {
-    if (!colorPickerOpen && editor) {
-      const { from, to } = editor.state.selection
+    if (!colorPickerOpen && usableEditor) {
+      const { from, to } = usableEditor.state.selection
       savedColorTargetRef.current = { from, to }
     }
     setColorPickerOpen((v) => !v)
-  }, [colorPickerOpen, editor])
+  }, [colorPickerOpen, usableEditor])
 
   // 点击外部关闭颜色/表格选择器
   useEffect(() => {
@@ -201,7 +208,7 @@ export default function EditorToolbar() {
 
   /** 插入图片（压缩后以 Base64 内嵌，确保导出/导入自包含） */
   const handleInsertImage = useCallback(async () => {
-    if (!editor) return
+    if (!usableEditor) return
     try {
       const selected = await open({
         title: '选择图片',
@@ -209,16 +216,18 @@ export default function EditorToolbar() {
         filters: [{ name: '图片文件', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'] }],
       })
       if (!selected) return
+      // await 期间编辑器可能被销毁，重新校验
+      if (!isEditorUsable(usableEditor)) return
       const dataUrl = await processEditorImage(selected as string)
-      editor.chain().focus().setImage({ src: dataUrl }).run()
+      usableEditor.chain().focus().setImage({ src: dataUrl }).run()
     } catch (err) {
       console.error('插入图片失败', err)
     }
-  }, [editor])
+  }, [usableEditor])
 
   /** 裁切插入图片：选择 → 裁剪 → 压缩 → 插入 */
   const handleInsertCroppedImage = useCallback(async () => {
-    if (!editor) return
+    if (!usableEditor) return
     try {
       const selected = await open({
         title: '选择图片',
@@ -231,21 +240,23 @@ export default function EditorToolbar() {
     } catch (err) {
       console.error('选择图片失败', err)
     }
-  }, [editor])
+  }, [usableEditor])
 
   /** 裁剪确认 */
   const handleCropperConfirm = useCallback(async (crop: { x: number; y: number; width: number; height: number }) => {
-    if (!editor || !cropperFilePath) return
+    if (!usableEditor || !cropperFilePath) return
     try {
       const dataUrl = await processCroppedEditorImage(cropperFilePath, crop)
-      editor.chain().focus().setImage({ src: dataUrl }).run()
+      // await 期间编辑器可能被销毁，重新校验
+      if (!isEditorUsable(usableEditor)) return
+      usableEditor.chain().focus().setImage({ src: dataUrl }).run()
     } catch (err) {
       console.error('裁剪图片失败', err)
     } finally {
       setCropperOpen(false)
       setCropperFilePath('')
     }
-  }, [editor, cropperFilePath])
+  }, [usableEditor, cropperFilePath])
 
   // ----- 窗口切换（使用统一的 toggleWindow）-----
 
@@ -393,12 +404,12 @@ export default function EditorToolbar() {
 
       {/* 代码块 */}
       <ToolbarBtn
-        active={editor?.isActive('codeBlock') ?? false}
-        onClick={() => editor?.chain().focus().toggleCodeBlock().run()}
+        active={usableEditor?.isActive('codeBlock') ?? false}
+        onClick={() => usableEditor?.chain().focus().toggleCodeBlock().run()}
         title="代码块"
         icon={<Code2Icon className="w-4 h-4" />}
       />
-      {(editor?.isActive('codeBlock') ?? false) && <CodeLanguageSelect editor={editor} />}
+      {(usableEditor?.isActive('codeBlock') ?? false) && <CodeLanguageSelect editor={usableEditor} />}
 
       {/* 表格 */}
       <div ref={tableAnchorRef} className="relative flex items-center gap-1 shrink-0">
@@ -413,7 +424,7 @@ export default function EditorToolbar() {
         />
         {tablePickerOpen && (
           <TablePopover
-            editor={editor}
+            editor={usableEditor}
             onClose={() => setTablePickerOpen(false)}
             canMergeCells={canMerge}
             canSplitCell={canSplit}
@@ -429,7 +440,7 @@ export default function EditorToolbar() {
             {canMerge && (
               <TooltipWrap title="合并选中的单元格">
                 <button
-                  onClick={() => editor?.chain().focus().mergeCells().run()}
+                  onClick={() => usableEditor?.chain().focus().mergeCells().run()}
                   className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors shrink-0 whitespace-nowrap"
                 >
                   <TableCellsMergeIcon className="w-3 h-3" />
@@ -440,7 +451,7 @@ export default function EditorToolbar() {
             {canSplit && (
               <TooltipWrap title="拆分当前单元格">
                 <button
-                  onClick={() => editor?.chain().focus().splitCell().run()}
+                  onClick={() => usableEditor?.chain().focus().splitCell().run()}
                   className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors shrink-0 whitespace-nowrap"
                 >
                   <TableCellsSplitIcon className="w-3 h-3" />
@@ -450,7 +461,7 @@ export default function EditorToolbar() {
             )}
             <TooltipWrap title="删除当前行">
               <button
-                onClick={() => editor?.chain().focus().deleteRow().run()}
+                onClick={() => usableEditor?.chain().focus().deleteRow().run()}
                 className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors shrink-0 whitespace-nowrap"
               >
                 <MinusIcon className="w-3 h-3" />
@@ -459,7 +470,7 @@ export default function EditorToolbar() {
             </TooltipWrap>
             <TooltipWrap title="删除当前列">
               <button
-                onClick={() => editor?.chain().focus().deleteColumn().run()}
+                onClick={() => usableEditor?.chain().focus().deleteColumn().run()}
                 className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors shrink-0 whitespace-nowrap"
               >
                 <MinusIcon className="w-3 h-3" />
@@ -468,7 +479,7 @@ export default function EditorToolbar() {
             </TooltipWrap>
             <TooltipWrap title="删除整个表格">
               <button
-                onClick={() => editor?.chain().focus().deleteTable().run()}
+                onClick={() => usableEditor?.chain().focus().deleteTable().run()}
                 className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors shrink-0 whitespace-nowrap"
               >
                 <Trash2Icon className="w-3 h-3" />
@@ -483,8 +494,8 @@ export default function EditorToolbar() {
 
       {/* 加粗 */}
       <ToolbarBtn
-        active={editor?.isActive('bold') ?? false}
-        onClick={() => editor?.chain().focus().toggleBold().run()}
+        active={usableEditor?.isActive('bold') ?? false}
+        onClick={() => usableEditor?.chain().focus().toggleBold().run()}
         title="加粗"
         icon={<BoldIcon className="w-4 h-4" />}
       />
@@ -499,18 +510,18 @@ export default function EditorToolbar() {
         />
         {colorPickerOpen && (
           <ColorPickerPopover
-            currentColor={editor?.getAttributes('textStyle').color ?? null}
+            currentColor={usableEditor?.getAttributes('textStyle').color ?? null}
             onSelectColor={(color) => {
-              if (editor) {
+              if (usableEditor) {
                 const target = savedColorTargetRef.current
                 if (target && target.from !== target.to) {
-                  editor.commands.setTextSelection({ from: target.from, to: target.to })
+                  usableEditor.commands.setTextSelection({ from: target.from, to: target.to })
                 }
                 savedColorTargetRef.current = null
                 if (color) {
-                  editor.chain().focus().setColor(color).run()
+                  usableEditor.chain().focus().setColor(color).run()
                 } else {
-                  editor.chain().focus().unsetColor().run()
+                  usableEditor.chain().focus().unsetColor().run()
                 }
               }
               setColorPickerOpen(false)
@@ -524,26 +535,26 @@ export default function EditorToolbar() {
       <div className="w-px h-5 bg-border mx-1 shrink-0" />
 
       {/* 标题（一级~四级合并为下拉菜单） */}
-      <HeadingSelect editor={editor} />
+      <HeadingSelect editor={usableEditor} />
 
       <div className="w-px h-5 bg-border mx-1 shrink-0" />
 
       {/* 列表 */}
       <ToolbarBtn
-        active={editor?.isActive('bulletList') ?? false}
-        onClick={() => editor?.chain().focus().toggleBulletList().run()}
+        active={usableEditor?.isActive('bulletList') ?? false}
+        onClick={() => usableEditor?.chain().focus().toggleBulletList().run()}
         title="无序列表"
         icon={<ListIcon className="w-4 h-4" />}
       />
       <ToolbarBtn
-        active={editor?.isActive('orderedList') ?? false}
-        onClick={() => editor?.chain().focus().toggleOrderedList().run()}
+        active={usableEditor?.isActive('orderedList') ?? false}
+        onClick={() => usableEditor?.chain().focus().toggleOrderedList().run()}
         title="有序列表"
         icon={<ListOrderedIcon className="w-4 h-4" />}
       />
       <ToolbarBtn
-        active={editor?.isActive('taskList') ?? false}
-        onClick={() => editor?.chain().focus().toggleTaskList().run()}
+        active={usableEditor?.isActive('taskList') ?? false}
+        onClick={() => usableEditor?.chain().focus().toggleTaskList().run()}
         title="待办事项"
         icon={<ListTodoIcon className="w-4 h-4" />}
       />

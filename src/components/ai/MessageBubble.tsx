@@ -8,6 +8,7 @@ import { Loader2Icon, ClipboardPasteIcon, InfoIcon, Trash2Icon, SettingsIcon, Ch
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { cn, markdownToHtml } from '@/lib/utils'
+import { isEditorUsable } from '@/lib/editor-guard'
 import { editorInstanceAtom, worldWindowOpenAtom } from '@/stores/uiAtoms'
 import { windowApi } from '@/lib/tauri-bridge'
 import type { AiMessage, ChatRequestPayload } from '@/types'
@@ -67,7 +68,8 @@ export const MessageBubble = memo(function MessageBubble({ message, onDelete, on
   const isLoading = message.loading && !message.content && !hasThinking && !isSummarizing
 
   const handleInsertToEditor = useCallback(() => {
-    if (!editor || !editor.isEditable || !message.content) return
+    // 已销毁的编辑器实例（StrictMode）不可调用
+    if (!isEditorUsable(editor) || !editor.isEditable || !message.content) return
 
     const contentHash = simpleHash(message.content)
     const now = Date.now()
@@ -99,6 +101,7 @@ export const MessageBubble = memo(function MessageBubble({ message, onDelete, on
     } catch (err) {
       console.error('插入编辑器失败:', err)
       // 降级处理：直接插入原始内容
+      if (!isEditorUsable(editor)) return
       try {
         editor.chain().focus().insertContent(`<p>${message.content}</p>`).run()
       } catch {

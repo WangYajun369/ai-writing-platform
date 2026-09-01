@@ -21,6 +21,7 @@ import {
   TableCellsSplitIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils.ts'
+import { isEditorUsable } from '@/lib/editor-guard.ts'
 import { useAnchorPosition } from './useAnchorPosition'
 
 const MAX_ROWS = 6
@@ -48,11 +49,13 @@ export const TablePopover = memo(function TablePopover({
   popoverRef,
 }: TablePopoverProps) {
   const [gridHover, setGridHover] = useState({ rows: 3, cols: 3 })
-  const isInTable = editor?.isActive('table') ?? false
+  // 已销毁的编辑器实例调用 isActive 会抛异常，需先校验
+  const usableEditor = isEditorUsable(editor) ? editor : null
+  const isInTable = usableEditor?.isActive('table') ?? false
   const pos = useAnchorPosition(anchorRef)
 
   function handleInsertTable() {
-    editor
+    usableEditor
       ?.chain()
       .focus()
       .insertTable({ rows: gridHover.rows, cols: gridHover.cols, withHeaderRow: true })
@@ -78,7 +81,7 @@ export const TablePopover = memo(function TablePopover({
             <span className="text-xs text-muted-foreground w-8">行：</span>
             <button
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => editor?.chain().focus().addRowBefore().run()}
+              onClick={() => usableEditor?.chain().focus().addRowBefore().run()}
               className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-muted transition-colors"
               title="在上方插入行"
             >
@@ -87,7 +90,7 @@ export const TablePopover = memo(function TablePopover({
             </button>
             <button
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => editor?.chain().focus().addRowAfter().run()}
+              onClick={() => usableEditor?.chain().focus().addRowAfter().run()}
               className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-muted transition-colors"
               title="在下方插入行"
             >
@@ -100,7 +103,7 @@ export const TablePopover = memo(function TablePopover({
             <span className="text-xs text-muted-foreground w-8">列：</span>
             <button
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => editor?.chain().focus().addColumnBefore().run()}
+              onClick={() => usableEditor?.chain().focus().addColumnBefore().run()}
               className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-muted transition-colors"
               title="在左侧插入列"
             >
@@ -109,7 +112,7 @@ export const TablePopover = memo(function TablePopover({
             </button>
             <button
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => editor?.chain().focus().addColumnAfter().run()}
+              onClick={() => usableEditor?.chain().focus().addColumnAfter().run()}
               className="flex items-center gap-1 px-2 py-1 text-xs rounded hover:bg-muted transition-colors"
               title="在右侧插入列"
             >
@@ -128,7 +131,7 @@ export const TablePopover = memo(function TablePopover({
           <div className="flex items-center gap-1 mb-2">
             <button
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => editor?.chain().focus().mergeCells().run()}
+              onClick={() => usableEditor?.chain().focus().mergeCells().run()}
               disabled={!canMergeCells}
               className={cn(
                 'flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors',
@@ -143,7 +146,7 @@ export const TablePopover = memo(function TablePopover({
             </button>
             <button
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => editor?.chain().focus().splitCell().run()}
+              onClick={() => usableEditor?.chain().focus().splitCell().run()}
               disabled={!canSplitCell}
               className={cn(
                 'flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors',

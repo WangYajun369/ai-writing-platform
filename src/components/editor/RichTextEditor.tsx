@@ -39,6 +39,7 @@ import { useAppStore,  useCurrentChapter, getEditorState } from '@/stores/appSto
 import { chapterApi } from '@/lib/tauri-bridge.ts'
 import { countWordsFromHtml, calcBookWordCount } from '@/lib/utils.ts'
 import { toast } from '@/lib/toast.ts'
+import { isEditorUsable } from '@/lib/editor-guard.ts'
 
 const AUTOSAVE_DEBOUNCE_MS = 300
 const AUTOSAVE_INTERVAL_MS = 3 * 60 * 1000 // 3 分钟
@@ -159,7 +160,9 @@ export default function RichTextEditor() {
   })
   // 同步 editor 实例到 atom，供工具栏等外部组件使用
   useEffect(() => {
-    setEditorInstance(editor)
+    // StrictMode 下编辑器可能已被销毁（commandManager 为 null），
+    // 此时不能把已销毁实例暴露给外部组件，需置为 null
+    setEditorInstance(isEditorUsable(editor) ? editor : null)
     return () => setEditorInstance(null)
   }, [editor, setEditorInstance])
   // 当切换章节时加载并设置内容
@@ -170,7 +173,8 @@ export default function RichTextEditor() {
       try {
         // list_chapters 不返回 contentHtml，需要单独请求
         const html = await chapterApi.getContent(currentChapter.id)
-        if (!cancelled) {
+        // await 期间组件可能已卸载或编辑器已被销毁（StrictMode）
+        if (!cancelled && isEditorUsable(editor)) {
           const current = editor.getHTML()
           const incoming = html || '<p></p>'
           if (current !== incoming) {
@@ -184,6 +188,8 @@ export default function RichTextEditor() {
           if (savedState && savedState.chapterId === currentChapter.id && !positionRestoredRef.current) {
             // 延迟恢复，等 DOM 渲染完成
             requestAnimationFrame(() => {
+              // rAF 回调执行时编辑器可能已被销毁（StrictMode），需再次校验
+              if (!isEditorUsable(editor)) return
               // 恢复滚动位置
               if (savedState.scrollTop > 0 && editorScrollRef.current) {
                 editorScrollRef.current.scrollTop = savedState.scrollTop
@@ -222,8 +228,10 @@ export default function RichTextEditor() {
 
   // 定时自动保存（3 分钟）
   useEffect(() => {
-    if (!editor) return
+    if (!isEditorUsable(editor)) return
     const timer = setInterval(() => {
+      // 定时器回调执行时编辑器可能已被销毁（StrictMode）
+      if (!isEditorUsable(editor)) return
       const html = editor.getHTML()
       void saveContent(html)
     }, AUTOSAVE_INTERVAL_MS)
@@ -253,7 +261,8 @@ export default function RichTextEditor() {
     const handleScroll = () => {
       const top = scrollEl.scrollTop
       setScrollPosition(top)
-      const sel = editor?.state.selection
+      // 编辑器可能已被销毁，读取 state 前需校验
+      const sel = isEditorUsable(editor) ? editor.state.selection : null
       const cursorPos = sel ? { from: sel.from, to: sel.to } : null
       setCursorPosition(cursorPos)
       const ch = currentChapterRef.current
@@ -265,8 +274,9 @@ export default function RichTextEditor() {
 
   // 跟踪光标/选区变化
   useEffect(() => {
-    if (!editor || !currentChapter) return
+    if (!isEditorUsable(editor) || !currentChapter) return
     const handleSelectionUpdate = () => {
+      if (!isEditorUsable(editor)) return
       const { from, to } = editor.state.selection
       setCursorPosition({ from, to })
       const scrollTop = editorScrollRef.current?.scrollTop ?? 0
@@ -287,7 +297,8 @@ export default function RichTextEditor() {
       clearTimeout(saveEditorStateTimerRef.current)
       if (!bookId || !chapterId) return
       const scrollTop = editorScrollRef.current?.scrollTop ?? 0
-      const sel = editor?.state.selection
+      // 卸载时编辑器可能已被销毁，读取 state 前需校验
+      const sel = isEditorUsable(editor) ? editor.state.selection : null
       const cursorPos = sel ? { from: sel.from, to: sel.to } : null
       saveEditorStateRef.current(bookId, chapterId, scrollTop, cursorPos)
     }
@@ -300,10 +311,12 @@ export default function RichTextEditor() {
 
   // Ctrl+S / Cmd+S 手动保存快捷键
   useEffect(() => {
-    if (!editor) return
+    if (!isEditorUsable(editor)) return
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault()
+        // 快捷键触发时编辑器可能已被销毁（StrictMode）
+        if (!isEditorUsable(editor)) return
         const html = editor.getHTML()
         console.log('[手动保存] Ctrl+S 触发')
         saveContent(html)

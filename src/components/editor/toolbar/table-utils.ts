@@ -2,6 +2,7 @@
  * 表格单元格工具函数（合并 / 拆分可用性检测）
  */
 import type { Editor } from '@tiptap/react'
+import { isEditorUsable } from '@/lib/editor-guard'
 
 /**
  * 判断当前选区是否可以合并单元格。
@@ -10,7 +11,8 @@ import type { Editor } from '@tiptap/react'
  * `editor.can().mergeCells()` 才返回 true。
  */
 export function canMergeCells(editor: Editor | null): boolean {
-  if (!editor) return false
+  // 已销毁的实例 commandManager 为 null，调用 can() 会抛异常
+  if (!isEditorUsable(editor)) return false
   return editor.can().mergeCells()
 }
 
@@ -21,7 +23,7 @@ export function canMergeCells(editor: Editor | null): boolean {
  * 通过编辑器的 DOM 映射定位当前光标所在 td/th 元素并读取其属性。
  */
 export function hasSplittableCell(editor: Editor | null): boolean {
-  if (!editor) return false
+  if (!isEditorUsable(editor)) return false
   const { from } = editor.state.selection
   const domNode = editor.view.domAtPos(from).node
   // 光标可能落在文本节点上，需上溯到元素节点
