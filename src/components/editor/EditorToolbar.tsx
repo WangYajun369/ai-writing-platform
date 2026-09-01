@@ -35,6 +35,8 @@ import {
   BoldIcon,
   PaletteIcon,
   TableIcon,
+  TableCellsMergeIcon,
+  TableCellsSplitIcon,
   Trash2Icon,
   ListIcon,
   ListOrderedIcon,
@@ -64,6 +66,7 @@ import { SaveIndicator } from './toolbar/SaveIndicator'
 import { ColorPickerPopover } from './toolbar/ColorPickerPopover'
 import { TablePopover } from './toolbar/TablePopover'
 import { CodeLanguageSelect } from './toolbar/CodeLanguageSelect'
+import { canMergeCells, hasSplittableCell } from './toolbar/table-utils'
 
 /**
  * 统一的窗口开关处理函数
@@ -148,15 +151,21 @@ export default function EditorToolbar() {
   const [tablePickerOpen, setTablePickerOpen] = useState(false)
   const tablePickerRef = useRef<HTMLDivElement>(null)
   const [isInTable, setIsInTable] = useState(false)
+  const [canMerge, setCanMerge] = useState(false)
+  const [canSplit, setCanSplit] = useState(false)
 
   // --- 图片裁剪 ---
   const [cropperOpen, setCropperOpen] = useState(false)
   const [cropperFilePath, setCropperFilePath] = useState('')
 
-  // 监听编辑器选区变化，实时更新 isInTable 状态
+  // 监听编辑器选区变化，实时更新表格状态（isInTable / 可合并 / 可拆分）
   useEffect(() => {
     if (!editor) return
-    const updateTableState = () => setIsInTable(editor.isActive('table'))
+    const updateTableState = () => {
+      setIsInTable(editor.isActive('table'))
+      setCanMerge(canMergeCells(editor))
+      setCanSplit(hasSplittableCell(editor))
+    }
     updateTableState()
     editor.on('selectionUpdate', updateTableState)
     editor.on('transaction', updateTableState)
@@ -407,6 +416,8 @@ export default function EditorToolbar() {
             ref={tablePickerRef}
             editor={editor}
             onClose={() => setTablePickerOpen(false)}
+            canMergeCells={canMerge}
+            canSplitCell={canSplit}
           />
         )}
 
@@ -414,6 +425,28 @@ export default function EditorToolbar() {
         {isInTable && !tablePickerOpen && (
           <>
             <span className="w-px h-4 bg-border mx-0.5 shrink-0" />
+            {canMerge && (
+              <TooltipWrap title="合并选中的单元格">
+                <button
+                  onClick={() => editor?.chain().focus().mergeCells().run()}
+                  className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors shrink-0 whitespace-nowrap"
+                >
+                  <TableCellsMergeIcon className="w-3 h-3" />
+                  <span>合并</span>
+                </button>
+              </TooltipWrap>
+            )}
+            {canSplit && (
+              <TooltipWrap title="拆分当前单元格">
+                <button
+                  onClick={() => editor?.chain().focus().splitCell().run()}
+                  className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors shrink-0 whitespace-nowrap"
+                >
+                  <TableCellsSplitIcon className="w-3 h-3" />
+                  <span>拆分</span>
+                </button>
+              </TooltipWrap>
+            )}
             <TooltipWrap title="删除当前行">
               <button
                 onClick={() => editor?.chain().focus().deleteRow().run()}

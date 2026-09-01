@@ -1,8 +1,9 @@
 /**
  * 表格操作弹窗
  *
- * 提供表格网格尺寸选择器和行/列添加操作。
+ * 提供表格网格尺寸选择器、行/列添加操作，以及合并/拆分单元格操作。
  * gridHover 状态内化到组件内部，不再由父组件管理。
+ * 合并/拆分的可用性由父组件（EditorToolbar）计算后通过 props 传入。
  */
 import { useState, memo } from 'react'
 import type { Editor } from '@tiptap/react'
@@ -12,6 +13,8 @@ import {
   ArrowLeftToLineIcon,
   ArrowRightToLineIcon,
   PlusIcon,
+  TableCellsMergeIcon,
+  TableCellsSplitIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils.ts'
 
@@ -21,11 +24,17 @@ const MAX_COLS = 6
 interface TablePopoverProps {
   editor: Editor | null
   onClose: () => void
+  /** 当前是否选中了多个单元格，可执行合并 */
+  canMergeCells?: boolean
+  /** 当前单元格是否由合并产生（colspan/rowspan > 1），可执行拆分 */
+  canSplitCell?: boolean
 }
 
 export const TablePopover = memo(function TablePopover({
   editor,
   onClose,
+  canMergeCells = false,
+  canSplitCell = false,
   ref,
 }: TablePopoverProps & { ref: React.Ref<HTMLDivElement> }) {
   const [gridHover, setGridHover] = useState({ rows: 3, cols: 3 })
@@ -98,6 +107,44 @@ export const TablePopover = memo(function TablePopover({
           </div>
 
           <div className="h-px bg-border my-2" />
+
+          {/* --- 合并 / 拆分单元格 --- */}
+          <span className="text-xs font-medium text-muted-foreground block mb-1.5">合并 / 拆分单元格</span>
+          <p className="text-[11px] leading-snug text-muted-foreground/70 mb-2">
+            合并：先拖动鼠标选中相邻的多个单元格
+          </p>
+          <div className="flex items-center gap-1 mb-2">
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => editor?.chain().focus().mergeCells().run()}
+              disabled={!canMergeCells}
+              className={cn(
+                'flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors',
+                canMergeCells
+                  ? 'hover:bg-muted'
+                  : 'text-muted-foreground/40 cursor-not-allowed',
+              )}
+              title="合并选中的多个单元格"
+            >
+              <TableCellsMergeIcon className="w-3 h-3" />
+              合并
+            </button>
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => editor?.chain().focus().splitCell().run()}
+              disabled={!canSplitCell}
+              className={cn(
+                'flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors',
+                canSplitCell
+                  ? 'hover:bg-muted'
+                  : 'text-muted-foreground/40 cursor-not-allowed',
+              )}
+              title="拆分当前合并单元格"
+            >
+              <TableCellsSplitIcon className="w-3 h-3" />
+              拆分
+            </button>
+          </div>
         </>
       )}
 
