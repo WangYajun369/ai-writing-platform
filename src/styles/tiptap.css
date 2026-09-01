@@ -316,10 +316,12 @@
 }
 .tiptap-editor th {
   @apply bg-muted/80 border border-border px-3 py-2 text-left font-semibold;
+  position: relative; /* column-resize-handle 的定位上下文 */
   min-width: 2.5em;
 }
 .tiptap-editor td {
   @apply border border-border px-3 py-2;
+  position: relative; /* column-resize-handle 的定位上下文 */
   min-width: 2.5em;
 }
 .tiptap-editor .selectedCell { @apply bg-primary/10; }
@@ -329,14 +331,22 @@
   bottom: 0;
   right: -2px;
   width: 4px;
-  background-color: hsl(var(--primary) / 0.3);
+  background-color: hsl(var(--primary) / 0.45);
   cursor: col-resize;
   z-index: 5;
   opacity: 0;
   transition: opacity 0.15s;
 }
+/* 悬浮到单元格时显示该列右边缘的调整把手，把手自身悬停时加深 */
+.tiptap-editor th:hover .column-resize-handle,
+.tiptap-editor td:hover .column-resize-handle,
+.tiptap-editor .column-resize-handle:hover { opacity: 1; }
 .tiptap-editor .column-resize-handle:hover,
-.tiptap-editor th:hover .column-resize-handle { opacity: 1; }
+.tiptap-editor .column-resize-handle:active {
+  background-color: hsl(var(--primary) / 0.75);
+}
+/* 拖动调整列宽过程中全局显示拖拽光标 */
+.tiptap-editor .column-resize-dragging { cursor: col-resize; }
 .tiptap-editor td strong,
 .tiptap-editor th strong,
 .tiptap-editor td em,

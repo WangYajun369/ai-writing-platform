@@ -49,6 +49,9 @@ export const TablePopover = memo(function TablePopover({
       {isInTable && (
         <>
           <span className="text-xs font-medium text-muted-foreground block mb-2">添加行/列</span>
+          <p className="text-[11px] leading-snug text-muted-foreground/70 mb-2">
+            提示：将鼠标移到表格上方，拖动列边线可调整列宽
+          </p>
 
           <div className="flex items-center gap-1 mb-1.5">
             <span className="text-xs text-muted-foreground w-8">行：</span>
