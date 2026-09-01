@@ -41,9 +41,6 @@ import {
   ListIcon,
   ListOrderedIcon,
   ListTodoIcon,
-  Heading1Icon,
-  Heading2Icon,
-  Heading3Icon,
   WrenchIcon,
 } from 'lucide-react'
 import {
@@ -66,6 +63,7 @@ import { SaveIndicator } from './toolbar/SaveIndicator'
 import { ColorPickerPopover } from './toolbar/ColorPickerPopover'
 import { TablePopover } from './toolbar/TablePopover'
 import { CodeLanguageSelect } from './toolbar/CodeLanguageSelect'
+import { HeadingSelect } from './toolbar/HeadingSelect'
 import { canMergeCells, hasSplittableCell } from './toolbar/table-utils'
 
 /**
@@ -525,25 +523,8 @@ export default function EditorToolbar() {
 
       <div className="w-px h-5 bg-border mx-1 shrink-0" />
 
-      {/* 标题 */}
-      <ToolbarBtn
-        active={editor?.isActive('heading', { level: 1 }) ?? false}
-        onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()}
-        title="一级标题"
-        icon={<Heading1Icon className="w-4 h-4" />}
-      />
-      <ToolbarBtn
-        active={editor?.isActive('heading', { level: 2 }) ?? false}
-        onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}
-        title="二级标题"
-        icon={<Heading2Icon className="w-4 h-4" />}
-      />
-      <ToolbarBtn
-        active={editor?.isActive('heading', { level: 3 }) ?? false}
-        onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()}
-        title="三级标题"
-        icon={<Heading3Icon className="w-4 h-4" />}
-      />
+      {/* 标题（一级~四级合并为下拉菜单） */}
+      <HeadingSelect editor={editor} />
 
       <div className="w-px h-5 bg-border mx-1 shrink-0" />
 
