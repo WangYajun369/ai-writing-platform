@@ -1,10 +1,8 @@
 /**
  * BookCard — 书籍卡片组件
  *
- * 支持网格（grid）与列表（list）两种视图模式。
- * 网格模式展示封面、日更进度环及右键菜单；
- * 列表模式展示缩略图、书名、作者、字数及操作菜单。
- * 支持修改封面（网格模式悬停显示编辑按钮）。
+ * 网格模式展示封面、日更进度环及右键菜单。
+ * 支持修改封面（悬停显示编辑按钮）。
  */
 import { useState, useEffect } from 'react'
 import { MoreVerticalIcon, EditIcon, Trash2Icon, CalendarIcon, ImageIcon, PencilIcon, UploadIcon } from 'lucide-react'
@@ -27,12 +25,11 @@ const MAX_COVER_SIZE = 5 * 1024 * 1024
 
 interface BookCardProps {
   book: Book
-  viewMode: 'grid' | 'list'
   onOpen: (book: Book) => void
   onRefresh: () => void
 }
 
-export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCardProps) {
+export default function BookCard({ book, onOpen, onRefresh }: BookCardProps) {
   const [coverChanging, setCoverChanging] = useState(false)
   const [coverSrc, setCoverSrc] = useState<string | undefined>(undefined)
   const [showEditDialog, setShowEditDialog] = useState(false)
@@ -180,70 +177,6 @@ export default function BookCard({ book, viewMode, onOpen, onRefresh }: BookCard
     }
   }
 
-  if (viewMode === 'list') {
-    return (
-      <div
-        className="flex items-center gap-4 p-4 rounded-xl bg-card border hover:border-primary/40 transition-all cursor-pointer group relative"
-        onDoubleClick={() => onOpen(book)}
-        onContextMenu={onContextMenu}
-      >
-        {/* 封面缩略图 */}
-        <div className="w-10 h-14 rounded flex-shrink-0 flex items-center justify-center overflow-hidden bg-gradient-to-br from-primary/20 to-primary/5">
-          {coverSrc ? (
-            <img src={coverSrc} alt={book.title} className="w-full h-full object-cover" />
-          ) : (
-            <span className="text-xs text-primary font-bold">{book.title.charAt(0)}</span>
-          )}
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <p className="font-medium truncate">{book.title}</p>
-          <p className="text-xs text-muted-foreground">{book.author}</p>
-        </div>
-
-        <div className="text-sm text-muted-foreground">{formatWordCount(book.wordCount)}</div>
-        <div className="text-xs text-muted-foreground">{formatRelativeTime(book.updatedAt)}</div>
-
-        <button
-          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted"
-          onClick={(e) => {
-            e.stopPropagation()
-            const rect = e.currentTarget.getBoundingClientRect()
-            openMenu(rect.left, rect.bottom + 4)
-          }}
-        >
-          <MoreVerticalIcon className="w-4 h-4" />
-        </button>
-
-        {/* 共用右键菜单 */}
-        {contextMenu}
-
-        {/* 编辑信息弹窗 */}
-        {showEditDialog && (
-          <EditBookDialog
-            book={book}
-            onClose={() => setShowEditDialog(false)}
-            onSaved={(_updated) => {
-              setShowEditDialog(false)
-              onRefresh()
-            }}
-          />
-        )}
-
-        {/* 封面裁剪弹窗 */}
-        {cropperFile && (
-          <ImageCropperDialog
-            filePath={cropperFile}
-            aspectRatio={COVER_ASPECT}
-            onConfirm={handleCropConfirm}
-            onClose={handleCropClose}
-          />
-        )}
-      </div>
-    )
-  }
-
-  // Grid 卡片
   return (
     <div
       className="relative group rounded-xl border bg-card hover:border-primary/40 hover:shadow-md transition-all cursor-pointer overflow-hidden flex flex-col"

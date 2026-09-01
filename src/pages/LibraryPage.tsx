@@ -2,7 +2,7 @@
  * LibraryPage — 书库管理页面
  *
  * 应用首页，提供：
- * - 多作品网格/列表视图（虚拟化滚动）
+ * - 多作品网格视图（虚拟化滚动）
  * - 书名/作者搜索与排序
  * - 新建作品弹窗入口
  * - 回收站（软删除作品管理）
@@ -11,7 +11,7 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAtom } from 'jotai'
-import { PlusIcon, SearchIcon, GridIcon, ListIcon, SettingsIcon, BookOpenIcon, Trash2Icon, WrenchIcon, UploadIcon, DownloadIcon, BugIcon } from 'lucide-react'
+import { PlusIcon, SearchIcon, SettingsIcon, BookOpenIcon, Trash2Icon, WrenchIcon, UploadIcon, DownloadIcon, BugIcon } from 'lucide-react'
 import { listen } from '@tauri-apps/api/event'
 import { save, open } from '@tauri-apps/plugin-dialog'
 import { useAppStore } from '@/stores/appStore'
@@ -51,11 +51,9 @@ export default function LibraryPage() {
   const {
     books, setBooks, setCurrentBookId, currentBookId, isLoadingBooks, setLoadingBooks,
     gridSize, appVersion,
-    libraryViewMode, setLibraryViewMode,
     librarySortBy, setLibrarySortBy,
     trashCount, setTrashCount,
   } = useAppStore()
-  const viewMode = libraryViewMode
   const sortBy = librarySortBy
   const [searchQuery, setSearchQuery] = useState('')
   const [showNewBookDialog, setShowNewBookDialog] = useState(false)
@@ -78,7 +76,6 @@ export default function LibraryPage() {
       for (const entry of entries) {
         const w = entry.contentRect.width
         setContainerWidth(w)
-        if (viewMode !== 'grid') return
         const thresholds = GRID_COL_MAP[gridSize]
         if (w >= 1280) setColumnCount(thresholds[1280])
         else if (w >= 1024) setColumnCount(thresholds[1024])
@@ -88,7 +85,7 @@ export default function LibraryPage() {
     })
     observer.observe(el)
     return () => observer.disconnect()
-  }, [viewMode, gridSize])
+  }, [gridSize])
 
   const loadTrashCount = useCallback(async () => {
     try {
@@ -259,8 +256,8 @@ export default function LibraryPage() {
     [books, searchQuery, sortBy],
   )
 
-  // 按行分组（grid 模式多列，list 模式单列）
-  const effectiveColumnCount = viewMode === 'list' ? 1 : columnCount
+  // 按行分组（网格模式多列）
+  const effectiveColumnCount = columnCount
   const rowCount = Math.ceil(filteredBooks.length / effectiveColumnCount)
   const rows = useMemo(
     () =>
@@ -327,7 +324,7 @@ export default function LibraryPage() {
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => (viewMode === 'list' ? 72 : gridRowHeight),
+    estimateSize: () => gridRowHeight,
     overscan: 5,
   })
 
@@ -394,26 +391,6 @@ export default function LibraryPage() {
           <option value="title">书名</option>
           <option value="wordCount">字数</option>
         </select>
-
-        {/* 视图切换 */}
-        <div className="flex rounded-lg overflow-hidden border">
-          <TooltipWrap title="网格视图">
-            <button
-              onClick={() => setLibraryViewMode('grid')}
-              className={cn('p-2 transition-colors', viewMode === 'grid' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
-            >
-              <GridIcon className="w-4 h-4" />
-            </button>
-          </TooltipWrap>
-          <TooltipWrap title="列表视图">
-            <button
-              onClick={() => setLibraryViewMode('list')}
-              className={cn('p-2 transition-colors', viewMode === 'list' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
-            >
-              <ListIcon className="w-4 h-4" />
-            </button>
-          </TooltipWrap>
-        </div>
 
         {/* 新建书籍 */}
         <button
@@ -530,26 +507,19 @@ export default function LibraryPage() {
                   <div
                     ref={virtualizer.measureElement}
                     data-index={vItem.index}
-                    className={cn(
-                      'pb-4',
-                      viewMode === 'grid'
-                        ? `grid ${GRID_GAP_MAP[gridSize]}`
-                        : 'flex flex-col gap-2',
-                    )}
-                    style={viewMode === 'grid' ? { gridTemplateColumns: `repeat(${effectiveColumnCount}, minmax(0, 1fr))` } : undefined}
+                    className={cn('pb-4', `grid ${GRID_GAP_MAP[gridSize]}`)}
+                    style={{ gridTemplateColumns: `repeat(${effectiveColumnCount}, minmax(0, 1fr))` }}
                   >
                     {rowBooks.map((book) => (
                       <BookCard
                         key={book.id}
                         book={book}
-                        viewMode={viewMode}
                         onOpen={handleOpenBook}
                         onRefresh={loadBooks}
                       />
                     ))}
-                    {/* 网格模式用空 div 补齐最后一行的列 */}
-                    {viewMode === 'grid' &&
-                      rowBooks.length < effectiveColumnCount &&
+                    {/* 用空 div 补齐最后一行的列 */}
+                    {rowBooks.length < effectiveColumnCount &&
                       [...Array(effectiveColumnCount - rowBooks.length)].map(function (_el, idx) {
                         return <div key={`empty-${idx}`} />
                       })}
