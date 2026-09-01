@@ -43,17 +43,18 @@ impl ManageConnection for SqliteConnectionManager {
 }
 
 /// 执行 ALTER TABLE ADD COLUMN，若列已存在则跳过，其他错误向上传播
-fn safe_add_column(conn: &Connection, table: &str, column: &str, column_def: &str) -> anyhow::Result<()> {
+///
+/// 返回值：`true` = 本次实际新增了该列；`false` = 列已存在（跳过）
+///
+/// 注意：这里刻意不打印日志，交由调用方汇总输出。
+/// 因为绝大多数启动都会命中"列已存在"分支，逐条打印会产生固定噪音。
+fn safe_add_column(conn: &Connection, table: &str, column: &str, column_def: &str) -> anyhow::Result<bool> {
     let sql = format!("ALTER TABLE {} ADD COLUMN {} {}", table, column, column_def);
     match conn.execute(&sql, []) {
-        Ok(_) => {
-            eprintln!("[SQL] ALTER TABLE → {}.{} 添加成功", table, column);
-            Ok(())
-        }
+        Ok(_) => Ok(true),
         Err(e) => {
             if e.to_string().contains("duplicate column name") {
-                eprintln!("[SQL] ALTER TABLE → {}.{} 已存在，跳过", table, column);
-                Ok(())
+                Ok(false)
             } else {
                 Err(e).with_context(|| format!("ALTER TABLE {}.{} 失败", table, column))
             }
@@ -89,15 +90,15 @@ impl AppDb {
             .get()
             .map_err(|e| anyhow::anyhow!("获取数据库连接失败: {}", e))?;
 
-        eprintln!("[SQL] PRAGMA → journal_mode=WAL");
+        crate::app_log!("[SQL] PRAGMA → journal_mode=WAL");
         conn.execute_batch("PRAGMA journal_mode=WAL;")
             .context("启用 WAL 模式失败")?;
-        eprintln!("[SQL] PRAGMA → foreign_keys=ON");
+        crate::app_log!("[SQL] PRAGMA → foreign_keys=ON");
         conn.execute_batch("PRAGMA foreign_keys=ON;")
             .context("启用外键约束失败")?;
 
         // 创建表
-        eprintln!("[SQL] CREATE TABLE → books, volumes, chapters, snapshots, world_cards, embeddings");
+        crate::app_log!("[SQL] CREATE TABLE → books, volumes, chapters, snapshots, world_cards, embeddings");
         conn.execute_batch(r#"
             CREATE TABLE IF NOT EXISTS books (
                 id          TEXT PRIMARY KEY,
@@ -177,7 +178,7 @@ impl AppDb {
         "#).context("创建数据表失败")?;
 
         // FTS5 全文搜索虚拟表（章节 + 世界观卡片）
-        eprintln!("[SQL] CREATE VIRTUAL TABLE → chapters_fts, world_cards_fts");
+        crate::app_log!("[SQL] CREATE VIRTUAL TABLE → chapters_fts, world_cards_fts");
         conn.execute_batch(r#"
             CREATE VIRTUAL TABLE IF NOT EXISTS chapters_fts USING fts5(
                 title, content, tokenize='unicode61'
@@ -232,16 +233,29 @@ impl AppDb {
 
         // 迁移现有数据库：为旧表添加字段（列已存在时跳过，其他错误则报错）
         // 注意：必须在索引创建之前执行，否则旧库会因列不存在而创建索引失败
-        safe_add_column(&conn, "volumes", "deleted_at", "TEXT")?;
-        safe_add_column(&conn, "chapters", "deleted_at", "TEXT")?;
-        safe_add_column(&conn, "books", "deleted_at", "TEXT")?;
-        safe_add_column(&conn, "chapters", "summary", "TEXT")?;
-        safe_add_column(&conn, "chapters", "summary_at", "TEXT")?;
-        safe_add_column(&conn, "books", "outline", "TEXT NOT NULL DEFAULT ''")?;
-        safe_add_column(&conn, "chapters", "outline", "TEXT NOT NULL DEFAULT ''")?;
+        let mut added_columns: Vec<String> = Vec::new();
+        for (table, column, column_def) in [
+            ("volumes", "deleted_at", "TEXT"),
+            ("chapters", "deleted_at", "TEXT"),
+            ("books", "deleted_at", "TEXT"),
+            ("chapters", "summary", "TEXT"),
+            ("chapters", "summary_at", "TEXT"),
+            ("books", "outline", "TEXT NOT NULL DEFAULT ''"),
+            ("chapters", "outline", "TEXT NOT NULL DEFAULT ''"),
+        ] {
+            if safe_add_column(&conn, table, column, column_def)? {
+                added_columns.push(format!("{}.{}", table, column));
+            }
+        }
+        // 汇总输出：常见情况是全部已存在，此时只打印一行，避免逐条刷屏
+        if added_columns.is_empty() {
+            crate::app_log!("[SQL] ALTER TABLE → 表结构已是最新，无需变更");
+        } else {
+            crate::app_log!("[SQL] ALTER TABLE → 新增字段: {}", added_columns.join(", "));
+        }
 
         // 关键字段索引（提升查询性能）
-        eprintln!("[SQL] CREATE INDEX → volumes, chapters, books, snapshots, world_cards, embeddings");
+        crate::app_log!("[SQL] CREATE INDEX → volumes, chapters, books, snapshots, world_cards, embeddings");
         conn.execute_batch(r#"
             CREATE INDEX IF NOT EXISTS idx_volumes_book_id ON volumes(book_id);
             CREATE INDEX IF NOT EXISTS idx_volumes_deleted_at ON volumes(deleted_at);

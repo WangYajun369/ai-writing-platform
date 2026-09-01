@@ -20,8 +20,14 @@
 git clone git@github.com:WangYajun369/ai-writing-platform.git
 cd ai-writing-platform
 pnpm install
+
+# 可选：初始化 Agent 环境（仅开发 Agent 自动化功能时需要）
+pnpm agent:setup
+
 pnpm tauri dev
 ```
+
+> **Python 环境说明**：不使用 Agent 自动化功能时，应用无需 Python 环境即可运行全部其他功能。`pnpm agent:setup` 会创建 `agent/.venv` 并安装依赖；`pnpm agent:check` 可诊断环境问题。
 
 ## 项目规范
 
@@ -58,9 +64,15 @@ pnpm tauri dev
 - **路由**：懒加载页面组件
 
 ### 后端
-- **IPC 命令**：在 `src-tauri/src/commands/` 按功能模块组织
-- **数据库**：通过 `r2d2` 连接池访问，WAL 模式
+- **分层**：`commands/` → `service/`（事务边界）→ `repository/`（纯 SQL）→ `db/`
+- **IPC 命令**：在 `src-tauri/src/commands/` 按功能模块组织，并在 `lib.rs` 的 `invoke_handler` 中注册
+- **数据库**：通过 `r2d2` 连接池访问，WAL 模式；禁止跨层直接写 SQL
 - **事件推送**：使用 `app.emit()` 向前端推送实时事件
+
+### Python Agent
+- **技能**：新增 Skill 需同时修改 `agent/config.py` 的 `SkillType`、`skills/prompts.py` 的 Prompt、`tools/db_tools.py` 的 `SKILL_TOOLS_MAP`
+- **数据访问**：只能经 Bridge（`127.0.0.1:9876`）回调读取，禁止直连 SQLite
+- **埋点**：统一使用 `tracer.py` 的 `@trace` 装饰器与 `trace_event()`
 
 ## 测试
 

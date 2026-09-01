@@ -29,7 +29,7 @@ pub async fn get_agent_status(
             AgentState::Stopped => "stopped".into(),
             AgentState::Starting => "starting".into(),
             AgentState::Running => "running".into(),
-            AgentState::Crashed(reason) => format!("crashed: {}", reason),
+            AgentState::Crashed(reason, _) => format!("crashed: {}", reason),
         },
         base_url: agent.base_url().to_string(),
     })

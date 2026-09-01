@@ -4,13 +4,15 @@ TimeWrite 内置 AI 写作助手，支持流式对话、RAG 上下文检索和 A
 
 ## 支持的服务商
 
-| 服务商 | 模型 | 说明 |
-|--------|------|------|
-| 智谱 BigModel | `glm-5.1` | 默认服务商，国产大模型 |
-| DeepSeek | `deepseek-chat` 等 | 支持推理思考模式（Thinking） |
-| OpenAI | `gpt-4o` 等 | 需要 API Key |
-| Ollama | `qwen2.5:7b` 等 | 本地部署，无需 API Key |
-| 自定义 OpenAI 兼容 | 任意 | 支持任何 OpenAI 兼容 API |
+| 服务商 | 默认端点 | 可选模型 | 说明 |
+|--------|---------|---------|------|
+| 智谱 BigModel | `https://open.bigmodel.cn/api/paas/v4` | `glm-5.1` | 默认服务商，国产大模型 |
+| DeepSeek | `https://api.deepseek.com` | `deepseek-v4-flash`、`deepseek-v4-pro` | 支持推理思考模式（Thinking） |
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o` 等 | 需要 API Key |
+| Ollama | `http://127.0.0.1:11434` | `qwen2.5:7b` 等 | 本地部署，无需 API Key |
+| 自定义 OpenAI 兼容 | 任意 | 任意 | 支持任何 OpenAI 兼容 API |
+
+> 上表默认值定义于 `src/components/settings/constants.ts`（`PROVIDER_DEFAULTS`）。RAG/Embedding 仅支持智谱 BigModel（`embedding-3`）。
 
 ## 配置 AI 服务
 
@@ -19,7 +21,7 @@ TimeWrite 内置 AI 写作助手，支持流式对话、RAG 上下文检索和 A
 ### 对话配置（Chat Config）
 1. **服务商**：选择智谱 BigModel / DeepSeek / Ollama / OpenAI 兼容
 2. **API 地址**：API 端点 URL（选择服务商自动填充默认值）
-3. **对话模型**：模型名称（如 `glm-5.1`、`deepseek-chat`）
+3. **对话模型**：模型名称（如 `glm-5.1`、`deepseek-v4-flash`）
 4. **API Key**：各服务商独立管理（密码形式存储）
 5. **思考模式**：DeepSeek/智谱推理模型可开启 Thinking，展示推理过程
 6. **高级参数**：Temperature（0-1.0）、最大输出 Token（默认 131072）
@@ -81,13 +83,25 @@ AI 对话会自动检索当前作品的相关内容作为上下文：
 
 ## Agent 自动化
 
-TimeWrite 内置 Agent 系统，基于 Python FastAPI 服务（端口 9877）提供自动化写作辅助：
+AI 助手是**单轮对话**工具；如果需要 Agent 自主调用工具、多步推理完成复杂任务，请使用 [Agent 自动化面板](user-guide/agent-panel)。
 
-- **续写/润色**：自动生成续写内容或润色现有文字
-- **扩写/剧情推演**：基于当前内容推演剧情、扩充段落
-- **角色分析**：分析章节角色关系和发展轨迹
-- **章节总结**：自动生成章节内容摘要
-- **技能可扩展**：Agent 支持动态加载技能，可通过插件扩展
+Agent 基于 Python FastAPI 服务（端口 9877）+ LangGraph ReAct 引擎，提供 4 大技能：
+
+| 技能 | 用途 | 使用模型 |
+|------|------|---------|
+| ✍️ 写作辅助 | 大纲生成、情节建议、角色对话模拟、冲突设计 | 云端 DeepSeek |
+| 🔍 内容分析 | 文风分析、剧情连贯性、伏笔追踪、角色弧光 | 云端 DeepSeek |
+| 📖 研究辅助 | 资料检索、世界观一致性校验、设定扩展 | 云端 DeepSeek |
+| ✨ 润色优化 | 语法纠错、文笔润色、风格统一、冗余精简 | 本地 Ollama |
+
+与 AI 助手的差异：
+
+| 维度 | AI 助手（本页） | Agent 自动化 |
+|------|----------------|-------------|
+| 交互方式 | 单轮/多轮对话 | 自主多步推理，自动调用工具 |
+| 数据获取 | RAG 检索片段 | 6 个数据库工具，按需读取章节/世界观 |
+| 记忆 | 对话历史（滑动窗口） | 三层记忆体，跨会话持久化 |
+| 需要 Python | 否 | 是（需启动 Agent 服务） |
 
 ## 对话状态
 

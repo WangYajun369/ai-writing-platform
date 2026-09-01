@@ -13,14 +13,27 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
-use chrono::Local;
 use tauri::Emitter;
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 use tokio::time::{interval, sleep};
 
-use crate::commands::window::{log_buffer, LogEntry};
 use crate::error::AppError;
+// 日志统一走 crate 级全局宏（控制台 + 调试窗口双写），定义见 src/logging.rs
+use crate::{app_log, app_log_console, app_log_error};
+
+/// Agent 启动失败类型
+///
+/// 用于区分"重试有意义"与"重试无意义"的错误，避免看门狗做无用功：
+/// - `Permanent`：环境/配置缺失（找不到解释器、缺依赖、入口文件缺失），重试必然重复失败
+/// - `Transient`：进程崩溃、端口占用、网络抖动，重试可能恢复
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AgentFailureKind {
+    /// 永久性错误：不应重试
+    Permanent,
+    /// 临时性错误：可以重试
+    Transient,
+}
 
 /// Python 进程管理器状态
 #[derive(Debug, Clone, PartialEq)]
@@ -31,8 +44,33 @@ pub enum AgentState {
     Starting,
     /// 运行中
     Running,
-    /// 已停止（异常）
-    Crashed(String),
+    /// 已停止（异常）。携带 (原因, 失败类型)
+    Crashed(String, AgentFailureKind),
+}
+
+/// Python 启动方式
+///
+/// 两种形态：
+/// - 普通解释器：`program` = 解释器路径，`prefix_args` = 空
+/// - uv 项目：`program` = "uv"，`prefix_args` = ["run", "python"]，由 uv 解析项目环境
+///
+/// 之所以要用前缀参数而不是只存一个路径，是因为 uv 需要先由 `uv run`
+/// 解析 pyproject.toml + uv.lock 再执行，无法简化成单个解释器路径。
+#[derive(Debug, Clone)]
+pub struct PythonLauncher {
+    /// 可执行程序
+    pub program: String,
+    /// 前置参数（uv 模式为 ["run", "python"]）
+    pub prefix_args: Vec<String>,
+    /// 人类可读描述（用于日志）
+    pub description: String,
+}
+
+impl PythonLauncher {
+    /// 是否为 uv 启动模式（`uv run python`）
+    pub fn is_uv(&self) -> bool {
+        !self.prefix_args.is_empty()
+    }
 }
 
 /// Agent Server 配置
@@ -131,127 +169,292 @@ impl AgentManager {
         normalized
     }
 
-    /// 查找 Python 解释器路径
+    /// 查找可用的 Python 启动方式
     ///
     /// 优先级：
     /// 1. 用户指定的 python_path
-    /// 2. agent/.venv 虚拟环境中的解释器（生产环境首次运行前由用户创建）
-    /// 3. PATH 中的 python/python3（开发环境）
-    fn find_python(&self) -> String {
-        // 辅助：同时输出到 stderr 和调试窗口日志缓冲区
-        let log = |msg: &str| {
-            eprintln!("{}", msg);
-            if let Ok(mut buffer) = log_buffer().lock() {
-                if buffer.len() >= 1000 { buffer.remove(0); }
-                buffer.push(LogEntry {
-                    timestamp: Local::now().format("%H:%M:%S").to_string(),
-                    level: "info".to_string(),
-                    message: msg.to_string(),
-                    file: None,
-                    file_name: None,
-                    line: None,
-                });
-            }
-        };
+    /// 2. agent/.venv、项目根 .venv 中的解释器（`uv sync` 或 `python -m venv` 创建）
+    /// 3. uv 项目环境（uv.lock / pyproject `[tool.uv]` + uv 命令可用）→ `uv run python`
+    /// 4. PATH 中的 python3 / python（开发备选）
+    ///
+    /// 每个候选都同时校验两件事：
+    /// - Python 版本不低于项目要求（读 agent/.python-version 或 pyproject requires-python）
+    /// - 已安装 uvicorn
+    ///
+    /// 找不到时返回错误并附带修复指引，而不是降级到一个注定失败的解释器。
+    fn find_python(&self) -> Result<PythonLauncher, AppError> {
+        // 探测过程先收集到 trace：成功时只打印一行汇总，失败时才逐条输出。
+        // 这样可避免启动阶段每个候选都刷日志（看门狗重试还会成倍放大）。
+        let mut trace: Vec<String> = Vec::new();
 
-        log("[Agent] 开始查找 Python 解释器...");
+        // 入口文件所在目录（agent/），用于推导 .venv 与读取项目配置
+        let agent_dir_opt = self
+            .find_agent_entry()
+            .ok()
+            .and_then(|e| e.parent().map(|p| p.to_path_buf()));
+        if agent_dir_opt.is_none() {
+            trace.push("[Agent] 未找到 agent 入口文件".to_string());
+        }
 
-        // 优先级 1：使用用户显式指定的解释器路径
+        // 项目要求的 Python 最低版本
+        let required = agent_dir_opt.as_deref().and_then(Self::read_required_python);
+        let required_desc = required
+            .map(|(a, b)| format!("{}.{}", a, b))
+            .unwrap_or_else(|| "未指定".to_string());
+        trace.push(format!("[Agent] 项目要求的 Python 版本: >= {}", required_desc));
+
+        // ─── 优先级 1：用户显式指定 ───
         if let Some(ref path) = self.config.python_path {
-            log(&format!("[Agent] 使用用户指定的 Python 路径: {}", path));
-            return path.clone();
+            app_log!("[Agent] 使用用户指定的 Python 路径: {}", path);
+            return Ok(PythonLauncher {
+                program: path.clone(),
+                prefix_args: vec![],
+                description: format!("用户指定 ({})", path),
+            });
         }
 
-        // 优先级 2：尝试 .venv 虚拟环境
-        //   先查 agent/.venv（打包后随 agent 目录分发）
-        //   再查项目根目录 .venv（开发备选，不被打包）
-        if let Ok(entry) = self.find_agent_entry() {
-            log(&format!("[Agent] agent 入口文件: {}", entry.display()));
-            if let Some(agent_dir) = entry.parent() {
-                log(&format!("[Agent] agent 目录: {}", agent_dir.display()));
-                // 根据操作系统选择虚拟环境的 Python 可执行文件路径
-                #[cfg(target_os = "windows")]
-                let venv_candidates: Vec<PathBuf> = vec![
-                    agent_dir.join(".venv").join("Scripts").join("python.exe"),
-                ];
-                #[cfg(not(target_os = "windows"))]
-                let venv_candidates: Vec<PathBuf> = vec![
-                    agent_dir.join(".venv").join("bin").join("python"),
-                    // 候选 2：项目根目录 .venv（开发备选，不被打包）
-                    agent_dir.parent().map(|p| p.join(".venv").join("bin").join("python")).unwrap_or_default(),
-                ];
+        // ─── 优先级 2：.venv 虚拟环境 ───
+        if let Some(ref agent_dir) = agent_dir_opt {
+            // 根据操作系统选择虚拟环境的 Python 可执行文件路径
+            #[cfg(target_os = "windows")]
+            let venv_candidates: Vec<PathBuf> = vec![
+                agent_dir.join(".venv").join("Scripts").join("python.exe"),
+            ];
+            #[cfg(not(target_os = "windows"))]
+            let venv_candidates: Vec<PathBuf> = vec![
+                agent_dir.join(".venv").join("bin").join("python"),
+                // 项目根目录 .venv（开发备选，不被打包）
+                agent_dir
+                    .parent()
+                    .map(|p| p.join(".venv").join("bin").join("python"))
+                    .unwrap_or_default(),
+            ];
 
-                // 遍历候选路径，返回第一个存在且已安装 uvicorn 的解释器
-                for venv_python in &venv_candidates {
-                    log(&format!("[Agent] 检查虚拟环境候选: {}", venv_python.display()));
-                    if venv_python.exists() {
-                        // 用原始 venv 路径验证 uvicorn（不能先 canonicalize，因为 venv/bin/python
-                        // 是符号链接，解析后指向的系统 Python 不关联虚拟环境的 site-packages）
-                        // let verify_path = venv_python.to_string_lossy().to_string();
-                        let verify_path = venv_python.display().to_string();
-                        log(&format!("[Agent] 虚拟环境 Python 存在，验证 uvicorn: {}", verify_path));
-                        if let Ok(uv) = std::process::Command::new(&verify_path)
-                            .arg("-c")
-                            .arg("import uvicorn")
-                            .output()
-                        {
-                            if uv.status.success() {
-                                // 获取绝对路径：canonicalize() 会解析符号链接，但 venv/bin/python
-                                // 是符号链接，解析后指向系统 Python 会丢失 site-packages，因此手动
-                                // 拼接 current_dir + 规范化 .. 来获得不解析符号链接的绝对路径
-                                let abs_path = Self::normalize_path(venv_python);
-                                let path = abs_path.display().to_string();
-                                log(&format!("[Agent] 使用虚拟环境 Python: {}", path));
-                                return path;
-                            } else {
-                                log(&format!("[Agent] 虚拟环境 Python 未安装 uvicorn，跳过: {}", verify_path));
-                            }
-                        } else {
-                            log(&format!("[Agent] 无法执行虚拟环境 Python: {}", verify_path));
-                        }
-                    } else {
-                        log(&format!("[Agent] 虚拟环境候选不存在: {}", venv_python.display()));
+            for venv_python in &venv_candidates {
+                if !venv_python.exists() {
+                    trace.push(format!(
+                        "[Agent] 虚拟环境候选不存在: {}",
+                        venv_python.display()
+                    ));
+                    continue;
+                }
+                // 用原始 venv 路径探测（不能先 canonicalize：venv/bin/python 是符号链接，
+                // 解析后会指向系统 Python，丢失 venv 的 site-packages）
+                let verify_path = venv_python.display().to_string();
+                match Self::probe_python(&verify_path, &[], required) {
+                    Ok(ver) => {
+                        // 归一化为绝对路径（同样不解析符号链接）
+                        let abs_path = Self::normalize_path(venv_python).display().to_string();
+                        app_log!("[Agent] 使用虚拟环境 Python: {} (Python {})", abs_path, ver);
+                        return Ok(PythonLauncher {
+                            program: abs_path,
+                            prefix_args: vec![],
+                            description: format!("虚拟环境 Python {}", ver),
+                        });
                     }
+                    Err(reason) => trace.push(format!(
+                        "[Agent] 虚拟环境候选不可用: {} ({})",
+                        verify_path, reason
+                    )),
                 }
             }
-        } else {
-            log("[Agent] 未找到 agent 入口文件");
         }
 
-        // 优先级 3：开发模式，用 which 命令查找系统 PATH 中的 python
-        log("[Agent] 尝试通过 which python 查找系统 Python...");
-        if let Ok(output) = std::process::Command::new("which")
-            .arg("python")
-            .output()
-        {
+        // ─── 优先级 3：uv 项目环境 ───
+        // 本项目用 uv 管理依赖（uv.lock + pyproject [tool.uv]），交由 uv 解析环境，
+        // 无需用户预先 sync —— 依赖缺失时 uv 会在启动时自动同步。
+        if let Some(ref agent_dir) = agent_dir_opt {
+            if Self::is_uv_project(agent_dir) {
+                match Self::find_uv() {
+                    Some(uv) => {
+                        // 刻意不做 `uv run python -c "import uvicorn"` 探测：
+                        // 当 .venv 不存在时，uv run 会自动创建环境并下载依赖，
+                        // 而 std::process::Command::output() 是同步阻塞的，会卡住整个启动流程。
+                        // uv.lock 已保证依赖可解析，改由启动阶段的健康检查兜底（并放宽超时）。
+                        app_log!(
+                            "[Agent] 检测到 uv 项目，采用 {} run python 启动（依赖由 uv 按需同步）",
+                            uv
+                        );
+                        return Ok(PythonLauncher {
+                            program: uv,
+                            prefix_args: vec!["run".to_string(), "python".to_string()],
+                            description: "uv 项目环境".to_string(),
+                        });
+                    }
+                    None => trace
+                        .push("[Agent] 项目为 uv 管理，但 PATH 中未找到 uv 命令".to_string()),
+                }
+            }
+        }
+
+        // ─── 优先级 4：PATH 中的 python3 / python ───
+        for cmd in ["python3", "python"] {
+            let output = match std::process::Command::new("which").arg(cmd).output() {
+                Ok(o) => o,
+                Err(_) => {
+                    trace.push(format!("[Agent] which {} 命令执行失败", cmd));
+                    continue;
+                }
+            };
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                log(&format!("[Agent] which python 结果: {}", path));
-                // 验证该 python 是否安装了 uvicorn
-                if let Ok(uv) = std::process::Command::new(&path)
-                    .arg("-c")
-                    .arg("import uvicorn")
-                    .output()
-                {
-                    if uv.status.success() {
-                        log(&format!("[Agent] 使用系统 Python (which): {}", path));
-                        return path;
-                    } else {
-                        log(&format!("[Agent] 系统 Python 未安装 uvicorn: {}", path));
-                    }
-                } else {
-                    log(&format!("[Agent] 无法执行系统 Python: {}", path));
-                }
-            } else {
-                log("[Agent] which python 返回空结果");
+            if path.is_empty() {
+                trace.push(format!("[Agent] which {} 返回空结果", cmd));
+                continue;
             }
-        } else {
-            log("[Agent] which python 命令执行失败");
+            match Self::probe_python(&path, &[], required) {
+                Ok(ver) => {
+                    app_log!("[Agent] 使用系统 Python: {} (Python {})", path, ver);
+                    return Ok(PythonLauncher {
+                        // clone：path 还被 match scrutinee 借用着，不能直接 move
+                        program: path.clone(),
+                        prefix_args: vec![],
+                        description: format!("系统 Python {} ({})", ver, path),
+                    });
+                }
+                Err(reason) => {
+                    trace.push(format!("[Agent] 系统 Python 不可用: {} ({})", path, reason))
+                }
+            }
         }
 
-        // 终极降级：返回 "python" 字符串，由系统 PATH 自行解析
-        log("[Agent] 所有方式未找到可用 Python，降级使用默认 'python'");
-        "python".to_string()
+        // 全部失败：输出完整探测轨迹（成功路径不会走到这里，因此不影响正常启动的日志量）
+        for line in &trace {
+            app_log_error!("{}", line);
+        }
+        Err(AppError::Business(format!(
+            "未找到可用的 Python 环境（需 Python >= {} 且已安装 uvicorn）。\
+             请在 agent/ 目录用 uv 同步依赖：cd agent && uv sync \
+             （或使用项目脚本：pnpm agent:setup --dev）",
+            required_desc
+        )))
+    }
+
+    /// 探测候选 Python 是否可用
+    ///
+    /// 一次子进程调用同时取得「版本」与「uvicorn 可用性」，减少子进程开销。
+    /// 返回 Ok("3.14.6") 表示可用；Err(原因) 表示不可用。
+    fn probe_python(
+        program: &str,
+        prefix_args: &[String],
+        required: Option<(u32, u32)>,
+    ) -> Result<String, String> {
+        // 输出格式："<major>.<minor>;<1|0>"，后者表示 uvicorn 是否可导入
+        let script = concat!(
+            "import sys\n",
+            "v=sys.version_info\n",
+            "print('%d.%d'%(v.major,v.minor),end=';')\n",
+            "try:\n",
+            "    import uvicorn\n",
+            "    print('1')\n",
+            "except Exception:\n",
+            "    print('0')\n",
+        );
+
+        let mut cmd = std::process::Command::new(program);
+        cmd.args(prefix_args).arg("-c").arg(script);
+        let out = cmd.output().map_err(|e| format!("无法执行: {}", e))?;
+        if !out.status.success() {
+            return Err("执行失败".to_string());
+        }
+
+        let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        let mut parts = text.split(';');
+        let version = parts.next().unwrap_or("").to_string();
+        let has_uvicorn = parts.next() == Some("1");
+
+        if !has_uvicorn {
+            return Err("未安装 uvicorn".to_string());
+        }
+
+        // 版本校验：低于项目要求则拒绝。
+        // 否则可能选中系统旧版 Python（如 macOS 自带的 3.9），
+        // 导致 Agent 在运行期因语法/特性不支持而崩溃，排查成本很高。
+        if let Some((req_major, req_minor)) = required {
+            if let Some((major, minor)) = Self::parse_version_pair(&version) {
+                if (major, minor) < (req_major, req_minor) {
+                    return Err(format!(
+                        "Python {} 低于项目要求的 {}.{}",
+                        version, req_major, req_minor
+                    ));
+                }
+            }
+        }
+
+        Ok(version)
+    }
+
+    /// 判断子进程 stderr 的一行是否为错误线索
+    ///
+    /// 只影响"是否写入调试窗口缓冲"，控制台始终保留完整输出。
+    /// uvicorn 以 `--log-level debug` 运行时 stderr 混杂大量 INFO/DEBUG，
+    /// 全量写入会占满 1000 条缓冲并挤掉其它模块的日志。
+    fn is_error_line(line: &str) -> bool {
+        let lower = line.to_lowercase();
+        lower.contains("traceback")
+            || lower.contains("error")
+            || lower.contains("exception")
+            || lower.contains("failed")
+            || lower.contains("modulenotfound")
+            // uv 依赖解析失败（如 uv.lock 与 pyproject 不一致）
+            || lower.contains("no solution")
+    }
+
+    /// 读取项目要求的最低 Python 版本
+    ///
+    /// 优先级：agent/.python-version（如 "3.14.2"）→ pyproject.toml 的 requires-python（如 ">=3.14"）
+    /// 都读不到时返回 None（表示不做版本校验）。
+    fn read_required_python(agent_dir: &std::path::Path) -> Option<(u32, u32)> {
+        if let Ok(s) = std::fs::read_to_string(agent_dir.join(".python-version")) {
+            if let Some(v) = Self::parse_version_pair(s.trim()) {
+                return Some(v);
+            }
+        }
+        if let Ok(s) = std::fs::read_to_string(agent_dir.join("pyproject.toml")) {
+            for line in s.lines() {
+                let line = line.trim();
+                // 形如：requires-python = ">=3.14"
+                if let Some(rest) = line.strip_prefix("requires-python") {
+                    if let Some(quoted) = rest.split('"').nth(1) {
+                        let digits = quoted.trim_start_matches(|c: char| !c.is_ascii_digit());
+                        if let Some(v) = Self::parse_version_pair(digits) {
+                            return Some(v);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// 解析 "3.14.2" / "3.14" → (3, 14)
+    fn parse_version_pair(s: &str) -> Option<(u32, u32)> {
+        let mut it = s.split('.');
+        let major: u32 = it.next()?.trim().parse().ok()?;
+        let minor: u32 = it.next()?.trim().parse().ok()?;
+        Some((major, minor))
+    }
+
+    /// 判断 agent 目录是否为 uv 管理的项目
+    ///
+    /// 依据：存在 uv.lock，或 pyproject.toml 含 [tool.uv] 段。
+    fn is_uv_project(agent_dir: &std::path::Path) -> bool {
+        if agent_dir.join("uv.lock").exists() {
+            return true;
+        }
+        std::fs::read_to_string(agent_dir.join("pyproject.toml"))
+            .map(|s| s.contains("[tool.uv]"))
+            .unwrap_or(false)
+    }
+
+    /// 在 PATH 中查找 uv 命令
+    fn find_uv() -> Option<String> {
+        let out = std::process::Command::new("which").arg("uv").output().ok()?;
+        let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if path.is_empty() {
+            None
+        } else {
+            Some(path)
+        }
     }
 
     /// 查找 agent/main.py 入口文件路径
@@ -271,7 +474,10 @@ impl AgentManager {
 
         for candidate in &candidates {
             if candidate.exists() {
-                return Ok(candidate.clone());
+                // 归一化为绝对路径：候选里含 "agent/main.py"、"../agent/main.py" 等相对路径，
+                // 后续要用它拼接 .venv 路径、并推导子进程 cwd，依赖 CWD 容易出错。
+                // 用 normalize_path 而非 canonicalize，避免解析符号链接破坏 venv。
+                return Ok(Self::normalize_path(candidate));
             }
         }
 
@@ -285,13 +491,13 @@ impl AgentManager {
                 if let Some(bundle_parent) = parent.parent() {
                     let bundle_path = bundle_parent.join("Resources").join("agent").join("main.py");
                     if bundle_path.exists() {
-                        return Ok(bundle_path);
+                        return Ok(Self::normalize_path(&bundle_path));
                     }
                 }
                 // 非 bundle / Linux / Windows 路径：exe 同级目录下的 resources/agent/
                 let flat_path = parent.join("resources").join("agent").join("main.py");
                 if flat_path.exists() {
-                    return Ok(flat_path);
+                    return Ok(Self::normalize_path(&flat_path));
                 }
             }
         }
@@ -330,10 +536,10 @@ impl AgentManager {
                             return Some(pid);
                         }
                     }
-                    eprintln!("[Agent] lsof 返回了无法解析的内容: '{}'", stdout);
+                    app_log!("[Agent] lsof 返回了无法解析的内容: '{}'", stdout);
                 }
                 Err(e) => {
-                    eprintln!("[Agent] lsof 命令执行失败: {}", e);
+                    app_log!("[Agent] lsof 命令执行失败: {}", e);
                 }
             }
         }
@@ -394,7 +600,7 @@ impl AgentManager {
     /// 单纯 kill 主进程可能留下孤儿 worker 继续占用端口。
     fn kill_process_on_port(port: u16) {
         if let Some(pid) = Self::find_pid_on_port(port) {
-            eprintln!("[Agent] 发现端口 {} 被 PID {} 占用，发送 SIGKILL...", port, pid);
+            app_log!("[Agent] 发现端口 {} 被 PID {} 占用，发送 SIGKILL...", port, pid);
             #[cfg(unix)]
             {
                 // 1) 先杀整个进程组（-pid 取负表示进程组），确保 worker 全部终止
@@ -413,7 +619,7 @@ impl AgentManager {
                     .spawn();
             }
         } else {
-            eprintln!("[Agent] 未找到占用端口 {} 的进程 PID（lsof/netstat 均未查到）", port);
+            app_log!("[Agent] 未找到占用端口 {} 的进程 PID（lsof/netstat 均未查到）", port);
         }
     }
 
@@ -430,7 +636,7 @@ impl AgentManager {
         let start = std::time::Instant::now();
         let addr = format!("127.0.0.1:{}", self.config.port);
 
-        eprintln!("[Agent] 等待端口 {} 释放...", addr);
+        app_log!("[Agent] 等待端口 {} 释放...", addr);
 
         // 标记是否已尝试过 kill（避免循环中反复 kill 同一进程）
         let mut kill_attempted = false;
@@ -464,7 +670,7 @@ impl AgentManager {
                 }
                 Err(_) => {
                     // connect 失败 = 端口无人监听 = 已释放
-                    eprintln!(
+                    app_log!(
                         "[Agent] 端口 {} 已释放 ({}ms)",
                         addr,
                         start.elapsed().as_millis()
@@ -496,13 +702,30 @@ impl AgentManager {
         // ─── 步骤 2：启动前确保端口已释放 ───
         // auto_kill=true：如果发现端口被占用，自动 kill 僵尸进程
         if let Err(e) = self.wait_for_port_free(15, true).await {
-            eprintln!("[Agent] 端口检查警告: {}", e);
+            app_log!("[Agent] 端口检查警告: {}", e);
             // 不阻塞启动，继续尝试（可能是自身残留的 TIME_WAIT 状态）
         }
 
-        // ─── 步骤 3：查找 Python 解释器和入口文件 ───
-        let python = self.find_python();
-        let entry = self.find_agent_entry()?;
+        // ─── 步骤 3：查找 Python 启动方式与入口文件 ───
+        // 失败时必须把状态置为 Crashed，不能停留在 Starting：
+        // 看门狗对 Starting 状态是 continue 跳过，否则 Agent 会永久卡在"启动中"且不再重试。
+        // 这两类失败都是环境/配置缺失，属永久性错误，标记 Permanent 让看门狗不再无谓重试。
+        let launcher = match self.find_python() {
+            Ok(l) => l,
+            Err(e) => {
+                let mut state = self.state.lock().await;
+                *state = AgentState::Crashed(e.to_string(), AgentFailureKind::Permanent);
+                return Err(e);
+            }
+        };
+        let entry = match self.find_agent_entry() {
+            Ok(p) => p,
+            Err(e) => {
+                let mut state = self.state.lock().await;
+                *state = AgentState::Crashed(e.to_string(), AgentFailureKind::Permanent);
+                return Err(e);
+            }
+        };
 
         // 从 agent/main.py 路径推导项目根目录
         // entry = /path/to/project/agent/main.py
@@ -519,15 +742,20 @@ impl AgentManager {
             })
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
-        eprintln!(
-            "[Agent] 启动 Server: {} -m uvicorn agent.main:app (端口: {}, cwd: {})",
-            python,
+        app_log!(
+            "[Agent] 启动 Server [{}]: {} {} -m uvicorn agent.main:app (端口: {}, cwd: {})",
+            launcher.description,
+            launcher.program,
+            launcher.prefix_args.join(" "),
             self.config.port,
             project_root.display()
         );
 
         // ─── 步骤 4：启动 Python 子进程（uvicorn） ───
-        let child = Command::new(&python)
+        // uv 模式：   uv run python -u -m uvicorn ...（由 uv 解析 pyproject/uv.lock 并按需同步依赖）
+        // 普通模式：  <解释器> -u -m uvicorn ...
+        let mut child = Command::new(&launcher.program)
+            .args(&launcher.prefix_args)                    // uv 模式为 ["run","python"]，普通模式为空
             .arg("-u")                                      // 无缓冲输出，确保日志实时可见
             .arg("-m")
             .arg("uvicorn")                                 // 以模块方式运行 uvicorn
@@ -543,13 +771,32 @@ impl AgentManager {
             .env("PYTHONUNBUFFERED", "1")                    // Python 无缓冲输出
             .env("AGENT_TRACE_LEVEL", "DEBUG")               // 启动后默认打开所有调试日志
             .stdout(Stdio::inherit())                        // stdout 转发到 Rust 进程控制台
-            .stderr(Stdio::inherit())                        // stderr 转发到 Rust 进程控制台
+            .stderr(Stdio::piped())                          // stderr 走管道：既转发控制台，也写入调试窗口缓冲
             .kill_on_drop(true)                              // Rust 侧 drop Child 时自动 kill
             .spawn()
             .context("无法启动 Python 进程")?;
 
+        // 读取 Python 子进程 stderr：原样转发到控制台，仅错误线索写入调试窗口。
+        // 原本使用 Stdio::inherit() 时 Rust 拿不到子进程的错误内容，
+        // uvicorn 启动失败（如 No module named uvicorn）只能靠用户肉眼在控制台找。
+        if let Some(stderr) = child.stderr.take() {
+            tokio::spawn(async move {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let mut lines = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    // 控制台保留完整输出，便于排查
+                    app_log_console!("{}", line);
+                    // 调试窗口只收错误行：uvicorn 以 debug 级别运行，
+                    // stderr 混杂大量 INFO/DEBUG，全量写入会挤爆 1000 条缓冲
+                    if Self::is_error_line(&line) {
+                        app_log_error!("[Python] {}", line);
+                    }
+                }
+            });
+        }
+
         let pid = child.id();
-        eprintln!("[Agent] Server PID: {:?}", pid);
+        app_log!("[Agent] Server PID: {:?}", pid);
 
         // 保存子进程句柄（用于后续健康检查和优雅关闭）
         {
@@ -558,20 +805,22 @@ impl AgentManager {
         }
 
         // ─── 步骤 5：等待服务就绪 ───
-        match self.wait_for_ready().await {
-            Ok(()) => {
-                // ─── 步骤 6：验证 Rust ↔ Python 通信链路 ───
-                // 服务已启动，发送实际 HTTP 请求验证通信正常
-                match self.verify_communication().await {
-                    Ok(info) => {
-                        eprintln!("[Agent] Server 已就绪，通信链路验证通过");
-                        eprintln!("[Agent] 服务信息: {}", info);
-                    }
-                    Err(e) => {
-                        // 通信验证失败不阻塞启动，仅打印警告
-                        eprintln!("[Agent] 通信链路验证警告: {}", e);
-                    }
-                }
+        // wait_for_ready 会返回最后一次成功的 /health 响应体，供下面解析服务信息复用，
+        // 因此这里不再额外发送一次 /health（原实现 verify_communication 会重复请求）。
+        // uv 模式首次启动可能需要现场创建虚拟环境并下载全部依赖，放宽启动超时
+        let startup_timeout = if launcher.is_uv() {
+            self.config.startup_timeout_secs.max(180)
+        } else {
+            self.config.startup_timeout_secs
+        };
+        match self.wait_for_ready(startup_timeout).await {
+            Ok(health_body) => {
+                // ─── 步骤 6：解析服务信息，确认 Rust ↔ Python 通信链路正常 ───
+                app_log!("[Agent] Server 已就绪，通信链路验证通过");
+                app_log!(
+                    "[Agent] 服务信息: {}",
+                    Self::parse_service_info(&health_body)
+                );
                 // 更新状态为 Running，重置重启计数
                 let mut state = self.state.lock().await;
                 *state = AgentState::Running;
@@ -580,63 +829,42 @@ impl AgentManager {
                 Ok(())
             }
             Err(e) => {
-                // 启动超时：更新状态为 Crashed
+                // 启动超时 / 进程意外退出属于临时性错误，可由看门狗重试恢复
                 let mut state = self.state.lock().await;
-                *state = AgentState::Crashed(format!("启动超时: {}", e));
+                *state =
+                    AgentState::Crashed(format!("启动超时: {}", e), AgentFailureKind::Transient);
                 Err(AppError::Business(format!("Agent Server 启动失败: {}", e)))
             }
         }
     }
 
-    /// 启动后验证 Rust ↔ Python 通信链路
+    /// 从 /health 响应体中解析服务信息（版本 + 本地/云端模型）
     ///
-    /// 发送一次真实的 HTTP GET 请求到 /health 端点，
-    /// 并解析返回的 JSON 以确认服务版本和模型配置。
-    async fn verify_communication(&self) -> Result<String, String> {
-        // 创建不经过系统代理的 HTTP 客户端（本地通信不需要代理）
-        let client = reqwest::Client::builder()
-            .no_proxy()
-            .build()
-            .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
-        let health_url = format!("{}/health", self.base_url);
-
-        // 发送健康检查请求（5 秒超时）
-        let resp = client
-            .get(&health_url)
-            .timeout(Duration::from_secs(5))
-            .send()
-            .await
-            .map_err(|e| format!("健康检查请求失败: {}", e))?;
-
-        // 检查 HTTP 状态码
-        if !resp.status().is_success() {
-            return Err(format!("健康检查返回非成功状态: {}", resp.status()));
-        }
-
-        // 解析 JSON 响应体，提取版本和模型信息
-        let body: serde_json::Value = resp
-            .json()
-            .await
-            .map_err(|e| format!("解析响应失败: {}", e))?;
-
+    /// 纯函数，不发起网络请求：响应体由 wait_for_ready 复用而来。
+    fn parse_service_info(body: &serde_json::Value) -> String {
         let version = body["version"].as_str().unwrap_or("unknown");
         let config = &body["config"];
         let local_model = config["local_model"].as_str().unwrap_or("N/A");
         let cloud_model = config["cloud_model"].as_str().unwrap_or("N/A");
-
-        Ok(format!(
+        format!(
             "version={}, local_model={}, cloud_model={}",
             version, local_model, cloud_model
-        ))
+        )
     }
 
     /// 等待服务就绪（轮询 /health 端点）
     ///
-    /// 使用指数退避的轮询策略：
+    /// 返回最后一次成功的 /health 响应体，供调用方解析服务信息，
+    /// 避免 start() 再单独发一次 /health 请求。
+    ///
+    /// 参数 `timeout_secs`：启动等待超时。uv 模式首次启动需现场同步依赖，
+    /// 调用方会传入放大的值（见 start()）。
+    ///
+    /// 轮询策略：
     /// 1. 先等待 500ms 让 uvicorn 完成模块导入和 asyncio loop 初始化
-    /// 2. 每 500ms 轮询一次 /health，直到成功或超时
-    /// 3. 前 3 秒的失败静默处理，之后打印日志帮助排查问题
-    async fn wait_for_ready(&self) -> Result<(), String> {
+    /// 2. 每 500ms 轮询一次 /health，直到成功或超时；每轮先探测子进程是否已退出
+    /// 3. 失败日志按 5 秒节流，避免刷屏
+    async fn wait_for_ready(&self, timeout_secs: u64) -> Result<serde_json::Value, String> {
         let start = std::time::Instant::now();
         // 本地通信不使用代理
         let client = reqwest::Client::builder()
@@ -645,13 +873,34 @@ impl AgentManager {
             .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
         let health_url = format!("{}/health", self.base_url);
 
-        eprintln!("[Agent] 开始健康检查轮询: {}", health_url);
+        app_log!("[Agent] 开始健康检查轮询: {}", health_url);
 
         // 先等待 500ms，让 uvicorn 完成内部初始化（导入模块、启动 asyncio event loop 等）
         // 避免因过早轮询导致大量无意义的连接错误日志
         sleep(Duration::from_millis(500)).await;
 
-        while start.elapsed().as_secs() < self.config.startup_timeout_secs {
+        // 日志节流：每 5 秒最多打印一次失败日志（避免 500ms 一次刷屏）
+        let log_interval = Duration::from_secs(5);
+        let mut last_log = std::time::Instant::now();
+
+        while start.elapsed().as_secs() < timeout_secs {
+            // 关键：先探测子进程是否已意外退出。
+            // uvicorn 若因模块缺失（如 No module named uvicorn）或端口冲突，
+            // 会在 1 秒内退出；若只轮询 HTTP 会白等满 startup_timeout（默认 30 秒）才报错。
+            {
+                let mut child_lock = self.child.lock().await;
+                if let Some(ref mut child) = *child_lock {
+                    if let Ok(Some(status)) = child.try_wait() {
+                        return Err(format!(
+                            "Agent 进程启动后立即退出（状态码: {}）。\
+                             常见原因：Python 解释器未安装 uvicorn、依赖缺失或端口 {} 被占用，\
+                             详见上方 Python 错误输出",
+                            status, self.config.port
+                        ));
+                    }
+                }
+            }
+
             match client
                 .get(&health_url)
                 .timeout(Duration::from_secs(self.config.health_check_timeout_secs))
@@ -660,18 +909,30 @@ impl AgentManager {
             {
                 Ok(resp) if resp.status().is_success() => {
                     // 健康检查成功，服务已就绪
-                    eprintln!("[Agent] 健康检查成功 ({}ms)", start.elapsed().as_millis());
-                    return Ok(());
+                    app_log!("[Agent] 健康检查成功 ({}ms)", start.elapsed().as_millis());
+                    // 直接解析响应体返回，供调用方复用（不再单独发一次 /health）
+                    return resp
+                        .json::<serde_json::Value>()
+                        .await
+                        .map_err(|e| format!("解析健康检查响应失败: {}", e));
                 }
                 Ok(resp) => {
                     // 服务器响应了但状态码不是 2xx（可能是启动中）
-                    eprintln!("[Agent] 健康检查返回非成功状态: {}", resp.status());
+                    if last_log.elapsed() >= log_interval {
+                        last_log = std::time::Instant::now();
+                        app_log_error!("[Agent] 健康检查返回非成功状态: {}", resp.status());
+                    }
                 }
                 Err(e) => {
-                    // 如果启动超过 3 秒仍失败，打印日志帮助排查原因
-                    // 3 秒内的失败属于正常的"uvicorn 尚未就绪"阶段
-                    if start.elapsed().as_secs() > 3 {
-                        eprintln!("[Agent] 健康检查失败 ({}ms): {}", start.elapsed().as_millis(), e);
+                    // 启动超过 3 秒仍失败才打印，且按 5 秒节流
+                    // （3 秒内的失败属于正常的"uvicorn 尚未就绪"阶段）
+                    if start.elapsed().as_secs() > 3 && last_log.elapsed() >= log_interval {
+                        last_log = std::time::Instant::now();
+                        app_log_error!(
+                            "[Agent] 健康检查失败 ({}ms): {}",
+                            start.elapsed().as_millis(),
+                            e
+                        );
                     }
                 }
             }
@@ -680,10 +941,7 @@ impl AgentManager {
         }
 
         // 超时未就绪
-        Err(format!(
-            "Agent Server 在 {} 秒内未就绪",
-            self.config.startup_timeout_secs
-        ))
+        Err(format!("Agent Server 在 {} 秒内未就绪", timeout_secs))
     }
 
     /// 健康检查（供外部定时调用）
@@ -694,7 +952,7 @@ impl AgentManager {
         let client = match reqwest::Client::builder().no_proxy().build() {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("[Agent] 创建 HTTP 客户端失败: {}", e);
+                app_log_error!("[Agent] 创建 HTTP 客户端失败: {}", e);
                 return false;
             }
         };
@@ -709,7 +967,7 @@ impl AgentManager {
         {
             Ok(resp) => resp.status().is_success(),
             Err(e) => {
-                eprintln!("[Agent] 健康检查失败: {}", e);
+                app_log_error!("[Agent] 健康检查失败: {}", e);
                 false
             }
         }
@@ -730,9 +988,10 @@ impl AgentManager {
                 "Agent Server 已崩溃 {} 次，达到最大重启次数限制",
                 *count
             );
-            eprintln!("[Agent] {}", msg);
+            app_log_error!("[Agent] {}", msg);
             let mut state = self.state.lock().await;
-            *state = AgentState::Crashed(msg.clone());
+            // 达到上限后即为永久性失败，看门狗据此停止重试
+            *state = AgentState::Crashed(msg.clone(), AgentFailureKind::Permanent);
             return Err(AppError::Business(msg));
         }
 
@@ -741,7 +1000,7 @@ impl AgentManager {
         let attempt = *count;
         drop(count); // 尽早释放锁
 
-        eprintln!(
+        app_log!(
             "[Agent] 第 {} 次尝试重启（最多 {} 次）",
             attempt,
             self.config.max_restart_attempts
@@ -768,7 +1027,7 @@ impl AgentManager {
         let mut child_opt = self.child.lock().await;
         if let Some(ref mut child) = *child_opt {
             let pid = child.id();
-            eprintln!("[Agent] 正在关闭 Server (PID: {:?})...", pid);
+            app_log!("[Agent] 正在关闭 Server (PID: {:?})...", pid);
 
             // 步骤 1：发送 SIGTERM 优雅关闭
             // SIGTERM 允许 uvicorn 完成正在处理的请求后再退出
@@ -792,16 +1051,16 @@ impl AgentManager {
             match tokio::time::timeout(Duration::from_secs(10), child.wait()).await {
                 Ok(Ok(status)) => {
                     // 进程正常退出
-                    eprintln!("[Agent] Server 进程已退出: {:?}", status);
+                    app_log!("[Agent] Server 进程已退出: {:?}", status);
                 }
                 Ok(Err(e)) => {
                     // 等待过程中出错（进程可能已经退出）
-                    eprintln!("[Agent] 等待关闭时出错: {}", e);
+                    app_log!("[Agent] 等待关闭时出错: {}", e);
                     let _ = child.kill().await;
                 }
                 Err(_) => {
                     // 10 秒超时，强制 kill
-                    eprintln!("[Agent] 关闭超时，强制终止");
+                    app_log!("[Agent] 关闭超时，强制终止");
                     let _ = child.kill().await;
                 }
             }
@@ -833,14 +1092,14 @@ impl AgentManager {
         match TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_millis(200)) {
             Ok(_) => {
                 // 端口仍被占用 → 尝试通过系统命令 kill 占用进程
-                eprintln!("[Agent] 端口 {} 仍被占用，尝试强制清理...", addr);
+                app_log!("[Agent] 端口 {} 仍被占用，尝试强制清理...", addr);
                 Self::kill_process_on_port(port);
 
                 // 等待端口释放（最多 timeout_secs 秒）
                 let start = std::time::Instant::now();
                 loop {
                     if start.elapsed().as_secs() >= timeout_secs {
-                        eprintln!("[Agent] 警告: 端口 {} 在 {} 秒内未释放", addr, timeout_secs);
+                        app_log!("[Agent] 警告: 端口 {} 在 {} 秒内未释放", addr, timeout_secs);
                         break;
                     }
                     match TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_millis(200)) {
@@ -849,7 +1108,7 @@ impl AgentManager {
                             sleep(Duration::from_millis(300)).await;
                         }
                         Err(_) => {
-                            eprintln!("[Agent] 端口 {} 已确认释放", addr);
+                            app_log!("[Agent] 端口 {} 已确认释放", addr);
                             break;
                         }
                     }
@@ -857,7 +1116,7 @@ impl AgentManager {
             }
             Err(_) => {
                 // connect 失败 = 端口已释放
-                eprintln!("[Agent] 端口 {} 已释放 ✓", addr);
+                app_log!("[Agent] 端口 {} 已释放 ✓", addr);
             }
         }
     }
@@ -876,7 +1135,7 @@ impl AgentManager {
         if let Ok(mut child_opt) = self.child.try_lock() {
             if let Some(ref mut child) = *child_opt {
                 if let Some(pid) = child.id() {
-                    eprintln!("[Agent] force_shutdown: 发送 SIGTERM 给 PID {}", pid);
+                    app_log!("[Agent] force_shutdown: 发送 SIGTERM 给 PID {}", pid);
                     #[cfg(unix)]
                     unsafe {
                         // 先向进程组发送 SIGTERM（pid 取负），确保 uvicorn worker 全部终止
@@ -892,7 +1151,7 @@ impl AgentManager {
         }
 
         // 2) 再通过端口强制清理（SIGKILL 进程组，确保 worker 不会被残留）
-        eprintln!("[Agent] force_shutdown: 通过端口 {} 强制清理残留进程...", port);
+        app_log!("[Agent] force_shutdown: 通过端口 {} 强制清理残留进程...", port);
         Self::kill_process_on_port(port);
 
         // 3) 等待端口彻底释放（最多 8 秒）
@@ -906,7 +1165,7 @@ impl AgentManager {
             ) {
                 Ok(_) => {
                     if start.elapsed() >= timeout {
-                        eprintln!(
+                        app_log!(
                             "[Agent] force_shutdown: 端口 {} 未能在 {} 秒内释放",
                             port,
                             timeout.as_secs()
@@ -918,7 +1177,7 @@ impl AgentManager {
                     std::thread::sleep(std::time::Duration::from_millis(300));
                 }
                 Err(_) => {
-                    eprintln!(
+                    app_log!(
                         "[Agent] force_shutdown: 端口 {} 已释放 ({}ms)",
                         port,
                         start.elapsed().as_millis()
@@ -950,13 +1209,46 @@ impl AgentManager {
                 let state = manager.state().await;
                 match state {
                     AgentState::Running => {
-                        // 正常运行中，执行健康检查
-                        // 检查逻辑在下面
+                        // 正常运行中：执行健康检查，健康则跳过本轮
+                        if manager.check_health().await {
+                            continue;
+                        }
+                        app_log_error!("[Agent] 健康检查失败，尝试重启...");
                     }
-                    AgentState::Crashed(_) => {
-                        // 已达最大重启次数，退出看门狗（不再继续监控）
-                        eprintln!("[Agent] 看门狗：Agent 已崩溃且达到最大重启次数，退出监控");
-                        break;
+                    AgentState::Crashed(ref reason, kind) => {
+                        // 永久性错误（环境/配置缺失，如找不到 Python、缺 uvicorn、入口文件缺失）：
+                        // 重试必然重复同样的失败，还会重复执行整套环境探测，直接放弃并提示用户。
+                        if kind == AgentFailureKind::Permanent {
+                            app_log_error!(
+                                "[Agent] 看门狗：检测到永久性错误（环境/配置问题），停止重试：{}",
+                                reason
+                            );
+                            let _ = app.emit("agent-status-changed", serde_json::json!({
+                                "status": "crashed",
+                                "message": format!("Agent 服务不可用（需人工处理）: {}", reason)
+                            }));
+                            break;
+                        }
+
+                        // 临时性错误：区分"运行期崩溃且已耗尽重启次数"与"首次启动失败"
+                        //   ① 已耗尽重启次数 → 真正放弃
+                        //   ② 启动失败（restart_count 仍为 0）→ 继续尝试重启
+                        let count = *manager.restart_count.lock().await;
+                        if count >= manager.config.max_restart_attempts {
+                            app_log_error!(
+                                "[Agent] 看门狗：Agent 已崩溃且达到最大重启次数（{}/{}），退出监控",
+                                count, manager.config.max_restart_attempts
+                            );
+                            let _ = app.emit("agent-status-changed", serde_json::json!({
+                                "status": "crashed",
+                                "message": format!("Agent 服务不可用: {}", reason)
+                            }));
+                            break;
+                        }
+                        app_log!(
+                            "[Agent] 看门狗：检测到 Agent 崩溃（{}/{} 次重启），尝试重启...",
+                            count, manager.config.max_restart_attempts
+                        );
                     }
                     _ => {
                         // Stopped 或 Starting 状态，跳过本轮检查
@@ -964,9 +1256,7 @@ impl AgentManager {
                     }
                 }
 
-                // 执行健康检查
-                if !manager.check_health().await {
-                    eprintln!("[Agent] 健康检查失败，尝试重启...");
+                {
                     // 通知前端：开始重启
                     let _ = app.emit("agent-status-changed", serde_json::json!({
                         "status": "restarting",
@@ -987,10 +1277,15 @@ impl AgentManager {
                                 "status": "crashed",
                                 "message": format!("Agent 服务异常: {}", e)
                             }));
-                            // 检查是否已达到最大重启次数
-                            let state = manager.state().await;
-                            if matches!(state, AgentState::Crashed(_)) {
-                                eprintln!("[Agent] 看门狗：重启失败已达上限，退出监控");
+                            // 只有真正耗尽重启次数才退出监控。
+                            // 注意：不能用 state == Crashed 判定，因为启动失败也会置为 Crashed，
+                            // 那样会在第一次启动失败时就永久退出监控。
+                            let count = *manager.restart_count.lock().await;
+                            if count >= manager.config.max_restart_attempts {
+                                app_log_error!(
+                                    "[Agent] 看门狗：已耗尽 {}/{} 次重启机会，退出监控",
+                                    count, manager.config.max_restart_attempts
+                                );
                                 break;
                             }
                         }

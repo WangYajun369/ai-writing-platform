@@ -1,6 +1,21 @@
-# MirageInk（智写时光）深度优化分析报告
+# TimeWrite（智写时光）深度优化分析报告
 
+> **适用版本**：`1.0.0`　|　**分析日期**：2026-06-XX　|　**状态复核**：2026-08-31
+>
 > **分析范围**：全部代码（排除 `docs/` 和 `product/`），涵盖 Rust 后端 42 个 `.rs` 文件、React 前端 65+ 个 `.tsx`/`.ts` 文件、配置与构建系统。
+
+---
+
+## 处理状态图例
+
+| 标记 | 含义 |
+|------|------|
+| ✅ **已修复** | 代码中已落实，可在对应文件验证 |
+| 🟡 **部分修复** | 已采取缓解措施但未彻底解决 |
+| ❌ **未修复** | 代码中仍存在，附可验证的文件位置 |
+| ⚪ **待确认** | 需人工复核代码细节 |
+
+> 本报告原为一次性分析产物，现纳入文档体系并持续复核。**已知 P0 安全问题（问题 7/8/9/10/11）截至 v1.0.0 仍未修复**，见 [CHANGELOG 已知问题](CHANGELOG)。
 
 ---
 
@@ -18,7 +33,7 @@
 ### 核心短板
 
 - **数据一致性**：多个写操作缺少事务保护
-- **安全漏洞**：硬编码加密密钥、CSP 策略过宽、更新签名未配置
+- **安全漏洞**（v1.0.1 已修复 5/6）：硬编码加密密钥 ✅、CSP 策略过宽 ✅、更新签名未配置 ✅、`withGlobalTauri` ✅、fs 权限无作用域 ✅；剩余 Bridge Server 无鉴权（问题 27）
 - **代码重复**：动态 SQL 构建、FTS5 模式多处实现
 
 ---
@@ -45,6 +60,8 @@ let book_wc = book_repo::word_count_by_chapter(conn, book_id)?;
 - `restore_chapter`
 - `hard_delete_chapter`
 - `restore_snapshot`
+
+> **状态**：🟡 部分修复。`service/chapter_service.rs`（6 处）与 `service/volume_service.rs`（4 处）已引入 `conn.transaction()`；但 `book_service` / `world_card_service` / `snapshot_service` 仍无事务保护。
 
 **建议方案：**
 
@@ -142,6 +159,8 @@ if (!streaming) {
 
 **建议：** 将 `DraggableVolume`、`DraggableChapter`、对话框拆分为独立文件。
 
+> **状态**：🟡 部分修复。v0.9.1 已抽出 `DraggableChapter` / `DraggableVolume` / `OutlineDialogs` / `OutlineDragDrop` / `OutlineRecycleBin` 子组件，文件由 1048 行降至 **842 行**，仍属大文件。
+
 #### 问题 6：`useAiChat.ts` 函数过大
 
 589 行的 hook，`handleSend` 包含 200+ 行业务逻辑，涵盖前置校验、章节总结、RAG 检索、流式对话、错误处理、对话压缩。违反单一职责原则。
@@ -153,6 +172,8 @@ if (!streaming) {
 - `useStreamChat` — 流式对话 + RAF 缓冲
 - `useConversationCompression` — 滑动窗口 + 摘要
 
+> **状态**：❌ 未修复。文件由 589 行降至 **483 行**，但仍为单一 hook，未按上述方案拆分。
+
 ---
 
 ## 三、功能实现层面优化建议
@@ -162,26 +183,21 @@ if (!streaming) {
 #### 问题 7：硬编码 AES 加密密钥
 
 ```rust
-// src-tauri/src/commands/io/crypto.rs
+// src-tauri/src/commands/io/crypto.rs:15
 const ENCRYPTION_KEY: &[u8; 32] = b"TimeWrite2024SecretKey!MirageInk";
 ```
 
 任何获取二进制文件的人都能提取密钥，备份加密形同虚设。
 
-**建议：** 使用 PBKDF2/Argon2 从用户密码派生密钥：
+> **状态**：✅ 已修复（v1.0.1 安全加固：密钥不再硬编码）。
+> 算法本身为 **AES-256-GCM**（nonce[12] + ciphertext + tag[16]），算法选型正确。
 
-```rust
-use argon2::Argon2;
-use rand::Rng;
+**实际采用方案**（`crypto.rs`）：
 
-fn derive_key(password: &str, salt: &[u8]) -> [u8; 32] {
-    let mut key = [0u8; 32];
-    Argon2::default()
-        .hash_password_into(password.as_bytes(), salt, &mut key)
-        .expect("Argon2 key derivation failed");
-    key
-}
-```
+1. 环境变量 `TIMEWRITE_BACKUP_KEY`（任意长度 → SHA-256 派生 32 字节）—— 优先级最高，适合 CI / 高级用户
+2. 持久化密钥文件 `<app_data_dir>/backup.key` —— 首次启动生成随机密钥（Unix 权限 0600），之后自动加载
+
+应用启动时经 `init_backup_key` 初始化，加密/解密函数从全局缓存读取。密钥泄露面从「二进制内静态常量」降为「本机文件权限保护」。
 
 #### 问题 8：CSP 策略过宽
 
@@ -192,6 +208,10 @@ fn derive_key(password: &str, salt: &[u8]) -> [u8; 32] {
 - `img-src https:` — 允许任意 HTTPS 图片源，可被用于用户追踪
 - `connect-src http://ipc.localhost` — 允许明文 HTTP，应改为 `https://ipc.localhost`
 
+> **状态**：✅ 已修复（v1.0.1：`img-src` 移除 `https:` 通配，仅保留 `asset:` + `data:`；`connect-src` 按实际需要增加 `https://api.github.com`；新增 `base-uri 'self'` / `form-action 'self'` / `frame-ancestors 'self'` 收紧）。
+>
+> ⚠️ 说明：`ipc:` / `http://ipc.localhost` 是 **Tauri 内部 IPC 协议**（非真实网络请求），不能改为 `https://`，否则 IPC 调用会被 CSP 阻断。AI 请求全部在 Rust 侧（`reqwest`）发起、不经过 WebView，因此无需在 CSP 中放行 AI 服务商域名。
+
 #### 问题 9：Updater 签名未配置
 
 ```json
@@ -200,11 +220,17 @@ fn derive_key(password: &str, salt: &[u8]) -> [u8; 32] {
 
 **必须立即修复**：执行 `pnpm tauri signer generate -w ~/.tauri/myapp.key` 并填入公钥。
 
+> **状态**：✅ 已修复（v1.0.1：已生成 minisign 签名密钥对，公钥已填入 `tauri.conf.json` 的 `pubkey`）。
+>
+> ⚠️ 使用须知：私钥保存在 `~/.tauri/timewrite.key`，口令见 v1.0.1 加固记录（**请妥善保管并尽快自行更换**）。发布 CI 需在 GitHub 仓库配置两个 Secret：`TAURI_PRIVATE_KEY`（私钥内容）与 `TAURI_PRIVATE_KEY_PASSWORD`（私钥口令），否则构建产物无法签名、更新校验将失败。
+
 #### 问题 10：`withGlobalTauri: true`
 
 将 Tauri API 暴露到全局作用域（`window.__TAURI__`），增加 XSS 攻击面。
 
 **建议：** 设为 `false`，仅在需要时通过 `@tauri-apps/api` 显式导入。
+
+> **状态**：✅ 已修复（v1.0.1：`withGlobalTauri` 已设为 `false`。已核实前端零使用 `window.__TAURI__`，所有 IPC 均经 `@tauri-apps/api` 显式导入）。
 
 #### 问题 11：文件系统权限无作用域限制
 
@@ -214,12 +240,14 @@ fn derive_key(password: &str, salt: &[u8]) -> [u8; 32] {
 
 所有文件系统操作全局允许。
 
-**建议**添加路径限制：
+> **状态**：✅ 已修复（v1.0.1：12 项 fs 权限均已限定 `$APPDATA/**`、`$RESOURCE/**` 路径作用域；`assetProtocol.scope` 同步收窄。用户通过系统对话框选择的路径由 dialog 插件**动态授权**，不影响导入导出 / 插图功能）。
+
+**修复方式**：
 
 ```json
 {
   "identifier": "fs:allow-read",
-  "allow": [{ "path": "$APPDATA/**" }, { "path": "$HOME/Documents/**" }]
+  "scope": ["$APPDATA/**", "$RESOURCE/**"]
 }
 ```
 
@@ -237,6 +265,8 @@ INSERT OR REPLACE INTO chapters_fts(rowid, title, content)
 大数据量下拖慢启动。
 
 **建议**：仅在新数据插入时通过触发器增量更新，启动时只检查 `chapters_fts` 和 `chapters` 行数是否一致。
+
+> **状态**：✅ 已修复。`db/mod.rs` 已建立 6 个 `CREATE TRIGGER`（chapters / world_cards 各 3 个，INSERT/UPDATE/DELETE 自动同步 FTS5）。
 
 #### 问题 13：向量搜索全量加载到内存
 
@@ -278,6 +308,8 @@ if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) 
 ```
 
 这是最大的 vendor chunk，应单独拆出。
+
+> **状态**：✅ 已修复。`vite.config.ts:95` 已精确匹配 `node_modules/react/` / `react-dom/` / `scheduler/` 输出为 `react-vendor`，并另拆 tiptap / lucide / state / router / markdown / utils / virtual / highlight / katex / dnd-kit / tauri-vendor 等 chunk。
 
 ---
 
@@ -333,6 +365,8 @@ let title: String = row.get("title")?;
 
 项目使用 `pnpm`，应改为 `pnpm run dev` / `pnpm run build`。
 
+> **状态**：❌ 未修复（`tauri.conf.json:7,9` 仍为 `npm run dev` / `npm run build`）。
+
 ---
 
 ### D. 缺失功能 — 🟡 中优先级
@@ -348,6 +382,8 @@ let title: String = row.get("title")?;
 仅实现了 `Ctrl+S` 保存。写作软件应有丰富的快捷键（加粗/倾斜/标题/撤销等）。
 
 **建议**：使用 `useEffect` 监听全局 keydown，或使用 TipTap 内置快捷键。
+
+> **状态**：❌ 未修复。仍仅有 `Ctrl/Cmd + S` 保存与 `Esc` 退出专注模式，格式快捷键由 TipTap 内置提供，无全局自定义快捷键系统。
 
 #### 问题 24：缺少写作统计面板
 
@@ -369,71 +405,130 @@ let title: String = row.get("title")?;
 
 ---
 
+### E. Agent 子系统（v1.0.0 新增，原报告未覆盖）
+
+> 原报告分析于 Agent 子系统引入之前，以下为 2026-08-31 补充。
+
+#### 问题 27：Bridge Server（9876）无鉴权 🟡 P1
+
+`python/bridge.rs` 启动的 tiny_http 服务监听 `127.0.0.1:9876`，提供 `read_chapter` / `list_chapters` / `search_world_cards` / `book_context` 四个路由，`tools/db_tools.py` 直接 `POST /agent/{endpoint}` 调用，无 Token 校验。
+
+任何本机进程均可读取用户全部作品内容。虽然绑定 localhost 缓解了远程风险，但多用户机器或恶意本地软件仍可窃取数据。
+
+**建议**：Bridge 启动时生成随机 Token 写入临时文件，Python 侧读取后置于 `Authorization` 头；Rust 侧校验。
+
+> **状态**：❌ 未修复。
+
+#### 问题 28：`/skills/cancel` 为占位实现 🟡 P1
+
+`server/routes.py:124-128` 的 `cancel_skill` 仅返回 `{"status": "cancelled"}`，未真正中断正在执行的任务。前端「停止生成」按钮调用 `cancel_agent_skill` 后，Python 侧 LangGraph 流仍在继续消耗 Token。
+
+**建议**：引入任务注册表（requestId → asyncio.Task），cancel 时 `task.cancel()` 并触发 SSE `cancelled` 事件。
+
+> **状态**：❌ 未修复。
+
+#### 问题 29：记忆库无容量上限与过期清理 ❌ 🟢 P2
+
+`memory/store.py` 的 `memories` 表无行数上限，`relevance_score` 随时间衰减但从不删除。长期使用会产生大量低分记忆，拖慢检索（每次取 50 条候选全量打分）。
+
+**建议**：定期清理 `relevance_score` 低于阈值且超过 N 天未命中的记忆；或按 (book_id, skill_type) 限制上限。
+
+> **状态**：❌ 未修复。
+
+#### 问题 30：Agent 端口硬编码 🟢 P3
+
+9877（Agent）/ 9876（Bridge）散落于 `config.py`、`bridge.rs`、`manager.rs` 及 CSP 配置（`tauri.conf.json:28`）。虽支持环境变量覆盖，但前端 CSP 中的端口是硬编码的，改端口需同步修改多处。
+
+**建议**：统一由 Rust 侧动态分配空闲端口并注入 Python 环境变量，CSP 改用运行时注入。
+
+> **状态**：⚪ 待确认（端口冲突时 AgentManager 会 kill 僵尸进程，可勉强工作）。
+
+#### 问题 31：Agent 依赖管理 ✅
+
+`agent/` 已提供 `pyproject.toml` + `uv.lock`，配合 `scripts/setup-agent.ts` 创建 `.venv` 并校验，依赖可复现。
+
+> **状态**：✅ 已满足。
+
+---
+
 ## 四、优化优先级矩阵
 
-| 优先级 | 问题 | 领域 | 影响 |
-|--------|------|------|------|
-| 🔴 P0 | 硬编码加密密钥（问题 7） | 安全 | 备份数据完全可破解 |
-| 🔴 P0 | Updater 签名未配置（问题 9） | 安全 | 更新包可被篡改 |
-| 🔴 P0 | 写操作无事务保护（问题 1） | 数据一致性 | 字数统计错乱 |
-| 🔴 P0 | CSP/权限策略过宽（问题 8、11） | 安全 | XSS/信息泄露风险 |
-| 🟡 P1 | `withGlobalTauri: true`（问题 10） | 安全 | XSS 攻击面增大 |
-| 🟡 P1 | Zustand 单 store 过重（问题 3） | 架构 | 性能/可维护性 |
-| 🟡 P1 | AI 对话写放大（问题 4） | 性能 | localStorage 频繁序列化 |
-| 🟡 P1 | 前端乐观更新无验证（问题 2） | 数据一致性 | 状态可能不同步 |
-| 🟡 P1 | FTS5 每次启动重建（问题 12） | 性能 | 大库启动慢 |
-| 🟡 P1 | 向量搜索全量加载（问题 13） | 性能 | 大库内存爆炸 |
-| 🟡 P1 | 缺少快捷键系统（问题 23） | 功能缺失 | 用户体验 |
-| 🟡 P1 | 缺少写作统计面板（问题 24） | 功能缺失 | 用户激励 |
-| 🟢 P2 | 动态 SQL 重复（问题 17） | 代码质量 | 可维护性 |
-| 🟢 P2 | `useAiChat` 过大（问题 6） | 代码质量 | 可读性 |
-| 🟢 P2 | React.memo 缺失（问题 15） | 性能 | 渲染效率 |
-| 🟢 P2 | Vite chunk 拆分（问题 16） | 构建 | 首屏加载 |
-| 🟢 P2 | FTS5 搜索不一致（问题 18） | 代码质量 | 可维护性 |
-| 🟢 P2 | 列索引访问（问题 19） | 代码质量 | Schema 变更风险 |
-| 🟢 P2 | 缺少 Linux 构建（问题 26） | 部署 | 用户覆盖面 |
-| 🟢 P3 | `OutlinePanel` 过大（问题 5） | 代码质量 | 可读性 |
-| 🟢 P3 | `check-versions.ts`（问题 20） | 代码质量 | 工具链 |
-| 🟢 P3 | `beforeDevCommand`（问题 21） | 构建 | 一致性 |
-| 🟢 P3 | 缺少离线草稿（问题 22） | 功能缺失 | 数据安全 |
-| 🟢 P3 | AI 对话导出（问题 25） | 功能缺失 | 数据迁移 |
+> 「状态」列为 2026-08-31 复核 + v1.0.1 安全加固后的结果（✅ 已修复 / 🟡 部分修复 / ❌ 未修复 / ⚪ 待确认）。
+
+| 优先级 | 问题 | 领域 | 影响 | 状态 |
+|--------|------|------|------|------|
+| 🔴 P0 | 硬编码加密密钥（问题 7） | 安全 | 备份数据完全可破解 | ✅ |
+| 🔴 P0 | Updater 签名未配置（问题 9） | 安全 | 更新包可被篡改 | ✅ |
+| 🔴 P0 | 写操作无事务保护（问题 1） | 数据一致性 | 字数统计错乱 | 🟡 |
+| 🔴 P0 | CSP/权限策略过宽（问题 8、11） | 安全 | XSS/信息泄露风险 | ✅ |
+| 🟡 P1 | `withGlobalTauri: true`（问题 10） | 安全 | XSS 攻击面增大 | ✅ |
+| 🟡 P1 | Bridge Server 无鉴权（问题 27） | 安全 | 本地数据泄露 | ❌ |
+| 🟡 P1 | `/skills/cancel` 占位实现（问题 28） | 功能缺陷 | 无法中断，浪费 Token | ❌ |
+| 🟡 P1 | Zustand 单 store 过重（问题 3） | 架构 | 性能/可维护性 | 🟡 |
+| 🟡 P1 | AI 对话写放大（问题 4） | 性能 | localStorage 频繁序列化 | 🟡 |
+| 🟡 P1 | 前端乐观更新无验证（问题 2） | 数据一致性 | 状态可能不同步 | ⚪ |
+| 🟡 P1 | 向量搜索全量加载（问题 13） | 性能 | 大库内存爆炸 | ❌ |
+| 🟡 P1 | 缺少快捷键系统（问题 23） | 功能缺失 | 用户体验 | ❌ |
+| 🟡 P1 | 缺少写作统计面板（问题 24） | 功能缺失 | 用户激励 | 🟡 |
+| 🟢 P2 | 动态 SQL 重复（问题 17） | 代码质量 | 可维护性 | ⚪ |
+| 🟢 P2 | `useAiChat` 过大（问题 6） | 代码质量 | 可读性 | ❌ |
+| 🟢 P2 | React.memo 缺失（问题 15） | 性能 | 渲染效率 | ⚪ |
+| 🟢 P2 | FTS5 搜索不一致（问题 18） | 代码质量 | 可维护性 | ⚪ |
+| 🟢 P2 | 列索引访问（问题 19） | 代码质量 | Schema 变更风险 | ⚪ |
+| 🟢 P2 | 缺少 Linux 构建（问题 26） | 部署 | 用户覆盖面 | ❌ |
+| 🟢 P2 | 记忆库无清理机制（问题 29） | 性能 | 检索退化 | ❌ |
+| 🟢 P3 | `OutlinePanel` 过大（问题 5） | 代码质量 | 可读性 | 🟡 |
+| 🟢 P3 | `check-versions.ts`（问题 20） | 代码质量 | 工具链 | ⚪ |
+| 🟢 P3 | `beforeDevCommand`（问题 21） | 构建 | 一致性 | ❌ |
+| 🟢 P3 | 缺少离线草稿（问题 22） | 功能缺失 | 数据安全 | ❌ |
+| 🟢 P3 | AI 对话导出（问题 25） | 功能缺失 | 数据迁移 | ❌ |
+| 🟢 P3 | Agent 端口硬编码（问题 30） | 可维护性 | 配置分散 | ⚪ |
+| — | FTS5 每次启动重建（问题 12） | 性能 | 大库启动慢 | ✅ 已修复 |
+| — | Vite chunk 拆分（问题 16） | 构建 | 首屏加载 | ✅ 已修复 |
 
 ---
 
 ## 五、建议修复路线图
 
-### Phase 1（立即 — 1-2 天）：修复 P0 安全问题
+> 路线图已按 2026-08-31 复核结果重排：**只保留仍未关闭的问题**，已完成的（FTS5 触发器、Vite chunk、OutlinePanel 初步拆分）不再占用排期。
 
-1. 生成 updater 密钥对并配置公钥
-2. 收紧 CSP 策略
-3. 添加文件系统权限作用域
-4. 将所有写操作包装在事务中
+### Phase 1（✅ 已于 2026-08-31 关闭）：P0 安全问题
+
+| 问题 | 处理 |
+|------|------|
+| 9 Updater 签名 | ✅ 已生成密钥对并配置 pubkey |
+| 8 CSP 收紧 | ✅ 已修复 |
+| 11 fs 权限作用域 | ✅ 已修复 |
+| 10 withGlobalTauri | ✅ 已修复 |
+| 7 硬编码密钥 | ✅ 已修复 |
+
+> 剩余与安全相关的未决项：**Bridge Server（9876）Token 鉴权**（问题 27，需代码改动 + 协议变更，已移至 Phase 2）。
 
 ### Phase 2（短期 — 1 周）
 
-1. 用 PBKDF2/Argon2 替换硬编码密钥
-2. `withGlobalTauri: false`
-3. 修复 AI 对话写放大（防抖持久化）
-4. FTS5 索引增量更新
-5. 前端关键操作后全量刷新
+1. 为 Bridge Server（9876）增加 Token 鉴权（问题 27）
+2. 补齐 `book_service` / `world_card_service` / `snapshot_service` 的事务保护（问题 1 收尾）
+3. 实现 `/skills/cancel` 真正的任务中断（问题 28）
+4. `beforeDevCommand` / `beforeBuildCommand` 改为 `pnpm run …`（问题 21）
+5. 向量搜索加 `LIMIT` 分页加载（问题 13 缓解）
 
 ### Phase 3（中期 — 2-4 周）
 
-1. 拆分 Zustand store
-2. 拆分 `useAiChat` 为多个 hook
-3. 拆分 `OutlinePanel` 为独立组件
-4. 向量搜索优化（LIMIT + 分页加载）
-5. 添加 `React.memo` 优化
-6. 添加写作统计面板和快捷键系统
+1. 拆分 `useAiChat`（483 行）为 4 个职责单一的 hook（问题 6）
+2. 将 Zustand 的 slice 模式升级为真正独立的 store（问题 3 收尾）
+3. 全局快捷键系统（问题 23）
+4. 离线草稿保护：TipTap content → sessionStorage（问题 22）
+5. `DraggableVolume` / `DraggableChapter` / `MessageBubble` 加 `React.memo`（问题 15）
+6. 记忆库容量上限与过期清理（问题 29）
 
 ### Phase 4（长期）
 
-1. 动态 SQL 宏抽取
-2. sqlite-vss / LanceDB 迁移
-3. AI 对话导出功能
-4. 离线草稿保护
-5. Linux 构建支持
-6. Vite chunk 优化
+1. 动态 SQL 构建抽取为宏/泛型函数（问题 17）
+2. sqlite-vec / LanceDB 迁移，彻底解决向量检索内存问题（问题 13）
+3. AI 对话导出为 Markdown / JSON（问题 25）
+4. Linux 构建目标（deb / AppImage）（问题 26）
+5. 写作统计面板：日更进度条、连续天数、字数曲线（问题 24）
+6. Agent 端口动态分配（问题 30）
 
 ---
 

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from ..config import SkillType, config
 from ..memory.store import MemoryType
-from ..tracer import trace, trace_event, get_request_id
+from ..tracer import trace_event
 from .sse import create_sse_response
 
 logger = logging.getLogger(__name__)
@@ -55,16 +55,15 @@ def register_routes(app):
     """将路由注册到 FastAPI 应用"""
 
     @app.get("/health")
-    @trace(log_args=False, log_result=True, max_result_len=200)
     async def health_check():
-        """健康检查端点"""
-        try:
-            from ..memory import MemoryStore
-            store = MemoryStore()
-            memory_count = store.get_memory_count()
-        except Exception:
-            memory_count = -1
+        """健康检查端点
 
+        纯进程级检查：不做任何 IO / 数据库查询，保证心跳足够轻量。
+        数据库状态由具体业务接口的错误响应体现；若让心跳查询 DB，
+        看门狗只会得到 200 + memory_count=-1，反而掩盖数据层故障。
+        该端点被看门狗每 10 秒轮询一次，故不加 @trace（避免刷屏），
+        uvicorn access log 侧也已通过过滤器排除 /health 请求。
+        """
         return HealthResponse(
             status="ok",
             version="0.1.0",
@@ -72,7 +71,6 @@ def register_routes(app):
                 "local_model": config.local_model_name,
                 "cloud_model": config.cloud_model_name,
                 "ollama_url": config.ollama_base_url,
-                "memory_count": memory_count,
                 "history_compression": config.enable_history_compression,
                 "max_iterations": config.max_iterations,
             },

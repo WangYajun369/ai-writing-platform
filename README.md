@@ -14,7 +14,7 @@
 | **前端** | React 19 + TypeScript 6 + Vite 8 |
 | **样式** | TailwindCSS 4（CSS-first）+ HSL CSS 变量色彩体系（亮色/暗色/暖黄/豆沙绿四套主题） |
 | **富文本** | TipTap（H1-H3/加粗/斜体/下划线/颜色/图片/表格/代码高亮/任务列表/字符计数/Placeholder） |
-| **状态管理** | Zustand（业务数据 + 插件状态）+ Jotai（UI 原子状态，21 个 atom） |
+| **状态管理** | Zustand（业务数据 + 插件状态）+ Jotai（UI 原子状态） |
 | **路由** | React Router v7（懒加载 Editor/Settings 页面） |
 | **后端** | Rust 2021 + SQLite（WAL 模式）+ rusqlite（bundled）+ r2d2 连接池 |
 | **AI 通信** | SSE 流式对话，reqwest stream + tokio 异步 |
@@ -34,8 +34,9 @@
 - 右键上下文菜单（编辑/删除作品）
 
 ### 章节编辑
-- TipTap 富文本编辑器（H1-H3、加粗/斜体/下划线/颜色、图片、表格、代码高亮 34 种语言、任务列表、Placeholder 占位提示）
+- TipTap 富文本编辑器（H1-H3、加粗/斜体/下划线/颜色、图片、表格、代码高亮 36 种语言、任务列表、Placeholder 占位提示）
 - 图片插入与拖拽缩放，编辑器图片 1200px 等比压缩、封面图片 800px 压缩
+- 图片查看器（放大/缩小/拖拽）与精确选区裁剪对话框
 - 数学公式渲染（KaTeX）
 - 卷-章节两级目录树，新建/重命名/折叠/状态标签、拖拽排序、内联标题编辑
 - 编辑器状态恢复：滚动位置和光标位置自动保存，切换章节后恢复上次编辑位置
@@ -51,11 +52,11 @@
 - 独立悬浮窗口模式（always_on_top，420×650）
 
 ### AI 助手
-- 双服务商支持：智谱 BigModel + 自定义 OpenAI 兼容端点（含 DeepSeek 预设）
+- 多服务商支持：智谱 BigModel + 自定义 OpenAI 兼容端点（含 DeepSeek / Ollama 本地模型预设）
 - 推理模型 Thinking 展示，对话/RAG 配置完全解耦，API Key 按服务商独立管理
-- SSE 流式对话，自动重试与网络容错
-- RAG 语义检索：向量检索 + FTS5 双轨降级，Embedding 索引管理
-- AI 工具箱：30+ 快捷提示词（续写/润色/扩写/剧情推演/角色分析/章末总结 等）
+- SSE 流式对话，自动重试与网络容错（2 次指数退避 + 60s 断流保底 + 保留已生成内容）
+- RAG 语义检索：向量检索 + FTS5 双轨降级，Embedding 索引管理（连接独立测试 + stale 过期提示）
+- AI 工具箱：29 个预设快捷提示词，5 大分类（续写/润色/扩写/剧情推演/角色分析/章末总结 等）
 - 滑动窗口上下文管理（自动截断保护），对话总结压缩
 - 章节总结缓存、Token 用量统计、连接状态指示器
 - 请求详情面板：查看完整 AI 请求/响应内容
@@ -73,7 +74,7 @@ Agent 系统基于 LangGraph ReAct 架构，调用 AI 模型 + 数据库工具�
 - **看门狗自动恢复**：异常崩溃检测 + 自动重启（最多 3 次），优雅关闭（SIGTERM → 10s 等待 → SIGKILL）
 - **LangGraph ReAct 执行引擎**：动态 Prompt 注入、多步推理、选择性工具集加载（每 Skill 不同工具子集）
 - **6 个数据库工具链**：读取章节/摘要/分页、列出章节、搜索世界观卡片、获取整书上下文 — 全部通过 Rust Bridge（端口 9876）回调访问 SQLite
-- **记忆体系统**：三层记忆（偏好/决策/经验）、SQLite 持久化、关键词匹配 + 时间衰减排序、Token 预算控制（600 tokens）
+- **记忆体系统**：三层记忆（偏好/决策/经验）、SQLite 持久化、关键词匹配 + 时间衰减排序、Token 预算控制（600 tokens），附管理界面（查看/编辑/删除/清空）
 - **对话压缩**：超 6 轮自动触发本地 Ollama 模型压缩，保留最近 4 轮完整对话
 - **双模型路由**：本地 Ollama（qwen2.5:7b，处理润色）+ 云端 DeepSeek（处理写作/分析/研究），按任务复杂度自动选择
 - **DeepSeek 思考模式适配**：KV Cache 友好 Prompt 结构、reasoning_content 剥离、首 Token 延迟监控
@@ -88,7 +89,7 @@ Agent 系统基于 LangGraph ReAct 架构，调用 AI 模型 + 数据库工具�
 ### 导入导出
 - 导出为 TXT / Markdown / HTML
 - 导入 TXT，自动按正则识别章节分隔
-- 数据备份：全量导出/单作品导出，AES-256-GCM 加密，支持完整恢复
+- 数据备份：全量导出/单作品导出，AES-256-GCM 加密，支持完整恢复（密钥管理见 [安全设计](#-安全设计)）
 
 ### 个性化设置
 - 浅色/深色/跟随系统主题切换
@@ -110,7 +111,7 @@ Agent 系统基于 LangGraph ReAct 架构，调用 AI 模型 + 数据库工具�
 - AI 连接状态检测与诊断
 
 ### 插件系统
-- 6 个扩展点（editor/menu/toolbar/settings/ai/search），支持生命周期管理
+- 6 个扩展点（`editor-toolbar` / `editor-sidebar` / `library-card` / `export-format` / `ai-prompt` / `command-palette`），支持生命周期管理
 - PluginManager 单例驱动，启用/禁用/卸载
 - 内置字符统计示例插件
 
@@ -121,10 +122,19 @@ Agent 系统基于 LangGraph ReAct 架构，调用 AI 模型 + 数据库工具�
 
 ### 其他
 - 完整性自动检测脚本
-- 更新器插件集成（GitHub Releases）
+- 更新器插件集成（GitHub Releases + GitHub API 双重回退）
 - 代码分割优化（TipTap、Lucide、状态库等独立 chunk）
 - GitHub CI/CD 自动构建与代码签名
 - 产品宣传页（Landing Page） + GitHub Issue 模板
+
+## 🔒 安全设计
+
+- **备份加密**：备份文件使用 AES-256-GCM 加密，密钥不硬编码 —— 支持环境变量 `TIMEWRITE_BACKUP_KEY`（SHA-256 派生），或使用首次启动自动生成的本机密钥文件（`<app_data_dir>/backup.key`，Unix 权限 0600）
+- **更新签名**：GitHub Releases 更新包经 minisign 签名校验，公钥内置于应用，防止更新包被篡改
+- **CSP 收紧**：严格内容安全策略 —— `img-src` 仅允许本地资源（`asset:`/`data:`），`connect-src` 仅放行 IPC 与必要的 `api.github.com`，阻断注入攻击面
+- **文件系统权限作用域**：Tauri fs 权限限定在应用数据目录与资源目录（`$APPDATA/**`、`$RESOURCE/**`），用户选择的路径经系统对话框动态授权
+- **IPC 最小暴露**：`withGlobalTauri` 关闭，前端仅通过显式导入的 `@tauri-apps/api` 调用 IPC，不暴露全局 `window.__TAURI__`
+- **Agent 只读保证**：Python Agent 经 Rust Bridge（9876）仅读数据，所有写操作唯一入口在 Rust 侧
 
 ## 📖 文档
 
@@ -149,7 +159,7 @@ Agent 系统基于 LangGraph ReAct 架构，调用 AI 模型 + 数据库工具�
 |------|------|
 | 应用名称 | TimeWrite |
 | 应用标识 | `com.ukcoder.timewrite` |
-| 版本 | 0.9.4 |
+| 版本 | 1.0.0 |
 | 窗口默认尺寸 | 1280 × 800 |
 | 窗口最小尺寸 | 800 × 600 |
 | 深度链接协议 | `com.ukcoder.timewrite://` |

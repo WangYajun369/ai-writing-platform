@@ -62,14 +62,14 @@ fn detect_proxy() -> Option<reqwest::Proxy> {
             if !val.is_empty() {
                 match reqwest::Proxy::all(&val) {
                     Ok(proxy) => {
-                        eprintln!(
+                        crate::app_log!(
                             "[reqwest] 自动检测到代理: {} (来自环境变量 {})",
                             val, var
                         );
                         return Some(proxy);
                     }
                     Err(e) => {
-                        eprintln!(
+                        crate::app_log_error!(
                             "[reqwest] 环境变量 {} 的代理配置无效: {}",
                             var, e
                         );

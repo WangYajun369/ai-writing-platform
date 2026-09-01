@@ -35,7 +35,7 @@ pub async fn rag_search(
             let query_vec = match call_embedding_api(ep, key, model, &[query.to_string()]).await {
                 Ok(embs) => embs.into_iter().next(),
                 Err(e) => {
-                    eprintln!("Embedding API 调用失败，降级为关键词搜索: {e}");
+                    crate::app_log_error!("Embedding API 调用失败，降级为关键词搜索: {e}");
                     None
                 }
             };

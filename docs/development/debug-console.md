@@ -245,7 +245,7 @@ console.log('值是:', undefined)              // → "值是: undefined"
 ### 数据模型
 
 ```rust
-// src-tauri/src/commands/window.rs
+// src-tauri/src/commands/window/debug.rs
 
 /// 日志条目
 #[derive(Debug, Clone, Serialize)]
@@ -419,7 +419,7 @@ pub async fn do_something_complex(app: AppHandle, param: String) -> Result<Strin
 #### 方案 C：封装 Rust 工具函数（最佳实践）
 
 ```rust
-// 在 window.rs 或新建 debug.rs 中封装一个便捷函数
+// 在 window/debug.rs 中封装一个便捷函数
 use tauri::{AppHandle, Emitter};
 use chrono::Local;
 
@@ -637,7 +637,7 @@ export const debugWindowOpenAtom = atom<boolean>(false)
 
 | 文件 | 作用 |
 |------|------|
-| `src-tauri/src/commands/window.rs` | 定义 `LogEntry`、`LOG_BUFFER`、`log_message`、`open_debug_window`、`close_debug_window`、`get_debug_logs`、`clear_debug_logs` |
+| `src-tauri/src/commands/window/debug.rs` | 定义 `LogEntry`、`LOG_BUFFER`、`log_message`、`open_debug_window`、`close_debug_window`、`get_debug_logs`、`clear_debug_logs` |
 | `src-tauri/src/lib.rs` | `invoke_handler` 注册命令 + `setup` 监听主窗口关闭 |
 | `src/lib/tauri-bridge.ts` | 导出 `LogEntry` 类型 + `debugApi` 封装 |
 | `src/stores/uiAtoms.ts` | 导出 `debugWindowOpenAtom` |
@@ -666,7 +666,7 @@ const handleExport = useCallback(async () => {
 
 ### 调整缓冲区大小
 
-在 `src-tauri/src/commands/window.rs` 中修改常量：
+在 `src-tauri/src/commands/window/debug.rs` 中修改常量：
 
 ```rust
 static LOG_BUFFER: OnceLock<Mutex<Vec<LogEntry>>> = OnceLock::new();

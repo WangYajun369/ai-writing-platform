@@ -37,13 +37,35 @@ TimeWrite（智写时光）为小说作者提供完整的写作工作流。
 - ✅ 推理模型思考过程（Thinking）展示（可折叠）
 - ✅ 对话配置与 RAG/Embedding 配置独立解耦
 - ✅ 各服务商独立 API Key 管理
-- ✅ RAG 上下文检索（向量优先 + SQL LIKE 降级）
-- ✅ RAG 连接独立测试 + Embedding 索引状态管理
+- ✅ RAG 上下文检索（向量优先 + FTS5/LIKE 降级）
+- ✅ RAG 连接独立测试 + Embedding 索引状态管理（含 `stale` 过期提示）
 - ✅ 快捷提示词：续写/润色/剧情推演/角色分析
 - ✅ 滑动窗口上下文管理（自动截断保护），对话总结压缩
+- ✅ 章节自动总结（原文 > 300 字）+ 对话摘要压缩
 - ✅ 请求详情面板：查看完整 AI 请求/响应内容
-- ✅ AI 工具箱独立悬浮窗口 + 连接状态指示器
-- ✅ Agent 技能系统：自动化写作辅助（续写/润色/扩写/分析）
+- ✅ AI 工具箱独立悬浮窗口（29 个预设工具，5 大分类）+ 连接状态指示器
+- ✅ 流式对话容错：自动重试（2 次指数退避）+ 60s 断流保底 + 保留已生成内容
+
+> AI 助手的完整能力说明见 [AI 助手能力详解](features/ai-assistant)。
+
+## Agent 自动化（Python 子系统）
+
+> v1.0.0 核心新增，需 Python ≥ 3.10 环境。
+
+- ✅ **4 大写作技能**：写作辅助 / 内容分析 / 研究辅助 / 润色优化
+- ✅ **自主多步推理**：LangGraph ReAct 引擎，自动规划并调用工具
+- ✅ **6 个数据库工具**：读取章节/摘要/分页、列出章节、搜索世界观、整书上下文
+- ✅ **双模型路由**：润色走本地 Ollama（免费），写作/分析/研究走云端 DeepSeek
+- ✅ **三层记忆体**：偏好 / 决策 / 经验，SQLite 持久化，跨会话自动注入
+- ✅ **记忆管理界面**：查看、编辑、删除、清空
+- ✅ **动态 Prompt**：核心提示词 + 关键词匹配的场景提示，KV Cache 友好
+- ✅ **历史压缩**：超 6 轮自动触发本地模型压缩，保留最近 4 轮
+- ✅ **全生命周期管理**：解释器自动探测、端口僵尸清理、看门狗自动重启（3 次上限）
+- ✅ **优雅关闭**：SIGTERM → 10s 等待 → SIGKILL
+- ✅ **SSE 流式输出**：前端 RAF 缓冲合并，避免高频重渲染
+- ✅ **只读保证**：Agent 经 Bridge 只读数据，写操作唯一入口仍在 Rust
+
+> 详见 [Agent 自动化](user-guide/agent-panel) 与 [Agent 架构](architecture/agent-architecture)。
 
 ## 版本管理
 - ✅ 章节 HTML 内容快照（auto/milestone 类型）
@@ -85,12 +107,13 @@ TimeWrite（智写时光）为小说作者提供完整的写作工作流。
 ## 其他
 - ✅ 完整性自动检测脚本
 - ✅ 更新器集成（GitHub Releases + GitHub API 双重回退）
-- ✅ 代码分割优化（手动 chunk 拆分 TiTap/Icons/State/Router/Markdown/Utils/Virtual）
+- ✅ 代码分割优化（react-vendor / tiptap / lucide / state / router / markdown / utils / virtual / highlight / katex / dnd-kit / tauri-vendor）
 - ✅ HSL CSS 变量色彩体系（shadcn/ui 兼容语义化色板）
 - ✅ 自定义滚动条样式
 - ✅ 产品宣传页面（部署至 GitHub Pages）
 - ✅ Issue 模板（Bug 报告 + 功能请求，中文表单）
 - ✅ 应用版本运行时获取
+- ✅ 运行环境自检（`system_check` 命令）
 - ✅ MIT 开源许可证
 
 ## 路线图
@@ -99,6 +122,15 @@ TimeWrite（智写时光）为小说作者提供完整的写作工作流。
 |-------|------|------|
 | Phase 1 | ✅ 完成 | 工程骨架、书库管理、TipTap 编辑、SQLite CRUD |
 | Phase 2 | ✅ 完成 | 自动保存、专注模式、导入导出、世界观、AI 助手、版本快照、主题系统、插件框架 |
-| Phase 3 | ✅ 部分完成 | 调试控制台、独立窗口系统、数据加密备份、图片裁剪/查看器、Agent 系统 |
-| Phase 4 | 🔜 规划 | sqlite-vec 向量语义检索 + Ollama RAG、EPUB/PDF 导出、react-diff-viewer 版本对比 |
-| Phase 5 | 🔜 规划 | 多平台打包发布（macOS 签名公证 + Windows NSIS） |
+| Phase 3 | ✅ 完成 | 调试控制台、独立窗口系统、数据加密备份、图片裁剪/查看器、**Agent 子系统**（v1.0.0 全部交付） |
+| Phase 4 | 🔜 规划 | sqlite-vec 向量语义检索、EPUB/PDF 导出、AI 对话导出、全局快捷键系统、离线草稿保护 |
+| Phase 5 | 🔜 规划 | Linux 构建（deb / AppImage）、写作统计面板、插件市场 |
+
+### ⚠️ 安全待办（不属功能路线图，优先处理）
+
+以下项目当前仍未完成，直接影响发布安全性，详见 [优化报告](meta/optimization-report)：
+
+- Bridge Server（9876）无鉴权，任何本机进程可读取作品数据（问题 27，P1）
+- `/skills/cancel` 为占位实现，无法真正中断任务（问题 28，P1）
+- Bridge Server（9876）无鉴权（P1）
+- `/skills/cancel` 为占位实现，无法真正中断任务（P1）

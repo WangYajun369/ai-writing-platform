@@ -1,5 +1,54 @@
 # 更新日志
 
+## [Unreleased] — 安全加固（2026-08-31）
+
+> 关闭 5 项 P0/P1 安全问题，详见 [优化报告](meta/optimization-report) 问题 7-11。
+
+### 安全
+- **Updater 签名**：生成 minisign 签名密钥对，`tauri.conf.json` 配置真实 `pubkey`（私钥 `~/.tauri/timewrite.key`；发布 CI 需配置 `TAURI_PRIVATE_KEY` / `TAURI_PRIVATE_KEY_PASSWORD` 两个 Secret）
+- **CSP 收紧**：`img-src` 移除 `https:` 通配；`connect-src` 按实际需要仅放行 `https://api.github.com`；新增 `base-uri 'self'` / `form-action 'self'` / `frame-ancestors 'self'`
+- **fs 权限作用域**：`capabilities/default.json` 的 12 项 fs 权限限定 `$APPDATA/**`、`$RESOURCE/**`；`assetProtocol.scope` 同步收窄；移除前端未使用的过宽 `http:allow-fetch`（`https://**`）
+- **`withGlobalTauri`** 设为 `false`（前端零使用 `window.__TAURI__`）
+- **备份加密密钥去硬编码**：环境变量 `TIMEWRITE_BACKUP_KEY` 优先（SHA-256 派生），否则使用 `<app_data_dir>/backup.key` 随机密钥（Unix 权限 0600）
+
+### 已知问题（延续）
+- Bridge Server（9876）无鉴权（问题 27）
+- `/skills/cancel` 为占位实现，无法真正中断任务（问题 28）
+
+## v1.0.0 (2026-08-31)
+
+> 里程碑版本：引入 Python Agent 自动化写作子系统，架构升级为三进程模型。
+
+### 新增 — Python Agent 子系统
+- **Python Agent 服务**：FastAPI + LangGraph ReAct，端口 9877，由 Rust `python/manager.rs` 全生命周期管理
+- **4 大写作技能（Skill）**：写作辅助 `writing` / 内容分析 `analysis` / 研究辅助 `research` / 润色优化 `polish`
+- **6 个数据库工具链**：`read_chapter`、`read_chapter_summary`、`read_chapter_chunk`、`list_book_chapters`、`search_world_cards`、`get_book_context`
+- **Rust 数据桥接（Bridge）**：`python/bridge.rs` 启动 tiny_http 服务（端口 9876），Agent 反向回调读取 SQLite，确保写操作唯一入口仍在 Rust
+- **Agent 记忆体系统**：三层记忆（偏好 `preference` / 决策 `decision` / 经验 `lesson`），SQLite 持久化（`data/agent_memory.db`），关键词匹配 + 类型加权 + 时间衰减检索，Token 预算 600
+- **双模型路由**：本地 Ollama（`qwen2.5:7b`，处理润色）+ 云端 DeepSeek（处理写作/分析/研究），按任务复杂度自动分配
+- **对话历史压缩**：超过 6 轮自动触发本地模型压缩，保留最近 4 轮完整对话
+- **前端 Agent 面板**：`components/agent/`（AgentPanel / AgentMessageBubble / AgentMemoryPanel / useAgent），Skill 选择器 + 流式输出 + 记忆管理
+- **Agent IPC 命令 9 个**：`get_agent_status`、`start_agent`、`stop_agent`、`execute_agent_skill`、`cancel_agent_skill`、`list_agent_memories`、`update_agent_memory`、`delete_agent_memory`、`clear_agent_memories`
+
+### 新增 — 基础设施
+- `commands/system_check.rs` + `system_check` 命令：运行环境自检
+- `src-tauri/src/logging.rs`：独立日志模块
+- `service/`（6 个业务服务）与 `repository/`（6 个数据仓库）严格分层，事务边界与 SQL 审计日志 `emit_sql_log`
+- FTS5 虚拟表 `world_cards_fts`，INSERT/UPDATE/DELETE 三触发器自动同步
+- `AppError` 统一错误枚举（10 种变体），实现 `Serialize` 可直接作为 Tauri 命令 Err 返回
+
+### 优化
+- `commands/ai.rs` 拆分为 `ai/{chat,embedding,summarize,test}.rs` 四个子模块
+- `commands/io`、`commands/window`、`commands/agent` 同步子模块化
+- 前端 store 由单一 `appStore` 重构为 slice 模式：`booksSlice` / `aiSlice` / `preferencesSlice` / `pluginStore`
+
+### 已知问题
+> 以下问题已于 2026-08-31 的安全加固（见上方 `[Unreleased]`）中修复。
+
+- `tauri.conf.json` 中 updater `pubkey` 仍为占位符，更新签名校验未启用（P0 安全问题，详见 [优化报告](meta/optimization-report)）
+- `withGlobalTauri: true`、`beforeDevCommand` 使用 `npm` 而非 `pnpm`，待修正
+- 加密备份使用硬编码 AES-256-GCM 密钥，待替换为 PBKDF2/Argon2 口令派生
+
 ## v0.9.4 (2026-06-11)
 
 ### 新增

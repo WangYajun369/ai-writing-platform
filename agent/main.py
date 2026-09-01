@@ -25,8 +25,9 @@
 """
 
 import logging
-import sys
+import logging.config
 import signal
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,21 +35,79 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import config
 from .server import register_routes
 
-# ─── 日志配置 ───
-# 注意：uvicorn 启动时会重新配置 root logger，可能覆盖 basicConfig。
-# 解决方案：tracer logger 使用独立的 handler + propagate=False，
-# 并在 uvicorn 启动后重新确认日志级别。
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)-5s] %(name)s: %(message)s",
-    datefmt="%H:%M:%S",
-    stream=sys.stderr,
-)
 logger = logging.getLogger(__name__)
 
-# 强制导入 tracer 模块，确保日志初始化在 uvicorn 之前完成
-from .tracer import get_tracer_logger, _init_tracer_logger  # noqa: E402
-_init_tracer_logger()
+
+# ─── 日志配置 ───
+# 统一日志策略，解决三个问题：
+# 1. 时序错乱：tracer 之前写 stderr、uvicorn access log 写 stdout，
+#    双流缓冲不同步导致日志顺序重排。现在将 uvicorn 家族 logger 与
+#    root 统一输出到 stdout（与 tracer 同一流），并使用 FlushStreamHandler
+#    每次写入后强制 flush，保证同一流内的日志顺序与写入顺序一致。
+# 2. 调试控制台标红：stderr 在调试控制台会被统一渲染为 ERROR，
+#    因此正常日志全部走 stdout，仅让未捕获异常默认落到 stderr。
+# 3. 心跳噪声：uvicorn.access 挂 ExcludeHealthFilter，过滤 /health 轮询日志。
+# 4. 日志级别：uvicorn 自身使用 info 级别，避免 debug 堆栈刷屏。
+class ExcludeHealthFilter(logging.Filter):
+    """过滤 uvicorn access log 中的 /health 心跳请求（看门狗每 10 秒轮询一次）"""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.name != "uvicorn.access":
+            return True
+        args = record.args
+        # uvicorn.access 格式: '%s - "%s %s HTTP/%s" %d'
+        # → args = (client_addr, method, path, http_version, status_code)
+        if isinstance(args, tuple) and len(args) > 2:
+            return not str(args[2]).startswith("/health")
+        return True
+
+
+LOG_CONFIG: dict[str, Any] = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "format": "%(asctime)s [%(levelname)-5s] %(name)s: %(message)s",
+            "datefmt": "%H:%M:%S",
+        },
+    },
+    "filters": {
+        "no_health": {"()": ExcludeHealthFilter},
+    },
+    "handlers": {
+        "console": {
+            # 复用 tracer 的 FlushStreamHandler，保证 uvicorn 与 tracer 同流且即时 flush
+            "class": "agent.tracer.FlushStreamHandler",
+            "formatter": "default",
+        },
+    },
+    "loggers": {
+        # uvicorn 家族统一输出到 stdout，与 tracer 同流，保证日志顺序一致
+        "uvicorn": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        "uvicorn.error": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        # access log 默认 INFO；挂 no_health filter 消除心跳噪声
+        "uvicorn.access": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+            "filters": ["no_health"],
+        },
+    },
+    "root": {"handlers": ["console"], "level": "INFO"},
+}
+
+
+def _setup_logging() -> None:
+    """应用统一日志配置（模块导入时执行，先于 uvicorn 接管）"""
+    logging.config.dictConfig(LOG_CONFIG)
+
+
+# 强制导入 tracer 模块，确保 tracer logger 初始化在 uvicorn 之前完成；
+# tracer 保持独立 handler（stdout + [TRACE] 格式，见 tracer.py）
+from .tracer import get_tracer_logger
+
+# 应用统一日志配置（覆盖 uvicorn 默认的 stdout access log）
+_setup_logging()
 
 # ─── FastAPI 应用 ───
 app = FastAPI(
@@ -105,6 +164,7 @@ if __name__ == "__main__":
         "agent.main:app",
         host=config.host,
         port=config.port,
-        log_level="debug",       # uvicorn 自身也用 debug 级别
+        log_config=LOG_CONFIG,   # 复用统一日志配置（stderr + 心跳过滤）
+        log_level="info",        # uvicorn 自身用 info 级别，避免 debug 堆栈刷屏
         reload=False,
     )

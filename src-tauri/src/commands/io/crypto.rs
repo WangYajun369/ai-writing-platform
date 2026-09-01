@@ -6,20 +6,125 @@
 //!   [2 bytes: u16 BE = prefix_block 长度]
 //!   [prefix_block: encrypt_bytes(MAGIC_PREFIX)]
 //!   [data_block:   encrypt_bytes(JSON 载荷)]
+//!
+//! 密钥管理（v1.0.1 安全加固）：
+//!   1. 环境变量 `TIMEWRITE_BACKUP_KEY` 优先（任意长度 → SHA-256 派生 32 字节）
+//!   2. 持久化密钥文件 `<app_data_dir>/backup.key`（首次启动生成随机密钥，Unix 权限 0600）
+//!
+//! 密钥在应用启动时由 `init_backup_key` 初始化一次，加密/解密函数从全局缓存读取。
 
-use aes_gcm::{Aes256Gcm, Key, Nonce};
 use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Key, Nonce};
 use rand::Rng;
+use sha2::{Digest, Sha256};
+use std::sync::OnceLock;
+use tauri::Manager;
 
-/// AES-256-GCM 加密密钥（32 字节）
-const ENCRYPTION_KEY: &[u8; 32] = b"TimeWrite2024SecretKey!MirageInk";
+/// AES-256-GCM 加密密钥（32 字节），应用启动时初始化
+static BACKUP_KEY: OnceLock<[u8; 32]> = OnceLock::new();
 
 /// 待加密的引导标识字符串
 const MAGIC_PREFIX: &str = "TimeWrite";
 
+/// 自定义备份密钥的环境变量名（可选，优先级最高）
+const BACKUP_KEY_ENV: &str = "TIMEWRITE_BACKUP_KEY";
+
+/// 初始化备份密钥（在 Tauri setup 中调用一次）。
+///
+/// 优先级：
+/// 1. 环境变量 `TIMEWRITE_BACKUP_KEY`（非空 → SHA-256 派生）
+/// 2. 已有密钥文件 `<app_data_dir>/backup.key`
+/// 3. 生成随机密钥并写入密钥文件（Unix 权限 0600）
+pub fn init_backup_key(app: &tauri::AppHandle) -> Result<(), String> {
+    // 幂等：已初始化则直接返回
+    if BACKUP_KEY.get().is_some() {
+        return Ok(());
+    }
+    let key = resolve_backup_key(app)?;
+    // 并发场景下若已被其他线程设置，保留首次设置的密钥
+    let _ = BACKUP_KEY.set(key);
+    Ok(())
+}
+
+/// 解析密钥来源：环境变量 > 持久化密钥文件 > 生成新密钥
+fn resolve_backup_key(app: &tauri::AppHandle) -> Result<[u8; 32], String> {
+    if let Ok(env_key) = std::env::var(BACKUP_KEY_ENV) {
+        let trimmed = env_key.trim();
+        if !trimmed.is_empty() {
+            crate::app_log_console!(
+                "[Crypto] 使用环境变量 {} 作为备份密钥",
+                BACKUP_KEY_ENV
+            );
+            return Ok(derive_key(trimmed.as_bytes()));
+        }
+    }
+
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("无法获取数据目录: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建数据目录失败: {e}"))?;
+    let key_path = dir.join("backup.key");
+
+    if let Ok(existing) = std::fs::read(&key_path) {
+        if existing.len() == 32 {
+            let mut k = [0u8; 32];
+            k.copy_from_slice(&existing);
+            crate::app_log_console!("[Crypto] 已加载备份密钥文件 {}", key_path.display());
+            return Ok(k);
+        }
+        crate::app_log_console!(
+            "[Crypto] 密钥文件长度非法 ({} bytes)，重新生成",
+            existing.len()
+        );
+    }
+
+    let mut key = [0u8; 32];
+    rand::thread_rng().fill(&mut key);
+    write_key_file(&key_path, &key)?;
+    crate::app_log_console!("[Crypto] 已生成新备份密钥: {}", key_path.display());
+    Ok(key)
+}
+
+/// 写入密钥文件（Unix 权限 0600；Windows 无 POSIX 权限语义）
+fn write_key_file(path: &std::path::Path, key: &[u8; 32]) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut opts = std::fs::OpenOptions::new();
+        opts.create(true).write(true).truncate(true).mode(0o600);
+        let mut f = opts
+            .open(path)
+            .map_err(|e| format!("写入密钥文件失败: {e}"))?;
+        f.write_all(key)
+            .map_err(|e| format!("写入密钥文件失败: {e}"))?;
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, key).map_err(|e| format!("写入密钥文件失败: {e}"))?;
+    }
+    Ok(())
+}
+
+/// 将任意字节派生为 32 字节密钥（SHA-256）
+fn derive_key(bytes: &[u8]) -> [u8; 32] {
+    let digest = Sha256::digest(bytes);
+    let mut k = [0u8; 32];
+    k.copy_from_slice(&digest);
+    k
+}
+
+/// 获取当前密钥；未初始化时返回错误
+fn current_key() -> Result<&'static [u8; 32], String> {
+    BACKUP_KEY
+        .get()
+        .ok_or_else(|| "备份密钥未初始化：应用启动流程异常，请重启应用".to_string())
+}
+
 /// AES-256-GCM 加密：nonce[12] + ciphertext + tag[16]
 pub fn encrypt_bytes(plaintext: &[u8]) -> Result<Vec<u8>, String> {
-    let key = Key::<Aes256Gcm>::from_slice(ENCRYPTION_KEY);
+    let key = Key::<Aes256Gcm>::from_slice(current_key()?);
     let cipher = Aes256Gcm::new(key);
     let mut nonce_bytes = [0u8; 12];
     rand::thread_rng().fill(&mut nonce_bytes);
@@ -38,7 +143,7 @@ pub fn decrypt_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
     if data.len() < 28 {
         return Err("数据块太短，无法解密".to_string());
     }
-    let key = Key::<Aes256Gcm>::from_slice(ENCRYPTION_KEY);
+    let key = Key::<Aes256Gcm>::from_slice(current_key()?);
     let cipher = Aes256Gcm::new(key);
     let nonce = Nonce::from_slice(&data[..12]);
     let plaintext = cipher

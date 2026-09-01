@@ -36,6 +36,7 @@ jobs:
             echo "::error::Source docs/ has only $SOURCE_COUNT .md files, expected 22+"
             exit 1
           fi
+          echo "ℹ️ Note: if you added a new subdirectory under docs/, it is synced automatically — no workflow change needed."
 
       - name: Clone Wiki repository
         env:
@@ -84,42 +85,61 @@ jobs:
             echo "  ✅ $(basename "$f")"
           done
 
-          # ---------- 2. 子目录 → 扁平化文件名 ----------
-          # GitHub Wiki 不支持子目录页面，所以 user-guide/quick-start.md
-          # 必须在 wiki 根级命名为 user-guide-quick-start.md
-          SUBDIRS="user-guide features development architecture"
+          # ---------- 2. 子目录 → 扁平化文件名（动态发现，支持多级目录） ----------
+          # GitHub Wiki 不支持子目录页面，docs/architecture/adr/xxx.md
+          # 必须在 wiki 根级命名为 architecture-adr-xxx.md。
+          # 此处动态扫描 docs/ 下所有子目录，新增目录无需修改本脚本。
+          echo ""
+          echo "🔍 Discovering subdirectories under docs/..."
+          mapfile -t ALL_SUBDIRS < <(cd ../docs && find . -mindepth 1 -type d -not -path '*/.*' | sed 's|^\./||' | sort)
+
+          if [ "${#ALL_SUBDIRS[@]}" -eq 0 ] || [ -z "${ALL_SUBDIRS[0]}" ]; then
+            echo "  ℹ️ No subdirectories found (flat docs layout)"
+          fi
+
+          # 按路径深度降序处理：深层目录先扁平化，避免 architecture/ 先被
+          # 替换后 architecture/adr/ 失去匹配机会
+          mapfile -t SORTED_SUBDIRS < <(
+            printf '%s\n' "${ALL_SUBDIRS[@]}" \
+              | awk -F'/' '{print NF"\t"$0}' \
+              | sort -rn \
+              | cut -f2-
+          )
+
           TOTAL_FLAT=0
-          for dir in $SUBDIRS; do
+          for dir in "${SORTED_SUBDIRS[@]}"; do
+            [ -n "$dir" ] || continue
             SRC_DIR="../docs/$dir"
-            if [ ! -d "$SRC_DIR" ]; then
-              echo "  ⚠️ $dir/ → source not found, skipping"
-              continue
-            fi
+            [ -d "$SRC_DIR" ] || continue
+            FLAT_PREFIX=$(echo "$dir" | tr '/' '-')
             COUNT=0
             for f in "$SRC_DIR"/*.md; do
               [ -f "$f" ] || continue
-              flat_name="${dir}-$(basename "$f")"
-              cp "$f" "./${flat_name}"
+              cp "$f" "./${FLAT_PREFIX}-$(basename "$f")"
               COUNT=$((COUNT + 1))
             done
-            echo "  📁 $dir/ → $COUNT files (prefix: $dir-)"
+            echo "  📁 $dir/ → $COUNT files (prefix: ${FLAT_PREFIX}-)"
             TOTAL_FLAT=$((TOTAL_FLAT + COUNT))
           done
           echo "  🔢 Total flattened files: $TOTAL_FLAT"
 
           # ---------- 3. 修正所有 Markdown 内部链接 ----------
-          # 将 [text](subdir/page) 改为 [text](subdir-page)
+          # 将 [text](subdir/page) 改为 [text](subdir-page)，
+          # 多级目录 [text](a/b/page) 改为 [text](a-b-page)。
+          # 同样按深度降序，确保深层路径优先匹配。
           echo ""
           echo "🔧 Fixing internal wiki links (flattening paths)..."
-          for dir in $SUBDIRS; do
+          for dir in "${SORTED_SUBDIRS[@]}"; do
+            [ -n "$dir" ] || continue
+            FLAT_PREFIX=$(echo "$dir" | tr '/' '-')
             # 只替换 markdown 链接格式中的路径，不影响其他内容
-            sed -i "s|(\(${dir}\)/|(\1-|g" ./*.md
-            echo "  🔗 $(basename "$dir")/ → $(basename "$dir")-"
+            sed -i "s|(${dir}/|(${FLAT_PREFIX}-|g" ./*.md
+            echo "  🔗 $dir/ → ${FLAT_PREFIX}-"
           done
 
           # ---------- 4. 删除空的子目录（如果有残留） ----------
-          for dir in $SUBDIRS; do
-            [ -d "$dir" ] && rm -rf "$dir"
+          for dir in "${ALL_SUBDIRS[@]}"; do
+            [ -n "$dir" ] && [ -d "$dir" ] && rm -rf "$dir"
           done
 
           # ---------- 最终校验 ----------
@@ -189,13 +209,20 @@ jobs:
             fi
           }
 
-          # 验证首页和几个关键子页面（使用扁平化命名）
+          # 验证首页和关键子页面（使用扁平化命名）
           check_page "Home"
+          check_page "DOC-INDEX"
           check_page "user-guide-quick-start"
+          check_page "user-guide-agent-panel"
           check_page "user-guide-chapter-editing"
           check_page "features-feature-list"
+          check_page "features-ai-assistant"
           check_page "architecture-overview"
+          check_page "architecture-agent-architecture"
+          check_page "architecture-AI-architecture"
           check_page "development-project-structure"
+          check_page "development-ipc-api"
+          check_page "meta-optimization-report"
           check_page "FAQ"
           check_page "CHANGELOG"
 

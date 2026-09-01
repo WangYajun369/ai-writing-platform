@@ -34,6 +34,26 @@ R = TypeVar("R")
 
 # ─── 日志配置 ───
 
+class FlushStreamHandler(logging.StreamHandler):
+    """输出到 stdout 的 StreamHandler，每次写入后强制 flush
+
+    与 uvicorn 共享 stdout 输出流时，默认 StreamHandler 会按缓冲区延迟
+    flush，导致多个 logger 的日志行交错重排。强制 flush 可以保证同一
+    流内的日志顺序与写入顺序一致。
+    """
+
+    def __init__(self):
+        super().__init__(stream=sys.stdout)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        super().emit(record)
+        try:
+            self.flush()
+        except Exception:
+            # flush 失败不影响日志本身
+            pass
+
+
 # 独立的 tracer logger，前缀 [TRACE] 便于 grep 过滤
 _tracer_logger: logging.Logger | None = None
 
@@ -48,9 +68,9 @@ def _init_tracer_logger() -> logging.Logger:
     # 不传播到 root logger，避免被 uvicorn 配置覆盖
     _tracer_logger.propagate = False
 
-    # 始终确保有 handler（stderr 输出）
+    # 始终确保有 handler（stdout 输出，与 uvicorn / root 同流）
     if not _tracer_logger.handlers:
-        handler = logging.StreamHandler(sys.stderr)
+        handler = FlushStreamHandler()
         handler.setFormatter(logging.Formatter(
             "%(asctime)s [TRACE] %(message)s", datefmt="%H:%M:%S"
         ))

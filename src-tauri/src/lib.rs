@@ -17,6 +17,7 @@
 mod commands;   // Tauri IPC 命令集合
 mod db;         // 数据库连接与初始化
 mod error;      // 统一错误类型
+mod logging;    // 全局日志宏（app_log! / app_log_error!，双写控制台与调试窗口）
 mod models;     // 数据模型
 mod python;     // Agent/Bridge 管理（Python 子进程 + Rust HTTP Bridge）
 mod repository; // 数据访问层（DAO）
@@ -77,6 +78,11 @@ pub fn run() {
                 .map_err(|e| format!("数据库初始化失败: {e}"))?;
             app.manage(db);
 
+            // ========== 1.5 备份加密密钥初始化 ==========
+            // 密钥来源：环境变量 TIMEWRITE_BACKUP_KEY > <app_data_dir>/backup.key
+            commands::io::crypto::init_backup_key(app.handle())
+                .map_err(|e| format!("备份密钥初始化失败: {e}"))?;
+
             // ========== 2. Agent Server 初始化 ==========
             // Agent 是一个独立的 Python FastAPI 服务，用于执行 AI Skill 调用
             let agent_config = AgentServerConfig::default();
@@ -96,7 +102,8 @@ pub fn run() {
                     }
                     Err(e) => {
                         // 启动失败：向前端推送 crashed 状态（非致命，应用仍可使用）
-                        eprintln!("[Agent] Server 启动失败（非致命）: {}", e);
+                        // 双写控制台 + 调试窗口：这条是排查 Agent 启动失败的关键线索
+                        crate::app_log_error!("[Agent] Server 启动失败（非致命）: {}", e);
                         let _ = handle_clone.emit("agent-status-changed", serde_json::json!({
                             "status": "crashed",
                             "message": format!("Agent 服务启动失败: {}", e)
@@ -131,7 +138,7 @@ pub fn run() {
             // 否则 Python Agent 工具在 Bridge 未就绪时调用会导致 "All connection attempts failed"。
             {
                 let bridge_addr = format!("127.0.0.1:{}", BridgeConfig::default().port);
-                eprintln!("[Bridge] 等待 Bridge Server 就绪: {}...", bridge_addr);
+                crate::app_log!("[Bridge] 等待 Bridge Server 就绪: {}...", bridge_addr);
                 let mut bridge_ready = false;
                 // 轮询检测 TCP 连接：最多等待 5 秒，每 100ms 尝试一次
                 for i in 0..50 {
@@ -142,14 +149,16 @@ pub fn run() {
                     ) {
                         Ok(_) => {
                             bridge_ready = true;
-                            eprintln!("[Bridge] Bridge Server 已就绪 ({}ms)", (i + 1) * 100);
+                            crate::app_log!("[Bridge] Bridge Server 已就绪 ({}ms)", (i + 1) * 100);
                             break;
                         }
                         Err(_) => {}  // 连接失败，继续等待
                     }
                 }
                 if !bridge_ready {
-                    eprintln!("[Bridge] 警告: Bridge Server 在 5 秒内未就绪，Agent 工具调用可能失败");
+                    crate::app_log_error!(
+                        "[Bridge] 警告: Bridge Server 在 5 秒内未就绪，Agent 工具调用可能失败"
+                    );
                 }
             }
 
@@ -185,7 +194,7 @@ pub fn run() {
                             "status": "closing",
                             "message": "正在关闭服务..."
                         }));
-                        eprintln!("[Agent] 主窗口关闭请求，开始清理 Agent Server...");
+                        crate::app_log!("[Agent] 主窗口关闭请求，开始清理 Agent Server...");
 
                         // 后台线程执行清理，完成后关闭窗口
                         if let Some(agent) = handle.try_state::<Arc<AgentManager>>() {
@@ -193,14 +202,14 @@ pub fn run() {
                             let handle_close = handle.clone();
                             std::thread::spawn(move || {
                                 agent.force_shutdown_sync();
-                                eprintln!("[Agent] ✅ Agent Server 清理完成，关闭窗口");
+                                crate::app_log!("[Agent] ✅ Agent Server 清理完成，关闭窗口");
                                 if let Some(w) = handle_close.get_webview_window("main") {
                                     let _ = w.close();
                                 }
                             });
                         } else {
                             // 没有 Agent 状态，直接关闭
-                            eprintln!("[Agent] 无 Agent 状态，直接关闭窗口");
+                            crate::app_log!("[Agent] 无 Agent 状态，直接关闭窗口");
                             if let Some(w) = handle.get_webview_window("main") {
                                 let _ = w.close();
                             }

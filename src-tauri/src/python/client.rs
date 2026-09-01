@@ -71,7 +71,7 @@ pub async fn execute_skill_with_id(
     // 使用前端传入的 request_id，若无则自动生成
     let request_id = request_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-    eprintln!(
+    crate::app_log!(
         "[Agent] 调用 Skill: skill={}, book={}, request_id={}, ai_config_provider={:?}, ai_config_model={:?}, ai_config_has_key={}",
         req.skill,
         req.book_id,
@@ -83,7 +83,7 @@ pub async fn execute_skill_with_id(
 
     // 调试：打印完整请求体（脱敏 api_key）
     if let Ok(body) = serde_json::to_string(&req) {
-        eprintln!("[Agent] 请求体长度: {} bytes", body.len());
+        crate::app_log!("[Agent] 请求体长度: {} bytes", body.len());
     }
 
     let response = client
@@ -160,7 +160,7 @@ pub async fn execute_skill_with_id(
                             );
                         }
                         _ => {
-                            eprintln!("[Agent] 未知 SSE 事件: {}", event_type);
+                            crate::app_log!("[Agent] 未知 SSE 事件: {}", event_type);
                         }
                     }
 
@@ -261,7 +261,7 @@ pub async fn list_memories(manager: Arc<AgentManager>, book_id: &str, skill_type
         } else {
             raw_body.clone()
         };
-        eprintln!(
+        crate::app_log!(
             "[Memory] ❌ JSON 解析失败: {}\n原始响应: {}",
             e, preview
         );

@@ -1,5 +1,26 @@
 # MirageInk 架构文档
 
+> [!CAUTION]
+> **⚠️ 本文档为历史设计草案，不代表当前代码现状。**
+>
+> 本系列文档（01–13）与 `tmp/Tauri + React + RTK + MVVM.md` 是 **v0.1.0 之前的技术选型与架构设想**，
+> 其中关键设计与实际实现**已不一致**：
+>
+> | 维度 | 本文档的设想 | 实际实现（v1.0.0） |
+> |------|-------------|-------------------|
+> | 前端状态管理 | Redux Toolkit（RTK Slice） | **Zustand（业务）+ Jotai（UI）**，见 [ADR-003](../../docs/architecture/adr/ADR-003-dual-state-management.md) |
+> | 前端架构模式 | MVVM（ViewModel / Binder） | 组件 + Hooks，无独立 ViewModel 层 |
+> | 后端分层 | Clean Architecture（UseCase / Domain） | commands / service / repository / db 四层 |
+> | 离线冲突解决 | 字段级 LWW 合并 | 未实现（本地优先，无多端同步） |
+>
+> **请以 `docs/` 下的文档为准**：
+> [架构总览](../../docs/architecture/overview.md) ·
+> [代码架构深度分析](../../docs/architecture/code-architecture.md) ·
+> [文档地图](../../docs/DOC-INDEX.md)
+>
+> 保留理由：记录了早期的技术选型推演过程，对理解演进历史有价值。
+> 如无参考价值，可整体删除本目录。
+
 ## 阅读指南
 
 本系列文档由总体架构概览文档派生而来，按关注点拆分为 13 个专题，供不同角色按需阅读。

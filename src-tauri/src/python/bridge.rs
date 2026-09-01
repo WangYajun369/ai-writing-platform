@@ -174,9 +174,9 @@ fn start_bridge_server(db_path: PathBuf, config: BridgeConfig) {
     {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("[Bridge] ❌ 无法创建 SQLite 连接池: {}", e);
-            eprintln!("[Bridge] 数据库路径: {}", db_path.display());
-            eprintln!("[Bridge] Agent 工具调用将全部失败！请检查数据库文件是否存在。");
+            crate::app_log_error!("[Bridge] ❌ 无法创建 SQLite 连接池: {}", e);
+            crate::app_log!("[Bridge] 数据库路径: {}", db_path.display());
+            crate::app_log_error!("[Bridge] Agent 工具调用将全部失败！请检查数据库文件是否存在。");
             return;
         }
     };
@@ -185,16 +185,16 @@ fn start_bridge_server(db_path: PathBuf, config: BridgeConfig) {
     let server = match Server::http(&addr) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("[Bridge] ❌ 无法启动 Bridge Server ({}): {}", addr, e);
-            eprintln!("[Bridge] 可能原因: 端口 {} 已被占用，请检查是否有其他进程监听此端口", config.port);
-            eprintln!("[Bridge] 排查命令: lsof -i :{}", config.port);
+            crate::app_log_error!("[Bridge] ❌ 无法启动 Bridge Server ({}): {}", addr, e);
+            crate::app_log_error!("[Bridge] 可能原因: 端口 {} 已被占用，请检查是否有其他进程监听此端口", config.port);
+            crate::app_log_error!("[Bridge] 排查命令: lsof -i :{}", config.port);
             return;
         }
     };
 
     // 标记 Bridge 已就绪
     BRIDGE_READY.store(true, Ordering::Relaxed);
-    eprintln!("[Bridge] ✅ Server 已启动，监听 {}", addr);
+    crate::app_log!("[Bridge] ✅ Server 已启动，监听 {}", addr);
 
     for mut request in server.incoming_requests() {
         let url = request.url().to_string();
@@ -212,7 +212,7 @@ fn start_bridge_server(db_path: PathBuf, config: BridgeConfig) {
         // 读取请求体
         let mut body = String::new();
         if let Err(e) = request.as_reader().read_to_string(&mut body) {
-            eprintln!("[Bridge] ❌ 读取请求体失败: {} (endpoint={})", e, endpoint);
+            crate::app_log_error!("[Bridge] ❌ 读取请求体失败: {} (endpoint={})", e, endpoint);
             let resp = Response::from_string(
                 serde_json::json!({"success": false, "error": "读取请求体失败"}).to_string(),
             )
@@ -227,7 +227,7 @@ fn start_bridge_server(db_path: PathBuf, config: BridgeConfig) {
         let params: Value = match serde_json::from_str(&body) {
             Ok(p) => p,
             Err(e) => {
-                eprintln!("[Bridge] JSON 解析失败: {}", e);
+                crate::app_log_error!("[Bridge] JSON 解析失败: {}", e);
                 let resp = Response::from_string(
                     serde_json::json!({"success": false, "error": format!("JSON 解析失败: {}", e)}).to_string(),
                 )
@@ -244,7 +244,7 @@ fn start_bridge_server(db_path: PathBuf, config: BridgeConfig) {
 
         // 记录错误详情到控制台，方便排查
         if let Err(ref e) = result {
-            eprintln!(
+            crate::app_log_error!(
                 "[Bridge] ❌ /agent/{} 失败: {} (params={})",
                 endpoint, e, params
             );
@@ -273,7 +273,7 @@ fn start_bridge_server(db_path: PathBuf, config: BridgeConfig) {
             );
 
         if let Err(e) = request.respond(resp) {
-            eprintln!("[Bridge] 响应发送失败: {}", e);
+            crate::app_log_error!("[Bridge] 响应发送失败: {}", e);
         }
     }
 }
