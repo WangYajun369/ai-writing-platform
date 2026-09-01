@@ -1,23 +1,8 @@
 # 更新日志
 
-## [Unreleased] — 安全加固（2026-08-31）
-
-> 关闭 5 项 P0/P1 安全问题，详见 [优化报告](meta/optimization-report) 问题 7-11。
-
-### 安全
-- **Updater 签名**：生成 minisign 签名密钥对，`tauri.conf.json` 配置真实 `pubkey`（私钥 `~/.tauri/timewrite.key`；发布 CI 需配置 `TAURI_PRIVATE_KEY` / `TAURI_PRIVATE_KEY_PASSWORD` 两个 Secret）
-- **CSP 收紧**：`img-src` 移除 `https:` 通配；`connect-src` 按实际需要仅放行 `https://api.github.com`；新增 `base-uri 'self'` / `form-action 'self'` / `frame-ancestors 'self'`
-- **fs 权限作用域**：`capabilities/default.json` 的 12 项 fs 权限限定 `$APPDATA/**`、`$RESOURCE/**`；`assetProtocol.scope` 同步收窄；移除前端未使用的过宽 `http:allow-fetch`（`https://**`）
-- **`withGlobalTauri`** 设为 `false`（前端零使用 `window.__TAURI__`）
-- **备份加密密钥去硬编码**：环境变量 `TIMEWRITE_BACKUP_KEY` 优先（SHA-256 派生），否则使用 `<app_data_dir>/backup.key` 随机密钥（Unix 权限 0600）
-
-### 已知问题（延续）
-- Bridge Server（9876）无鉴权（问题 27）
-- `/skills/cancel` 为占位实现，无法真正中断任务（问题 28）
-
 ## v1.0.0 (2026-08-31)
 
-> 里程碑版本：引入 Python Agent 自动化写作子系统，架构升级为三进程模型。
+> 里程碑版本：引入 Python Agent 自动化写作子系统，架构升级为三进程模型；同步完成首轮安全加固（关闭 5 项 P0/P1 安全问题，详见 [优化报告](meta/optimization-report) 问题 7-11）。
 
 ### 新增 — Python Agent 子系统
 - **Python Agent 服务**：FastAPI + LangGraph ReAct，端口 9877，由 Rust `python/manager.rs` 全生命周期管理
@@ -42,12 +27,22 @@
 - `commands/io`、`commands/window`、`commands/agent` 同步子模块化
 - 前端 store 由单一 `appStore` 重构为 slice 模式：`booksSlice` / `aiSlice` / `preferencesSlice` / `pluginStore`
 
-### 已知问题
-> 以下问题已于 2026-08-31 的安全加固（见上方 `[Unreleased]`）中修复。
+### 安全
+- **Updater 签名**：生成 minisign 签名密钥对，`tauri.conf.json` 配置真实 `pubkey`（私钥 `~/.tauri/timewrite.key`；发布 CI 需配置 `TAURI_PRIVATE_KEY` / `TAURI_PRIVATE_KEY_PASSWORD` 两个 Secret）
+- **CSP 收紧**：`img-src` 移除 `https:` 通配；`connect-src` 按实际需要仅放行 `https://api.github.com`；新增 `base-uri 'self'` / `form-action 'self'` / `frame-ancestors 'self'`
+- **fs 权限作用域**：`capabilities/default.json` 的 12 项 fs 权限限定 `$APPDATA/**`、`$RESOURCE/**`；`assetProtocol.scope` 同步收窄；移除前端未使用的过宽 `http:allow-fetch`（`https://**`）
+- **`withGlobalTauri`** 设为 `false`（前端零使用 `window.__TAURI__`）
+- **备份加密密钥去硬编码**：环境变量 `TIMEWRITE_BACKUP_KEY` 优先（SHA-256 派生），否则使用 `<app_data_dir>/backup.key` 随机密钥（Unix 权限 0600）
 
-- `tauri.conf.json` 中 updater `pubkey` 仍为占位符，更新签名校验未启用（P0 安全问题，详见 [优化报告](meta/optimization-report)）
-- `withGlobalTauri: true`、`beforeDevCommand` 使用 `npm` 而非 `pnpm`，待修正
-- 加密备份使用硬编码 AES-256-GCM 密钥，待替换为 PBKDF2/Argon2 口令派生
+### 已知问题（延续）
+- Bridge Server（9876）无鉴权（问题 27）
+- `/skills/cancel` 为占位实现，无法真正中断任务（问题 28）
+
+### 已修复的已知问题
+> 以下问题已在本版本安全加固中修复。
+- updater `pubkey` 占位符 → 已配置真实签名公钥，更新签名校验启用
+- `withGlobalTauri: true` → 已设为 `false`
+- 加密备份硬编码密钥 → 已替换为 `TIMEWRITE_BACKUP_KEY` / `backup.key` 动态密钥
 
 ## v0.9.4 (2026-06-11)
 
