@@ -315,7 +315,7 @@ export function AiToolboxSection() {
                       onBlur={saveEditCategory}
                       autoFocus
                       onClick={(e) => e.stopPropagation()}
-                      className="px-2 py-0.5 text-sm font-semibold rounded border bg-background/80 outline-none focus:ring-1 focus:ring-primary/30 max-w-[200px]"
+                      className="px-2 py-0.5 text-sm font-semibold rounded border bg-background/80 outline-none focus:ring-1 focus:ring-primary/30 max-w-50"
                     />
                   ) : (
                     <span className="text-sm font-semibold flex-1">{category.name}</span>

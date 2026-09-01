@@ -22,7 +22,7 @@ export default function ToastContainer() {
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 max-w-sm pointer-events-none">
+    <div className="fixed bottom-4 right-4 z-9999 flex flex-col gap-2 max-w-sm pointer-events-none">
       {toasts.map((toast) => (
         <ToastCard
           key={toast.id}
@@ -46,11 +46,11 @@ function ToastCard({ toast, onClose }: { toast: ToastItem; onClose: () => void }
         'bg-card border-border text-foreground',
       )}
     >
-      <config.icon className={cn('w-4 h-4 flex-shrink-0 mt-0.5', config.iconColor)} />
+      <config.icon className={cn('w-4 h-4 shrink-0 mt-0.5', config.iconColor)} />
       <span className="text-sm flex-1">{toast.message}</span>
       <button
         onClick={onClose}
-        className="p-0.5 rounded hover:bg-muted flex-shrink-0 text-muted-foreground"
+        className="p-0.5 rounded hover:bg-muted shrink-0 text-muted-foreground"
       >
         <XIcon className="w-3.5 h-3.5" />
       </button>

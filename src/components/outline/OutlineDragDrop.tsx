@@ -84,7 +84,7 @@ export function ChapterPreview({ chapter }: { chapter: Chapter }) {
       <span className="truncate">{chapter.title}</span>
       <span
         className={cn(
-          'text-xs px-1.5 py-0.5 rounded-full flex-shrink-0',
+          'text-xs px-1.5 py-0.5 rounded-full shrink-0',
           statusCfg.color,
         )}
       >

@@ -94,12 +94,12 @@ export default function DraggableChapter({
         {...attributes}
       >
         <button
-          className="p-0.5 rounded hover:bg-muted-foreground/20 cursor-grab active:cursor-grabbing touch-none flex-shrink-0 opacity-0 group-hover:opacity-100"
+          className="p-0.5 rounded hover:bg-muted-foreground/20 cursor-grab active:cursor-grabbing touch-none shrink-0 opacity-0 group-hover:opacity-100"
           {...listeners}
         >
           <GripVerticalIcon className="w-3 h-3" />
         </button>
-        <FileTextIcon className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+        <FileTextIcon className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
 
         {editing ? (
           <input
@@ -122,7 +122,7 @@ export default function DraggableChapter({
           onClick={cycleStatus}
           title="点击切换章节状态（大纲/草稿/精修/定稿）"
           className={cn(
-            'text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity',
+            'text-xs px-1.5 py-0.5 rounded-full shrink-0 cursor-pointer hover:opacity-80 transition-opacity',
             statusCfg.color,
           )}
         >
@@ -134,7 +134,7 @@ export default function DraggableChapter({
             e.stopPropagation()
             onDelete()
           }}
-          className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive flex-shrink-0"
+          className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive shrink-0"
           title="删除章节"
         >
           <Trash2Icon className="w-3.5 h-3.5" />

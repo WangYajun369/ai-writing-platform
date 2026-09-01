@@ -156,7 +156,7 @@ export default function TrashModal({ onClose, onChanged }: TrashModalProps) {
                   className="flex items-center gap-3 px-3 py-3 rounded-xl bg-muted/50 border border-border/50 group"
                 >
                   {/* 封面缩略图 */}
-                  <div className="w-9 h-12 rounded bg-gradient-to-br from-muted-foreground/10 to-muted-foreground/5 flex-shrink-0 flex items-center justify-center overflow-hidden">
+                  <div className="w-9 h-12 rounded bg-linear-to-br from-muted-foreground/10 to-muted-foreground/5 shrink-0 flex items-center justify-center overflow-hidden">
                     {coverSrcs[book.id] ? (
                       <img
                         src={coverSrcs[book.id]}

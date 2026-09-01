@@ -344,7 +344,7 @@ export default function WorldbuildingPanel({ bookId, initialTab }: Worldbuilding
         <button
           onClick={() => setActiveTab('cards')}
           className={cn(
-            'px-3 py-2 text-xs font-medium border-b-2 transition-colors -mb-[1px]',
+            'px-3 py-2 text-xs font-medium border-b-2 transition-colors -mb-px',
             activeTab === 'cards'
               ? 'border-primary text-primary'
               : 'border-transparent text-muted-foreground hover:text-foreground',
@@ -355,7 +355,7 @@ export default function WorldbuildingPanel({ bookId, initialTab }: Worldbuilding
         <button
           onClick={() => setActiveTab('outline')}
           className={cn(
-            'px-3 py-2 text-xs font-medium border-b-2 transition-colors -mb-[1px]',
+            'px-3 py-2 text-xs font-medium border-b-2 transition-colors -mb-px',
             activeTab === 'outline'
               ? 'border-primary text-primary'
               : 'border-transparent text-muted-foreground hover:text-foreground',
@@ -398,7 +398,7 @@ export default function WorldbuildingPanel({ bookId, initialTab }: Worldbuilding
           </div>
 
           {/* 类型过滤标签 */}
-          <div className="flex gap-1 px-3 py-2 overflow-x-auto scrollbar-none flex-shrink-0">
+          <div className="flex gap-1 px-3 py-2 overflow-x-auto scrollbar-none shrink-0">
             <FilterTag active={filterType === 'all'} onClick={() => setFilterType('all')}>全部</FilterTag>
             {(Object.keys(WORLD_CARD_TYPE_CONFIG) as WorldCardType[]).map((type) => (
               <FilterTag key={type} active={filterType === type} onClick={() => setFilterType(type)}>
@@ -480,7 +480,7 @@ export default function WorldbuildingPanel({ bookId, initialTab }: Worldbuilding
       {activeTab === 'outline' && (
         <div className="flex flex-col flex-1 overflow-hidden">
           {/* 作品大纲 */}
-          <div className="px-3 pt-3 pb-1 flex-shrink-0">
+          <div className="px-3 pt-3 pb-1 shrink-0">
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">作品大纲</span>
               {bookOutlineSaving && (
@@ -507,7 +507,7 @@ export default function WorldbuildingPanel({ bookId, initialTab }: Worldbuilding
           <div className="border-b mx-3 my-2" />
 
           {/* 章节大纲 */}
-          <div className="px-3 pb-1 flex-shrink-0">
+          <div className="px-3 pb-1 shrink-0">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">章节大纲</span>
           </div>
 
@@ -557,33 +557,33 @@ export default function WorldbuildingPanel({ bookId, initialTab }: Worldbuilding
                               className="w-full flex items-center gap-1.5 px-3 py-2 text-left hover:bg-muted/50 transition-colors rounded-lg cursor-pointer outline-none"
                             >
                               {isExpanded ? (
-                                <ChevronDownIcon className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                                <ChevronDownIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                               ) : (
-                                <ChevronRightIcon className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                                <ChevronRightIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                               )}
                               <span className="text-sm truncate flex-1">{ch.title}</span>
                               {/* 大纲状态 */}
-                              <span className="text-xs text-muted-foreground flex-shrink-0 mr-1">
+                              <span className="text-xs text-muted-foreground shrink-0 mr-1">
                                 {chapterOutlines[ch.id]?.trim()
                                   ? '已有大纲'
                                   : '暂无大纲'}
                               </span>
                               {/* 总结状态 / 操作按钮 */}
                               {isSummarizing ? (
-                                <span className="text-xs text-blue-500 flex items-center gap-1 flex-shrink-0">
+                                <span className="text-xs text-blue-500 flex items-center gap-1 shrink-0">
                                   <Loader2Icon className="w-3 h-3 animate-spin" />
                                   总结中
                                 </span>
                               ) : summaryInfo ? (
-                                <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1 flex-shrink-0">
+                                <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1 shrink-0">
                                   ✓ 已总结
                                 </span>
                               ) : wordTooFew ? (
-                                <span className="text-xs text-muted-foreground/40 flex-shrink-0">内容较少</span>
+                                <span className="text-xs text-muted-foreground/40 shrink-0">内容较少</span>
                               ) : (
                                 <button
                                   onClick={(e) => handleChapterSummary(ch.id, ch.title, e)}
-                                  className="text-xs text-primary hover:underline flex items-center gap-0.5 flex-shrink-0"
+                                  className="text-xs text-primary hover:underline flex items-center gap-0.5 shrink-0"
                                 >
                                   <SparklesIcon className="w-3 h-3" />
                                   总结
@@ -692,7 +692,7 @@ function SummarizeRequestDetailModal({ request, onClose }: { request: SummarizeA
   const hasCustomPrompt = !!request.systemPrompt
   const effectivePrompt = request.systemPrompt || DEFAULT_SUMMARY_SYSTEM_PROMPT
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+    <div className="fixed inset-0 z-60 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative z-10 bg-background border rounded-xl shadow-2xl w-[90vw] max-w-2xl max-h-[80vh] flex flex-col mx-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3 border-b shrink-0">
@@ -740,7 +740,7 @@ function SummarizeRequestDetailModal({ request, onClose }: { request: SummarizeA
                 <span className="w-1.5 h-1.5 rounded-full bg-current opacity-50" />
                 {hasCustomPrompt ? '自定义总结要求' : '系统默认总结要求'}
               </div>
-              <div className="px-3 py-2 text-xs whitespace-pre-wrap break-words bg-amber-50/30 dark:bg-amber-950/20 text-foreground leading-relaxed">
+              <div className="px-3 py-2 text-xs whitespace-pre-wrap wrap-break-word bg-amber-50/30 dark:bg-amber-950/20 text-foreground leading-relaxed">
                 {effectivePrompt}
               </div>
             </div>
@@ -762,7 +762,7 @@ function SummarizeRequestDetailModal({ request, onClose }: { request: SummarizeA
                 <span className="w-1.5 h-1.5 rounded-full bg-current opacity-50" />
                 章节正文内容（截取前 8000 字）
               </div>
-              <div className="px-3 py-2 text-xs whitespace-pre-wrap break-words bg-amber-50/30 dark:bg-amber-950/20 text-foreground leading-relaxed max-h-[40vh] overflow-y-auto">
+              <div className="px-3 py-2 text-xs whitespace-pre-wrap wrap-break-word bg-amber-50/30 dark:bg-amber-950/20 text-foreground leading-relaxed max-h-[40vh] overflow-y-auto">
                 {request.chapterContent}
               </div>
             </div>
@@ -783,7 +783,7 @@ function FilterTag({ active, onClick, children }: { active: boolean; onClick: ()
     <button
       onClick={onClick}
       className={cn(
-        'flex-shrink-0 px-2.5 py-1 rounded-full text-xs transition-colors',
+        'shrink-0 px-2.5 py-1 rounded-full text-xs transition-colors',
         active ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
       )}
     >

@@ -184,11 +184,11 @@ export default function BookCard({ book, onOpen, onRefresh }: BookCardProps) {
       onContextMenu={onContextMenu}
     >
       {/* 封面区域 — 固定宽高比，不受 flex 挤压 */}
-      <div className="aspect-[3/4] bg-muted/50 relative flex-shrink-0 overflow-hidden">
+      <div className="aspect-3/4 bg-muted/50 relative shrink-0 overflow-hidden">
         {coverSrc ? (
           <img src={coverSrc} alt={book.title} className="w-full h-full object-cover" />
         ) : (
-          <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-accent/5 flex items-center justify-center">
+          <div className="absolute inset-0 bg-linear-to-br from-primary/10 via-transparent to-accent/5 flex items-center justify-center">
             <div className="flex flex-col items-center gap-1.5">
               {/* 书本图标为主视觉 */}
               <svg className="w-8 h-8 text-primary/20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.2}>
@@ -209,7 +209,7 @@ export default function BookCard({ book, onOpen, onRefresh }: BookCardProps) {
       </div>
 
       {/* 信息区 — flex-shrink-0 确保不被压缩 */}
-      <div className="p-3 flex flex-col gap-0.5 flex-shrink-0">
+      <div className="p-3 flex flex-col gap-0.5 shrink-0">
         <p className="font-medium text-sm truncate leading-tight" title={book.title}>{book.title}</p>
         <p className="text-xs text-muted-foreground truncate leading-tight" title={book.author}>{book.author || '未署名'}</p>
         <div className="flex items-center gap-2 pt-1.5">
@@ -272,7 +272,7 @@ function ProgressRing({ progress, size = 32 }: { progress: number; size?: number
   const circumference = 2 * Math.PI * r
   const offset = circumference - (progress / 100) * circumference
   return (
-    <svg width={size} height={size} className="rotate-[-90deg]">
+    <svg width={size} height={size} className="-rotate-90">
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth={3} />
       <circle
         cx={size / 2} cy={size / 2} r={r}

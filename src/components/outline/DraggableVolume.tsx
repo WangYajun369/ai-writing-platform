@@ -82,17 +82,17 @@ export default function DraggableVolume({
         {...attributes}
       >
         <button
-          className="p-0.5 rounded hover:bg-muted-foreground/20 cursor-grab active:cursor-grabbing touch-none flex-shrink-0 transition-transform hover:scale-110"
+          className="p-0.5 rounded hover:bg-muted-foreground/20 cursor-grab active:cursor-grabbing touch-none shrink-0 transition-transform hover:scale-110"
           {...listeners}
         >
           <GripVerticalIcon className="w-3 h-3" />
         </button>
         {item.collapsed ? (
-          <ChevronRightIcon className="w-3 h-3 flex-shrink-0" />
+          <ChevronRightIcon className="w-3 h-3 shrink-0" />
         ) : (
-          <ChevronDownIcon className="w-3 h-3 flex-shrink-0" />
+          <ChevronDownIcon className="w-3 h-3 shrink-0" />
         )}
-        <FolderIcon className="w-3 h-3 flex-shrink-0" />
+        <FolderIcon className="w-3 h-3 hrink-0" />
         {editing ? (
           <input
             autoFocus

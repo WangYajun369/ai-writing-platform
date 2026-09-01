@@ -228,7 +228,7 @@ export default function ChapterSummaryToolbar() {
 /** 章节 AI 总结请求详情弹窗 */
 function SummarizeRequestDetailModal({ request, onClose }: { request: SummarizeArgs; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+    <div className="fixed inset-0 z-60 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative z-10 bg-background border rounded-xl shadow-2xl w-[90vw] max-w-2xl max-h-[80vh] flex flex-col mx-4" onClick={(e) => e.stopPropagation()}>
         {/* 弹窗头部 */}

@@ -445,8 +445,8 @@ export default function LibraryPage() {
             className={cn(
               'relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 shrink-0 whitespace-nowrap',
               aiToolboxWindowOpen
-                ? 'bg-gradient-to-r from-primary/90 to-primary text-primary-foreground shadow-md shadow-primary/25'
-                : 'bg-gradient-to-r from-primary/15 via-primary/10 to-primary/15 text-primary border border-primary/20 hover:border-primary/40 hover:shadow-sm hover:shadow-primary/10',
+                ? 'bg-linear-to-r from-primary/90 to-primary text-primary-foreground shadow-md shadow-primary/25'
+                : 'bg-linear-to-r from-primary/15 via-primary/10 to-primary/15 text-primary border border-primary/20 hover:border-primary/40 hover:shadow-sm hover:shadow-primary/10',
             )}
           >
             <WrenchIcon className="w-4 h-4" />

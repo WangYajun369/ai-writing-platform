@@ -117,7 +117,7 @@ export default function CoverPicker({ value, onChange, className }: CoverPickerP
             <img
               src={previewSrc}
               alt="封面预览"
-              className="w-full aspect-[3/4] object-cover"
+              className="w-full aspect-3/4 object-cover"
             />
             {/* 处理中遮罩 */}
             {processing && (
@@ -152,7 +152,7 @@ export default function CoverPicker({ value, onChange, className }: CoverPickerP
             type="button"
             onClick={handlePick}
             disabled={loading || processing}
-            className="w-full aspect-[3/4] rounded-lg border-2 border-dashed border-muted-foreground/30 bg-muted/50 hover:bg-muted hover:border-primary/40 transition-all flex flex-col items-center justify-center gap-3 group"
+            className="w-full aspect-3/4 rounded-lg border-2 border-dashed border-muted-foreground/30 bg-muted/50 hover:bg-muted hover:border-primary/40 transition-all flex flex-col items-center justify-center gap-3 group"
           >
             <div className="p-3 rounded-full bg-primary/10 group-hover:bg-primary/20 transition-colors">
               <ImageIcon className="w-6 h-6 text-primary" />
@@ -172,7 +172,7 @@ export default function CoverPicker({ value, onChange, className }: CoverPickerP
       {/* 错误提示 */}
       {error && (
         <div className="flex items-center gap-1.5 text-xs text-destructive">
-          <AlertTriangleIcon className="w-3.5 h-3.5 flex-shrink-0" />
+          <AlertTriangleIcon className="w-3.5 h-3.5 shrink-0" />
           <span>{error}</span>
         </div>
       )}

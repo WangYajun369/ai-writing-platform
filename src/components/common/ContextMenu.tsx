@@ -222,7 +222,7 @@ function ContextMenuPopup({ x, y, items, minWidth, onClose, ref }: PopupProps & 
                   : 'text-popover-foreground hover:bg-muted'
               }`}
           >
-            {entry.icon && <entry.icon className="w-3.5 h-3.5 flex-shrink-0" />}
+            {entry.icon && <entry.icon className="w-3.5 h-3.5 shrink-0" />}
             <span className="truncate">{entry.label}</span>
           </button>
         )

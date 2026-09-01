@@ -21,7 +21,7 @@ export default function StatusBar() {
   const totalWordCount = currentBook?.wordCount ?? wordCount.total
 
   return (
-    <footer className="border-t bg-card px-4 py-1.5 flex items-center gap-4 text-xs text-muted-foreground flex-shrink-0">
+    <footer className="border-t bg-card px-4 py-1.5 flex items-center gap-4 text-xs text-muted-foreground shrink-0">
       {/* 章节信息 */}
       {currentChapter && (
         <>

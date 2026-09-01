@@ -100,16 +100,16 @@ export default function OutlineRecycleBin({
                     key={`vol-${item.data.id}`}
                     className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-muted/50 group"
                   >
-                    <FolderIcon className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+                    <FolderIcon className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
                     <span className="flex-1 text-sm truncate">
                       {item.data.title}
                     </span>
-                    <span className="text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                    <span className="text-xs px-1.5 py-0.5 rounded-full shrink-0 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
                       卷
                     </span>
                     <button
                       onClick={() => onRestoreVolume(item.data.id)}
-                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary flex-shrink-0"
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary shrink-0"
                       title="恢复卷"
                     >
                       <RotateCcwIcon className="w-3.5 h-3.5" />
@@ -121,7 +121,7 @@ export default function OutlineRecycleBin({
                           item.data.title,
                         )
                       }
-                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive flex-shrink-0"
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive shrink-0"
                       title="永久删除"
                     >
                       <Trash2Icon className="w-3.5 h-3.5" />
@@ -132,13 +132,13 @@ export default function OutlineRecycleBin({
                     key={`ch-${item.data.id}`}
                     className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-muted/50 group"
                   >
-                    <FileTextIcon className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+                    <FileTextIcon className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
                     <span className="flex-1 text-sm truncate">
                       {item.data.title}
                     </span>
                     <span
                       className={cn(
-                        'text-xs px-1.5 py-0.5 rounded-full flex-shrink-0',
+                        'text-xs px-1.5 py-0.5 rounded-full shrink-0',
                         CHAPTER_STATUS_CONFIG[item.data.status].color,
                       )}
                     >
@@ -146,7 +146,7 @@ export default function OutlineRecycleBin({
                     </span>
                     <button
                       onClick={() => onRestoreChapter(item.data.id)}
-                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary flex-shrink-0"
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary shrink-0"
                       title="恢复章节"
                     >
                       <RotateCcwIcon className="w-3.5 h-3.5" />
@@ -158,7 +158,7 @@ export default function OutlineRecycleBin({
                           item.data.title,
                         )
                       }
-                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive flex-shrink-0"
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive shrink-0"
                       title="永久删除"
                     >
                       <Trash2Icon className="w-3.5 h-3.5" />
