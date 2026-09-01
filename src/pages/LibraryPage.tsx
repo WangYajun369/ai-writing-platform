@@ -360,14 +360,14 @@ export default function LibraryPage() {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* 顶栏 */}
-      <header className="border-b bg-card px-6 py-4 flex items-center gap-4 sticky top-0 z-10">
-        <div className="flex items-center gap-2">
+      <header className="border-b bg-card px-6 py-4 flex items-center gap-4 sticky top-0 z-10 min-w-240">
+        <div className="flex items-center gap-2 shrink-0">
           <BookOpenIcon className="w-6 h-6 text-primary" />
-          <h1 className="text-xl font-bold tracking-tight">智写时光</h1>
+          <h1 className="text-xl font-bold tracking-tight whitespace-nowrap">智写时光</h1>
         </div>
 
         {/* 搜索框 */}
-        <div className="flex-1 max-w-md relative">
+        <div className="flex-1 min-w-40 max-w-md relative shrink-0">
           <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
@@ -384,7 +384,7 @@ export default function LibraryPage() {
         <select
           value={sortBy}
           onChange={(e) => setLibrarySortBy(e.target.value as SortBy)}
-          className="text-sm bg-muted border-0 rounded-lg px-3 py-2 outline-none cursor-pointer"
+          className="text-sm bg-muted border-0 rounded-lg px-3 py-2 outline-none cursor-pointer shrink-0 whitespace-nowrap"
         >
           <option value="updatedAt">最近修改</option>
           <option value="createdAt">创建时间</option>
@@ -395,7 +395,7 @@ export default function LibraryPage() {
         {/* 新建书籍 */}
         <button
           onClick={() => setShowNewBookDialog(true)}
-          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity"
+          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-opacity shrink-0 whitespace-nowrap"
         >
           <PlusIcon className="w-4 h-4" />
           新建作品
@@ -405,7 +405,7 @@ export default function LibraryPage() {
         <TooltipWrap title="作品回收站">
           <button
             onClick={() => setShowTrashModal(true)}
-            className="relative p-2 rounded-lg hover:bg-muted transition-colors"
+            className="relative p-2 rounded-lg hover:bg-muted transition-colors shrink-0"
           >
             <Trash2Icon className="w-5 h-5 text-muted-foreground" />
             {trashCount > 0 && (
@@ -421,7 +421,7 @@ export default function LibraryPage() {
           <button
             onClick={handleExportAll}
             disabled={isExporting}
-            className="p-2 rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
+            className="p-2 rounded-lg hover:bg-muted transition-colors disabled:opacity-50 shrink-0"
           >
             <UploadIcon className={`w-5 h-5 text-muted-foreground ${isExporting ? 'animate-pulse' : ''}`} />
           </button>
@@ -432,7 +432,7 @@ export default function LibraryPage() {
           <button
             onClick={handleImportBackup}
             disabled={isImporting}
-            className="p-2 rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
+            className="p-2 rounded-lg hover:bg-muted transition-colors disabled:opacity-50 shrink-0"
           >
             <DownloadIcon className={`w-5 h-5 text-muted-foreground ${isImporting ? 'animate-pulse' : ''}`} />
           </button>
@@ -443,7 +443,7 @@ export default function LibraryPage() {
           <button
             onClick={handleToggleAiToolboxWindow}
             className={cn(
-              'relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-300',
+              'relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 shrink-0 whitespace-nowrap',
               aiToolboxWindowOpen
                 ? 'bg-gradient-to-r from-primary/90 to-primary text-primary-foreground shadow-md shadow-primary/25'
                 : 'bg-gradient-to-r from-primary/15 via-primary/10 to-primary/15 text-primary border border-primary/20 hover:border-primary/40 hover:shadow-sm hover:shadow-primary/10',
@@ -462,7 +462,7 @@ export default function LibraryPage() {
           <button
             onClick={handleToggleDebugWindow}
             className={cn(
-              'p-2 rounded-lg transition-colors',
+              'p-2 rounded-lg transition-colors shrink-0',
               debugWindowOpen ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-muted-foreground',
             )}
           >
@@ -473,7 +473,7 @@ export default function LibraryPage() {
         <TooltipWrap title="设置">
           <button
             onClick={() => navigate('/settings')}
-            className="p-2 rounded-lg hover:bg-muted transition-colors"
+            className="p-2 rounded-lg hover:bg-muted transition-colors shrink-0"
           >
             <SettingsIcon className="w-5 h-5 text-muted-foreground" />
           </button>

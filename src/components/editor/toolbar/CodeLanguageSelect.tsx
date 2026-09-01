@@ -37,7 +37,7 @@ export const CodeLanguageSelect = memo(function CodeLanguageSelect({ editor }: C
       <TooltipWrap title="选择代码语言">
         <button
           onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0 whitespace-nowrap"
         >
           <span>{currentLabel}</span>
           <ChevronDownIcon className="w-3 h-3" />

@@ -54,7 +54,7 @@ export const ToolbarBtn = memo(function ToolbarBtn({
   const { show, onMouseEnter, onMouseLeave } = useTooltip()
 
   return (
-    <div className="relative flex items-center" onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
+    <div className="relative flex items-center shrink-0" onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
       <button
         onClick={onClick}
         className={cn(

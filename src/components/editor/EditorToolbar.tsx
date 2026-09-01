@@ -109,7 +109,7 @@ function GradientButton({
     <button
       onClick={onClick}
       className={cn(
-        'relative flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold transition-all duration-300',
+        'relative flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold transition-all duration-300 shrink-0 whitespace-nowrap',
         active
           ? 'bg-linear-to-r from-primary/90 to-primary text-primary-foreground shadow-md shadow-primary/25'
           : 'bg-linear-to-r from-primary/15 via-primary/10 to-primary/15 text-primary border border-primary/20 hover:border-primary/40 hover:shadow-sm hover:shadow-primary/10',
@@ -324,21 +324,21 @@ export default function EditorToolbar() {
   }, [])
 
   return (
-    <header className="toolbar border-b bg-card px-4 py-2 flex items-center gap-2 shrink-0 h-12">
+    <header className="toolbar border-b bg-card px-4 py-2 flex items-center gap-2 shrink-0 h-12 overflow-x-auto scrollbar-hide">
       {/* 返回 */}
       <TooltipWrap title="返回书库">
         <button
           onClick={() => navigate('/')}
-          className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground"
+          className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground shrink-0"
         >
           <ArrowLeftIcon className="w-4 h-4" />
         </button>
       </TooltipWrap>
 
       {/* 书名 */}
-      <span className="text-sm font-medium truncate max-w-32">{currentBook?.title ?? '未命名'}</span>
+      <span className="text-sm font-medium truncate max-w-32 shrink-0">{currentBook?.title ?? '未命名'}</span>
 
-      <div className="w-px h-5 bg-border mx-1" />
+      <div className="w-px h-5 bg-border mx-1 shrink-0" />
 
       {/* 目录树 */}
       <ToolbarBtn
@@ -351,7 +351,7 @@ export default function EditorToolbar() {
       <div className="flex-1" />
 
       {/* 字体大小 */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 shrink-0">
         <TypeIcon className="w-3.5 h-3.5 text-muted-foreground" />
         <TooltipWrap title="缩小字体">
           <button
@@ -374,7 +374,7 @@ export default function EditorToolbar() {
         </TooltipWrap>
       </div>
 
-      <div className="w-px h-5 bg-border mx-1" />
+      <div className="w-px h-5 bg-border mx-1 shrink-0" />
 
       {/* 插入图片 */}
       <ToolbarBtn active={false} onClick={handleInsertImage} title="插入图片" icon={<ImageIcon className="w-4 h-4" />} />
@@ -392,7 +392,7 @@ export default function EditorToolbar() {
       {(editor?.isActive('codeBlock') ?? false) && <CodeLanguageSelect editor={editor} />}
 
       {/* 表格 */}
-      <div className="relative flex items-center gap-1">
+      <div className="relative flex items-center gap-1 shrink-0">
         <ToolbarBtn
           active={tablePickerOpen || isInTable}
           onClick={() => {
@@ -413,11 +413,11 @@ export default function EditorToolbar() {
         {/* 表格上下文操作按钮（仅在光标位于表格内时显示） */}
         {isInTable && !tablePickerOpen && (
           <>
-            <span className="w-px h-4 bg-border mx-0.5" />
+            <span className="w-px h-4 bg-border mx-0.5 shrink-0" />
             <TooltipWrap title="删除当前行">
               <button
                 onClick={() => editor?.chain().focus().deleteRow().run()}
-                className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors shrink-0 whitespace-nowrap"
               >
                 <MinusIcon className="w-3 h-3" />
                 <span>删行</span>
@@ -426,7 +426,7 @@ export default function EditorToolbar() {
             <TooltipWrap title="删除当前列">
               <button
                 onClick={() => editor?.chain().focus().deleteColumn().run()}
-                className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors shrink-0 whitespace-nowrap"
               >
                 <MinusIcon className="w-3 h-3" />
                 <span>删列</span>
@@ -435,7 +435,7 @@ export default function EditorToolbar() {
             <TooltipWrap title="删除整个表格">
               <button
                 onClick={() => editor?.chain().focus().deleteTable().run()}
-                className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                className="flex items-center gap-0.5 px-1.5 py-1 rounded text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors shrink-0 whitespace-nowrap"
               >
                 <Trash2Icon className="w-3 h-3" />
                 <span>删表</span>
@@ -445,7 +445,7 @@ export default function EditorToolbar() {
         )}
       </div>
 
-      <div className="w-px h-5 bg-border mx-1" />
+      <div className="w-px h-5 bg-border mx-1 shrink-0" />
 
       {/* 加粗 */}
       <ToolbarBtn
@@ -486,7 +486,7 @@ export default function EditorToolbar() {
         )}
       </div>
 
-      <div className="w-px h-5 bg-border mx-1" />
+      <div className="w-px h-5 bg-border mx-1 shrink-0" />
 
       {/* 标题 */}
       <ToolbarBtn
@@ -508,7 +508,7 @@ export default function EditorToolbar() {
         icon={<Heading3Icon className="w-4 h-4" />}
       />
 
-      <div className="w-px h-5 bg-border mx-1" />
+      <div className="w-px h-5 bg-border mx-1 shrink-0" />
 
       {/* 列表 */}
       <ToolbarBtn
@@ -530,7 +530,7 @@ export default function EditorToolbar() {
         icon={<ListTodoIcon className="w-4 h-4" />}
       />
 
-      <div className="w-px h-5 bg-border mx-1" />
+      <div className="w-px h-5 bg-border mx-1 shrink-0" />
 
       {/* 功能按钮组 */}
       <ToolbarBtn
