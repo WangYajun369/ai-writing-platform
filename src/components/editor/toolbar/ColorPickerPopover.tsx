@@ -2,26 +2,37 @@
  * 字体颜色选择器弹窗
  *
  * 展示预设色块网格 + 自定义颜色输入 + 清除颜色按钮。
+ * 弹窗通过 createPortal 渲染到 document.body，位置由 anchorRef 锚点计算，
+ * 避免被工具栏 overflow-x-auto 容器裁剪遮挡。
  */
 import { useState, memo } from 'react'
+import { createPortal } from 'react-dom'
 import { PRESET_COLORS } from './constants'
+import { useAnchorPosition } from './useAnchorPosition'
 
 interface ColorPickerPopoverProps {
   currentColor: string | null
   onSelectColor: (color: string | null) => void
+  /** 触发按钮容器（用于计算弹出位置） */
+  anchorRef: React.RefObject<HTMLDivElement | null>
+  /** 弹窗容器 ref（用于点击外部关闭检测） */
+  popoverRef: React.RefObject<HTMLDivElement | null>
 }
 
 export const ColorPickerPopover = memo(function ColorPickerPopover({
   currentColor,
   onSelectColor,
-  ref,
-}: ColorPickerPopoverProps & { ref: React.Ref<HTMLDivElement> }) {
+  anchorRef,
+  popoverRef,
+}: ColorPickerPopoverProps) {
   const [customColor, setCustomColor] = useState('#000000')
+  const pos = useAnchorPosition(anchorRef)
 
-  return (
+  return createPortal(
     <div
-      ref={ref}
-      className="absolute top-full right-0 mt-1 z-30 bg-popover border rounded-lg shadow-lg p-3 min-w-52"
+      ref={popoverRef}
+      className="fixed z-50 bg-popover border rounded-lg shadow-lg p-3 min-w-52"
+      style={pos ? { top: pos.top, right: pos.right } : { top: -9999, left: -9999 }}
     >
       {/* 标题栏 */}
       <div className="flex items-center justify-between mb-2">
@@ -82,6 +93,7 @@ export const ColorPickerPopover = memo(function ColorPickerPopover({
           应用
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 })

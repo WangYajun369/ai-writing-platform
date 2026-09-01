@@ -145,11 +145,13 @@ export default function EditorToolbar() {
   // --- 颜色选择器 ---
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
   const colorPickerRef = useRef<HTMLDivElement>(null)
+  const colorAnchorRef = useRef<HTMLDivElement>(null)
   const savedColorTargetRef = useRef<{ from: number; to: number } | null>(null)
 
   // --- 表格 ---
   const [tablePickerOpen, setTablePickerOpen] = useState(false)
   const tablePickerRef = useRef<HTMLDivElement>(null)
+  const tableAnchorRef = useRef<HTMLDivElement>(null)
   const [isInTable, setIsInTable] = useState(false)
   const [canMerge, setCanMerge] = useState(false)
   const [canSplit, setCanSplit] = useState(false)
@@ -401,7 +403,7 @@ export default function EditorToolbar() {
       {(editor?.isActive('codeBlock') ?? false) && <CodeLanguageSelect editor={editor} />}
 
       {/* 表格 */}
-      <div className="relative flex items-center gap-1 shrink-0">
+      <div ref={tableAnchorRef} className="relative flex items-center gap-1 shrink-0">
         <ToolbarBtn
           active={tablePickerOpen || isInTable}
           onClick={() => {
@@ -413,11 +415,12 @@ export default function EditorToolbar() {
         />
         {tablePickerOpen && (
           <TablePopover
-            ref={tablePickerRef}
             editor={editor}
             onClose={() => setTablePickerOpen(false)}
             canMergeCells={canMerge}
             canSplitCell={canSplit}
+            anchorRef={tableAnchorRef}
+            popoverRef={tablePickerRef}
           />
         )}
 
@@ -489,7 +492,7 @@ export default function EditorToolbar() {
       />
 
       {/* 字体颜色 */}
-      <div className="relative">
+      <div ref={colorAnchorRef} className="relative shrink-0">
         <ToolbarBtn
           active={colorPickerOpen}
           onClick={handleToggleColorPicker}
@@ -498,7 +501,6 @@ export default function EditorToolbar() {
         />
         {colorPickerOpen && (
           <ColorPickerPopover
-            ref={colorPickerRef}
             currentColor={editor?.getAttributes('textStyle').color ?? null}
             onSelectColor={(color) => {
               if (editor) {
@@ -515,6 +517,8 @@ export default function EditorToolbar() {
               }
               setColorPickerOpen(false)
             }}
+            anchorRef={colorAnchorRef}
+            popoverRef={colorPickerRef}
           />
         )}
       </div>

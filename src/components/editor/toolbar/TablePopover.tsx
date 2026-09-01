@@ -4,8 +4,12 @@
  * 提供表格网格尺寸选择器、行/列添加操作，以及合并/拆分单元格操作。
  * gridHover 状态内化到组件内部，不再由父组件管理。
  * 合并/拆分的可用性由父组件（EditorToolbar）计算后通过 props 传入。
+ *
+ * 弹窗通过 createPortal 渲染到 document.body，位置由 anchorRef 锚点计算，
+ * 避免被工具栏 overflow-x-auto 容器裁剪遮挡。
  */
 import { useState, memo } from 'react'
+import { createPortal } from 'react-dom'
 import type { Editor } from '@tiptap/react'
 import {
   ArrowUpIcon,
@@ -17,6 +21,7 @@ import {
   TableCellsSplitIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils.ts'
+import { useAnchorPosition } from './useAnchorPosition'
 
 const MAX_ROWS = 6
 const MAX_COLS = 6
@@ -28,6 +33,10 @@ interface TablePopoverProps {
   canMergeCells?: boolean
   /** 当前单元格是否由合并产生（colspan/rowspan > 1），可执行拆分 */
   canSplitCell?: boolean
+  /** 触发按钮容器（用于计算弹出位置） */
+  anchorRef: React.RefObject<HTMLDivElement | null>
+  /** 弹窗容器 ref（用于点击外部关闭检测） */
+  popoverRef: React.RefObject<HTMLDivElement | null>
 }
 
 export const TablePopover = memo(function TablePopover({
@@ -35,10 +44,12 @@ export const TablePopover = memo(function TablePopover({
   onClose,
   canMergeCells = false,
   canSplitCell = false,
-  ref,
-}: TablePopoverProps & { ref: React.Ref<HTMLDivElement> }) {
+  anchorRef,
+  popoverRef,
+}: TablePopoverProps) {
   const [gridHover, setGridHover] = useState({ rows: 3, cols: 3 })
   const isInTable = editor?.isActive('table') ?? false
+  const pos = useAnchorPosition(anchorRef)
 
   function handleInsertTable() {
     editor
@@ -49,10 +60,11 @@ export const TablePopover = memo(function TablePopover({
     onClose()
   }
 
-  return (
+  return createPortal(
     <div
-      ref={ref}
-      className="absolute top-full right-0 mt-1 z-30 bg-popover border rounded-lg shadow-lg p-3 min-w-52"
+      ref={popoverRef}
+      className="fixed z-50 bg-popover border rounded-lg shadow-lg p-3 min-w-52"
+      style={pos ? { top: pos.top, right: pos.right } : { top: -9999, left: -9999 }}
     >
       {/* --- 表格内行/列添加操作 --- */}
       {isInTable && (
@@ -189,6 +201,7 @@ export const TablePopover = memo(function TablePopover({
       >
         取消
       </button>
-    </div>
+    </div>,
+    document.body,
   )
 })
