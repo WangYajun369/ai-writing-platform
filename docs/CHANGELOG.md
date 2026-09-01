@@ -1,5 +1,13 @@
 # 更新日志
 
+## v1.0.2 (2026-09-01)
+
+### 修复
+- 修复编辑器销毁后应用崩溃：TipTap `destroy()` 将 `commandManager` 置为 null，StrictMode 下残留实例调用 `can()` 抛异常；新增 `src/lib/editor-guard.ts`（`isEditorUsable`）统一校验，`EditorToolbar` / `RichTextEditor` / `TablePopover` / `MessageBubble` 全部调用点改为安全引用，图片插入/裁剪等异步回调在 await 后重新校验编辑器可用性
+
+### 优化
+- `clean` 脚本新增清理 Python 缓存（`__pycache__` / `.pyc` / `.mypy_cache`），`Cargo.lock` 版本同步至 1.0.2
+
 ## v1.0.1 (2026-09-01)
 
 ### 新增
