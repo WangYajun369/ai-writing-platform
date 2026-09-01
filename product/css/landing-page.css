@@ -443,6 +443,8 @@ body {
 .feature-icon.amber  { background: rgba(255, 184, 77, 0.15); }
 .feature-icon.blue   { background: rgba(77, 155, 255, 0.15); }
 .feature-icon.green  { background: rgba(78, 222, 128, 0.15); }
+.feature-icon.pink   { background: rgba(255, 120, 180, 0.15); }
+.feature-icon.cyan   { background: rgba(64, 224, 208, 0.15); }
 
 .feature-card h3 {
   font-size: 16px;
@@ -508,6 +510,104 @@ body {
 }
 
 .ai-card p {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* ── Agent Section ───────────────────────────── */
+.agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  margin-top: 32px;
+}
+
+.agent-card {
+  background: linear-gradient(180deg, rgba(124, 92, 252, 0.08) 0%, rgba(15, 15, 18, 0) 100%);
+  border: 1px solid rgba(124, 92, 252, 0.22);
+  border-radius: var(--radius);
+  padding: 22px;
+  transition: all 0.3s;
+}
+
+.agent-card:hover {
+  border-color: rgba(124, 92, 252, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+}
+
+.agent-card-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  margin-bottom: 12px;
+}
+
+.agent-card h4 {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  letter-spacing: -0.2px;
+}
+
+.agent-card p {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.agent-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 12px;
+}
+
+.agent-tag {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(124, 92, 252, 0.12);
+  color: #b8a4ff;
+}
+
+.agent-features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.agent-feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+}
+
+.agent-feature-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.agent-feature strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+
+.agent-feature span {
   font-size: 12px;
   color: var(--text-muted);
   line-height: 1.5;
@@ -1075,6 +1175,18 @@ body {
   .ai-card {
     padding: 16px;
   }
+  .agent-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 24px;
+  }
+  .agent-card {
+    padding: 16px;
+  }
+  .agent-features {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
   .workflow-steps {
     grid-template-columns: 1fr;
     gap: 10px;
@@ -1148,6 +1260,12 @@ body {
     font-size: 13px;
   }
   .ai-cards {
+    grid-template-columns: 1fr;
+  }
+  .agent-grid {
+    grid-template-columns: 1fr;
+  }
+  .agent-features {
     grid-template-columns: 1fr;
   }
   .showcase-grid {
