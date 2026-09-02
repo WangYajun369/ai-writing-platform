@@ -20,14 +20,14 @@
 │  │ components/ (按业务域分组的 UI 组件)                                │  │
 │  │ stores/ (Zustand 业务状态 + Jotai UI 原子状态)                      │  │
 │  │ plugins/ (PluginManager 扩展点系统)                                │  │
-│  │ lib/tauri-bridge.ts (唯一 IPC 调用入口，11 个 API 模块)              │  │
+│  │ lib/tauri-bridge.ts (唯一 IPC 调用入口，13 个 API 模块)              │  │
 │  └───────────────────────────┬──────────────────────────────────────┘  │
 │                              │ Tauri IPC (invoke / event)              │
 ├──────────────────────────────┼─────────────────────────────────────────┤
 │  进程 2: Rust Core（Tauri v2）                                           │
 │  ┌───────────────────────────┴──────────────────────────────────────┐  │
 │  │ lib.rs (Builder / 插件注册 / 状态注入 / 事件)                      │  │
-│  │ commands/  (IPC 命令层，约 80 个命令)                              │  │
+│  │ commands/  (IPC 命令层，约 90 个命令)                              │  │
 │  │ service/   (业务编排层: 事务、审计日志、业务规则)                    │  │
 │  │ repository/(数据访问层: 纯 SQL，无业务逻辑)                         │  │
 │  │ db/        (r2d2 连接池 + SQLite WAL + FTS5，含 memories 表)       │  │
@@ -158,11 +158,11 @@ db/         连接与 Schema —— r2d2 连接池、迁移、FTS5 触发器、�
 2. **数据库初始化**：`app_data_dir/time_write.db` → `AppDb::new()`（建表 + 迁移 + 索引）
 3. **旧版 Agent 记忆库迁移**：检测旧 `agent_memory.db`（`<cwd>/data/` 与 `<app_data_dir>/`），存在则将存量记忆导入 `memories` 表（幂等，失败仅记日志）
 4. **窗口关闭拦截**：CloseRequested → prevent_close → emit `agent-status-changed {status:"closing"}` → 关调试窗口 → 真正关闭（AtomicBool 防死循环）
-5. 注册约 80 个 IPC 命令（books / volumes / chapters / snapshots / world_cards / ai / io / image / window / agent / system_check）
+5. 注册约 90 个 IPC 命令（books / volumes / chapters / snapshots / world_cards / diaries / schedules / ai / io / image / window / agent / system_check）
 
 ### 3.3 数据库设计（db/schema.rs + db/mod.rs）
 
-**7 张业务表 + 2 张 FTS5 虚拟表**（v1.1 起新增 `memories`）：
+**9 张业务表 + 2 张 FTS5 虚拟表**（v1.1 起新增 `memories`；开发分支新增 `diaries` / `schedules`）：
 
 | 表 | 关键字段 | 说明 |
 |----|---------|------|
@@ -173,6 +173,8 @@ db/         连接与 Schema —— r2d2 连接池、迁移、FTS5 触发器、�
 | `world_cards` | book_id(FK), type(6 类), content_html, tags, vectorized | 世界观 |
 | `embeddings` | source_type, source_id, embedding(BLOB), model | 向量索引，UNIQUE(source_type, source_id) |
 | `memories` | book_id, skill_type, memory_type, content, keywords, relevance_score | Agent 记忆（索引：book_skill / type） |
+| `diaries` | diary_date(UNIQUE), content_html, word_count, keywords(JSON 数组文本), created_at, updated_at | 日记（每天至多一篇） |
+| `schedules` | schedule_date, content, done(0/1), created_at, updated_at | 个人日程（某天多条） |
 | `chapters_fts` / `world_cards_fts` | FTS5 (unicode61) | 全文搜索，INSERT/UPDATE/DELETE 三触发器自动同步 |
 
 技术要点：
@@ -326,7 +328,7 @@ Agent 面板/AI 侧面板发送消息
 MirageInk/
 ├── src/                      # 🔵 前端（React 19 + TS 6）
 │   ├── pages/                #   LibraryPage / EditorPage / SettingsPage
-│   ├── components/           #   10 个业务域组件目录 + ErrorBoundary
+│   ├── components/           #   11 个业务域组件目录 + ErrorBoundary
 │   ├── stores/               #   Zustand 3 slices + Jotai 21 atoms + pluginStore
 │   ├── lib/                  #   tauri-bridge.ts（IPC 入口）/ utils / toast / image
 │   ├── hooks/                #   useAppVersion / useConsoleInterceptor / useResizeHandle / useThemeFontInit
@@ -336,12 +338,12 @@ MirageInk/
 │   └── styles/               #   TailwindCSS 4 + HSL 主题变量（4 套主题）
 ├── src-tauri/                # 🟠 Rust 后端（Tauri v2）
 │   ├── src/
-│   │   ├── lib.rs            #   Builder / 插件 / 启动编排 / ~80 命令注册
-│   │   ├── commands/         #   book/volume/chapter/snapshot/world_card/image/system_check + ai/io/window/agent
+│   │   ├── lib.rs            #   Builder / 插件 / 启动编排 / ~90 命令注册
+│   │   ├── commands/         #   book/volume/chapter/snapshot/world_card/diary/schedule/image/system_check + ai/io/window/agent
 │   │   │   └── agent/        #   engine / prompts / tools / memory / skills（Rust 原生 Agent）
-│   │   ├── service/          #   6 个业务服务（事务 + 审计）
-│   │   ├── repository/       #   6 个数据仓库（纯 SQL）
-│   │   ├── db/               #   r2d2 连接池 + Schema（含 memories）+ FTS5
+│   │   ├── service/          #   8 个业务服务（事务 + 审计）
+│   │   ├── repository/       #   8 个数据仓库（纯 SQL）
+│   │   ├── db/               #   r2d2 连接池 + Schema（memories / diaries / schedules）+ FTS5
 │   │   ├── error.rs          #   AppError 统一错误
 │   │   └── utils.rs          #   HTTP 客户端 / HTML 工具 / 校验
 │   ├── capabilities/         #   权限声明

@@ -38,7 +38,7 @@ repository/ 数据访问层   —— 纯 SQL，接受 &Connection，无业务逻
 db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发器、索引
 ```
 
-各层职责边界在对应 `mod.rs` 注释中明确约定。共注册 **81 个 IPC 命令**（`#[tauri::command]` 计数）。
+各层职责边界在对应 `mod.rs` 注释中明确约定。共注册 **90 个 IPC 命令**（`#[tauri::command]` 计数）。
 
 ---
 
@@ -50,7 +50,7 @@ src/
 ├── App.tsx                   # 根组件：JotaiProvider + 主题/字体初始化 + 窗口类型检测
 ├── vite-env.d.ts             # Vite 环境类型声明
 ├── pages/                    # 页面级组件
-├── components/               # UI 组件（10 个业务域目录 + ErrorBoundary）
+├── components/               # UI 组件（11 个业务域目录 + ErrorBoundary）
 ├── stores/                   # Zustand（3 slice + pluginStore）+ Jotai（21 atom）
 ├── lib/                      # 工具库（tauri-bridge.ts / utils / toast / image-utils）
 ├── hooks/                    # 自定义 Hooks
@@ -60,11 +60,12 @@ src/
 └── styles/                   # CSS（TailwindCSS v4 + HSL 主题变量）
 ```
 
-### 组件 `components/`（10 个业务域）
+### 组件 `components/`（11 个业务域）
 
 | 目录 | 核心文件 | 职责 |
 |------|---------|------|
 | `library/` | `BookCard`、`NewBookDialog`、`EditBookDialog`、`CoverPicker`、`TrashModal` | 书库网格/列表、封面裁剪、回收站 |
+| `diary/` | `DiaryPanel`、`DiaryDialog`、`DiaryBookDialog`、`ScheduleManager` | 书库首页右栏：按月日历、TipTap 日记编辑器、「看日记」书页浏览、个人日程 |
 | `outline/` | `OutlinePanel`（842 行） | 卷-章两级目录树、拖拽排序（@dnd-kit）、虚拟滚动、回收站 |
 | `editor/` | `RichTextEditor`、`EditorToolbar`、`SnapshotPanel`、`ImageCropperDialog`、`ImageViewerDialog` | TipTap 编辑、工具栏、版本快照、图片处理 |
 | `ai/` | `AiSidePanel`、`AiToolboxPanel`、`MessageBubble`、`RequestDetailModal`、`useAiChat`（425 行）、`panel/*` | AI 对话面板、工具箱、请求详情 |
@@ -92,7 +93,7 @@ src/
 
 | 文件 | 说明 |
 |------|------|
-| `tauri-bridge.ts` | **全项目唯一允许调用 `invoke` 的模块**，11 个类型安全 API 对象 |
+| `tauri-bridge.ts` | **全项目唯一允许调用 `invoke` 的模块**，13 个类型安全 API 对象 |
 | `utils.ts` | `cn()` 类名合并、字数统计、HTML 清洗、日期格式化 |
 | `image-utils.ts` | 图片压缩、Base64 转换、尺寸获取 |
 | `toast.ts` | Toast 通知（成功/错误/警告/信息） |
@@ -127,13 +128,13 @@ src-tauri/
 ├── icons/                    # 应用图标（25 PNG + ICNS + ICO）
 └── src/
     ├── main.rs               # 程序入口
-    ├── lib.rs                # Tauri Builder：6 插件 + 数据库 + 记忆迁移 + 81 命令注册
+    ├── lib.rs                # Tauri Builder：6 插件 + 数据库 + 记忆迁移 + 90 命令注册
     ├── error.rs              # AppError 统一错误枚举（10 种变体）
     ├── logging.rs            # 日志模块
     ├── utils.rs              # HTTP 客户端工厂、HTML 工具、FTS5 转义、字段校验
-    ├── commands/             # IPC 命令层（11 个模块，24 个 .rs 文件）
-    ├── service/              # 业务编排层（6 个服务）
-    ├── repository/           # 数据访问层（6 个仓库）
+    ├── commands/             # IPC 命令层（13 个模块，30 个 .rs 文件）
+    ├── service/              # 业务编排层（8 个服务）
+    ├── repository/           # 数据访问层（8 个仓库）
     ├── db/                   # r2d2 连接池 + Schema + FTS5 触发器
     ├── models/               # Serde 数据模型（统一 camelCase）
     └── commands/agent/       # Rust 原生 Agent 引擎（engine/prompts/tools/memory/skills）
@@ -148,11 +149,13 @@ src-tauri/
 | 章节 | `chapter.rs` | 16 |
 | 快照 | `snapshot.rs` | 5 |
 | 世界观 | `world_card.rs` | 5 |
+| 日记 | `diary.rs` | 5 |
+| 日程 | `schedule.rs` | 4 |
 | 图片 | `image.rs` | 2 |
 | 系统检查 | `system_check.rs` | 1 |
 | AI | `ai/{mod,chat,embedding,summarize,test}.rs` | 8 |
 | 导入导出 | `io/{mod,export,import_txt,backup,crypto}.rs` | 5 |
-| 窗口 | `window/{mod,manager,debug,validate}.rs` | 12 |
+| 窗口 | `window/{mod,manager,debug,validate}.rs` | 14 |
 | Agent | `agent/{mod,engine,prompts,tools,memory,skills}.rs` | 6 |
 
 ### 业务服务 `service/`
@@ -165,14 +168,16 @@ src-tauri/
 | `snapshot_service.rs` | 快照创建与恢复 |
 | `search_service.rs` | FTS5 全文搜索 + LIKE 降级、向量语义搜索、混合排序 |
 | `world_card_service.rs` | 世界观 CRUD + 搜索 |
+| `diary_service.rs` | 日记保存（字数统计、关键字校验与入库）、查询、删除 |
+| `schedule_service.rs` | 个人日程 CRUD |
 
 ### 数据仓库 `repository/`
 
-纯 SQL 访问层，不含业务逻辑：`book_repo.rs` / `chapter_repo.rs` / `volume_repo.rs` / `snapshot_repo.rs` / `world_card_repo.rs` / `embedding_repo.rs`。
+纯 SQL 访问层，不含业务逻辑：`book_repo.rs` / `chapter_repo.rs` / `volume_repo.rs` / `snapshot_repo.rs` / `world_card_repo.rs` / `diary_repo.rs` / `schedule_repo.rs` / `embedding_repo.rs`。
 
 ### 数据库 `db/`
 
-7 张业务表（v1.1 起含 `memories`）+ 2 张 FTS5 虚拟表：
+9 张业务表（v1.1 起含 `memories`；开发分支新增 `diaries` / `schedules`）+ 2 张 FTS5 虚拟表：
 
 | 表 | 关键字段 |
 |----|---------|
@@ -183,6 +188,8 @@ src-tauri/
 | `world_cards` | book_id(FK), type(6 类), content_html, tags, vectorized |
 | `embeddings` | source_type, source_id, embedding(BLOB), model — UNIQUE(source_type, source_id) |
 | `memories` | book_id, skill_type, memory_type(preference/decision/lesson), content, keywords, relevance_score（v1.1 起，Agent 记忆并入主库） |
+| `diaries` | diary_date(UNIQUE), content_html, word_count, keywords(JSON 数组文本), created_at, updated_at（每天至多一篇） |
+| `schedules` | schedule_date, content, done(0/1), created_at, updated_at（某天可有多条） |
 | `chapters_fts` / `world_cards_fts` | FTS5（unicode61），由 6 个 CREATE TRIGGER 自动同步 |
 
 技术要点：
@@ -223,7 +230,7 @@ Python Agent（`agent/`）与 Bridge（`src-tauri/src/python/`）已删除，Age
 
 ## 相关文档
 
-- [IPC 命令速查](development/ipc-api) — 82 条命令完整清单
+- [IPC 命令速查](development/ipc-api) — 90 条命令完整清单
 - [技术栈](development/tech-stack)
 - [架构总览](architecture/overview)
 - [代码架构深度分析](architecture/code-architecture)

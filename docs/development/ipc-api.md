@@ -2,7 +2,7 @@
 
 > **适用版本**：`1.2.0`　|　**最后核对**：2026-09-02
 
-TimeWrite 共注册 **81 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用（Agent 命令为例外，见文末说明）。
+TimeWrite 共注册 **90 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用（Agent 命令为例外，见文末说明）。
 
 > **架构约定**：`tauri-bridge.ts` 是全项目**唯一**允许调用 `invoke` 的模块。禁止在其他文件中直接 import `@tauri-apps/api` 的 `invoke`。
 
@@ -17,13 +17,15 @@ TimeWrite 共注册 **81 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的
 | [章节](#章节-chapter) | 16 | `commands/chapter.rs` |
 | [快照](#快照-snapshot) | 5 | `commands/snapshot.rs` |
 | [世界观](#世界观-world_card) | 5 | `commands/world_card.rs` |
+| [日记](#日记-diary) | 5 | `commands/diary.rs` |
+| [日程](#日程-schedule) | 4 | `commands/schedule.rs` |
 | [AI](#ai-commandsai) | 8 | `commands/ai/{test,embedding,chat,summarize}.rs` |
 | [导入导出](#导入导出-commandsio) | 5 | `commands/io/{export,import_txt,backup}.rs` |
 | [图片](#图片-image) | 2 | `commands/image.rs` |
 | [窗口](#窗口-commandswindow) | 14 | `commands/window/{manager,debug,validate}.rs` |
 | [Agent](#agent-commandsagent) | 6 | `commands/agent/skills.rs` |
 | [系统](#系统检查-system_check) | 1 | `commands/system_check.rs` |
-| **合计** | **81** | — |
+| **合计** | **90** | — |
 
 ---
 
@@ -111,6 +113,25 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 | `delete_world_card` | 删除卡片 |
 | `search_world_cards` | FTS5 全文搜索 |
 
+## 日记 `diary`
+
+| 命令 | 说明 |
+|------|------|
+| `list_month_diaries` | 列出指定年月的日记摘要（按日期升序，不含正文） |
+| `list_all_diaries` | 列出全部日记摘要（书页式「看日记」跨月浏览用，按日期升序） |
+| `get_diary` | 按日期获取日记全文（无记录返回 null） |
+| `save_diary` | 保存日记（校验关键字数量/长度上限并入库；内容为空时前端转为删除该日记录） |
+| `delete_diary` | 删除某日日记 |
+
+## 日程 `schedule`
+
+| 命令 | 说明 |
+|------|------|
+| `list_schedules_by_date` | 列出某日全部日程 |
+| `list_schedules_by_month` | 列出某月全部日程（日历状态点用，按日期与创建时间排序） |
+| `save_schedule` | 新增或更新日程（含完成状态） |
+| `delete_schedule` | 删除日程 |
+
 ## AI `commands/ai/`
 
 | 命令 | 源文件 | 说明 |
@@ -192,7 +213,7 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 
 ## 前端桥接层 API 模块
 
-`src/lib/tauri-bridge.ts` 中对应的 11 个 API 对象：
+`src/lib/tauri-bridge.ts` 中对应的 13 个 API 对象：
 
 | API 对象 | 覆盖命令数 |
 |----------|:---:|
@@ -201,6 +222,8 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 | `chapterApi` | 16 |
 | `snapshotApi` | 5 |
 | `worldCardApi` | 5 |
+| `diaryApi` | 5 |
+| `scheduleApi` | 4 |
 | `aiApi` | 8 |
 | `importExportApi` | 5 |
 | `imageApi` | 2 |

@@ -14,6 +14,7 @@
 |--------|------|
 | 快速上手 | [快速开始](user-guide/quick-start) |
 | 管理作品与封面 | [书库管理](user-guide/library-management) |
+| 记日记、管理个人日程 | [日记与个人日程](user-guide/diary) |
 | 写章节、插图、调格式 | [章节编辑](user-guide/chapter-editing) |
 | 安静地码字 | [专注模式](user-guide/focus-mode) |
 | 管理人物/设定 | [世界观资料库](user-guide/worldbuilding) |
@@ -67,9 +68,9 @@
 | `_Sidebar.md` | Wiki 侧边栏导航 |
 | `_Footer.md` | Wiki 页脚 |
 
-### `user-guide/`（10 篇）
+### `user-guide/`（11 篇）
 
-`quick-start` · `library-management` · `chapter-editing` · `focus-mode` · `worldbuilding` · `ai-assistant` · `agent-panel` · `version-management` · `import-export` · `personalization`
+`quick-start` · `library-management` · `diary` · `chapter-editing` · `focus-mode` · `worldbuilding` · `ai-assistant` · `agent-panel` · `version-management` · `import-export` · `personalization`
 
 ### `features/`（2 篇）
 
@@ -95,7 +96,7 @@
 
 ---
 
-**合计 35 篇**（根级 6 + `user-guide/` 10 + `features/` 2 + `development/` 8 + `architecture/` 4 + `architecture/adr/` 4 + `meta/` 1）
+**合计 36 篇**（根级 6 + `user-guide/` 11 + `features/` 2 + `development/` 8 + `architecture/` 4 + `architecture/adr/` 4 + `meta/` 1）
 
 ---
 
