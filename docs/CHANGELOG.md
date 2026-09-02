@@ -1,5 +1,13 @@
 # 更新日志
 
+## v1.2.0 (2026-09-02)
+
+### 优化
+- **Agent 引擎全面迁移为 Rust 原生实现**：移除 Python FastAPI 子进程服务（`agent/` 服务端 24 个文件）与 Rust HTTP Bridge（`tiny_http`，端口 9876/9877 双进程架构），新增 `engine.rs`（SSE 流式 ReAct 工具循环 + 任务取消）、`prompts.rs`（4 大技能 Prompt 内置 Rust）、`tools.rs`（6 个数据库工具）；应用启动不再依赖外部 Python 环境，免除 uvicorn/解释器自检与端口看门狗
+- **记忆库并入主数据库**：新增 `memories` 表（支持书级/技能级记忆的增删改查、关键词提取、语义召回），旧 `agent_memory.db` 存量记忆在应用启动时自动幂等迁移至 `time_write.db`
+- **前端 Agent 交互精简**：移除 `AgentPanel` 启停面板与 `EmbeddingStatus` 索引状态组件，Agent 恒为就绪（无外部进程启停按钮），设置页 RAG 配置/系统检查同步为内置引擎检测
+- **工程与文档同步**：删除 `setup-agent` / `check-python-versions` 等 Python 运维脚本与 `pyrightconfig.json`，`check.mjs` 新增 Rust Agent 模块检查与 Python 迁移防回归断言及 `--fast` 模式；docs / release.yml / README 全量更新为 Rust 原生架构说明
+
 ## v1.1.0 (2026-09-02)
 
 ### 优化
