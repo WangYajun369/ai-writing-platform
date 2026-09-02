@@ -1,8 +1,9 @@
-# Python Agent 架构
+# Python Agent 架构（v1.0 归档）
 
-> **适用版本**：`1.0.0`　|　**最后核对**：2026-08-31
+> **适用版本**：`1.0.0`（Python FastAPI + LangGraph 架构，端口 9877 / Bridge 9876）。
 >
-> Agent 子系统是 v1.0.0 的核心新增特性。面向用户的使用说明见 [Agent 自动化](user-guide/agent-panel)。
+> **⚠️ 已废弃**：v1.1 起 Agent 已整体迁移为 Rust 原生引擎（`src-tauri/src/commands/agent/`），
+> 本文仅作历史设计参考。最新说明见 [AI 架构](AI-architecture) 与用户指南 [Agent 自动化](../user-guide/agent-panel)。
 
 ---
 

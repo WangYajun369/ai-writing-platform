@@ -41,7 +41,6 @@ sha2 = "0.10"
 rand = "0.8"
 image = "0.25"
 base64 = "0.22"
-tiny_http = "0.12"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

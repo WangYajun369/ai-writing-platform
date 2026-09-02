@@ -15,14 +15,10 @@
     "tauri": "tauri",
     "check": "node scripts/check.mjs",
     "check-versions": "npx tsx scripts/check-npm-versions.ts",
-    "check-py-versions": "npx tsx scripts/check-python-versions.ts",
     "check-rust-versions": "npx tsx scripts/check-rust-versions.ts",
     "node": "npx tsx scripts/node-manager.ts",
     "clean": "npx tsx scripts/clean.ts",
-    "clean:all": "npx tsx scripts/clean.ts --all",
-    "agent:setup": "npx tsx scripts/setup-agent.ts",
-    "agent:check": "npx tsx scripts/setup-agent.ts --check",
-    "agent:models": "npx tsx scripts/setup-agent.ts --download-models"
+    "clean:all": "npx tsx scripts/clean.ts --all"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

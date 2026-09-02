@@ -1,7 +1,0 @@
-{
-  "include": ["agent"],
-  "pythonVersion": "3.14",
-  "venvPath": "agent",
-  "venv": ".venv",
-  "typeCheckingMode": "strict"
-}

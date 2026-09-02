@@ -15,7 +15,7 @@
 按 `Esc` 键退出专注模式，所有面板恢复之前状态。
 
 ### Q: AI 助手支持哪些模型？
-默认集成智谱 BigModel（`glm-5.1`）和 DeepSeek（支持推理思考模式），同时支持任何 OpenAI 兼容 API 以及本地 Ollama 部署。
+默认集成智谱 BigModel（`glm-5.1`）和 DeepSeek（支持推理思考模式），同时支持任何 OpenAI 兼容 API。
 
 ### Q: 为什么 AI 回复被截断？
 检查设置中的「最大输出 Token」参数，确保设置足够大的值（默认 131072）。
@@ -28,26 +28,17 @@
 
 ## Agent 自动化相关
 
-### Q: Agent 面板显示"未启动"怎么办？
+### Q: Agent 面板提示异常怎么办？
 
-Agent 由 Rust 侧 `python/manager.rs` 自动拉起。点击面板右上角「启动」按钮即可；若反复失败，常见原因：
-
-1. **未初始化 Python 环境** —— 执行 `pnpm agent:setup` 创建 `agent/.venv` 并安装依赖
-2. **uvicorn 不可用** —— AgentManager 会验证解释器可用性，缺失时会自动降级查找，详见 [Agent 架构](architecture/agent-architecture)
-3. **端口 9877 被占用** —— AgentManager 启动时会自动 kill 僵尸进程；仍失败可手动 `lsof -i :9877`
+Agent 已内置为 Rust 原生引擎，无需安装或启动。若面板异常，请检查「设置 → AI 配置」中的 API Key 是否有效，或用「测试连接」验证网络。
 
 ### Q: Agent 需要联网吗？
 
-取决于技能与模型路由：
-
-- **润色优化（polish）** —— 走本地 Ollama（`qwen2.5:7b`），无需联网，但需要本地已拉取该模型
-- **写作 / 分析 / 研究** —— 走云端 DeepSeek，需要有效的 API Key（在设置 → AI 配置中填写）
-
-若本地 Ollama 不可用，历史压缩功能会自动降级跳过。
+需要。Agent 全部技能使用「设置 → AI 配置」中配置的云端对话模型（智谱 / DeepSeek / OpenAI 兼容），不再依赖本地 Ollama / Python 环境。
 
 ### Q: Agent 会修改我的章节内容吗？
 
-**不会。** Python Agent 不直接访问 SQLite，只能通过 Rust Bridge（端口 9876）**读取**数据。所有写操作（保存、恢复快照等）的唯一入口仍在 Rust 侧。Agent 的输出以文本形式展示，是否采纳由你决定。
+**不会。** Agent 引擎只能通过内置只读工具读取章节与世界观资料。所有写操作（保存、恢复快照等）的唯一入口始终在 Rust 命令层。Agent 的输出以文本形式展示，是否采纳由你决定。
 
 ### Q: Agent 记忆保存在哪里？可以删除吗？
 

@@ -117,16 +117,20 @@ export function getChatApiKey(config: AiChatConfig): string | undefined {
   return config.provider === 'bigmodel' ? config.bigmodelApiKey : config.deepseekApiKey
 }
 
-/** RAG / Embedding 检索服务商（当前暂不可用，DeepSeek 不提供 Embeddings API，后期扩展） */
+/**
+ * RAG / Embedding 检索服务商（智谱 BigModel）
+ *
+ * 预留能力：向量索引/语义检索尚未接入对话（当前对话由 Agent 引擎通过内置
+ * 工具检索章节与世界观资料）。保留配置用于连接测试与未来接入。
+ */
 export type RagProvider = 'bigmodel'
 
-/** RAG / Embedding 检索配置（当前暂不可用） */
+/** RAG / Embedding 检索配置（预留能力，不影响当前对话） */
 export interface RagConfig {
-  enabled: boolean
   provider: RagProvider
   endpoint: string
   embeddingModel: string
-  /** 智谱 API Key（后期扩展使用） */
+  /** 智谱 API Key */
   bigmodelApiKey?: string
 }
 

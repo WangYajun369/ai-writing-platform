@@ -2,10 +2,9 @@
 //!
 //! 在全局设置中提供系统信息检测功能，包括：
 //! - 系统类型与版本
-//! - Python / Node / Rust 版本
+//! - Agent 引擎 / Node / Rust 状态
 //! - 安装路径信息
 
-use std::path::Path;
 use std::process::Command;
 
 use serde::Serialize;
@@ -100,129 +99,13 @@ fn detect_os_info() -> (String, String, String) {
     (os_type.to_string(), os_version, arch.to_string())
 }
 
-/// 查找 .venv 虚拟环境中的 Python 解释器
-/// 优先 agent/.venv（打包位置），再项目根目录 .venv（开发备选）
-fn find_venv_python() -> Option<String> {
-    // 开发模式：从项目目录查找
-    let dev_candidates = vec![
-        std::path::PathBuf::from("agent/.venv/bin/python"),        // 主位置（打包分发）
-        std::path::PathBuf::from(".venv/bin/python"),              // 项目根目录（开发备选）
-        std::path::PathBuf::from("../agent/.venv/bin/python"),     // 从 src-tauri
-        std::path::PathBuf::from("../.venv/bin/python"),           // 从 src-tauri（开发备选）
-    ];
-    for candidate in &dev_candidates {
-        if candidate.exists() {
-            return Some(candidate.to_string_lossy().to_string());
-        }
-    }
-    // 也尝试从可执行文件同目录的资源路径查找（生产环境打包路径）
-    // - macOS .app bundle: Contents/Resources/ （exe/../Resources/）
-    // - 非 bundle / Linux / Windows: {exe}同目录下的 resources/
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            #[cfg(not(target_os = "windows"))]
-            let candidates = {
-                let mut v: Vec<std::path::PathBuf> = Vec::new();
-                // macOS .app bundle: Contents/Resources/agent/.venv/bin/python
-                if let Some(bundle_parent) = parent.parent() {
-                    v.push(bundle_parent.join("Resources").join("agent").join(".venv").join("bin").join("python"));
-                }
-                // 非 bundle 模式: {exe}/resources/agent/.venv/bin/python
-                v.push(parent.join("resources").join("agent").join(".venv").join("bin").join("python"));
-                // 直接在 {exe} 同目录找 .venv（不太可能但无害）
-                v.push(parent.join(".venv").join("bin").join("python"));
-                v
-            };
-            #[cfg(target_os = "windows")]
-            let candidates = {
-                let mut v: Vec<std::path::PathBuf> = Vec::new();
-                if let Some(bundle_parent) = parent.parent() {
-                    v.push(bundle_parent.join("Resources").join("agent").join(".venv").join("Scripts").join("python.exe"));
-                }
-                v.push(parent.join("resources").join("agent").join(".venv").join("Scripts").join("python.exe"));
-                v.push(parent.join(".venv").join("Scripts").join("python.exe"));
-                v
-            };
-            for prod_python in &candidates {
-                if prod_python.exists() {
-                    return Some(prod_python.to_string_lossy().to_string());
-                }
-            }
-        }
-    }
-    None
-}
-
-/// 查找 Python 解释器并获取版本
-///
-/// 优先级：agent/.venv > PATH 中的 python3 > PATH 中的 python
-fn check_python() -> CheckItem {
-    // 优先查找 agent/.venv 虚拟环境（与 manager.rs 启动逻辑一致）
-    if let Some(venv_path_raw) = find_venv_python() {
-        // ⚠️ 不使用 canonicalize() 执行 Python 命令！
-        // venv/bin/python 可能是 symlink，canonicalize 会解析到系统 Python，
-        // 导致 sys.path 不包含 venv 的 site-packages，import uvicorn 失败
-        let venv_path_display = Path::new(&venv_path_raw)
-            .canonicalize()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|_| venv_path_raw.clone());
-        if let Ok(version) = run_cmd(&venv_path_raw, &["--version"]) {
-            let raw = run_cmd(&venv_path_raw, &["-c", "import sys; print(sys.prefix)"])
-                .unwrap_or_else(|_| "无法获取".to_string());
-            let lib_path = Path::new(raw.trim())
-                .canonicalize()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|_| raw.trim().to_string());
-            // 验证 uvicorn 是否可用（使用原始 venv 路径，不能 canonicalize）
-            let uvicorn_ok = std::process::Command::new(&venv_path_raw)
-                .arg("-c")
-                .arg("import uvicorn")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
-            let extra = if uvicorn_ok {
-                " (uvicorn ✓)"
-            } else {
-                " (缺少 uvicorn，请运行 uv sync)"
-            };
-            return CheckItem {
-                name: "Python".to_string(),
-                value: format!("{} {}", version, extra),
-                status: if uvicorn_ok { "ok" } else { "warning" }.to_string(),
-                detail: Some(format!("解释器: {} (agent/.venv)\n安装路径: {}", venv_path_display, lib_path)),
-            };
-        }
-    }
-
-    // 回退：尝试 PATH 中的 python3 / python
-    for python_bin in &["python3", "python"] {
-        if let Ok(version) = run_cmd(python_bin, &["--version"]) {
-            let raw_python_path = run_cmd("which", &[python_bin])
-                .unwrap_or_else(|_| python_bin.to_string());
-            let python_path = Path::new(raw_python_path.trim())
-                .canonicalize()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|_| raw_python_path.trim().to_string());
-            let raw = run_cmd(python_bin, &["-c", "import sys; print(sys.prefix)"])
-                .unwrap_or_else(|_| "无法获取".to_string());
-            let lib_path = Path::new(raw.trim())
-                .canonicalize()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|_| raw.trim().to_string());
-            return CheckItem {
-                name: "Python".to_string(),
-                value: version,
-                status: "ok".to_string(),
-                detail: Some(format!("解释器: {} (系统)\n安装路径: {}", python_path, lib_path)),
-            };
-        }
-    }
-
+/// 检查 Agent 引擎（Rust 原生内置，无外部进程依赖）
+fn check_agent() -> CheckItem {
     CheckItem {
-        name: "Python".to_string(),
-        value: "未安装".to_string(),
-        status: "error".to_string(),
-        detail: Some("未检测到 Python 解释器，请安装 Python 3.11+".to_string()),
+        name: "Agent 引擎".to_string(),
+        value: "内置（Rust）".to_string(),
+        status: "ok".to_string(),
+        detail: Some("Skill 引擎已原生集成于 Tauri 后端，无需 Python / 外部进程".to_string()),
     }
 }
 
@@ -334,7 +217,7 @@ pub async fn system_check(app: AppHandle) -> Result<SystemCheckResult, AppError>
     });
 
     // ── 运行时版本 ──
-    items.push(check_python());
+    items.push(check_agent());
     items.push(check_node());
     items.push(check_rust());
 

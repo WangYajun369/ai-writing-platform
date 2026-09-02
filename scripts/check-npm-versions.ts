@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 /**
+ * MirageInk (TimeWrite / 智写时光) — 前端依赖版本巡检
+ *
  * 检测 Node.js/npm 项目依赖的当前版本与最新版本
  *   - Node.js 工具链 (node/pnpm/npm/tsx)
  *   - npm 依赖 (package.json)

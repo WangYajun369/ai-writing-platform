@@ -3,8 +3,6 @@
  */
 import { memo } from 'react'
 import { SendIcon, Loader2Icon } from 'lucide-react'
-import { useAiChat } from '../useAiChat'
-import { EmbeddingStatus } from './EmbeddingStatus'
 
 interface InputAreaProps {
   input: string
@@ -12,18 +10,10 @@ interface InputAreaProps {
   onSend: () => void
   streaming: boolean
   modelName: string
-  embeddingGenerating: boolean
-  embeddingStatusLoading: boolean
-  embeddingStatus: ReturnType<typeof useAiChat>['embeddingStatus']
-  currentBookId: string | null
-  ragEnabled: boolean
-  onGenerateEmbeddings: () => void
 }
 
 export const InputArea = memo(function InputArea({
   input, onChange, onSend, streaming, modelName,
-  embeddingGenerating, embeddingStatusLoading, embeddingStatus,
-  currentBookId, ragEnabled, onGenerateEmbeddings,
 }: InputAreaProps) {
   return (
     <div className="px-3 py-3 border-t shrink-0">
@@ -50,16 +40,8 @@ export const InputArea = memo(function InputArea({
           {streaming ? <Loader2Icon className="w-4 h-4 animate-spin" /> : <SendIcon className="w-4 h-4" />}
         </button>
       </div>
-      <p className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
+      <p className="text-xs text-muted-foreground mt-1">
         模型：{modelName}
-        {currentBookId && ragEnabled && (
-          <EmbeddingStatus
-            generating={embeddingGenerating}
-            loading={embeddingStatusLoading}
-            status={embeddingStatus}
-            onRegenerate={onGenerateEmbeddings}
-          />
-        )}
       </p>
     </div>
   )

@@ -1,7 +1,7 @@
 //! TimeWrite 数据库模块
 //!
 //! 基于 rusqlite + r2d2 连接池，WAL 模式 + 外键约束。
-//! 管理 6 张表：books / volumes / chapters / snapshots / world_cards / embeddings。
+//! 管理 7 张表：books / volumes / chapters / snapshots / world_cards / embeddings / memories。
 
 pub mod schema;
 
@@ -175,6 +175,19 @@ impl AppDb {
                 created_at   TEXT NOT NULL DEFAULT (datetime('now')),
                 UNIQUE(source_type, source_id)
             );
+
+            -- Agent 记忆体（由原 Python Agent 迁移而来，用于注入 Skill 对话上下文）
+            CREATE TABLE IF NOT EXISTS memories (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id         TEXT NOT NULL,
+                skill_type      TEXT NOT NULL,
+                memory_type     TEXT NOT NULL,
+                content         TEXT NOT NULL,
+                keywords        TEXT NOT NULL DEFAULT '',
+                relevance_score REAL NOT NULL DEFAULT 1.0,
+                created_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+                updated_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+            );
         "#).context("创建数据表失败")?;
 
         // FTS5 全文搜索虚拟表（章节 + 世界观卡片）
@@ -255,7 +268,7 @@ impl AppDb {
         }
 
         // 关键字段索引（提升查询性能）
-        crate::app_log!("[SQL] CREATE INDEX → volumes, chapters, books, snapshots, world_cards, embeddings");
+        crate::app_log!("[SQL] CREATE INDEX → volumes, chapters, books, snapshots, world_cards, embeddings, memories");
         conn.execute_batch(r#"
             CREATE INDEX IF NOT EXISTS idx_volumes_book_id ON volumes(book_id);
             CREATE INDEX IF NOT EXISTS idx_volumes_deleted_at ON volumes(deleted_at);
@@ -267,6 +280,8 @@ impl AppDb {
             CREATE INDEX IF NOT EXISTS idx_snapshots_chapter_id ON snapshots(chapter_id);
             CREATE INDEX IF NOT EXISTS idx_world_cards_book_id ON world_cards(book_id);
             CREATE INDEX IF NOT EXISTS idx_embeddings_source ON embeddings(source_type, source_id);
+            CREATE INDEX IF NOT EXISTS idx_memories_book_skill ON memories(book_id, skill_type);
+            CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(memory_type);
         "#).context("创建索引失败")?;
 
         Ok(())

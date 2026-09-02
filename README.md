@@ -18,8 +18,8 @@
 | **路由** | React Router v7（懒加载 Editor/Settings 页面） |
 | **后端** | Rust 2021 + SQLite（WAL 模式）+ rusqlite（bundled）+ r2d2 连接池 |
 | **AI 通信** | SSE 流式对话，reqwest stream + tokio 异步 |
-| **Agent 服务** | Python ≥ 3.10 + FastAPI + LangGraph ReAct Agent，端口 9877，独立子进程管理 |
-| **Agent 记忆** | SQLite 持久化（跨会话偏好/决策/经验记忆，相关性检索 + 时间衰减） |
+| **Agent 引擎** | Rust 原生实现（Skill Prompt + SSE 流式 ReAct 工具循环），无外部进程 |
+| **Agent 记忆** | SQLite 持久化（time_write.db memories 表，跨会话偏好/决策/经验记忆，关键词相关性检索） |
 | **包管理** | pnpm >= 11，Node >= 22 |
 | **深度链接** | com.ukcoder.timewrite 协议（`com.ukcoder.timewrite://`），支持外部应用唤起与参数传递 |
 
@@ -52,7 +52,7 @@
 - 独立悬浮窗口模式（always_on_top，420×650）
 
 ### AI 助手
-- 多服务商支持：智谱 BigModel + 自定义 OpenAI 兼容端点（含 DeepSeek / Ollama 本地模型预设）
+- 多服务商支持：智谱 BigModel / DeepSeek + 自定义 OpenAI 兼容端点
 - 推理模型 Thinking 展示，对话/RAG 配置完全解耦，API Key 按服务商独立管理
 - SSE 流式对话，自动重试与网络容错（2 次指数退避 + 60s 断流保底 + 保留已生成内容）
 - RAG 语义检索：向量检索 + FTS5 双轨降级，Embedding 索引管理（连接独立测试 + stale 过期提示）
@@ -62,23 +62,19 @@
 - 请求详情面板：查看完整 AI 请求/响应内容
 - 默认对话模型：`glm-5.1`，Embedding：`embedding-3`
 
-### Agent 自动化（Python FastAPI 服务）
-Agent 系统基于 LangGraph ReAct 架构，调用 AI 模型 + 数据库工具链完成复杂的多步写作任务：
+### Agent 智能助手（Rust 原生引擎）
+Agent 引擎已完全内置于 Rust 后端（无 Python / 外部进程依赖），基于 OpenAI function calling 协议实现流式 ReAct 工具循环，调用云端模型 + 数据库工具链完成多步写作任务：
 
 - **4 个核心技能（Skill）**：
   - 写作辅助（WRITING）—— 大纲生成、情节建议、角色对话模拟、冲突设计
   - 文学分析（ANALYSIS）—— 文风分析、连贯性检查、伏笔追踪、角色弧光、节奏评估
   - 设定研究（RESEARCH）—— 资料检索、世界观一致性校验、设定扩展、关系图谱
   - 文字润色（POLISH）—— 语法纠错、文笔润色、风格统一、冗余精简
-- **独立子进程管理**：Python FastAPI 服务（端口 9877）、Rust AgentManager 全生命周期管控
-- **看门狗自动恢复**：异常崩溃检测 + 自动重启（最多 3 次），优雅关闭（SIGTERM → 10s 等待 → SIGKILL）
-- **LangGraph ReAct 执行引擎**：动态 Prompt 注入、多步推理、选择性工具集加载（每 Skill 不同工具子集）
-- **6 个数据库工具链**：读取章节/摘要/分页、列出章节、搜索世界观卡片、获取整书上下文 — 全部通过 Rust Bridge（端口 9876）回调访问 SQLite
-- **记忆体系统**：三层记忆（偏好/决策/经验）、SQLite 持久化、关键词匹配 + 时间衰减排序、Token 预算控制（600 tokens），附管理界面（查看/编辑/删除/清空）
-- **对话压缩**：超 6 轮自动触发本地 Ollama 模型压缩，保留最近 4 轮完整对话
-- **双模型路由**：本地 Ollama（qwen2.5:7b，处理润色）+ 云端 DeepSeek（处理写作/分析/研究），按任务复杂度自动选择
-- **DeepSeek 思考模式适配**：KV Cache 友好 Prompt 结构、reasoning_content 剥离、首 Token 延迟监控
-- **SSE 流式输出**：React Agent Panel → Rust HTTP Client → Python Agent → LangGraph ReAct → Rust Bridge → SQLite → 流式回传
+- **原生 ReAct 执行引擎**：SSE 流式接收模型输出，工具调用增量累积 → 执行 → 回填 → 多轮循环（上限 15 轮），事件契约与旧版一致（`agent-stream-chunk`）
+- **动态 Prompt 注入**：按 Skill 组装 System Prompt + 用户消息关键词匹配最多 3 个场景提示 + 记忆注入 + 历史摘要
+- **6 个数据库工具链**：读取章节/摘要/分页、列出章节、搜索世界观卡片、获取整书上下文 — 直接在 Rust 内访问 SQLite（repository 层），无中间跳转
+- **记忆体系统**：三层记忆（偏好/决策/经验）、`memories` 表 SQLite 持久化、关键词相关性打分、Token 预算控制，附管理界面（查看/编辑/删除/清空）；启动时自动导入旧版 Python 记忆库（幂等）
+- **模型路由**：按用户 AI 配置直连 DeepSeek / 智谱等 OpenAI 兼容端点（SSE 流式 + 60s 断流保底 + 总超时保护）
 - **前端 RAF 缓冲优化**：requestAnimationFrame 合并高频 SSE chunk，避免过多重渲染
 
 ### 版本管理
@@ -134,7 +130,7 @@ Agent 系统基于 LangGraph ReAct 架构，调用 AI 模型 + 数据库工具�
 - **CSP 收紧**：严格内容安全策略 —— `img-src` 仅允许本地资源（`asset:`/`data:`），`connect-src` 仅放行 IPC 与必要的 `api.github.com`，阻断注入攻击面
 - **文件系统权限作用域**：Tauri fs 权限限定在应用数据目录与资源目录（`$APPDATA/**`、`$RESOURCE/**`），用户选择的路径经系统对话框动态授权
 - **IPC 最小暴露**：`withGlobalTauri` 关闭，前端仅通过显式导入的 `@tauri-apps/api` 调用 IPC，不暴露全局 `window.__TAURI__`
-- **Agent 只读保证**：Python Agent 经 Rust Bridge（9876）仅读数据，所有写操作唯一入口在 Rust 侧
+- **Agent 只读保证**：Agent 工具仅通过 Rust repository 层只读访问数据库，所有写操作唯一入口在 Rust 侧
 
 ## 📖 文档
 

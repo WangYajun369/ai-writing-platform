@@ -35,24 +35,20 @@
 | 富文本 | TipTap |
 | 状态管理 | Zustand（业务 slice）+ Jotai（21 个 UI atom） |
 | 后端 | Rust 2021 + SQLite（WAL 模式 + FTS5 全文索引） |
-| AI 通信 | Rust `reqwest` SSE 流式对话（智谱 / DeepSeek / OpenAI 兼容 / Ollama） |
-| Agent 服务 | Python + FastAPI + LangGraph ReAct（端口 **9877**） |
-| 数据桥接 | Rust Bridge HTTP Server（端口 **9876**），Agent 反向回调读库 |
+| AI 通信 | Rust `reqwest` SSE 流式对话（智谱 / DeepSeek / OpenAI 兼容端点） |
+| Agent 引擎 | Rust 原生 ReAct 引擎（流式输出、4 大技能、长期记忆、工具调用） |
 
-### 三进程架构
+### 双进程架构
 
-TimeWrite 运行时包含 3 个独立进程，Rust 是**唯一的数据拥有者**：
+TimeWrite 运行时包含 2 个进程，Rust 是**唯一的数据拥有者**。v1.1 起 Python Agent（9877）/ Bridge（9876）已移除，Agent 引擎原生集成于 Rust 后端：
 
 ```
-WebView 前端  ──Tauri IPC──►  Rust Core  ──HTTP SSE──►  Python Agent
- (React 19)                  (SQLite 独占)              (LangGraph)
-                                   ▲                          │
-                                   └──── HTTP 9876 Bridge ◄───┘
+WebView 前端  ──Tauri IPC──►  Rust Core（SQLite 独占 + 内置 Agent 引擎）
+ (React 19)                   （工具检索 / 记忆注入 / ReAct 推理全部在 Rust 内完成）
 ```
 
 - **前端**：只通过 IPC 访问数据，不直连数据库
-- **Rust Core**：业务编排 + 数据持久化 + 子进程管理
-- **Python Agent**：AI 执行体，不直接触碰 SQLite，通过 9876 Bridge 反向回调读数据
+- **Rust Core**：业务编排 + 数据持久化 + Agent 引擎（Skill 执行、记忆管理、工具调用）
 
 ---
 

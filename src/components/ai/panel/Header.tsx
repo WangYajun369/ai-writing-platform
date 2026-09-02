@@ -8,7 +8,7 @@ import {
   BotIcon, Trash2Icon, MessageSquareIcon, SparklesIcon, BrainIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { SkillType, AgentStatus } from '@/components/agent/types'
+import type { SkillType } from '@/components/agent/types'
 import { SKILLS } from '@/components/agent/types'
 import { STATUS_CONFIG, type StatusKey } from './constants'
 import { ModelCheckIcon } from './ModelCheckIcon'
@@ -25,9 +25,6 @@ interface HeaderProps {
   selectedSkill: SkillType
   onSkillChange: (skill: SkillType) => void
   onClear: () => void
-  agentStatus: AgentStatus
-  onStartAgent: () => void
-  onStopAgent: () => void
   /** Agent 记忆面板相关 */
   showMemory: boolean
   onToggleMemory: () => void
@@ -39,20 +36,17 @@ export const Header = memo(function Header({
   modelCheckStatus, modelCheckDetail, onCheckModel,
   statusKey,
   selectedSkill, onSkillChange,
-  onClear, agentStatus, onStartAgent, onStopAgent,
+  onClear,
   showMemory, onToggleMemory,
 }: HeaderProps) {
   const StatusIcon = STATUS_CONFIG[statusKey].icon
   const statusColor = STATUS_CONFIG[statusKey].color
   const statusLabel = STATUS_CONFIG[statusKey].label
 
-  const tooltipText = statusKey === 'error'
-    ? 'Agent 服务异常，请重启应用'
-    : statusKey === 'idle'
-      ? `${providerLabel} · ${statusLabel}`
-      : statusKey === 'testing'
-        ? '正在启动 Agent…'
-        : `${providerLabel} · ${statusLabel}`
+  // Agent 已迁移为 Rust 原生实现：状态栏恒为「已连接」，tooltip 说明模型服务状态
+  const tooltipText = statusKey === 'connected'
+    ? `${providerLabel} · 模型服务就绪（Rust 内置 Agent）`
+    : `${providerLabel} · ${statusLabel}`
 
   return (
     <div className="px-3 py-2 border-b shrink-0 space-y-2">
@@ -100,26 +94,6 @@ export const Header = memo(function Header({
           </button>
         </div>
         <div className="flex items-center gap-1">
-          {/* Agent 模式下的启停按钮 */}
-          {mode === 'agent' && (
-            agentStatus === 'stopped' || agentStatus === 'crashed' ? (
-              <button
-                onClick={onStartAgent}
-                title="启动 Agent 服务"
-                className="px-2 py-0.5 rounded text-[10px] bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-              >
-                启动
-              </button>
-            ) : (
-              <button
-                onClick={onStopAgent}
-                title="停止 Agent 服务"
-                className="px-2 py-0.5 rounded text-[10px] text-muted-foreground hover:bg-muted transition-colors"
-              >
-                停止
-              </button>
-            )
-          )}
           {/* Agent 模式下的记忆按钮 */}
           {mode === 'agent' && (
             <button

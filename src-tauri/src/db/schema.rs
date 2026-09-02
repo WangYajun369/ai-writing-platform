@@ -40,4 +40,11 @@ pub const TABLE_SCHEMA: &[(&str, &[&str])] = &[
         "embeddings",
         &["id", "source_type", "source_id", "embedding", "model", "created_at"],
     ),
+    (
+        "memories",
+        &[
+            "id", "book_id", "skill_type", "memory_type", "content", "keywords",
+            "relevance_score", "created_at", "updated_at",
+        ],
+    ),
 ];

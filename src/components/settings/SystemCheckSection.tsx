@@ -1,5 +1,5 @@
 /**
- * 系统检查区块 —— 检测运行环境（Python/Node/Rust 版本、系统信息、安装路径）
+ * 系统检查区块 —— 检测运行环境（Agent 引擎/Node/Rust、系统信息、安装路径）
  */
 import { useState, useEffect } from 'react'
 import { RefreshCwIcon, CheckCircleIcon, AlertTriangleIcon, XCircleIcon } from 'lucide-react'
@@ -174,8 +174,8 @@ export function SystemCheckSection() {
       {/* 底部说明 */}
       <div className="p-3 bg-muted/50 rounded-lg text-xs text-muted-foreground">
         <p>
-          系统检查会检测本地开发环境中 Python、Node.js、Rust
-          等工具链的安装状态与版本信息，帮助你排查运行问题。
+          系统检查会检测本地环境中 Agent 引擎、Node.js、Rust 等组件
+          的状态与版本信息，帮助你排查运行问题。Agent 引擎已内置（无需 Python）。
         </p>
       </div>
     </div>

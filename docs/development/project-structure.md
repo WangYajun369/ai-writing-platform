@@ -18,8 +18,7 @@ MirageInk/
 ├── index.html                # Vite 入口 HTML
 ├── README.md                 # 项目说明
 ├── src/                      # 🔵 前端源码（React 19 + TypeScript 6）
-├── src-tauri/                # 🟠 Rust 后端（Tauri v2）
-├── agent/                    # 🐍 Python Agent 服务（FastAPI，端口 9877）
+├── src-tauri/                # 🟠 Rust 后端（Tauri v2，内置 Agent 引擎）
 ├── scripts/                  # 🔧 构建/检查/环境脚本（6 个）
 ├── docs/                     # 📖 项目文档（自动同步到 GitHub Wiki）
 ├── product/                  # 🏠 产品落地页（GitHub Pages）

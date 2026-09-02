@@ -25,7 +25,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data:; font-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; connect-src 'self' ipc: http://ipc.localhost https://asset.localhost http://127.0.0.1:9877 http://127.0.0.1:9876 https://api.github.com",
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data:; font-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; connect-src 'self' ipc: http://ipc.localhost https://asset.localhost https://api.github.com",
       "assetProtocol": {
         "enable": true,
         "scope": [
@@ -48,9 +48,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": {
-      "../agent/": "agent/"
-    },
     "macOS": {
       "entitlements": "./entitlements.plist"
     },

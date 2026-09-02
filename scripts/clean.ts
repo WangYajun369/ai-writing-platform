@@ -19,8 +19,6 @@ const DIRS_TO_REMOVE = [
   'dist',
   // 前端依赖
   'node_modules',
-  // Python 虚拟环境
-  'agent/.venv',
   // Rust 后端构建产物
   'src-tauri/target',
 ]
@@ -30,8 +28,6 @@ const FILES_TO_REMOVE = [
   // TypeScript 增量编译信息
   'tsconfig.tsbuildinfo',
   'tsconfig.node.tsbuildinfo',
-  // Python uv 锁文件
-  'agent/uv.lock',
   // Rust 锁文件（可选，clean:all 时清理）
 ]
 
@@ -175,71 +171,6 @@ function cleanNodeModules() {
   removeDir('node_modules')
 }
 
-/**
- * 清理 Python 字节码缓存（__pycache__ 目录 + 孤立 .pyc 文件）
- *
- * 递归扫描项目根目录，跳过已被整体删除或无需遍历的目录
- * （.git / node_modules / .venv / target / dist）。
- */
-function cleanPythonCache() {
-  heading('🐍 清理 Python 缓存（__pycache__ / *.pyc）')
-  /** 无需遍历的目录名（.venv / target 等已在前面被整体删除） */
-  const EXCLUDED_DIRS = new Set(['.git', 'node_modules', '.venv', 'target', 'dist'])
-
-  let dirCount = 0
-  let fileCount = 0
-
-  const rel = (p: string) => p.slice(ROOT.length + 1)
-
-  const walk = (dir: string) => {
-    let entries: string[]
-    try {
-      entries = readdirSync(dir)
-    } catch {
-      return // 无权限或已删除，跳过
-    }
-    for (const entry of entries) {
-      const fullPath = join(dir, entry)
-      let stat: ReturnType<typeof statSync>
-      try {
-        stat = statSync(fullPath)
-      } catch {
-        continue
-      }
-      if (stat.isDirectory()) {
-        if (entry === '__pycache__') {
-          const size = getSize(fullPath)
-          try {
-            rmSync(fullPath, { recursive: true, force: true })
-            success(`${rel(fullPath)} — 已删除 (${size})`)
-            dirCount++
-          } catch (e) {
-            warn(`${rel(fullPath)} — 删除失败：${e instanceof Error ? e.message : e}`)
-          }
-        } else if (!EXCLUDED_DIRS.has(entry)) {
-          walk(fullPath)
-        }
-      } else if (entry.endsWith('.pyc')) {
-        try {
-          rmSync(fullPath, { force: true })
-          success(`${rel(fullPath)} — 已删除 (${formatBytes(stat.size)})`)
-          fileCount++
-        } catch (e) {
-          warn(`${rel(fullPath)} — 删除失败：${e instanceof Error ? e.message : e}`)
-        }
-      }
-    }
-  }
-
-  walk(ROOT)
-
-  if (dirCount === 0 && fileCount === 0) {
-    log('⏭️', '未找到 __pycache__ / *.pyc，跳过')
-  } else {
-    info(`共清理 ${dirCount} 个 __pycache__ 目录、${fileCount} 个 .pyc 文件`)
-  }
-}
-
 // ============================================================
 // 主流程
 // ============================================================
@@ -262,14 +193,11 @@ async function main() {
     cleanRustTarget()
   }
 
-  cleanPythonCache()
-
   console.log('\n' + '='.repeat(50))
   console.log('🎉  清理完成！\n')
   console.log('📋  后续步骤：')
   console.log('   1. pnpm install        # 重新安装前端依赖')
-  console.log('   2. pnpm agent:setup    # 重新安装 Python 依赖（uv sync）')
-  console.log('   3. pnpm tauri dev       # 启动开发环境\n')
+  console.log('   2. pnpm tauri dev       # 启动开发环境\n')
 }
 
 main().catch((e) => {

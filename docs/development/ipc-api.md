@@ -135,6 +135,7 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 | `debug-log` | Rust → 所有窗口 | `LogEntry` |
 | `debug-window-closed` | Rust → main | `()` |
 | `chapter-summary-done` | Rust → 前端 | `()` |
+| `agent-status-changed` | Rust → main | `{ status, message }`（关闭流程发出；`status=closing` 时前端显示退出遮罩） |
 
 ## 导入导出 `commands/io/`
 
@@ -169,13 +170,13 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 
 ## Agent `commands/agent/`
 
+> v1.1 起 Agent 由 Python 外部进程迁移为 **Rust 原生引擎**（无 9877 / 9876 服务）。
+> 原 `get_agent_status` / `start_agent` / `stop_agent` 兼容命令已随迁移一并移除。
+
 | 命令 | 说明 |
 |------|------|
-| `get_agent_status` | 查询 Agent 服务状态（stopped / starting / running / crashed） |
-| `start_agent` | 启动 Python 子进程 |
-| `stop_agent` | 优雅停止（SIGTERM → 10s → SIGKILL） |
-| `execute_agent_skill` | 执行 Skill（转发到 `127.0.0.1:9877/skills/execute`） |
-| `cancel_agent_skill` | 取消任务（**当前为占位实现**，见优化报告问题 28） |
+| `execute_agent_skill` | 执行 Skill（Rust 引擎 ReAct 循环，增量经 `agent-stream-chunk` 推送） |
+| `cancel_agent_skill` | 取消当前 Agent 任务（引擎全局取消标志） |
 | `list_agent_memories` | 列出指定作品的记忆条目 |
 | `update_agent_memory` | 更新记忆内容/关键词/类型 |
 | `delete_agent_memory` | 删除单条记忆 |
@@ -185,7 +186,7 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 
 | 命令 | 说明 |
 |------|------|
-| `system_check` | 运行环境自检（Python 解释器、uvicorn、端口占用、目录权限等） |
+| `system_check` | 运行环境自检（v1.1 无外部服务依赖，校验内置引擎/数据库等） |
 
 ---
 
@@ -205,7 +206,7 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 | `imageApi` | 2 |
 | `windowApi` | 6 |
 | `debugApi` | 6 |
-| `agentApi` | 9 |
+| `agentApi` | 6 |
 | `systemApi` | 1 |
 
 ---
@@ -214,4 +215,4 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 
 - [项目结构](development/project-structure) — 目录组织与分层设计
 - [架构总览](architecture/overview) — 三进程架构与数据流
-- [Agent 架构](architecture/agent-architecture) — Python Agent 与 Bridge 协议
+- [AI 架构](architecture/AI-architecture) — Rust 原生 Agent 引擎（v1.1）

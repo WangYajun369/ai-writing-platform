@@ -101,26 +101,15 @@
 | `uuid` | UUID 生成 |
 | `chrono` | 时间处理 |
 | `aes-gcm` | AES-256-GCM 备份加密 |
-| `tiny_http` | Bridge Server（端口 9876，供 Python 回调） |
 | `anyhow` | 错误处理 |
 
 ---
 
-## Python 依赖（Agent 服务）
+## Python 依赖（Agent 服务）— v1.1 起已移除
 
-| 依赖 | 用途 |
-|------|------|
-| `fastapi` | Agent HTTP 服务框架（端口 9877） |
-| `uvicorn` | ASGI 服务器（AgentManager 启动时会验证其可用性） |
-| `langgraph` | ReAct Agent 执行引擎（`astream_events` v2 事件流） |
-| `langchain-core` / `langchain-ollama` / `langchain-openai` | LLM 抽象与工具定义（`@tool` 装饰器） |
-| `httpx` | 异步 HTTP 客户端（回调 Rust Bridge） |
-| `pydantic` | 请求/响应模型校验 |
-| `sqlite3`（标准库） | 记忆体持久化 |
-
-依赖声明见 `agent/pyproject.toml`，锁定于 `agent/uv.lock`，由 `scripts/setup-agent.ts` 自动安装到 `agent/.venv`。
-
-> **注意**：Agent 服务为可选功能。不使用 Agent 自动化时，应用无需 Python 环境即可运行全部其他功能。
+v1.0 的 Python Agent（FastAPI @9877）与 Bridge（tiny_http @9876）已随 Agent 迁移整体移除：
+`agent/` 目录、`scripts/setup-agent.ts`、`scripts/check-python-versions.ts` 均已删除，
+应用不再需要任何 Python 运行环境。Rust Agent 引擎依赖见上表（`reqwest` / `tokio` 等）。
 
 ---
 

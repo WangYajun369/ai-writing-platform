@@ -1,17 +1,17 @@
 /**
  * AI 对话相关的自定义 hooks
  *
- * 现已接入 Agent 服务：通过 invoke('execute_agent_skill') 调用 Python Agent，
- * 由 Agent 内部管理 Prompt 构建、RAG 检索、模型路由和工具调用。
+ * 现已接入 Agent 引擎（Rust 原生）：通过 invoke('execute_agent_skill') 调用，
+ * 由引擎内部管理 Prompt 构建、上下文检索（工具调用）与流式输出。
  * 流式响应通过 Tauri 事件 `agent-stream-chunk` 接收。
  */
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import { useAppStore, useCurrentChapter, useCurrentAiMessages } from '@/stores/appStore'
-import { aiApi, bookApi, chapterApi, type UsageInfo, type EmbeddingStatus } from '@/lib/tauri-bridge'
+import { aiApi, bookApi, chapterApi, type UsageInfo } from '@/lib/tauri-bridge'
 import type { ChatMessage } from '@/lib/tauri-bridge'
-import { getChatApiKey, getRagApiKey } from '@/types'
+import { getChatApiKey } from '@/types'
 import type { AiMessage, AiConfig, ConversationSummary, Chapter } from '@/types'
 import type { SkillType } from '@/components/agent/types'
 
@@ -81,14 +81,9 @@ export interface UseAiChatOptions {
 
 export interface UseAiChatReturn {
   streaming: boolean
-  embeddingGenerating: boolean
-  embeddingStatus: EmbeddingStatus | null
-  embeddingStatusLoading: boolean
   handleSend: (input: string) => Promise<void>
   handleClear: () => void
   handleDeleteMessage: (messageId: string) => void
-  handleGenerateEmbeddings: () => Promise<void>
-  refreshEmbeddingStatus: () => Promise<void>
 }
 
 export function useAiChat(options: UseAiChatOptions): UseAiChatReturn {
@@ -98,9 +93,6 @@ export function useAiChat(options: UseAiChatOptions): UseAiChatReturn {
   const { aiSummaries, addAiMessage, updateAiMessage, deleteAiMessage, clearAiConversation, persistAiConversation, setConversationSummary } = useAppStore()
 
   const [streaming, setStreaming] = useState(false)
-  const [embeddingGenerating, setEmbeddingGenerating] = useState(false)
-  const [embeddingStatus, setEmbeddingStatus] = useState<EmbeddingStatus | null>(null)
-  const [embeddingStatusLoading, setEmbeddingStatusLoading] = useState(false)
 
   const unlistenRef = useRef<UnlistenFn | null>(null)
   const streamErrorRef = useRef(false)
@@ -126,29 +118,6 @@ export function useAiChat(options: UseAiChatOptions): UseAiChatReturn {
       }
     }
   }, [])
-
-  // 检查 Embedding 状态
-  const refreshEmbeddingStatus = useCallback(async () => {
-    if (!bookId) return
-    setEmbeddingStatusLoading(true)
-    try {
-      const status = await aiApi.checkEmbeddingStatus(bookId)
-      setEmbeddingStatus(status)
-    } catch {
-      // 静默忽略
-    } finally {
-      setEmbeddingStatusLoading(false)
-    }
-  }, [bookId])
-
-  // 切换作品时自动检测索引状态
-  useEffect(() => {
-    if (bookId) {
-      void refreshEmbeddingStatus()
-    } else {
-      setEmbeddingStatus(null)
-    }
-  }, [bookId, refreshEmbeddingStatus])
 
   // 窗口大小：每轮 = user + assistant，至少保留 1 轮
   const windowSize = Math.max(1, aiConfig.chat.contextWindowSize ?? 10)
@@ -247,28 +216,6 @@ export function useAiChat(options: UseAiChatOptions): UseAiChatReturn {
     if (!bookId) return
     deleteAiMessage(bookId, messageId)
   }, [bookId, deleteAiMessage])
-
-  // 生成 Embedding
-  const handleGenerateEmbeddings = useCallback(async () => {
-    if (!bookId) return
-    const ragApiKey = getRagApiKey(aiConfig.rag) || getChatApiKey(aiConfig.chat)
-    if (!aiConfig.rag.endpoint || !ragApiKey || !aiConfig.rag.embeddingModel) {
-      alert('请先在设置中配置 RAG 检索（Endpoint、API Key、Embedding 模型）')
-      return
-    }
-    setEmbeddingGenerating(true)
-    setEmbeddingStatus(null)
-    try {
-      await aiApi.triggerEmbedding(bookId, aiConfig.rag.endpoint, ragApiKey, aiConfig.rag.embeddingModel)
-      await refreshEmbeddingStatus()
-    } catch (err) {
-      const msg = String(err)
-      // 提取友好提示
-      alert(`Embedding 生成失败\n\n${msg}\n\n排查建议：\n1. 检查智谱 API Key 是否有 Embedding 模型（embedding-3）的调用权限\n2. 单条文本过长可能超过 3072 tokens 限制（已自动截断）\n3. 检查 Endpoint 地址是否正确（默认 https://open.bigmodel.cn/api/paas/v4）`)
-    } finally {
-      setEmbeddingGenerating(false)
-    }
-  }, [bookId, aiConfig, refreshEmbeddingStatus])
 
   // 发送消息
   const handleSend = useCallback(async (input: string) => {
@@ -471,13 +418,8 @@ export function useAiChat(options: UseAiChatOptions): UseAiChatReturn {
 
   return {
     streaming,
-    embeddingGenerating,
-    embeddingStatus,
-    embeddingStatusLoading,
     handleSend,
     handleClear,
     handleDeleteMessage,
-    handleGenerateEmbeddings,
-    refreshEmbeddingStatus,
   }
 }

@@ -253,7 +253,6 @@ export function migrateLegacyAiConfig(raw: Record<string, unknown>): AiConfig {
       contextWindowSize: 10,
     },
     rag: {
-      enabled: true,
       provider: 'bigmodel',
       endpoint: (raw.endpoint as string) || 'https://open.bigmodel.cn/api/paas/v4',
       embeddingModel: (raw.embeddingModel as string) || 'embedding-3',

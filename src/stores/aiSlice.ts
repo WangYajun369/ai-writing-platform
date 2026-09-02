@@ -33,7 +33,6 @@ export const createAiSlice: AppSlice = (set, get) => {
         contextWindowSize: 10,
       },
       rag: {
-        enabled: true,
         provider: 'bigmodel',
         endpoint: 'https://open.bigmodel.cn/api/paas/v4',
         embeddingModel: 'embedding-3',

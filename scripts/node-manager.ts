@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Node.js 版本管理工具（基于 nvm）
+ * MirageInk (TimeWrite / 智写时光) — Node.js 版本管理工具（基于 nvm）
  *
+ * 项目引擎要求见 package.json engines（node >= 22），与 .nvmrc 协同。
  * 用法:
  *   npx tsx scripts/node-manager.ts          交互式选择菜单（推荐）
  *   npx tsx scripts/node-manager.ts --status  显示状态面板

@@ -7,14 +7,13 @@
 /** 技能类型枚举 */
 export type SkillType = 'writing' | 'analysis' | 'research' | 'polish'
 
-/** Agent 服务状态 */
+/**
+ * Agent 运行状态（供 Agent 面板展示）
+ *
+ * Agent 已迁移为 Rust 原生实现（无外部进程、始终就绪），实际值恒为
+ * 'running'；保留联合类型以兼容面板语义，未来如引入引擎状态可扩展。
+ */
 export type AgentStatus = 'stopped' | 'starting' | 'running' | 'crashed'
-
-/** Agent 状态信息（来自 Rust） */
-export interface AgentStatusInfo {
-  state: string
-  baseUrl: string
-}
 
 /** SSE 流事件 */
 export interface AgentStreamEvent {
@@ -27,14 +26,6 @@ export interface AgentStreamEvent {
 export interface ChatHistoryItem {
   role: 'user' | 'assistant'
   content: string
-}
-
-/** Skill 执行参数 */
-export interface SkillExecuteParams {
-  skill: SkillType
-  bookId: string
-  message: string
-  conversationHistory?: ChatHistoryItem[]
 }
 
 /** Agent 消息（前端展示用） */

@@ -1,6 +1,8 @@
-# 架构总览
+# 架构总览（v1.0 归档）
 
-> **适用版本**：`1.0.0`　|　**最后核对**：2026-08-31
+> **适用版本**：`1.0.0`（Python Agent 三进程架构）。v1.1 起 Agent 已迁移为 Rust 原生引擎，
+> 运行时为**双进程**（WebView + Rust Core，Agent 内嵌于 Rust），本文仅作历史参考。
+> 最新架构说明见 [AI 架构](AI-architecture) 与 [代码结构](../development/project-structure)。
 
 ---
 

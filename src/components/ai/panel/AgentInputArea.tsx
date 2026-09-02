@@ -33,7 +33,7 @@ export const AgentInputArea = memo(function AgentInputArea({
               onSend()
             }
           }}
-          placeholder={disabled ? '请先启动 Agent 服务…' : `输入指令，${selectedSkillMeta?.label ?? ''}模式…`}
+          placeholder={`输入指令，${selectedSkillMeta?.label ?? ''}模式…`}
           rows={2}
           className="flex-1 bg-muted rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring resize-none disabled:opacity-50"
           disabled={disabled || isStreaming}

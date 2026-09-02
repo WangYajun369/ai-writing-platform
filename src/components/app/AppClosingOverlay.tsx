@@ -1,8 +1,9 @@
 /**
  * AppClosingOverlay — 应用退出遮罩
  *
- * 当 Tauri 后端发送 agent-status-changed { status: "closing" } 时弹出，
- * 覆盖全屏阻止用户操作，等后端清理完 Agent 服务后自动消失（窗口关闭）。
+ * 主窗口关闭时后端会发送 agent-status-changed { status: "closing" } 事件，
+ * 本组件监听后弹出全屏遮罩阻止用户操作，直至窗口真正关闭。
+ * （事件名沿自早期 Agent 架构，现仅用于表达「退出中」）
  */
 import { useEffect, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
@@ -33,8 +34,8 @@ export default function AppClosingOverlay() {
 
       {/* 提示文字 */}
       <div className="flex flex-col items-center gap-1 text-white/90">
-        <span className="text-base font-medium tracking-wide">正在关闭服务...</span>
-        <span className="text-xs text-white/50">请稍候，正在清理 Agent 后端</span>
+        <span className="text-base font-medium tracking-wide">正在保存并退出...</span>
+        <span className="text-xs text-white/50">请稍候</span>
       </div>
     </div>
   )

@@ -49,7 +49,7 @@ export const AgentMessageList = memo(function AgentMessageList({
       {messages.length === 0 && agentStatus !== 'running' && (
         <div className="text-center py-12 text-muted-foreground">
           <BotIcon className="w-8 h-8 mx-auto mb-3 opacity-30" />
-          <p className="text-xs">请先启动 Agent 服务</p>
+          <p className="text-xs">Agent 引擎暂不可用</p>
         </div>
       )}
       {messages.map((msg) => (

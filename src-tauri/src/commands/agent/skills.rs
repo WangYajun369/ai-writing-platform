@@ -1,128 +1,27 @@
-//! Agent Skills IPC 命令
+//! Agent Skill IPC 层
 //!
-//! 暴露给前端的 Tauri 命令，用于与 Python Agent Server 交互。
-
-use std::sync::Arc;
+//! Python Agent 已迁移为纯 Rust 实现（engine/memory/tools/prompts）。
+//! 本模块负责前端命令入口：Skill 执行、记忆 CRUD。
+//! （原生引擎无外部进程，Python 时代兼容用的 get_agent_status/start_agent/
+//! stop_agent 命令已随迁移一并移除）
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
+use crate::commands::agent::{engine, memory};
+use crate::db::AppDb;
 use crate::error::AppError;
-use crate::python::{self, client::SkillRequest, client::AiModelConfig, client::MemoryListResponse, manager::AgentManager, AgentState};
 
-/// Agent 状态信息
+// ══════ Skill 执行 ══════
+
+/// 对话历史消息项（前端传入）
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentStatus {
-    pub state: String,
-    pub base_url: String,
-}
-
-/// 获取 Agent Server 状态
-#[tauri::command]
-pub async fn get_agent_status(
-    agent: State<'_, Arc<AgentManager>>,
-) -> Result<AgentStatus, AppError> {
-    let state = agent.state().await;
-    Ok(AgentStatus {
-        state: match state {
-            AgentState::Stopped => "stopped".into(),
-            AgentState::Starting => "starting".into(),
-            AgentState::Running => "running".into(),
-            AgentState::Crashed(reason, _) => format!("crashed: {}", reason),
-        },
-        base_url: agent.base_url().to_string(),
-    })
-}
-
-/// 启动 Agent Server
-#[tauri::command]
-pub async fn start_agent(
-    agent: State<'_, Arc<AgentManager>>,
-) -> Result<AgentStatus, AppError> {
-    agent.start().await?;
-    let state = agent.state().await;
-    Ok(AgentStatus {
-        state: match state {
-            AgentState::Running => "running".into(),
-            _ => "unknown".into(),
-        },
-        base_url: agent.base_url().to_string(),
-    })
-}
-
-/// 停止 Agent Server
-#[tauri::command]
-pub async fn stop_agent(
-    agent: State<'_, Arc<AgentManager>>,
-) -> Result<(), AppError> {
-    agent.stop().await
-}
-
-/// 执行 Agent Skill（SSE 流式）
-///
-/// 结果通过 Tauri 事件 `agent-stream-chunk` 推送到前端。
-/// 每个事件携带 request_id，前端据此过滤属于自己的事件。
-/// 返回值为最终累积的完整文本。
-#[tauri::command]
-pub async fn execute_agent_skill(
-    app: AppHandle,
-    agent: State<'_, Arc<AgentManager>>,
-    skill: String,
-    book_id: String,
-    message: String,
-    conversation_history: Option<Vec<SkillHistoryItem>>,
-    ai_config: Option<AiConfigParams>,
-    request_id: Option<String>,
-    conversation_summary: Option<String>,
-) -> Result<String, AppError> {
-    // 确保 Agent 在运行
-    let state = agent.state().await;
-    if state != AgentState::Running {
-        return Err(AppError::Business(
-            "Agent 服务未运行，请先启动 Agent".into(),
-        ));
-    }
-
-    let history = conversation_history.map(|h| {
-        h.into_iter()
-            .map(|item| python::client::ChatHistoryItem {
-                role: item.role,
-                content: item.content,
-            })
-            .collect()
-    });
-
-    let req = SkillRequest {
-        skill,
-        book_id,
-        message,
-        conversation_history: history,
-        ai_config: ai_config.map(|c| AiModelConfig {
-            provider: c.provider,
-            endpoint: c.endpoint,
-            model: c.model,
-            api_key: c.api_key.clone(),
-            temperature: c.temperature,
-            max_tokens: c.max_tokens,
-            thinking_enabled: c.thinking_enabled,
-            reasoning_effort: c.reasoning_effort.clone(),
-        }),
-        conversation_summary,
-    };
-
-    python::client::execute_skill_with_id(app, agent.inner().clone(), req, request_id).await
-}
-
-/// 对话历史项
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct SkillHistoryItem {
     pub role: String,
     pub content: String,
 }
 
-/// AI 配置参数（前端传入）
+/// AI 配置参数（前端传入，camelCase 与 aiSlice 一致）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiConfigParams {
@@ -138,64 +37,123 @@ pub struct AiConfigParams {
     pub reasoning_effort: Option<String>,
 }
 
-/// 取消当前 Agent 任务
+impl From<AiConfigParams> for engine::AiModelConfig {
+    fn from(v: AiConfigParams) -> Self {
+        engine::AiModelConfig {
+            provider: v.provider,
+            endpoint: v.endpoint,
+            model: v.model,
+            api_key: v.api_key,
+            temperature: v.temperature,
+            max_tokens: v.max_tokens,
+            thinking_enabled: v.thinking_enabled,
+            reasoning_effort: v.reasoning_effort,
+        }
+    }
+}
+
+/// 执行 Agent Skill（SSE 流式）
+///
+/// 结果通过 Tauri 事件 `agent-stream-chunk` 推送到前端，事件体携带 request_id。
+/// 返回值为最终累积的完整文本。
 #[tauri::command]
-pub async fn cancel_agent_skill(
-    agent: State<'_, Arc<AgentManager>>,
-) -> Result<(), AppError> {
-    python::client::cancel_skill(agent.inner().clone()).await
+pub async fn execute_agent_skill(
+    app: AppHandle,
+    db: State<'_, AppDb>,
+    skill: String,
+    book_id: String,
+    message: String,
+    conversation_history: Option<Vec<SkillHistoryItem>>,
+    ai_config: Option<AiConfigParams>,
+    request_id: Option<String>,
+    conversation_summary: Option<String>,
+) -> Result<String, AppError> {
+    let history: Vec<engine::HistoryMsg> = conversation_history
+        .unwrap_or_default()
+        .into_iter()
+        .map(|h| engine::HistoryMsg {
+            role: h.role,
+            content: h.content,
+        })
+        .collect();
+
+    let history = if history.is_empty() {
+        None
+    } else {
+        Some(history)
+    };
+
+    let config = ai_config.map(engine::AiModelConfig::from);
+    let request_id = request_id.unwrap_or_default();
+
+    engine::run_skill(
+        app,
+        db.pool.clone(),
+        skill,
+        book_id,
+        message,
+        history,
+        config,
+        request_id,
+        conversation_summary,
+    )
+    .await
+}
+
+/// 取消当前 Agent Skill 任务
+#[tauri::command]
+pub fn cancel_agent_skill() -> Result<(), AppError> {
+    engine::cancel_current_task();
+    Ok(())
 }
 
 // ══════ 记忆管理命令 ══════
 
 /// 列出指定书籍的记忆
 #[tauri::command]
-pub async fn list_agent_memories(
-    agent: State<'_, Arc<AgentManager>>,
+pub fn list_agent_memories(
+    db: State<'_, AppDb>,
     book_id: String,
     skill_type: Option<String>,
-) -> Result<MemoryListResponse, AppError> {
-    python::client::list_memories(
-        agent.inner().clone(),
-        &book_id,
-        skill_type.as_deref(),
-    )
-    .await
+) -> Result<memory::MemoryListResponse, AppError> {
+    let conn = db.pool.get().map_err(|e| AppError::DbPool(e.to_string()))?;
+    let memories = memory::get_memories(&conn, &book_id, skill_type.as_deref(), None, 200)?;
+    let total = memories.len();
+    Ok(memory::MemoryListResponse { memories, total })
 }
 
 /// 更新一条记忆
 #[tauri::command]
-pub async fn update_agent_memory(
-    agent: State<'_, Arc<AgentManager>>,
+pub fn update_agent_memory(
+    db: State<'_, AppDb>,
     memory_id: i64,
     content: Option<String>,
     keywords: Option<String>,
     memory_type: Option<String>,
 ) -> Result<(), AppError> {
-    python::client::update_memory(
-        agent.inner().clone(),
+    let conn = db.pool.get().map_err(|e| AppError::DbPool(e.to_string()))?;
+    memory::update_memory(
+        &conn,
         memory_id,
         content.as_deref(),
         keywords.as_deref(),
         memory_type.as_deref(),
     )
-    .await
 }
 
 /// 删除一条记忆
 #[tauri::command]
-pub async fn delete_agent_memory(
-    agent: State<'_, Arc<AgentManager>>,
+pub fn delete_agent_memory(
+    db: State<'_, AppDb>,
     memory_id: i64,
 ) -> Result<(), AppError> {
-    python::client::delete_memory(agent.inner().clone(), memory_id).await
+    let conn = db.pool.get().map_err(|e| AppError::DbPool(e.to_string()))?;
+    memory::delete_memory(&conn, memory_id)
 }
 
-/// 清空指定书籍的所有记忆
+/// 清空指定书籍的所有记忆，返回删除条数
 #[tauri::command]
-pub async fn clear_agent_memories(
-    agent: State<'_, Arc<AgentManager>>,
-    book_id: String,
-) -> Result<i64, AppError> {
-    python::client::clear_memories(agent.inner().clone(), &book_id).await
+pub fn clear_agent_memories(db: State<'_, AppDb>, book_id: String) -> Result<i64, AppError> {
+    let conn = db.pool.get().map_err(|e| AppError::DbPool(e.to_string()))?;
+    memory::clear_memories(&conn, &book_id)
 }

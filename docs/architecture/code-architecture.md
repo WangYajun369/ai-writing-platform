@@ -1,12 +1,10 @@
 # TimeWrite（智写时光）代码架构深度分析
 
-> **适用版本**：`1.0.0`　|　**最后核对**：2026-08-31
+> **适用版本**：`1.0.0`（v1.0 归档文档）。
 >
-> 基于对项目全部源码（前端 `src/`、Rust 后端 `src-tauri/`、Python Agent `agent/`、脚本 `scripts/`）的深度分析整理而成。
->
-> **架构**：Tauri v2 三进程模型　|　**技术栈**：React 19 + TypeScript 6 + Rust 2021 + Python ≥ 3.10
->
-> 本文是**模块级实现细节**的深入分析。若只需了解整体结构，请先阅读 [架构总览](architecture/overview)。
+> 基于 v1.0 源码（前端 `src/`、Rust 后端 `src-tauri/`、Python Agent `agent/`、脚本 `scripts/`）整理。
+> v1.1 起 Agent 已迁移为 Rust 原生引擎，Python Agent/Bridge 已移除，运行时为双进程模型。
+> 本文涉及 Python/三进程章节仅作历史参考；最新实现以 [AI 架构](AI-architecture) 与源码为准。
 
 ---
 

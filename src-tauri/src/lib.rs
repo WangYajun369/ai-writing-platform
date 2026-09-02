@@ -7,9 +7,9 @@
 //! ```
 //! Tauri App (lib.rs)
 //! ├── 插件层：shell / dialog / fs / updater / deep_link / http
-//! ├── 数据层：AppDb（SQLite，存储书籍/卷/章节/快照/世界观）
-//! ├── Agent 服务：Python AgentManager（本地 HTTP Server，端口 9877）
-//! ├── Bridge 服务：Rust tiny_http Server（端口 9876，供 Python 回调查询数据）
+//! ├── 数据层：AppDb（SQLite，存储书籍/卷/章节/快照/世界观/记忆）
+//! ├── Agent 引擎：纯 Rust（Skill Prompt 组装 + SSE 流式 ReAct 工具循环，
+//! │             原 Python Agent(9877)/Bridge(9876) 已移除）
 //! └── IPC 命令：books / volumes / chapters / snapshots / world_cards / ai / io / image / window / agent
 //! ```
 
@@ -19,23 +19,19 @@ mod db;         // 数据库连接与初始化
 mod error;      // 统一错误类型
 mod logging;    // 全局日志宏（app_log! / app_log_error!，双写控制台与调试窗口）
 mod models;     // 数据模型
-mod python;     // Agent/Bridge 管理（Python 子进程 + Rust HTTP Bridge）
 mod repository; // 数据访问层（DAO）
 mod service;    // 业务逻辑层
 mod utils;      // 工具函数
 
 // ─── 标准库 ───
-use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 
 // ─── Tauri / Tokio ───
 use tauri::{Emitter, Manager};
 
 // ─── 内部模块 ───
 use db::AppDb;
-use python::{AgentManager, AgentServerConfig, bridge::{self, BridgeConfig}};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// Tauri 应用的入口函数，负责构建并启动整个应用。
@@ -44,12 +40,9 @@ use python::{AgentManager, AgentServerConfig, bridge::{self, BridgeConfig}};
 ///
 /// 1. **注册插件** — shell / dialog / fs / updater / deep_link / http
 /// 2. **初始化数据库** — 在 app_data_dir 下创建 `time_write.db`（SQLite）
-/// 3. **启动 Agent Server** — 异步启动 Python Agent HTTP 服务（端口 9877）
-/// 4. **启动看门狗** — 定期健康检查，Agent 异常退出时自动重启
-/// 5. **启动 Bridge Server** — Rust tiny_http 服务（端口 9876），供 Python Agent 回调查询数据
-/// 6. **等待 Bridge 就绪** — 轮询 TCP 连接，最多等 5 秒
-/// 7. **注册窗口销毁钩子** — 主窗口关闭时自动清理调试窗口 + 停止 Agent
-/// 8. **注册 IPC 命令** — 书籍/卷/章节/快照/世界观/AI/导入导出/图片/窗口/Agent
+/// 3. **迁移旧记忆库** — 若存在旧 Python Agent 记忆库，导入到 time_write.db
+/// 4. **注册窗口销毁钩子** — 主窗口关闭时自动清理调试窗口
+/// 5. **注册 IPC 命令** — 书籍/卷/章节/快照/世界观/AI/导入导出/图片/窗口/Agent
 pub fn run() {
     tauri::Builder::default()
         // ────────── 插件注册 ──────────
@@ -83,91 +76,45 @@ pub fn run() {
             commands::io::crypto::init_backup_key(app.handle())
                 .map_err(|e| format!("备份密钥初始化失败: {e}"))?;
 
-            // ========== 2. Agent Server 初始化 ==========
-            // Agent 是一个独立的 Python FastAPI 服务，用于执行 AI Skill 调用
-            let agent_config = AgentServerConfig::default();
-            let agent = Arc::new(AgentManager::new(agent_config));
-
-            // 异步启动 Agent Server（非阻塞，不阻塞 Tauri setup）
-            let agent_clone = agent.clone();
-            let handle_clone = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                match agent_clone.start().await {
-                    Ok(()) => {
-                        // 启动成功：向前端推送 running 状态
-                        let _ = handle_clone.emit("agent-status-changed", serde_json::json!({
-                            "status": "running",
-                            "message": "Agent 服务已启动"
-                        }));
-                    }
-                    Err(e) => {
-                        // 启动失败：向前端推送 crashed 状态（非致命，应用仍可使用）
-                        // 双写控制台 + 调试窗口：这条是排查 Agent 启动失败的关键线索
-                        crate::app_log_error!("[Agent] Server 启动失败（非致命）: {}", e);
-                        let _ = handle_clone.emit("agent-status-changed", serde_json::json!({
-                            "status": "crashed",
-                            "message": format!("Agent 服务启动失败: {}", e)
-                        }));
-                    }
+            // ========== 1.6 旧版 Agent 记忆库迁移 ==========
+            // 原 Python Agent 的记忆存放在独立的 agent_memory.db（开发模式位于
+            // 项目根 data/ 下，打包模式可能随 cwd / app data 变化）。若存在则将
+            // 存量记忆一次性导入 time_write.db 的 memories 表（幂等，仅空库时导入）。
+            {
+                let mut legacy_candidates = Vec::new();
+                if let Ok(cwd) = std::env::current_dir() {
+                    legacy_candidates.push(cwd.join("data").join("agent_memory.db"));
                 }
-            });
+                legacy_candidates.push(app_dir.join("agent_memory.db"));
+                legacy_candidates.dedup();
 
-            // ========== 3. 健康检查看门狗 ==========
-            // 定期检测 Agent Server 是否存活，异常退出时自动重启
-            {
-                let agent_wd = agent.clone();
-                let handle_wd = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    AgentManager::spawn_watchdog(agent_wd, handle_wd);
-                });
-            }
-
-            // 将 AgentManager 注入 Tauri 状态，供 IPC 命令通过 app.state() 访问
-            app.manage(agent);
-
-            // ========== 4. Bridge Server 初始化 ==========
-            // Python Agent 通过 HTTP 回调 Rust 获取数据库数据（如书籍列表、章节内容等）
-            // 在独立线程中启动 tiny_http server，监听 127.0.0.1:9876
-            {
-                let bridge_config = BridgeConfig::default();
-                bridge::spawn_bridge(app_dir.join("time_write.db"), bridge_config);
-            }
-
-            // ========== 5. Bridge 就绪等待 ==========
-            // Bridge Server 在独立线程中启动，需要短暂等待确保端口已监听。
-            // 否则 Python Agent 工具在 Bridge 未就绪时调用会导致 "All connection attempts failed"。
-            {
-                let bridge_addr = format!("127.0.0.1:{}", BridgeConfig::default().port);
-                crate::app_log!("[Bridge] 等待 Bridge Server 就绪: {}...", bridge_addr);
-                let mut bridge_ready = false;
-                // 轮询检测 TCP 连接：最多等待 5 秒，每 100ms 尝试一次
-                for i in 0..50 {
-                    std::thread::sleep(Duration::from_millis(100));
-                    match TcpStream::connect_timeout(
-                        &bridge_addr.parse().unwrap(),
-                        Duration::from_millis(200),
-                    ) {
-                        Ok(_) => {
-                            bridge_ready = true;
-                            crate::app_log!("[Bridge] Bridge Server 已就绪 ({}ms)", (i + 1) * 100);
+                let state = app.state::<AppDb>();
+                if let Ok(conn) = state.pool.get() {
+                    for path in legacy_candidates {
+                        if path.exists() {
+                            crate::app_log!(
+                                "[Agent] 检测到旧版记忆库，尝试导入: {}",
+                                path.display()
+                            );
+                            match commands::agent::memory::migrate_legacy_db(&conn, &path) {
+                                Ok(n) => crate::app_log!("[Agent] 记忆库迁移完成: 导入 {n} 条"),
+                                Err(e) => crate::app_log_error!(
+                                    "[Agent] 记忆库迁移失败（跳过，不影响启动）: {}",
+                                    e
+                                ),
+                            }
                             break;
                         }
-                        Err(_) => {}  // 连接失败，继续等待
                     }
-                }
-                if !bridge_ready {
-                    crate::app_log_error!(
-                        "[Bridge] 警告: Bridge Server 在 5 秒内未就绪，Agent 工具调用可能失败"
-                    );
                 }
             }
 
-            // ========== 6. 窗口关闭拦截 ==========
+            // ========== 2. 窗口关闭拦截 ==========
             // 用户点击关闭按钮时：
             //   ① 阻止立即关闭（显示"正在关闭..."）
             //   ② 通知前端展示遮罩
-            //   ③ 后台清理 Agent Server + 关闭调试窗口
-            //   ④ 清理完成后真正关闭窗口
+            //   ③ 关闭调试窗口
+            //   ④ 真正关闭窗口
             //
             // 使用 AtomicBool 防止死循环：api.prevent_close() 后调用
             // window.close() 会再次触发 CloseRequested，第二次直接放行。
@@ -194,25 +141,11 @@ pub fn run() {
                             "status": "closing",
                             "message": "正在关闭服务..."
                         }));
-                        crate::app_log!("[Agent] 主窗口关闭请求，开始清理 Agent Server...");
 
-                        // 后台线程执行清理，完成后关闭窗口
-                        if let Some(agent) = handle.try_state::<Arc<AgentManager>>() {
-                            let agent = agent.inner().clone();
-                            let handle_close = handle.clone();
-                            std::thread::spawn(move || {
-                                agent.force_shutdown_sync();
-                                crate::app_log!("[Agent] ✅ Agent Server 清理完成，关闭窗口");
-                                if let Some(w) = handle_close.get_webview_window("main") {
-                                    let _ = w.close();
-                                }
-                            });
-                        } else {
-                            // 没有 Agent 状态，直接关闭
-                            crate::app_log!("[Agent] 无 Agent 状态，直接关闭窗口");
-                            if let Some(w) = handle.get_webview_window("main") {
-                                let _ = w.close();
-                            }
+                        // 无外部 Agent 进程需要清理，直接关闭
+                        crate::app_log!("[Agent] 主窗口关闭请求，直接关闭窗口");
+                        if let Some(w) = handle.get_webview_window("main") {
+                            let _ = w.close();
                         }
                     }
                 });
@@ -314,9 +247,6 @@ pub fn run() {
             // ══════ 窗口管理 — 数据库校验 ══════
             commands::window::validate::validate_database,
             // ══════ Agent Skills ══════
-            commands::agent::skills::get_agent_status,
-            commands::agent::skills::start_agent,
-            commands::agent::skills::stop_agent,
             commands::agent::skills::execute_agent_skill,
             commands::agent::skills::cancel_agent_skill,
             // ══════ Agent 记忆管理 ══════

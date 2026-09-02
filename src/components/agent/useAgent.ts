@@ -1,8 +1,11 @@
 /**
  * Agent 状态管理 Hook
  *
- * 封装与 Rust 侧 Agent 命令的通信逻辑。
- * 优化：流式输出使用 RAF 缓冲批量更新，避免高频重渲染。
+ * Agent 已由 Python 外部进程迁移为 Rust 原生实现（无独立进程、始终就绪），
+ * 因此不再需要「启动/停止/状态轮询」；本 Hook 负责 Skill 对话的流式收发：
+ * - executeSkill：调用 execute_agent_skill（Rust 引擎直接与模型 API 通信）
+ * - cancelSkill：取消当前任务
+ * 流式输出使用 RAF 缓冲批量更新，避免高频重渲染。
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react'
@@ -12,8 +15,6 @@ import { useAppStore } from '@/stores/appStore'
 import { getChatApiKey } from '@/types'
 import type {
   SkillType,
-  AgentStatus,
-  AgentStatusInfo,
   AgentStreamEvent,
   AgentMessage,
   ChatHistoryItem,
@@ -25,7 +26,8 @@ function generateId(): string {
 }
 
 export function useAgent() {
-  const [status, setStatus] = useState<AgentStatus>('stopped')
+  // Agent 为 Rust 原生实现，状态恒为 running（无外部进程需要管理）
+  const status = 'running' as const
   const [messages, setMessages] = useState<AgentMessage[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -39,25 +41,6 @@ export function useAgent() {
   const streamRafRef = useRef<number | null>(null)
   // 追踪最后一个助手消息的 ID，用于批量更新
   const lastAssistantIdRef = useRef<string>('')
-
-  // 监听 Agent 状态变化
-  useEffect(() => {
-    let unlisten: UnlistenFn | undefined
-
-    listen<{ status: string; message: string }>('agent-status-changed', (event) => {
-      const { status: s } = event.payload
-      if (s === 'running') setStatus('running')
-      else if (s === 'stopped') setStatus('stopped')
-      else if (s === 'starting') setStatus('starting')
-      else if (s.startsWith('crashed')) setStatus('crashed')
-    }).then((fn) => {
-      unlisten = fn
-    })
-
-    return () => {
-      unlisten?.()
-    }
-  }, [])
 
   /** 将缓冲区的流式数据刷新到状态 */
   const flushStreamBuffer = useCallback(() => {
@@ -190,44 +173,6 @@ export function useAgent() {
     }
   }, [stopListening])
 
-  // 获取 Agent 状态
-  const refreshStatus = useCallback(async () => {
-    try {
-      const info = await invoke<AgentStatusInfo>('get_agent_status')
-      const s = info.state
-      if (s === 'running') setStatus('running')
-      else if (s === 'stopped') setStatus('stopped')
-      else if (s.startsWith('starting')) setStatus('starting')
-      else if (s.startsWith('crashed')) setStatus('crashed')
-    } catch {
-      setStatus('stopped')
-    }
-  }, [])
-
-  // 启动 Agent
-  const startAgent = useCallback(async () => {
-    setStatus('starting')
-    try {
-      await invoke<AgentStatusInfo>('start_agent')
-      await startListening()
-      await refreshStatus()
-    } catch (e) {
-      setError(String(e))
-      setStatus('crashed')
-    }
-  }, [startListening, refreshStatus])
-
-  // 停止 Agent
-  const stopAgent = useCallback(async () => {
-    try {
-      await invoke('stop_agent')
-      stopListening()
-      setStatus('stopped')
-    } catch (e) {
-      setError(String(e))
-    }
-  }, [stopListening])
-
   // 执行 Skill
   const executeSkill = useCallback(
     async (skill: SkillType, bookId: string, message: string, history?: ChatHistoryItem[]) => {
@@ -292,6 +237,8 @@ export function useAgent() {
             reasoningEffort: 'max',
           },
           requestId,
+          // Skill 模式为独立任务轮次（每轮自带工具检索与记忆注入），
+          // 无需注入会话滑动窗口摘要；聊天模式的总结由 useAiChat 负责传递。
           conversationSummary: null,
         })
       } catch (e) {
@@ -338,22 +285,14 @@ export function useAgent() {
     setActiveSkill(null)
   }, [])
 
-  // 初始化时检查状态
-  useEffect(() => {
-    refreshStatus()
-  }, [refreshStatus])
-
   return {
     status,
     messages,
     isStreaming,
     error,
     activeSkill,
-    startAgent,
-    stopAgent,
     executeSkill,
     cancelSkill,
     clearMessages,
-    refreshStatus,
   }
 }

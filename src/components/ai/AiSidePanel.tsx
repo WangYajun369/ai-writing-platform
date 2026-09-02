@@ -1,9 +1,9 @@
 /**
  * AiSidePanel — AI 助手侧面板
  *
- * 支持两种模式：
- * - AI 聊天模式：原有对话方式，通过 invoke 直接调用 AI
- * - Agent 模式：通过 Python Agent 服务，支持技能选择、流式输出
+ * 支持两种模式（均经由 Rust Agent 引擎 execute_agent_skill + agent-stream-chunk 事件）：
+ * - AI 聊天模式：useAiChat 驱动（含滑动窗口总结、错误恢复）
+ * - Agent 模式：useAgent 驱动（技能选择、记忆管理、流式输出）
  *
  * 子组件拆分到 ./panel/ 目录：
  *  - Header         → 头部（模式切换、连接状态、技能选择器）
@@ -13,11 +13,9 @@
  *  - AgentMessageList → Agent 模式消息列表
  *  - AgentInputArea → Agent 模式输入区域
  *  - ModelCheckIcon → 模型检测图标
- *  - EmbeddingStatus→ Embedding 索引状态
  *  - constants      → 状态配置 / getAgentQuickActions
  */
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useAppStore, useCurrentAiMessages, useCurrentBook } from '@/stores/appStore'
 import type { ChatRequestPayload } from '@/types'
 import { getChatApiKey } from '@/types'
@@ -25,7 +23,7 @@ import { aiApi } from '@/lib/tauri-bridge'
 import { useAiChat, PROVIDER_LABELS } from './useAiChat'
 import { RequestDetailModal } from './RequestDetailModal'
 import { useAgent } from '@/components/agent/useAgent'
-import type { AgentStatus, SkillType } from '@/components/agent/types'
+import type { SkillType } from '@/components/agent/types'
 import { Header } from './panel/Header'
 import { MessageList } from './panel/MessageList'
 import { QuickHints } from './panel/QuickHints'
@@ -34,7 +32,6 @@ import { AgentMessageList } from './panel/AgentMessageList'
 import { AgentInputArea } from './panel/AgentInputArea'
 import { AgentMemoryPanel } from '@/components/agent/AgentMemoryPanel'
 import '@/styles/AgentPanel.css'
-import { mapAgentStatus } from './panel/constants'
 
 type PanelMode = 'chat' | 'agent'
 
@@ -52,41 +49,20 @@ export default function AiSidePanel() {
   const book = useCurrentBook()
   const {
     streaming,
-    embeddingGenerating,
-    embeddingStatus,
-    embeddingStatusLoading,
     handleSend,
     handleClear,
     handleDeleteMessage,
-    handleGenerateEmbeddings,
   } = useAiChat({ bookId: currentBookId ?? '', aiConfig, skill: selectedSkill })
 
-  // Agent 模式 hooks
+  // Agent 模式 hooks（Agent 为 Rust 原生实现，始终就绪，无外部进程启停）
   const {
-    status: agentStatus,
     messages: agentMessages,
     isStreaming: agentStreaming,
     error: agentError,
-    startAgent,
-    stopAgent,
     executeSkill,
     cancelSkill,
     clearMessages: clearAgentMessages,
   } = useAgent()
-
-  // Agent 连接状态（Rust 侧自动启动，前端只监听状态变化）
-  const [agentStatusDisplay, setAgentStatusDisplay] = useState<AgentStatus>('stopped')
-  useEffect(() => {
-    let unlisten: UnlistenFn | undefined
-    listen<{ status: string; message: string }>('agent-status-changed', (event) => {
-      const { status: s } = event.payload
-      if (s === 'running') setAgentStatusDisplay('running')
-      else if (s === 'stopped') setAgentStatusDisplay('stopped')
-      else if (s === 'starting') setAgentStatusDisplay('starting')
-      else if (s.startsWith('crashed')) setAgentStatusDisplay('crashed')
-    }).then((fn) => { unlisten = fn }).catch(() => {})
-    return () => { unlisten?.() }
-  }, [])
 
   const providerLabel = PROVIDER_LABELS[aiConfig.chat.provider] ?? aiConfig.chat.provider
   const modelName = aiConfig.chat.model
@@ -113,7 +89,8 @@ export default function AiSidePanel() {
     }
   }, [aiConfig])
 
-  const statusKey = mapAgentStatus(agentStatusDisplay)
+  // Agent 为 Rust 原生实现（无外部进程），状态栏恒为已连接
+  const statusKey: 'connected' = 'connected'
 
   // 稳定回调引用，避免子组件 memo 失效
   const onShowDetail = useCallback((payload: ChatRequestPayload) => {
@@ -188,9 +165,6 @@ export default function AiSidePanel() {
         selectedSkill={selectedSkill}
         onSkillChange={setSelectedSkill}
         onClear={onClear}
-        agentStatus={agentStatus}
-        onStartAgent={startAgent}
-        onStopAgent={stopAgent}
         showMemory={showMemory}
         onToggleMemory={() => setShowMemory((v) => !v)}
       />
@@ -210,7 +184,7 @@ export default function AiSidePanel() {
       ) : (
         <AgentMessageList
           messages={agentMessages}
-          agentStatus={agentStatus}
+          agentStatus="running"
           selectedSkill={selectedSkill}
           error={agentError}
           onSelectQuick={setInput}
@@ -231,12 +205,6 @@ export default function AiSidePanel() {
           onSend={onSend}
           streaming={streaming}
           modelName={aiConfig.chat.model}
-          embeddingGenerating={embeddingGenerating}
-          embeddingStatusLoading={embeddingStatusLoading}
-          embeddingStatus={embeddingStatus}
-          currentBookId={currentBookId}
-          ragEnabled={aiConfig.rag.enabled}
-          onGenerateEmbeddings={handleGenerateEmbeddings}
         />
       ) : (
         <AgentInputArea
@@ -244,7 +212,7 @@ export default function AiSidePanel() {
           onChange={setInput}
           onSend={onAgentSend}
           isStreaming={agentStreaming}
-          agentStatus={agentStatus}
+          agentStatus="running"
           selectedSkill={selectedSkill}
           onCancel={cancelSkill}
         />

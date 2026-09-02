@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 /**
+ * MirageInk (TimeWrite / 智写时光) — Rust 依赖版本巡检
+ *
  * 检测 Cargo.toml 中所有 Rust 依赖的当前版本与 crates.io 最新版本
  * 用法: npx tsx scripts/check-rust-versions.ts
  * 可选参数:

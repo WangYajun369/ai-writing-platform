@@ -1,7 +1,7 @@
 /**
  * AiSidePanel 共享常量
  */
-import type { SkillType, AgentStatus } from '@/components/agent/types'
+import type { SkillType } from '@/components/agent/types'
 import {
   CircleIcon,
   CircleCheckIcon,
@@ -18,26 +18,6 @@ export const STATUS_CONFIG = {
 } as const
 
 export type StatusKey = keyof typeof STATUS_CONFIG
-
-/** 将 Rust Agent 状态映射到显示状态 key */
-export function mapAgentStatus(status: AgentStatus): StatusKey {
-  switch (status) {
-    case 'running':  return 'connected'
-    case 'starting': return 'testing'
-    case 'crashed':  return 'error'
-    default:         return 'idle'
-  }
-}
-
-/** 获取 Agent 状态对应的显示文本 */
-export function getStatusLabel(status: AgentStatus): string {
-  switch (status) {
-    case 'running':  return 'Agent 已连接'
-    case 'starting': return 'Agent 启动中…'
-    case 'crashed':  return 'Agent 异常'
-    default:         return 'Agent 未启动'
-  }
-}
 
 /**
  * Agent 快捷操作（各技能通用）
