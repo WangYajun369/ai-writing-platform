@@ -13,24 +13,34 @@ DeepSeek API 参数说明（参考官方文档）：
 - AGENT_TRACE_LEVEL=DEBUG 查看模型选择过程
 """
 
-import logging
-from typing import AsyncIterator
+from __future__ import annotations
 
-from ..config import config, SkillType, TASK_COMPLEXITY_MAP, ModelTier
+import logging
+from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING, Any, TypeAlias
+
+from ..config import TASK_COMPLEXITY_MAP, ModelTier, SkillType, config
 from ..tracer import trace, trace_event
+
+if TYPE_CHECKING:
+    from langchain_core.language_models import BaseChatModel
+    from langchain_core.messages import BaseMessage
 
 logger = logging.getLogger(__name__)
 
 # ─── 模型实例（延迟初始化） ───
 
-_local_model = None
+# 云端模型缓存 key：(endpoint, model_name, api_key_hash, thinking_enabled, reasoning_effort)
+CloudModelCacheKey: TypeAlias = tuple[str, str, str, bool, str]
+
+_local_model: BaseChatModel | None = None
 # 云端模型改为按请求动态创建（不同用户可能有不同 API Key）
 # 保留缓存：key = (endpoint, model, api_key_hash) → model 实例
-_cloud_model_cache: dict[tuple, object] = {}
+_cloud_model_cache: dict[CloudModelCacheKey, BaseChatModel] = {}
 
 
 @trace(log_args=False, log_result=True)
-def _get_local_model():
+def _get_local_model() -> BaseChatModel:
     """获取本地 Ollama 模型"""
     global _local_model
     if _local_model is None:
@@ -59,50 +69,7 @@ def _is_deepseek_endpoint(endpoint: str) -> bool:
     return "deepseek" in endpoint.lower()
 
 
-def _build_deepseek_model_kwargs(
-    model_name: str,
-    endpoint: str,
-    api_key: str,
-    temperature: float,
-    max_tokens: int,
-    thinking_enabled: bool = True,
-    reasoning_effort: str = "high",
-) -> dict:
-    """构建 ChatOpenAI 初始化参数，遵循 DeepSeek 官方推荐配置。
-
-    参考：https://api-docs.deepseek.com/zh-cn/guides/thinking_mode
-
-    DeepSeek 思考模式注意事项：
-    - thinking 参数需通过 default_headers 或 extra_body 注入
-    - reasoning_effort: 普通请求默认 high，Agent 工具调用场景自动设为 max
-    - 思考模式下 temperature/top_p/presence_penalty/frequency_penalty 不生效
-    - KV Cache 自动启用，无需显式配置
-    """
-    kwargs = {
-        "model": model_name,
-        "base_url": endpoint,
-        "api_key": api_key,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-    }
-
-    if _is_deepseek_endpoint(endpoint) and thinking_enabled:
-        # DeepSeek 思考模式：通过 model_kwargs 传递 thinking 和 reasoning_effort
-        # langchain-openai 会将 model_kwargs 中的参数注入到每次 API 请求
-        kwargs["model_kwargs"] = {
-            "thinking": {"type": "enabled"},
-            "reasoning_effort": reasoning_effort,
-        }
-        trace_event(
-            "MODEL_DEEPSEEK_THINKING",
-            f"启用 DeepSeek 思考模式: reasoning_effort={reasoning_effort}",
-            logging.DEBUG,
-        )
-
-    return kwargs
-
-
-def _get_ai_config_value(ai_config: dict, *keys, default=None):
+def _get_ai_config_value(ai_config: dict[str, Any], *keys: str, default: Any = None) -> Any:
     """兼容 camelCase（前端）和 snake_case（Python）两种格式读取配置值"""
     for key in keys:
         if key in ai_config and ai_config[key] is not None:
@@ -111,7 +78,7 @@ def _get_ai_config_value(ai_config: dict, *keys, default=None):
 
 
 @trace(log_args=False, log_result=True)
-def _get_or_create_cloud_model(ai_config: dict | None = None):
+def _get_or_create_cloud_model(ai_config: dict[str, Any] | None = None) -> BaseChatModel:
     """获取或创建云端模型实例
 
     优先使用请求传入的 ai_config，否则回退到全局配置。
@@ -198,7 +165,7 @@ def _get_or_create_cloud_model(ai_config: dict | None = None):
                     base_url=endpoint,
                     api_key=api_key,
                     temperature=temperature,
-                    max_tokens=max_tokens,
+                    max_tokens=max_tokens,  # pyright: ignore[reportCallIssue]  # langchain-openai 1.x 类型 stub 未声明该参数，运行时字段合法
                 )
                 _cloud_model_cache[cache_key] = model
             else:
@@ -207,7 +174,7 @@ def _get_or_create_cloud_model(ai_config: dict | None = None):
                     base_url=endpoint,
                     api_key=api_key,
                     temperature=temperature,
-                    max_tokens=max_tokens,
+                    max_tokens=max_tokens,  # pyright: ignore[reportCallIssue]  # langchain-openai 1.x 类型 stub 未声明该参数，运行时字段合法
                 )
 
             trace_event(
@@ -229,7 +196,7 @@ def _get_or_create_cloud_model(ai_config: dict | None = None):
 
 
 @trace(log_args=True, log_result=True, max_result_len=100)
-def get_model_for_skill(skill: SkillType, ai_config: dict | None = None):
+def get_model_for_skill(skill: SkillType, ai_config: dict[str, Any] | None = None) -> BaseChatModel:
     """根据 Skill 类型返回对应层级的模型
 
     Args:
@@ -256,11 +223,11 @@ def get_model_for_skill(skill: SkillType, ai_config: dict | None = None):
 
 
 @trace(log_args=False, log_result=False, log_time=False)
-async def stream_model(model, messages) -> AsyncIterator[str]:
+async def stream_model(model: BaseChatModel, messages: list[BaseMessage]) -> AsyncIterator[str]:
     """流式调用模型，逐 token 产出"""
     trace_event(
         "MODEL_STREAM_START",
-        f"模型={model.model_name if hasattr(model, 'model_name') else 'unknown'} "
+        f"模型={getattr(model, 'model_name', 'unknown')} "
         f"消息数={len(messages)}",
         logging.DEBUG,
     )

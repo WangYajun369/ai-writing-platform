@@ -9,18 +9,16 @@
 - 设置 AGENT_TRACE_LEVEL=DEBUG 查看所有记忆体操作日志
 """
 
-import json
 import logging
 import os
 import sqlite3
 import threading
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import ClassVar, cast
 
 from ..config import config
-from ..tracer import trace, log_call, trace_event
+from ..tracer import trace, trace_event
 
 logger = logging.getLogger(__name__)
 
@@ -54,14 +52,33 @@ class Memory:
         return f"[{type_label}] {self.content}"
 
 
+def _row_to_memory(row: sqlite3.Row) -> Memory:
+    """将 SQLite 行转换为 Memory（Row 索引返回 Any，用 cast 收窄类型）"""
+    return Memory(
+        id=cast(int, row["id"]),
+        book_id=cast(str, row["book_id"]),
+        skill_type=cast(str, row["skill_type"]),
+        memory_type=MemoryType(cast(str, row["memory_type"])),
+        content=cast(str, row["content"]),
+        keywords=cast(str, row["keywords"]),
+        relevance_score=cast(float, row["relevance_score"]),
+        created_at=cast(str, row["created_at"]),
+        updated_at=cast(str, row["updated_at"]),
+    )
+
+
 class MemoryStore:
     """SQLite 记忆存储
 
     使用 WAL 模式 + 线程锁保证并发安全。
     """
 
-    _instance: Optional["MemoryStore"] = None
-    _lock = threading.Lock()
+    _instance: ClassVar["MemoryStore | None"] = None
+    _lock: ClassVar[threading.Lock] = threading.Lock()
+
+    # 实例属性注解（在 __new__ / __init__ 中赋值）
+    _db_path: str
+    _initialized: bool
 
     def __new__(cls, db_path: str | None = None):
         if cls._instance is None:
@@ -92,14 +109,14 @@ class MemoryStore:
             self._conn = sqlite3.connect(
                 self._db_path, check_same_thread=False
             )
-            self._conn.execute("PRAGMA journal_mode=WAL")
-            self._conn.execute("PRAGMA synchronous=NORMAL")
+            _ = self._conn.execute("PRAGMA journal_mode=WAL")
+            _ = self._conn.execute("PRAGMA synchronous=NORMAL")
             self._conn.row_factory = sqlite3.Row
         return self._conn
 
     def _init_db(self):
         conn = self._get_conn()
-        conn.execute("""
+        _ = conn.execute("""
             CREATE TABLE IF NOT EXISTS memories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 book_id TEXT NOT NULL,
@@ -112,11 +129,11 @@ class MemoryStore:
                 updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
             )
         """)
-        conn.execute("""
+        _ = conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_memories_book_skill
             ON memories(book_id, skill_type)
         """)
-        conn.execute("""
+        _ = conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_memories_type
             ON memories(memory_type)
         """)
@@ -143,10 +160,12 @@ class MemoryStore:
         )
         conn.commit()
         mem_id = cursor.lastrowid
+        if mem_id is None:
+            raise RuntimeError("记忆保存失败：未获得自增 ID")
         trace_event(
             "MEMORY_SAVE",
             f"id={mem_id} type={memory_type.value} keywords='{keywords[:50]}' "
-            f"content_len={len(content)}",
+            + f"content_len={len(content)}",
         )
         return mem_id
 
@@ -160,8 +179,8 @@ class MemoryStore:
     ) -> list[Memory]:
         """查询记忆"""
         conn = self._get_conn()
-        conditions = ["book_id = ?"]
-        params: list = [book_id]
+        conditions: list[str] = ["book_id = ?"]
+        params: list[str | int] = [book_id]
 
         if skill_type:
             conditions.append("skill_type = ?")
@@ -171,7 +190,7 @@ class MemoryStore:
             params.append(memory_type.value)
 
         where = " AND ".join(conditions)
-        rows = conn.execute(
+        rows: list[sqlite3.Row] = conn.execute(
             f"""SELECT * FROM memories
                WHERE {where}
                ORDER BY relevance_score DESC, updated_at DESC
@@ -179,22 +198,12 @@ class MemoryStore:
             params + [limit],
         ).fetchall()
 
-        results = [Memory(
-            id=row["id"],
-            book_id=row["book_id"],
-            skill_type=row["skill_type"],
-            memory_type=MemoryType(row["memory_type"]),
-            content=row["content"],
-            keywords=row["keywords"],
-            relevance_score=row["relevance_score"],
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-        ) for row in rows]
+        results = [_row_to_memory(row) for row in rows]
 
         trace_event(
             "MEMORY_GET",
             f"book={book_id} skill={skill_type or '*'} "
-            f"type={memory_type.value if memory_type else '*'} → {len(results)} 条",
+            + f"type={memory_type.value if memory_type else '*'} → {len(results)} 条",
         )
         return results
 
@@ -202,7 +211,7 @@ class MemoryStore:
     def update_relevance(self, memory_id: int, new_score: float):
         """更新记忆的相关性分数"""
         conn = self._get_conn()
-        conn.execute(
+        _ = conn.execute(
             """UPDATE memories
                SET relevance_score = ?, updated_at = datetime('now', 'localtime')
                WHERE id = ?""",
@@ -226,7 +235,7 @@ class MemoryStore:
         trace_event(
             "MEMORY_DECAY",
             f"book={book_id} skill={skill_type} rate={decay_rate} "
-            f"affected={cursor.rowcount} 条",
+            + f"affected={cursor.rowcount} 条",
         )
 
     @trace(log_args=True, log_result=False)
@@ -239,8 +248,8 @@ class MemoryStore:
     ):
         """更新一条记忆的内容/关键词/类型"""
         conn = self._get_conn()
-        fields = []
-        params: list = []
+        fields: list[str] = []
+        params: list[str | int] = []
 
         if content is not None:
             fields.append("content = ?")
@@ -258,17 +267,21 @@ class MemoryStore:
         fields.append("updated_at = datetime('now', 'localtime')")
         params.append(memory_id)
 
-        conn.execute(
+        _ = conn.execute(
             f"UPDATE memories SET {', '.join(fields)} WHERE id = ?",
             params,
         )
         conn.commit()
-        trace_event("MEMORY_UPDATE", f"id={memory_id} fields={list(zip(fields, params[:-1]))}", logging.DEBUG)
+        trace_event(
+            "MEMORY_UPDATE",
+            f"id={memory_id} fields={list(zip(fields, params[:-1]))}",
+            logging.DEBUG,
+        )
 
     @trace(log_args=True, log_result=False)
     def delete_memory(self, memory_id: int):
         conn = self._get_conn()
-        conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+        _ = conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
         conn.commit()
         trace_event("MEMORY_DELETE", f"id={memory_id}", logging.DEBUG)
 
@@ -286,15 +299,19 @@ class MemoryStore:
     def get_memory_count(self, book_id: str | None = None) -> int:
         conn = self._get_conn()
         if book_id:
-            row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM memories WHERE book_id = ?",
-                (book_id,),
-            ).fetchone()
+            row = cast(
+                sqlite3.Row | None,
+                conn.execute(
+                    "SELECT COUNT(*) as cnt FROM memories WHERE book_id = ?",
+                    (book_id,),
+                ).fetchone(),
+            )
         else:
-            row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM memories"
-            ).fetchone()
-        return row["cnt"] if row else 0
+            row = cast(
+                sqlite3.Row | None,
+                conn.execute("SELECT COUNT(*) as cnt FROM memories").fetchone(),
+            )
+        return cast(int, row["cnt"]) if row else 0
 
     # ─── 智能提取 ───
 
@@ -315,15 +332,15 @@ class MemoryStore:
         trace_event(
             "MEMORY_EXTRACT_START",
             f"book={book_id} skill={skill_type} "
-            f"user_msg_len={len(user_message)} assistant_msg_len={len(assistant_response)}",
+            + f"user_msg_len={len(user_message)} assistant_msg_len={len(assistant_response)}",
         )
         saved_count = 0
 
         # 提取偏好
         preference_keywords = ["喜欢", "偏好", "习惯", "风格", "语气", "总是", "一直"]
         if any(kw in user_message for kw in preference_keywords):
-            keywords = self._extract_keywords(user_message, max_words=5)
-            self.save_memory(
+            keywords = self.extract_keywords(user_message, max_words=5)
+            _ = self.save_memory(
                 book_id=book_id,
                 skill_type=skill_type,
                 memory_type=MemoryType.PREFERENCE,
@@ -335,8 +352,8 @@ class MemoryStore:
         # 提取决策
         decision_keywords = ["决定", "选择", "采用", "就用这个", "按这个来", "确认"]
         if any(kw in user_message for kw in decision_keywords):
-            keywords = self._extract_keywords(user_message, max_words=5)
-            self.save_memory(
+            keywords = self.extract_keywords(user_message, max_words=5)
+            _ = self.save_memory(
                 book_id=book_id,
                 skill_type=skill_type,
                 memory_type=MemoryType.DECISION,
@@ -355,8 +372,8 @@ class MemoryStore:
             ][:3]
             if relevant:
                 content = "。".join(relevant) + "。"
-                keywords = self._extract_keywords(content, max_words=5)
-                self.save_memory(
+                keywords = self.extract_keywords(content, max_words=5)
+                _ = self.save_memory(
                     book_id=book_id,
                     skill_type=skill_type,
                     memory_type=MemoryType.LESSON,
@@ -378,12 +395,13 @@ class MemoryStore:
             )
 
     @staticmethod
-    def _extract_keywords(text: str, max_words: int = 5) -> list[str]:
+    def extract_keywords(text: str, max_words: int = 5) -> list[str]:
         """简单关键词提取：取长度 >= 2 的高频词"""
+        # 该工具方法被 MemoryRetriever 跨类复用，保持公开命名
         import re
         from collections import Counter
 
-        words = re.findall(r"[\u4e00-\u9fff\w]{2,}", text)
+        words: list[str] = re.findall(r"[\u4e00-\u9fff\w]{2,}", text)
         stop_words = {
             "这个", "那个", "什么", "怎么", "可以", "是否", "需要",
             "已经", "还是", "但是", "然后", "一个", "一下", "一些",

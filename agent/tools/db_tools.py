@@ -14,19 +14,19 @@ Python Agent 不直接访问 SQLite，而是通过 Rust 侧暴露的 HTTP 回调
 - 设置环境变量 AGENT_TRACE_LEVEL=DEBUG 查看所有工具调用详情
 """
 
+import asyncio
 import json
 import logging
 import time
-import asyncio
 from collections import OrderedDict
-from typing import Optional
+from typing import Any
 
 import httpx
-from langchain_core.tools import tool
+from langchain_core.tools import BaseTool, tool
 from pydantic import BaseModel, Field
 
-from ..config import config, SkillType
-from ..tracer import trace, log_call, get_request_id, trace_event
+from ..config import SkillType, config
+from ..tracer import trace, trace_event
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +37,8 @@ class ChapterData(BaseModel):
     id: str
     title: str
     content: str
-    summary: Optional[str] = None
-    volume_name: Optional[str] = None
+    summary: str | None = None
+    volume_name: str | None = None
 
 
 class WorldCardData(BaseModel):
@@ -100,7 +100,7 @@ def _is_bridge_connection_error(error: Exception) -> bool:
 
 
 @trace(log_result=False)  # 不打印返回值（JSON 太大），只记录参数和耗时
-async def _call_rust(endpoint: str, params: dict) -> dict:
+async def _call_rust(endpoint: str, params: dict[str, Any]) -> dict[str, Any]:
     """通用 Rust 回调，含重试和 Bridge 专用错误诊断
 
     重试逻辑：
@@ -108,7 +108,6 @@ async def _call_rust(endpoint: str, params: dict) -> dict:
     - Bridge 业务错误（404、500 等）→ 不重试，直接报错
     - 其他网络错误 → 重试 1 次
     """
-    rid = get_request_id()
     last_error: Exception | None = None
 
     for attempt in range(1, _BRIDGE_MAX_RETRIES + 1):
@@ -134,13 +133,15 @@ async def _call_rust(endpoint: str, params: dict) -> dict:
             last_error = e
 
             # 尝试从 Bridge 响应体中提取详细错误信息
-            bridge_error_detail: str | None = None
-            if hasattr(e, "response") and e.response is not None:
+            # httpx.HTTPError 的类型 stub 未声明 response，运行时存在，故用 getattr
+            bridge_error_detail: Any = None
+            resp_obj = getattr(e, "response", None)
+            if resp_obj is not None:
                 try:
-                    body = e.response.json()
-                    bridge_error_detail = body.get("error")
-                except Exception:
-                    pass
+                    # 响应体约定为 {"error": ...}，解析失败或非 dict 时忽略详情
+                    bridge_error_detail = resp_obj.json().get("error")
+                except (json.JSONDecodeError, ValueError, AttributeError) as parse_err:
+                    logger.debug("Bridge 错误响应体解析失败，跳过详情提取: %s", parse_err)
 
             if _is_bridge_connection_error(e):
                 # Bridge 未就绪 → 重试
@@ -214,13 +215,13 @@ class ToolCache:
         self._max_size = max_size
         self._ttl = ttl_seconds
 
-    def _make_key(self, endpoint: str, params: dict) -> str:
+    def _make_key(self, endpoint: str, params: dict[str, Any]) -> str:
         """生成缓存键"""
         stable_params = {k: v for k, v in params.items()
                          if k not in ("timestamp", "request_id")}
         return f"{endpoint}:{json.dumps(stable_params, sort_keys=True, ensure_ascii=False)}"
 
-    def get(self, endpoint: str, params: dict) -> Optional[str]:
+    def get(self, endpoint: str, params: dict[str, Any]) -> str | None:
         key = self._make_key(endpoint, params)
         if key in self._cache:
             ts, result = self._cache[key]
@@ -232,7 +233,7 @@ class ToolCache:
                 del self._cache[key]
         return None
 
-    def set(self, endpoint: str, params: dict, result: str):
+    def set(self, endpoint: str, params: dict[str, Any], result: str):
         key = self._make_key(endpoint, params)
         if key in self._cache:
             self._cache.move_to_end(key)
@@ -274,7 +275,7 @@ async def read_chapter(book_id: str, chapter_id: str) -> str:
         "book_id": book_id,
         "chapter_id": chapter_id,
     })
-    chapter = ChapterData(**data)
+    chapter = ChapterData.model_validate(data)
     parts = [f"# {chapter.title}"]
     if chapter.volume_name:
         parts.append(f"所属卷：{chapter.volume_name}")
@@ -304,7 +305,7 @@ async def read_chapter_summary(book_id: str, chapter_id: str) -> str:
         "book_id": book_id,
         "chapter_id": chapter_id,
     })
-    chapter = ChapterData(**data)
+    chapter = ChapterData.model_validate(data)
     parts = [f"## {chapter.title}"]
     if chapter.volume_name:
         parts.append(f"所属卷：{chapter.volume_name}")
@@ -343,13 +344,13 @@ async def read_chapter_chunk(
         "book_id": book_id,
         "chapter_id": chapter_id,
     })
-    chapter = ChapterData(**data)
+    chapter = ChapterData.model_validate(data)
     content = chapter.content
     total_chunks = (len(content) + chunk_size - 1) // chunk_size
 
     if chunk_index < 0 or chunk_index >= total_chunks:
         return json.dumps({
-            "error": f"chunk_index 超出范围",
+            "error": "chunk_index 超出范围",
             "total_chunks": total_chunks,
             "valid_range": f"0 ~ {total_chunks - 1}",
         }, ensure_ascii=False)
@@ -389,7 +390,7 @@ async def list_book_chapters(book_id: str) -> str:
         章节列表，JSON 格式
     """
     data = await _call_rust("list_chapters", {"book_id": book_id})
-    chapters = [ChapterData(**c) for c in data.get("chapters", [])]
+    chapters = [ChapterData.model_validate(c) for c in data.get("chapters", [])]
     result = json.dumps(
         [{"id": c.id, "title": c.title, "summary": c.summary, "volume": c.volume_name}
          for c in chapters],
@@ -419,12 +420,12 @@ async def search_world_cards(book_id: str, query: str) -> str:
         "book_id": book_id,
         "query": query,
     })
-    cards = [WorldCardData(**c) for c in data.get("cards", [])]
+    cards = [WorldCardData.model_validate(c) for c in data.get("cards", [])]
 
     MAX_RESULTS = 5
     CONTENT_TRUNCATE = 300
 
-    truncated = []
+    truncated: list[dict[str, Any]] = []
     for c in cards[:MAX_RESULTS]:
         content = c.content
         if len(content) > CONTENT_TRUNCATE:
@@ -437,7 +438,7 @@ async def search_world_cards(book_id: str, query: str) -> str:
             "tags": c.tags,
         })
 
-    result_obj = {
+    result_obj: dict[str, Any] = {
         "total": len(cards),
         "shown": len(truncated),
         "cards": truncated,
@@ -464,7 +465,7 @@ async def get_book_context(book_id: str) -> str:
         书籍上下文概览
     """
     data = await _call_rust("book_context", {"book_id": book_id})
-    ctx = BookContext(**data)
+    ctx = BookContext.model_validate(data)
 
     parts = [f"# 《{ctx.book_name}》创作上下文\n"]
 
@@ -487,7 +488,7 @@ async def get_book_context(book_id: str) -> str:
 
 # ─── Tool 集合 ───
 
-DB_TOOLS = [
+DB_TOOLS: list[BaseTool] = [
     read_chapter,
     read_chapter_summary,
     read_chapter_chunk,
@@ -496,7 +497,7 @@ DB_TOOLS = [
     get_book_context,
 ]
 
-SKILL_TOOLS_MAP: dict[SkillType, list] = {
+SKILL_TOOLS_MAP: dict[SkillType, list[BaseTool]] = {
     SkillType.WRITING: [
         read_chapter_summary,
         read_chapter_chunk,

@@ -22,19 +22,19 @@
 
 import functools
 import inspect
-import json
 import logging
 import os
 import sys
 import time
-from typing import Any, Callable, TypeVar, ParamSpec, Optional, Union
+from collections.abc import Callable, Sequence
+from typing import Any, ClassVar, ParamSpec, TextIO, TypeVar, cast, overload
 
 P = ParamSpec("P")
 R = TypeVar("R")
 
 # ─── 日志配置 ───
 
-class FlushStreamHandler(logging.StreamHandler):
+class FlushStreamHandler(logging.StreamHandler[TextIO]):
     """输出到 stdout 的 StreamHandler，每次写入后强制 flush
 
     与 uvicorn 共享 stdout 输出流时，默认 StreamHandler 会按缓冲区延迟
@@ -49,9 +49,9 @@ class FlushStreamHandler(logging.StreamHandler):
         super().emit(record)
         try:
             self.flush()
-        except Exception:
-            # flush 失败不影响日志本身
-            pass
+        except (OSError, ValueError) as exc:
+            # flush 失败（如底层流已关闭）不影响日志本身，仅旁路记录
+            sys.stderr.write(f"[TRACE] flush 失败: {exc}\n")
 
 
 # 独立的 tracer logger，前缀 [TRACE] 便于 grep 过滤
@@ -87,6 +87,7 @@ def get_tracer_logger() -> logging.Logger:
     """获取 tracer 专用 logger"""
     if _tracer_logger is None:
         _init_tracer_logger()
+    assert _tracer_logger is not None, "_init_tracer_logger 未完成初始化"
     return _tracer_logger
 
 
@@ -112,14 +113,16 @@ def _serialize(obj: Any, max_len: int = 500) -> str:
         if isinstance(obj, (str, int, float, bool)):
             s = str(obj)
         elif isinstance(obj, (list, tuple)):
-            items = [_serialize(item, 100) for item in obj[:10]]
-            suffix = f", ...({len(obj) - 10} more)" if len(obj) > 10 else ""
+            seq = cast(Sequence[Any], obj)
+            items = [_serialize(item, 100) for item in seq[:10]]
+            suffix = f", ...({len(seq) - 10} more)" if len(seq) > 10 else ""
             s = f"[{', '.join(items)}{suffix}]"
         elif isinstance(obj, dict):
-            items = []
-            for k, v in list(obj.items())[:10]:
+            d = cast(dict[Any, Any], obj)
+            items: list[str] = []
+            for k, v in list(d.items())[:10]:
                 items.append(f"{k}={_serialize(v, 80)}")
-            suffix = f", ...({len(obj) - 10} more)" if len(obj) > 10 else ""
+            suffix = f", ...({len(d) - 10} more)" if len(d) > 10 else ""
             s = f"{{{', '.join(items)}{suffix}}}"
         elif hasattr(obj, "__class__"):
             class_name = obj.__class__.__name__
@@ -132,7 +135,7 @@ def _serialize(obj: Any, max_len: int = 500) -> str:
                 s = f"<{class_name}>"
         else:
             s = str(obj)
-    except Exception:
+    except Exception:  # noqa: BLE001 - 任意对象序列化都可能抛异常，降级为占位符
         s = "<serialize_error>"
 
     if len(s) > max_len:
@@ -141,9 +144,9 @@ def _serialize(obj: Any, max_len: int = 500) -> str:
 
 
 def _format_kwargs(
-    func: Callable,
-    args: tuple,
-    kwargs: dict,
+    func: Callable[..., Any],
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
     skip_self: bool = True,
 ) -> str:
     """格式化函数调用参数"""
@@ -156,7 +159,7 @@ def _format_kwargs(
 
         # 跳过 self/cls
         if skip_self and params:
-            first_key = list(params.keys())[0]
+            first_key = next(iter(params.keys()))
             if first_key in ("self", "cls"):
                 params.pop(first_key)
 
@@ -166,11 +169,11 @@ def _format_kwargs(
             if key.lower() in sensitive:
                 params[key] = "***"
 
-        parts = []
+        parts: list[str] = []
         for k, v in params.items():
             parts.append(f"{k}={_serialize(v, 200)}")
         return ", ".join(parts)
-    except Exception:
+    except Exception:  # noqa: BLE001 - 参数序列化失败不阻断追踪，降级为简单拼接
         # 降级：简单拼接
         args_str = ", ".join(_serialize(a, 150) for a in args[1:] if skip_self)
         kw_str = ", ".join(f"{k}={_serialize(v, 150)}" for k, v in kwargs.items())
@@ -179,19 +182,33 @@ def _format_kwargs(
 
 # ─── 装饰器 ───
 
+@overload
+def trace(log_args: Callable[P, R]) -> Callable[P, R]: ...
+
+
+@overload
 def trace(
     log_args: bool = True,
     log_result: bool = True,
     log_time: bool = True,
     max_result_len: int = 300,
     level: int = logging.DEBUG,
-) -> Callable[[Callable[P, R]], Callable[P, R]]:
+) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
+
+
+def trace(
+    log_args: bool | Callable[P, R] = True,
+    log_result: bool = True,
+    log_time: bool = True,
+    max_result_len: int = 300,
+    level: int = logging.DEBUG,
+) -> Callable[[Callable[P, R]], Callable[P, R]] | Callable[P, R]:
     """函数调用追踪装饰器
 
     自动记录：函数名、传参、返回值、耗时。
 
     Args:
-        log_args: 是否记录参数
+        log_args: 是否记录参数（@trace 无括号用法时传入被装饰函数）
         log_result: 是否记录返回值
         log_time: 是否记录耗时
         max_result_len: 返回值最大记录长度
@@ -204,22 +221,22 @@ def trace(
         @trace(level=logging.INFO, max_result_len=100)
         async def bar(x): ...
     """
-    def decorator(func: Callable[P, R]) -> Callable[P, R]:
-        module_name = func.__module__.split(".")[-1] if func.__module__ else ""
-        full_name = f"{module_name}.{func.__qualname__}"
+    def decorator(wrapped: Callable[P, R]) -> Callable[P, R]:
+        module_name = wrapped.__module__.split(".")[-1] if wrapped.__module__ else ""
+        full_name = f"{module_name}.{wrapped.__qualname__}"
 
-        if inspect.iscoroutinefunction(func):
-            @functools.wraps(func)
+        if inspect.iscoroutinefunction(wrapped):
+            @functools.wraps(wrapped)
             async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
                 tracer = get_tracer_logger()
                 start = time.perf_counter()
 
                 if log_args:
-                    args_str = _format_kwargs(func, args, kwargs)
+                    args_str = _format_kwargs(wrapped, args, kwargs)
                     tracer.log(level, f"▶ {full_name}({args_str})")
 
                 try:
-                    result = await func(*args, **kwargs)
+                    result = await wrapped(*args, **kwargs)
                     elapsed = (time.perf_counter() - start) * 1000
 
                     if log_result:
@@ -238,19 +255,20 @@ def trace(
                     )
                     raise
 
-            return async_wrapper
+            # async 包装实际返回 Coroutine，但装饰器契约下调用方 await 后得到 R
+            return cast(Callable[P, R], async_wrapper)
         else:
-            @functools.wraps(func)
+            @functools.wraps(wrapped)
             def sync_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
                 tracer = get_tracer_logger()
                 start = time.perf_counter()
 
                 if log_args:
-                    args_str = _format_kwargs(func, args, kwargs)
+                    args_str = _format_kwargs(wrapped, args, kwargs)
                     tracer.log(level, f"▶ {full_name}({args_str})")
 
                 try:
-                    result = func(*args, **kwargs)
+                    result = wrapped(*args, **kwargs)
                     elapsed = (time.perf_counter() - start) * 1000
 
                     if log_result:
@@ -273,8 +291,7 @@ def trace(
 
     # 支持 @trace 无括号用法
     if callable(log_args):
-        func, log_args = log_args, True
-        return decorator(func)
+        return decorator(log_args)
 
     return decorator
 
@@ -292,12 +309,12 @@ class Traced:
     注意：只追踪不以 _ 开头的方法。
     """
 
-    _trace_exclude_: set[str] = set()  # 子类可覆盖，排除特定方法
+    _trace_exclude_: ClassVar[set[str]] = set()  # 子类可覆盖，排除特定方法
 
-    def __init_subclass__(cls, **kwargs):
+    def __init_subclass__(cls, **kwargs: Any):
         super().__init_subclass__(**kwargs)
 
-        exclude = getattr(cls, "_trace_exclude_", set())
+        exclude: set[str] = getattr(cls, "_trace_exclude_", set())
 
         for name, method in list(cls.__dict__.items()):
             if name.startswith("_"):
@@ -316,7 +333,7 @@ class Traced:
 
 def log_call(
     func_name: str,
-    args: dict | None = None,
+    args: dict[str, Any] | None = None,
     result: Any = None,
     elapsed_ms: float | None = None,
     error: Exception | None = None,

@@ -27,6 +27,9 @@
 import logging
 import logging.config
 import signal
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from types import FrameType
 from typing import Any
 
 from fastapi import FastAPI
@@ -110,10 +113,18 @@ from .tracer import get_tracer_logger
 _setup_logging()
 
 # ─── FastAPI 应用 ───
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+    # 启动逻辑（如有需要在此添加）
+    yield
+    logger.info("Agent Server 已关闭")
+
+
 app = FastAPI(
     title="MirageInk Agent Server",
     description="智写时光 AI 写作助手 — Agent Skills 服务",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # CORS：允许 Rust Core 本地回调
@@ -131,7 +142,7 @@ register_routes(app)
 _shutdown_requested = False
 
 
-def _signal_handler(signum, frame):
+def _signal_handler(signum: int, frame: FrameType | None) -> None:
     global _shutdown_requested
     logger.info(f"收到信号 {signum}，正在优雅关闭...")
     _shutdown_requested = True
@@ -139,11 +150,6 @@ def _signal_handler(signum, frame):
 
 signal.signal(signal.SIGTERM, _signal_handler)
 signal.signal(signal.SIGINT, _signal_handler)
-
-
-@app.on_event("shutdown")
-async def on_shutdown():
-    logger.info("Agent Server 已关闭")
 
 
 # ─── 直接运行入口 ───

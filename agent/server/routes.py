@@ -6,6 +6,9 @@
 
 import logging
 import math
+from typing import Any
+
+from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
 from ..config import SkillType, config
@@ -22,10 +25,10 @@ class SkillExecuteRequest(BaseModel):
     skill: SkillType = Field(description="技能类型")
     book_id: str = Field(description="书籍 ID")
     message: str = Field(description="用户消息/指令")
-    conversation_history: list[dict] | None = Field(
+    conversation_history: list[dict[str, Any]] | None = Field(
         default=None, description="历史对话 [{role, content}, ...]"
     )
-    ai_config: dict | None = Field(
+    ai_config: dict[str, Any] | None = Field(
         default=None,
         description="AI 模型配置 {provider, endpoint, model, api_key, temperature?, max_tokens?, thinking_enabled?}",
     )
@@ -45,17 +48,17 @@ class MemoryUpdateRequest(BaseModel):
 class HealthResponse(BaseModel):
     status: str = "ok"
     version: str = "0.1.0"
-    config: dict
+    config: dict[str, Any]
 
 
 # ─── 路由注册 ───
 
 
-def register_routes(app):
+def register_routes(app: FastAPI) -> None:
     """将路由注册到 FastAPI 应用"""
 
     @app.get("/health")
-    async def health_check():
+    async def health_check():  # pyright: ignore[reportUnusedFunction]  # FastAPI 路由函数，嵌套定义下基于 pyright 误报未使用
         """健康检查端点
 
         纯进程级检查：不做任何 IO / 数据库查询，保证心跳足够轻量。
@@ -77,7 +80,7 @@ def register_routes(app):
         )
 
     @app.post("/skills/execute")
-    async def execute_skill(req: SkillExecuteRequest):
+    async def execute_skill(req: SkillExecuteRequest):  # pyright: ignore[reportUnusedFunction]  # FastAPI 路由函数，嵌套定义下基于 pyright 误报未使用
         """执行 Agent Skill（SSE 流式响应）
 
         POST /skills/execute
@@ -87,7 +90,6 @@ def register_routes(app):
         has_ai_config = req.ai_config is not None
         # 兼容 camelCase（前端）和 snake_case（Python）两种格式
         api_key_raw = (req.ai_config.get("api_key") or req.ai_config.get("apiKey")) if req.ai_config else None
-        has_api_key = bool(api_key_raw)
         # 脱敏：仅输出 api_key 长度和前缀
         api_key_len = len(api_key_raw) if api_key_raw else 0
         api_key_prefix = (api_key_raw[:6] + "...") if api_key_raw and len(api_key_raw) > 6 else (api_key_raw or "(空)")
@@ -120,14 +122,24 @@ def register_routes(app):
         )
 
     @app.post("/skills/cancel")
-    async def cancel_skill():
+    async def cancel_skill():  # pyright: ignore[reportUnusedFunction]  # FastAPI 路由函数，嵌套定义下基于 pyright 误报未使用
         """取消当前任务（预留，后续实现任务管理）"""
         trace_event("HTTP_REQUEST", "POST /skills/cancel", logging.DEBUG)
         return {"status": "cancelled"}
 
     # ─── 记忆管理 API ───
 
-    def _sanitize_memory(id, book_id, skill_type, memory_type, content, keywords, relevance_score, created_at, updated_at) -> dict:
+    def _sanitize_memory(
+        id: int,
+        book_id: str,
+        skill_type: str,
+        memory_type: str,
+        content: str,
+        keywords: str,
+        relevance_score: float,
+        created_at: str,
+        updated_at: str,
+    ) -> dict[str, Any]:
         """防御 NaN/Infinity，确保响应体为合法 JSON"""
         score = relevance_score
         if isinstance(score, float) and (math.isnan(score) or math.isinf(score)):
@@ -145,7 +157,7 @@ def register_routes(app):
         }
 
     @app.get("/memory/list")
-    async def list_memories(book_id: str, skill_type: str | None = None):
+    async def list_memories(book_id: str, skill_type: str | None = None) -> dict[str, Any]:  # pyright: ignore[reportUnusedFunction]  # FastAPI 路由函数，嵌套定义下基于 pyright 误报未使用
         """列出指定书籍的记忆
 
         GET /memory/list?book_id=xxx&skill_type=writing
@@ -182,11 +194,12 @@ def register_routes(app):
             )
             return result
         except Exception as e:
-            logger.error(f"获取记忆列表异常: {e}", exc_info=True)
-            return {"memories": [], "total": 0, "error": str(e)}
+            logger.exception("获取记忆列表异常")
+            empty_memories: list[dict[str, Any]] = []
+            return {"memories": empty_memories, "total": 0, "error": str(e)}
 
     @app.put("/memory/{memory_id}")
-    async def update_memory(memory_id: int, req: MemoryUpdateRequest):
+    async def update_memory(memory_id: int, req: MemoryUpdateRequest):  # pyright: ignore[reportUnusedFunction]  # FastAPI 路由函数，嵌套定义下基于 pyright 误报未使用
         """更新指定记忆
 
         PUT /memory/123
@@ -210,7 +223,7 @@ def register_routes(app):
         return {"status": "updated", "memory_id": memory_id}
 
     @app.delete("/memory/clear")
-    async def clear_memories(book_id: str):
+    async def clear_memories(book_id: str):  # pyright: ignore[reportUnusedFunction]  # FastAPI 路由函数，嵌套定义下基于 pyright 误报未使用
         """清空指定书籍的所有记忆
 
         DELETE /memory/clear?book_id=xxx
@@ -223,7 +236,7 @@ def register_routes(app):
         return {"status": "cleared", "deleted_count": count}
 
     @app.delete("/memory/{memory_id}")
-    async def delete_memory(memory_id: int):
+    async def delete_memory(memory_id: int):  # pyright: ignore[reportUnusedFunction]  # FastAPI 路由函数，嵌套定义下基于 pyright 误报未使用
         """删除指定记忆
 
         DELETE /memory/123
