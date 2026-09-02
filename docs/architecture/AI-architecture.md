@@ -1,8 +1,9 @@
 # AI 模块架构
 
-> **适用版本**：`1.0.0`　|　**最后核对**：2026-08-31
+> **适用版本**：`1.2.0`　|　**最后核对**：2026-09-02
 >
-> 涵盖 AI 流式对话、RAG 向量检索、Embedding 索引、内容总结、连接测试。Python Agent 子系统另见 [Agent 架构](architecture/agent-architecture)。
+> 涵盖 AI 流式对话（工具箱）、AI 侧面板对话（经 Agent 引擎）、RAG 向量检索（预留）、内容总结、连接测试。
+> Agent 自动化引擎（Rust 原生）另见 [Agent 引擎架构](architecture/agent-architecture)。
 
 ---
 
@@ -28,43 +29,46 @@
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                    前端 (React/TypeScript)                 │
-│  AiSidePanel.tsx        AiToolboxPanel.tsx               │
-│  (流式对话 UI + RAG)      (三栏工具箱)                     │
+│  AiSidePanel.tsx         AiToolboxPanel.tsx              │
+│  (AI 对话面板·4 技能)      (三栏工具箱·预设 Prompt)          │
 │       └───────────────┬───────────────┘                  │
 │                 useAiChat.ts                             │
-│        (流式事件监听 / RAG / Embedding 状态)               │
+│        （流式事件监听 / 历史总结 / 错误恢复）                 │
 │                       │                                  │
 │  Zustand aiSlice + Jotai aiPanelOpenAtom                 │
-│  tauri-bridge.ts（aiApi：8 个 IPC 方法）                  │
+│  tauri-bridge.ts（aiApi + 组件直调 Agent 命令）            │
 ├───────────────────────┼──────────────────────────────────┤
 │                 Tauri IPC 边界                            │
 ├───────────────────────┼──────────────────────────────────┤
-│                 Rust 后端 commands/ai/                    │
-│  ┌──────────────┬──────────────┬──────────────┐         │
-│  │   chat.rs    │ embedding.rs │ summarize.rs │ test.rs │
-│  │ 流式对话      │ RAG/索引      │ 章节/对话总结 │ 连接测试 │
-│  └──────┬───────┴──────┬───────┴──────┬───────┴────┬────┘
-│         │              │              │            │
-│         ▼              ▼              ▼            ▼
-│   SSE /chat/     Embeddings API   非流式总结    GET /models
-│   completions    + SQLite 向量     + 思考模式    + /embeddings
-│         │              │                                  │
-│         ▼              ▼                                  │
-│  emit('ai-stream-chunk')      embeddings / chapters 表     │
+│  Rust 对话与总结层 commands/ai/ + commands/agent/         │
+│  ┌────────────────┬────────────────┬──────────────┐      │
+│  │ agent/skills.rs│   chat.rs      │ embedding.rs  │      │
+│  │ engine.rs      │ 工具箱流式对话  │ RAG/索引(预留) │      │
+│  │ AI 面板对话     │  OpenAI SSE    │               │      │
+│  │ (ReAct+工具)    │                │ summarize.rs  │      │
+│  │                │                │ 章节/对话总结  │      │
+│  └──────┬─────────┴───────┬────────┴────────┬──────┘      │
+│         ▼                 ▼                 ▼             │
+│  emit('agent-       emit('ai-stream-   emit('chapter-/    │
+│  stream-chunk')    chunk')             conversation-      │
+│  (chunk/done/      (thinking/           summary-done')    │
+│   error/cancelled)  answering/retrying)                   │
 └───────────────────────────────────────────────────────────┘
 ```
 
 **关键设计决策**：
 
 1. 流式请求**完全在 Rust 端**通过 `reqwest` 处理，前端只通过 Tauri 事件接收增量文本，规避浏览器 CORS / 流式解析问题
-2. 支持 Ollama 原生协议（NDJSON）与 OpenAI 兼容协议（SSE）两条路径
-3. **对话配置（AiChatConfig）与 RAG/Embedding 配置（RagConfig）完全解耦**，各自独立管理 API Key、端点、模型
-4. RAG 采用**向量检索优先 + FTS5/LIKE 降级**双策略
-5. 各服务商 API Key 独立存储（`bigmodelApiKey` / `deepseekApiKey`）
-6. AI 配置经 localStorage 持久化，自动兼容旧版扁平格式迁移
-7. 流式事件三阶段通知：`thinking` → `answering` → `done`
+2. 支持 Ollama 原生协议（NDJSON）与 OpenAI 兼容协议（SSE）两条路径（工具箱/总结直连场景）
+3. **v1.2 起 AI 侧面板对话统一由 Agent 引擎驱动**：`useAiChat.handleSend()` → `execute_agent_skill`（默认 `writing` 技能），Prompt 构建与上下文检索由引擎内部完成；工具箱保留 `stream_ai_chat` 直连
+4. **RAG/Embedding 为预留能力**：后端 `rag_search` / `trigger_embedding` / `check_embedding_status` 命令已实现并注册，但设置页标记「预留」，当前对话上下文由 Agent 引擎内置工具（章节读取/搜索）提供，`triggerEmbedding` 无前端 UI 接线
+5. 对话配置（AiChatConfig）与 RAG/Embedding 配置（RagConfig）完全解耦，各自独立管理 API Key、端点、模型
+6. 各服务商 API Key 独立存储（`bigmodelApiKey` / `deepseekApiKey`）
+7. AI 配置经 localStorage 持久化，自动兼容旧版扁平格式迁移
+8. 流式事件三阶段通知：`thinking` → `answering` → `done`
 
 > **v1.0.0 变更**：原 `commands/ai.rs`（约 1265 行）已拆分为 `ai/{chat,embedding,summarize,test}.rs` 四个子模块。
+> **v1.2.0 变更**：Agent 迁移为 Rust 原生后，AI 面板对话接入 Agent 引擎（见 [Agent 引擎架构](agent-architecture)）。
 
 ---
 
@@ -176,23 +180,39 @@ pub struct EmbeddingStatus {
 
 ### 4.1 完整链路
 
+> v1.2 起 `useAiChat` 已改为经 **Agent 引擎**执行（`execute_agent_skill`），`chat.rs` 直连链路保留给
+> AI 工具箱（`AiToolboxPanel` → `aiApi.streamChat`）等场景。两条链路如下：
+
+**链路 A：AI 侧面板对话（当前默认，走 Agent 引擎）**
+
 ```
-用户输入 → useAiChat.handleSend()
+用户输入（AI 侧面板）→ useAiChat.handleSend()
   ↓
-1. 章节自动总结（原文 > 300 字时）
+1. 历史压缩：过长时先 summarize_conversation 滑动窗口压缩（可选）
   ↓
-2. RAG 语义检索（rag.enabled 时，topN = 3）
+2. 注册 listen('agent-stream-chunk')（按 requestId 过滤）
   ↓
-3. 注册 listen('ai-stream-chunk')
+3. invoke('execute_agent_skill', { skill:'writing', bookId, message, aiConfig, requestId, ... })
+  ↓ [Rust commands/agent/]
+4. engine.rs 组装 Prompt（基础 + 场景提示 + 记忆段）→ reqwest POST /chat/completions (stream: true)
+5. 需要上下文时调用工具，经 repository 层直读 SQLite
   ↓
-4. aiApi.streamChat() → invoke('stream_ai_chat')
-  ↓ [Rust]
-5. reqwest POST {endpoint}/chat/completions (stream: true)
-  ↓ [SSE chunk 回调]
-6. emit('ai-stream-chunk', StreamEvent) → 前端实时渲染
-  ↓ [DONE]
-7. persistAiConversation() → localStorage
+6. emit('agent-stream-chunk', { event: chunk/done/error/cancelled }) → 前端 RAF 缓冲合并渲染
+  ↓
+7. persistAiConversation() → localStorage（结束事件后）
 ```
+
+**链路 B：工具箱 / 直连场景（走 stream_ai_chat）**
+
+```
+AiToolboxPanel → aiApi.streamChat() → invoke('stream_ai_chat')
+  ↓ [Rust commands/ai/chat.rs]
+reqwest POST {endpoint}/chat/completions (stream: true)
+  → emit('ai-stream-chunk', StreamEvent) → 前端实时渲染
+  → [DONE] → 更新消息（含 usage / 思考过程）
+```
+
+> 本章 4.2～4.6 的客户端配置、阶段管理、容错、协议对比与思考模式均针对链路 B（`chat.rs`）。
 
 ### 4.2 HTTP 客户端配置
 
@@ -375,7 +395,7 @@ CREATE TABLE IF NOT EXISTS embeddings (
 | 组件 | 路径 | 职责 |
 |------|------|------|
 | `AiSidePanel` | `components/ai/AiSidePanel.tsx` | 对话面板：Header（连接状态指示器）+ MessageList + QuickHints + InputArea |
-| `useAiChat` | `components/ai/useAiChat.ts`（483 行） | 核心 hook：发送、RAG、Embedding、流式事件、对话压缩 |
+| `useAiChat` | `components/ai/useAiChat.ts`（425 行） | 核心 hook：发送（经 Agent 引擎 `execute_agent_skill`）、流式事件（`agent-stream-chunk`）、历史总结/压缩、错误恢复 |
 | `MessageBubble` | `components/ai/MessageBubble.tsx` | 消息气泡：Markdown 渲染 + 思考过程折叠 + 操作按钮 |
 | `RequestDetailModal` | `components/ai/RequestDetailModal.tsx` | 请求详情：参数 / System Prompt / 章节总结 / RAG 上下文 / 消息列表 |
 | `AiToolboxPanel` | `components/ai/AiToolboxPanel.tsx` | AI 工具箱（三栏布局，独立窗口） |
@@ -419,7 +439,7 @@ interface AiChatConfig {
 }
 
 interface RagConfig {
-  enabled: boolean             // 默认 true
+  // v1.2 起无 enabled 字段（预留能力，不影响当前对话）
   provider: 'bigmodel'         // 当前仅智谱提供 Embeddings API
   endpoint: string
   embeddingModel: string       // 默认 embedding-3
@@ -497,7 +517,7 @@ interface AiMessage {
 | 架构分离 | Rust 处理 HTTP/SSE，前端仅处理 UI，规避 CORS 与流式解析问题 |
 | 流中断保护 | 60s 超时 + buffer 刷新 + 保留部分内容，用户体验友好 |
 | 自动重试 | 区分可重试/不可重试错误，指数退避，减少用户干预 |
-| 双检索模式 | 向量语义 → FTS5/LIKE 降级，保证 RAG 始终可用 |
+| 双检索模式（预留） | 后端实现向量语义 → FTS5/LIKE 降级，但前端未接线，对话上下文由 Agent 引擎工具检索提供 |
 | 章节智能总结 | 原文 > 300 字自动总结，节省 context token |
 | 多维度配置 | 对话/RAG 解耦，服务商独立 API Key，工具箱可扩展 |
 | 持久化可靠 | 高频更新不写 localStorage，流结束后一次性持久化 |
@@ -517,7 +537,8 @@ interface AiMessage {
 | 章节总结缓存 | 每次对话都重新总结 | summary 有效期内复用缓存 |
 | 系统默认工具 | 预设 29 个工具不可删除/重置 | 增加「恢复默认」功能 |
 | 请求参数可配置性 | Temperature 等为全局设置 | 每个工具可独立覆盖参数 |
-| `useAiChat` 体积 | 483 行，职责过多 | 拆分为 `useChapterValidation` / `useChapterSummary` / `useStreamChat` / `useConversationCompression` |
+| `useAiChat` 体积 | 425 行（v1.2 移除 Embedding 逻辑），仍职责较多 | 拆分为 `useChapterValidation` / `useChapterSummary` / `useStreamChat` / `useConversationCompression` |
+| RAG 接线 | 后端命令已实现、前端标记预留 | 明确 RAG 定位（接入设置页或并入 Agent 工具），或移除冗余命令 |
 
 ### 12.3 安全注意
 

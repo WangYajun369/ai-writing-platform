@@ -24,7 +24,7 @@ ADR（Architecture Decision Record）用于记录 TimeWrite 中**具有长期影
 | 编号 | 标题 | 状态 | 影响范围 |
 |------|------|------|---------|
 | [ADR-001](architecture/adr/ADR-001-tauri-rust-backend) | 采用 Tauri v2 + Rust 后端承载数据与 AI 通信 | 已采纳 | 全局 |
-| [ADR-002](architecture/adr/ADR-002-agent-bridge-readonly) | Python Agent 经 Bridge 只读回调，不直连 SQLite | 已采纳 | Agent / 数据层 |
+| [ADR-002](architecture/adr/ADR-002-agent-bridge-readonly) | Python Agent 经 Bridge 只读回调，不直连 SQLite | 已废弃（v1.1 迁 Rust 原生） | Agent / 数据层 |
 | [ADR-003](architecture/adr/ADR-003-dual-state-management) | Zustand 管业务状态 + Jotai 管 UI 瞬态 | 已采纳 | 前端 |
 
 **状态取值**：`提议` / `已采纳` / `已废弃` / `已被取代（ADR-00X）`

@@ -26,7 +26,7 @@
   - [架构总览](architecture/overview)
   - [代码架构深度分析](architecture/code-architecture)
   - [AI 模块架构](architecture/AI-architecture)
-  - [Agent 架构](architecture/agent-architecture)
+  - [Agent 引擎架构](architecture/agent-architecture)
   - [架构决策记录 ADR](architecture/adr/README)
 - 📋 项目治理
   - [更新日志](CHANGELOG)

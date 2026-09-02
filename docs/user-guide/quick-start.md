@@ -7,7 +7,8 @@
 | Node.js | ≥ 22 |
 | pnpm | ≥ 11 |
 | Rust | 最新稳定版（Tauri 编译需要） |
-| Python | ≥ 3.10（仅 Agent 自动化功能需要） |
+
+> v1.1 起 Agent 引擎为 Rust 原生实现，**无需 Python 环境**。
 
 ## 安装与启动
 

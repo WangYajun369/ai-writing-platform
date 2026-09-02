@@ -48,24 +48,23 @@ TimeWrite（智写时光）为小说作者提供完整的写作工作流。
 
 > AI 助手的完整能力说明见 [AI 助手能力详解](features/ai-assistant)。
 
-## Agent 自动化（Python 子系统）
+## Agent 自动化（Rust 原生引擎）
 
-> v1.0.0 核心新增，需 Python ≥ 3.10 环境。
+> v1.0.0 引入、v1.1 起迁移为 **Rust 原生引擎**，无需 Python 环境。
 
 - ✅ **4 大写作技能**：写作辅助 / 内容分析 / 研究辅助 / 润色优化
-- ✅ **自主多步推理**：LangGraph ReAct 引擎，自动规划并调用工具
+- ✅ **自主多步推理**：Rust ReAct 循环（SSE 流式），自动规划并调用工具（≤15 轮）
 - ✅ **6 个数据库工具**：读取章节/摘要/分页、列出章节、搜索世界观、整书上下文
-- ✅ **双模型路由**：润色走本地 Ollama（免费），写作/分析/研究走云端 DeepSeek
-- ✅ **三层记忆体**：偏好 / 决策 / 经验，SQLite 持久化，跨会话自动注入
+- ✅ **模型配置化**：默认云端 DeepSeek，可配置 OpenAI 兼容端点（含 Ollama 等）
+- ✅ **三层记忆体**：偏好 / 决策 / 经验，`memories` 表并入主库（v1.1），跨会话自动注入
 - ✅ **记忆管理界面**：查看、编辑、删除、清空
-- ✅ **动态 Prompt**：核心提示词 + 关键词匹配的场景提示，KV Cache 友好
-- ✅ **历史压缩**：超 6 轮自动触发本地模型压缩，保留最近 4 轮
-- ✅ **全生命周期管理**：解释器自动探测、端口僵尸清理、看门狗自动重启（3 次上限）
-- ✅ **优雅关闭**：SIGTERM → 10s 等待 → SIGKILL
+- ✅ **动态 Prompt**：核心提示词 + 关键词匹配的场景提示（≤3 条），KV Cache 友好
+- ✅ **任务取消**：Rust 全局取消标志，可实时中断引擎循环（原 `/skills/cancel` 占位问题已解决）
+- ✅ **旧记忆自动迁移**：Python 期 `agent_memory.db` 启动时幂等导入主库
 - ✅ **SSE 流式输出**：前端 RAF 缓冲合并，避免高频重渲染
-- ✅ **只读保证**：Agent 经 Bridge 只读数据，写操作唯一入口仍在 Rust
+- ✅ **数据主权**：工具经 repository 层直查 SQLite，写操作唯一入口仍在 Rust
 
-> 详见 [Agent 自动化](user-guide/agent-panel) 与 [Agent 架构](architecture/agent-architecture)。
+> 详见 [Agent 自动化](user-guide/agent-panel) 与 [Agent 引擎架构](architecture/agent-architecture)。
 
 ## 版本管理
 - ✅ 章节 HTML 内容快照（auto/milestone 类型）
@@ -126,11 +125,10 @@ TimeWrite（智写时光）为小说作者提供完整的写作工作流。
 | Phase 4 | 🔜 规划 | sqlite-vec 向量语义检索、EPUB/PDF 导出、AI 对话导出、全局快捷键系统、离线草稿保护 |
 | Phase 5 | 🔜 规划 | Linux 构建（deb / AppImage）、写作统计面板、插件市场 |
 
-### ⚠️ 安全待办（不属功能路线图，优先处理）
+### ✅ 已解决的安全问题（v1.1 / v1.2）
 
-以下项目当前仍未完成，直接影响发布安全性，详见 [优化报告](meta/optimization-report)：
+- ✅ Bridge Server（9876）无鉴权 → Python Agent 与 Bridge 已整体移除，数据访问收敛至 Rust 进程内（原问题 27）
+- ✅ `/skills/cancel` 占位实现 → Rust 引擎全局取消标志，可实时中断（原问题 28）
+- ✅ 端口 9876 / 9877 硬编码 → 已无相关端口占用（原问题 30）
 
-- Bridge Server（9876）无鉴权，任何本机进程可读取作品数据（问题 27，P1）
-- `/skills/cancel` 为占位实现，无法真正中断任务（问题 28，P1）
-- Bridge Server（9876）无鉴权（P1）
-- `/skills/cancel` 为占位实现，无法真正中断任务（P1）
+> 历史背景详见 [优化报告](meta/optimization-report)。

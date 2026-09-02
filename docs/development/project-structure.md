@@ -1,6 +1,6 @@
 # 项目结构
 
-> **适用版本**：`1.0.0`　|　**最后核对**：2026-08-31
+> **适用版本**：`1.2.0`　|　**最后核对**：2026-09-02
 >
 > 本文档描述 TimeWrite 的目录组织与分层设计。IPC 命令清单见 [IPC 命令速查](development/ipc-api)。
 
@@ -19,7 +19,7 @@ MirageInk/
 ├── README.md                 # 项目说明
 ├── src/                      # 🔵 前端源码（React 19 + TypeScript 6）
 ├── src-tauri/                # 🟠 Rust 后端（Tauri v2，内置 Agent 引擎）
-├── scripts/                  # 🔧 构建/检查/环境脚本（6 个）
+├── scripts/                  # 🔧 构建/检查/环境脚本（5 个）
 ├── docs/                     # 📖 项目文档（自动同步到 GitHub Wiki）
 ├── product/                  # 🏠 产品落地页（GitHub Pages）
 └── dist/                     # 📦 前端构建产物
@@ -38,7 +38,7 @@ repository/ 数据访问层   —— 纯 SQL，接受 &Connection，无业务逻
 db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发器、索引
 ```
 
-各层职责边界在对应 `mod.rs` 注释中明确约定。共注册 **82 个 IPC 命令**。
+各层职责边界在对应 `mod.rs` 注释中明确约定。共注册 **81 个 IPC 命令**（`#[tauri::command]` 计数）。
 
 ---
 
@@ -67,8 +67,8 @@ src/
 | `library/` | `BookCard`、`NewBookDialog`、`EditBookDialog`、`CoverPicker`、`TrashModal` | 书库网格/列表、封面裁剪、回收站 |
 | `outline/` | `OutlinePanel`（842 行） | 卷-章两级目录树、拖拽排序（@dnd-kit）、虚拟滚动、回收站 |
 | `editor/` | `RichTextEditor`、`EditorToolbar`、`SnapshotPanel`、`ImageCropperDialog`、`ImageViewerDialog` | TipTap 编辑、工具栏、版本快照、图片处理 |
-| `ai/` | `AiSidePanel`、`AiToolboxPanel`、`MessageBubble`、`RequestDetailModal`、`useAiChat`（483 行）、`panel/*` | AI 对话、工具箱、请求详情、Embedding 状态 |
-| `agent/` | `AgentPanel`、`AgentMessageBubble`、`AgentMemoryPanel`、`useAgent` | Agent Skill 面板、流式输出、记忆管理 |
+| `ai/` | `AiSidePanel`、`AiToolboxPanel`、`MessageBubble`、`RequestDetailModal`、`useAiChat`（425 行）、`panel/*` | AI 对话面板、工具箱、请求详情 |
+| `agent/` | `useAgent`、`AgentMemoryPanel`、`AgentMessageBubble`、`types.ts` | Agent Skill 交互（Rust 原生引擎）、流式输出、记忆管理 |
 | `worldbuilding/` | `WorldbuildingPanel`、`WorldCardEditor` | 6 类世界观卡片管理 |
 | `settings/` | `AiConfigSection`、`RagConfigSection`、`AppearanceSection`、`AiToolboxSection` 等 12 个 | 设置页分区 |
 | `app/` | `AppInit`、`AppClosingOverlay`、`windowDetection` | 应用初始化、关闭遮罩、窗口类型检测 |
@@ -119,7 +119,7 @@ React Router v7，懒加载：
 src-tauri/
 ├── Cargo.toml
 ├── build.rs
-├── tauri.conf.json           # 应用配置（版本 1.0.0、窗口 1280×800、dmg/nsis 打包）
+├── tauri.conf.json           # 应用配置（版本 1.2.0、窗口 1280×800、dmg/nsis 打包）
 ├── entitlements.plist
 ├── capabilities/
 │   └── default.json          # 安全权限声明（CSP / FS / Shell / HTTP）
@@ -127,7 +127,7 @@ src-tauri/
 ├── icons/                    # 应用图标（25 PNG + ICNS + ICO）
 └── src/
     ├── main.rs               # 程序入口
-    ├── lib.rs                # Tauri Builder：6 插件 + 数据库 + Agent + 82 命令注册
+    ├── lib.rs                # Tauri Builder：6 插件 + 数据库 + 记忆迁移 + 81 命令注册
     ├── error.rs              # AppError 统一错误枚举（10 种变体）
     ├── logging.rs            # 日志模块
     ├── utils.rs              # HTTP 客户端工厂、HTML 工具、FTS5 转义、字段校验
@@ -136,7 +136,7 @@ src-tauri/
     ├── repository/           # 数据访问层（6 个仓库）
     ├── db/                   # r2d2 连接池 + Schema + FTS5 触发器
     ├── models/               # Serde 数据模型（统一 camelCase）
-    └── python/               # Agent 子进程管理（manager / client / bridge）
+    └── commands/agent/       # Rust 原生 Agent 引擎（engine/prompts/tools/memory/skills）
 ```
 
 ### 命令层 `commands/`
@@ -153,7 +153,7 @@ src-tauri/
 | AI | `ai/{mod,chat,embedding,summarize,test}.rs` | 8 |
 | 导入导出 | `io/{mod,export,import_txt,backup,crypto}.rs` | 5 |
 | 窗口 | `window/{mod,manager,debug,validate}.rs` | 12 |
-| Agent | `agent/{mod,skills}.rs` | 9 |
+| Agent | `agent/{mod,engine,prompts,tools,memory,skills}.rs` | 6 |
 
 ### 业务服务 `service/`
 
@@ -172,7 +172,7 @@ src-tauri/
 
 ### 数据库 `db/`
 
-6 张业务表 + 2 张 FTS5 虚拟表：
+7 张业务表（v1.1 起含 `memories`）+ 2 张 FTS5 虚拟表：
 
 | 表 | 关键字段 |
 |----|---------|
@@ -182,6 +182,7 @@ src-tauri/
 | `snapshots` | chapter_id(FK), content_html, type('auto'/'milestone'), label |
 | `world_cards` | book_id(FK), type(6 类), content_html, tags, vectorized |
 | `embeddings` | source_type, source_id, embedding(BLOB), model — UNIQUE(source_type, source_id) |
+| `memories` | book_id, skill_type, memory_type(preference/decision/lesson), content, keywords, relevance_score（v1.1 起，Agent 记忆并入主库） |
 | `chapters_fts` / `world_cards_fts` | FTS5（unicode61），由 6 个 CREATE TRIGGER 自动同步 |
 
 技术要点：
@@ -191,42 +192,19 @@ src-tauri/
 - 幂等迁移：`safe_add_column` 检测 duplicate column 后跳过
 - 软删除统一使用 `deleted_at` 时间戳
 
-### Python 集成层 `python/`
+### Agent 引擎 `commands/agent/`（v1.1 起 Rust 原生）
 
-```
-python/manager.rs  AgentManager —— Python 子进程全生命周期管理
-python/client.rs   HTTP 客户端  —— Rust → Python 调用（SSE 消费、记忆 CRUD）
-python/bridge.rs   数据桥接    —— Python → Rust 数据回调 HTTP Server（端口 9876）
-```
+Python Agent（`agent/`）与 Bridge（`src-tauri/src/python/`）已删除，Agent 引擎整体内嵌 Rust：
 
-详见 [Agent 架构](architecture/agent-architecture)。
+| 文件 | 职责 |
+|------|------|
+| `skills.rs` | IPC 命令层：`execute_agent_skill` / `cancel_agent_skill` + 记忆管理（6 个命令） |
+| `engine.rs` | SSE 流式 ReAct 工具循环（`run_skill`）+ 全局取消标志 |
+| `prompts.rs` | 4 个技能（writing/analysis/research/polish）System Prompt + 动态场景提示 |
+| `tools.rs` | 6 个数据库工具（schema + 执行，经 repository 层直查 SQLite） |
+| `memory.rs` | `memories` 表 CRUD、规则式提取、检索、旧库自动迁移 |
 
----
-
-## Python Agent `agent/`
-
-```
-agent/
-├── main.py              # FastAPI 入口：日志初始化、CORS、信号处理、优雅关闭
-├── config.py            # AgentConfig + SkillType 枚举 + 任务复杂度→模型层级映射
-├── tracer.py            # 统一埋点：@trace 装饰器、独立 logger（propagate=False）
-├── pyproject.toml / uv.lock / requirements.txt
-├── server/
-│   ├── routes.py        # /health、/skills/execute、/memory/* CRUD
-│   └── sse.py           # SSE 流式响应（chunk / done / cancelled / error）
-├── skills/
-│   ├── engine.py        # LangGraph ReAct Agent 构建与流式执行
-│   └── prompts.py       # 4 个核心 Skill Prompt + 动态场景提示
-├── models/
-│   ├── router.py        # 双模型路由：Ollama 本地 / DeepSeek 云端
-│   └── __init__.py      # 仅导出 get_model_for_skill / stream_model
-├── tools/
-│   └── db_tools.py      # 6 个 LangChain 工具（经 9876 Bridge 回调 Rust）
-└── memory/
-    ├── store.py         # SQLite 记忆持久化 + 规则式记忆提取
-    ├── retriever.py     # 关键词匹配 + 类型加权 + 时间衰减检索
-    └── summarizer.py    # 本地模型对话历史压缩（>6 轮触发，保留 4 轮）
-```
+> 执行链路、事件协议（`agent-stream-chunk`）与记忆系统详见 [Agent 引擎架构](architecture/agent-architecture)。
 
 ---
 
@@ -234,11 +212,12 @@ agent/
 
 | 脚本 | 用途 |
 |------|------|
-| `setup-agent.ts` | Agent 环境准备：创建 `.venv`、安装依赖、下载模型（`pnpm agent:setup`） |
-| `check.mjs` | 完整性自检（`pnpm check`） |
-| `check-npm-versions.ts` / `check-python-versions.ts` / `check-rust-versions.ts` | 三端依赖版本校验 |
+| `check.mjs` | 完整性自检（200 项：tsc 产物 + Rust 模块 + Agent 迁移防回归断言；`--fast` 快速模式） |
+| `check-npm-versions.ts` / `check-rust-versions.ts` | 前端 / Rust 依赖版本校验 |
 | `node-manager.ts` | Node 版本管理（`pnpm node`） |
 | `clean.ts` | 构建产物清理（`--all` 全清） |
+
+> v1.1 起已删除 Python 相关：`setup-agent.ts` / `check-python-versions.ts` / `pyrightconfig.json`。
 
 ---
 

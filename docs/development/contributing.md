@@ -10,7 +10,6 @@
 |------|------|
 | Node.js | ≥ 22 |
 | pnpm | ≥ 11 |
-| Python | ≥ 3.10（Agent 服务） |
 | Rust | 最新稳定版 |
 | macOS / Windows / Linux | - |
 
@@ -20,14 +19,11 @@
 git clone git@github.com:WangYajun369/ai-writing-platform.git
 cd ai-writing-platform
 pnpm install
-
-# 可选：初始化 Agent 环境（仅开发 Agent 自动化功能时需要）
-pnpm agent:setup
-
 pnpm tauri dev
 ```
 
-> **Python 环境说明**：不使用 Agent 自动化功能时，应用无需 Python 环境即可运行全部其他功能。`pnpm agent:setup` 会创建 `agent/.venv` 并安装依赖；`pnpm agent:check` 可诊断环境问题。
+> **运行环境说明**：v1.1 起 Agent 引擎为 Rust 原生实现，**无需 Python 环境**。
+> 仅 AI 对话需要可用的云端 API Key（设置页配置）或本地 Ollama 服务。
 
 ## 项目规范
 
@@ -69,10 +65,10 @@ pnpm tauri dev
 - **数据库**：通过 `r2d2` 连接池访问，WAL 模式；禁止跨层直接写 SQL
 - **事件推送**：使用 `app.emit()` 向前端推送实时事件
 
-### Python Agent
-- **技能**：新增 Skill 需同时修改 `agent/config.py` 的 `SkillType`、`skills/prompts.py` 的 Prompt、`tools/db_tools.py` 的 `SKILL_TOOLS_MAP`
-- **数据访问**：只能经 Bridge（`127.0.0.1:9876`）回调读取，禁止直连 SQLite
-- **埋点**：统一使用 `tracer.py` 的 `@trace` 装饰器与 `trace_event()`
+### Agent 引擎（Rust 原生）
+- **技能**：新增 Skill 需同时修改 `src-tauri/src/commands/agent/prompts.rs`（`skill_base_prompt` 与 `dynamic_hints`）、`tools.rs`（`tools_for_skill` 工具映射）、`skills.rs`（IPC 层）
+- **数据访问**：工具调用经 repository 层直查 SQLite，禁止在引擎层写裸 SQL
+- **记忆**：记忆沉淀遵循 `memory.rs` 的规则式提取（零 LLM 成本），不阻塞主流程
 
 ## 测试
 

@@ -1,222 +1,153 @@
-# Python Agent 架构（v1.0 归档）
+# Agent 引擎架构（Rust 原生）
 
-> **适用版本**：`1.0.0`（Python FastAPI + LangGraph 架构，端口 9877 / Bridge 9876）。
+> **适用版本**：`1.2.0`　|　**最后核对**：2026-09-02
 >
-> **⚠️ 已废弃**：v1.1 起 Agent 已整体迁移为 Rust 原生引擎（`src-tauri/src/commands/agent/`），
-> 本文仅作历史设计参考。最新说明见 [AI 架构](AI-architecture) 与用户指南 [Agent 自动化](../user-guide/agent-panel)。
+> Agent 自动化引擎已整体内嵌于 Rust（`src-tauri/src/commands/agent/`），**无外部进程、无需 Python 环境**。
+> 历史：v1.0 曾以 Python FastAPI + LangGraph 子进程实现（端口 9877），v1.1 迁移为 Rust 原生引擎，`agent/`、`src-tauri/src/python/` 已删除。
 
 ---
 
-## 1. 为什么需要独立进程
+## 1. 定位与架构
 
 TimeWrite 的 AI 能力分两条路径：
 
 | 路径 | 定位 | 实现 | 进程 |
 |------|------|------|------|
 | **AI 助手** | 单轮/多轮对话，RAG 增强 | Rust `commands/ai/` | Rust 主进程 |
-| **Agent 自动化** | 自主规划、多步工具调用、长期记忆 | Python + LangGraph | **独立子进程** |
+| **Agent 自动化** | 自主规划、多步工具调用、长期记忆 | Rust `commands/agent/` | Rust 主进程（内嵌） |
 
-Agent 需要 LangGraph ReAct、LangChain 工具链等 Python 生态能力，无法在 Rust 中低成本实现，故独立为 Python FastAPI 服务。
-
-**核心约束**：Python 进程**不直接访问 SQLite**。所有数据读取通过 Rust 侧的 Bridge HTTP 服务反向回调，保证数据库写操作的唯一入口始终在 Rust，避免多进程并发写 SQLite 的锁竞争与一致性风险。
-
----
-
-## 2. 三进程架构
+Agent 引擎与主进程**同进程运行**：Skill Prompt 组装 → 云端模型 ReAct 推理 → 工具调用直接经 repository 层读写 SQLite，全程无 HTTP 回调、无端口、无子进程生命周期管理。**数据库写操作的唯一入口始终在 Rust**，单进程模型天然规避多进程并发写锁。
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│  进程 1: WebView 前端（React 19）                            │
-│  components/agent/：AgentPanel / useAgent / AgentMemoryPanel │
+│  WebView 前端（React 19）                                    │
+│  components/agent/：useAgent / AgentMemoryPanel /          │
+│    AgentMessageBubble / types                               │
 └───────────────────────────┬────────────────────────────────┘
-                            │ Tauri IPC (invoke / event)
+                            │ Tauri IPC（invoke / event）
 ┌───────────────────────────┴────────────────────────────────┐
-│  进程 2: Rust Core（Tauri v2）                               │
-│  commands/agent/skills.rs  ← 9 个 Agent IPC 命令            │
-│  python/manager.rs  AgentManager（子进程全生命周期）          │
-│  python/client.rs   HTTP 客户端（SSE 消费、记忆 CRUD）        │
-│  python/bridge.rs   数据桥接 Server（端口 9876）             │
-└──────────┬─────────────────────────────────┬───────────────┘
-           │ HTTP POST /skills/execute       │ HTTP 回调 /agent/*
-           │ (9877)                          │ (9876)
-┌──────────┴─────────────────────────────────┴───────────────┐
-│  进程 3: Python Agent（FastAPI @ 127.0.0.1:9877）            │
-│  server/routes.py → server/sse.py → skills/engine.py        │
-│  models/router.py（Ollama 本地 / DeepSeek 云端双模型路由）     │
-│  tools/db_tools.py（6 个工具，经 9876 Bridge 回调 Rust）      │
-│  memory/（SQLite 三层记忆）                                  │
+│  Rust Core（Tauri v2）—— Agent 引擎 commands/agent/         │
+│  skills.rs  IPC 命令层（execute/cancel + 记忆 CRUD）         │
+│  engine.rs  SSE 流式 ReAct 循环 + 任务取消                    │
+│  prompts.rs 4 技能 Prompt + 动态场景提示                     │
+│  tools.rs   6 个数据库工具（schema + 执行）                  │
+│  memory.rs  memories 表存取 + 规则提取 + 检索                 │
+│     │                                                        │
+│     ├── repository/（chapter / world_card / book 仓库）      │
+│     └── SQLite（time_write.db，含 memories 表）              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 **数据流方向**：
 
 ```
-前端 → IPC → Rust → HTTP 9877 → Python Agent → LangGraph 推理
-                                      ↓ 需要数据时
-                              HTTP 9876 → Rust Bridge → SQLite
-                                      ↓
-                              Python 流式输出 SSE
-                                      ↓
-Rust client.rs 解析 → emit('agent-stream-chunk') → 前端 RAF 缓冲渲染
+前端 useAgent.executeSkill()
+  → invoke('execute_agent_skill', { skill, bookId, message, aiConfig, requestId, ... })
+  → skills.rs → engine.rs（ReAct 循环）
+       ├─ prompts.rs 组装 System Prompt（基础 + 场景提示 + 记忆段）
+       ├─ reqwest POST {endpoint}/chat/completions（OpenAI 兼容 SSE，默认 DeepSeek）
+       ├─ 模型返回 tool_calls → tools.rs execute_tool → repository → SQLite
+       └─ 流式增量 → emit('agent-stream-chunk', { event, data, requestId })
+  → 前端 listen() 按 requestId 过滤 → RAF 缓冲 → 更新消息 UI
+  → 结束后异步 memory::extract_and_save 沉淀记忆
 ```
 
 ---
 
-## 3. Rust 侧：`src-tauri/src/python/`
-
-### 3.1 模块职责
+## 2. 模块职责（`src-tauri/src/commands/agent/`）
 
 | 文件 | 职责 |
 |------|------|
-| `manager.rs` | `AgentManager`：Python 子进程全生命周期管理 |
-| `client.rs` | Rust → Python 的 HTTP 客户端（SSE 消费、记忆 CRUD 转发） |
-| `bridge.rs` | Python → Rust 的数据桥接 HTTP Server（tiny_http，端口 9876） |
+| `mod.rs` | 模块声明：engine / memory / prompts / skills / tools |
+| `skills.rs` | **IPC 命令层**：`execute_agent_skill`（流式执行）、`cancel_agent_skill`、记忆管理命令；参数类型 `AiConfigParams`（camelCase）→ `engine::AiModelConfig` |
+| `engine.rs` | **引擎核心**：`run_skill()` SSE 流式 ReAct 循环（工具调用 + 文本增量）、全局取消标志 `cancel_current_task()` |
+| `prompts.rs` | 4 个技能 System Prompt（`skill_base_prompt`）、动态场景提示（`get_dynamic_prompt`）、Token 估算 |
+| `tools.rs` | 6 个数据库工具：按技能返回工具集（`tools_for_skill`）、构建 function-calling schema、`execute_tool` 分发执行 |
+| `memory.rs` | `memories` 表 CRUD、规则式记忆提取（`extract_and_save`）、关键词检索（`retrieve_memories`）、旧库迁移（`migrate_legacy_db`） |
 
-### 3.2 AgentManager 关键能力
+### IPC 命令清单（skills.rs）
 
-**解释器探测 `find_python()`**（按优先级，逐级验证）：
+| 命令 | 说明 |
+|------|------|
+| `execute_agent_skill` | 执行技能（参数：skill / bookId / message / conversationHistory / aiConfig / requestId / conversationSummary） |
+| `cancel_agent_skill` | 取消当前任务 |
+| `list_agent_memories` | 记忆列表（bookId 必选，可按 skillType 过滤） |
+| `update_agent_memory` | 更新记忆内容/关键词/类型 |
+| `delete_agent_memory` | 删除单条记忆 |
+| `clear_agent_memories` | 清空某书全部记忆 |
 
-1. 用户指定路径
-2. `agent/.venv`（**验证 uvicorn 可用性**）
-3. `which python`（**验证 uvicorn 可用性**）
-4. 降级为字面量 `"python"`
-
-> 早期版本仅用 `which python` 查找，会在 venv 符号链接场景下误判。v1.0.0 增加了 uvicorn 可用性验证。
-
-**入口定位 `find_agent_entry()`**：
-
-- 开发模式 → 工作目录下的 `agent/`
-- 生产模式 → macOS bundle Resources 目录 / flat resources 目录
-
-**端口管理**：
-
-- `wait_for_port_free`：轮询 + 自动 kill 僵尸进程
-- `kill_process_on_port`：`lsof` / `netstat` 查 PID，`libc` SIGKILL 进程组 + 主进程双重保障
-
-**优雅关闭**：`SIGTERM` → 等待 10s → `SIGKILL` → 验证端口释放
-
-**看门狗**：`spawn_watchdog()` 每 10s 健康检查，状态机驱动（`Stopped` / `Starting` / `Running` / `Crashed`），崩溃自动重启**最多 3 次**
-
-### 3.3 Bridge Server（端口 9876）
-
-4 个路由，直接调用 `repository/` 层查询 SQLite 返回 JSON：
-
-| 路由 | 用途 | 调用工具 |
-|------|------|---------|
-| `/agent/read_chapter` | 读取章节完整内容 | `read_chapter`、`read_chapter_summary`、`read_chapter_chunk` |
-| `/agent/list_chapters` | 章节列表 | `list_book_chapters` |
-| `/agent/search_world_cards` | 世界观搜索 | `search_world_cards` |
-| `/agent/book_context` | 整书上下文 | `get_book_context` |
-
-响应格式统一为 `{"data": {...}}` 或 `{"data": null, "error": "..."}`。
-
-> ⚠️ **已知问题**：Bridge 当前无鉴权，任何本机进程均可读取作品数据。详见 [优化报告](meta/optimization-report) 问题 27。
+> v1.1 起原 `get_agent_status` / `start_agent` / `stop_agent`（启停外部 Python 进程）已随迁移移除；
+> Agent 常驻 Rust 主进程，无启停状态机。
 
 ---
 
-## 4. Python 侧：`agent/`
+## 3. 引擎核心（engine.rs）
 
-### 4.1 模块地图
+### 3.1 run_skill 参数
 
-```
-agent/
-├── main.py              # FastAPI 入口：日志初始化、CORS、信号处理、优雅关闭
-├── config.py            # AgentConfig 数据类 + SkillType 枚举 + 模型层级映射
-├── tracer.py            # 统一埋点：@trace 装饰器、独立 logger
-├── pyproject.toml / uv.lock / requirements.txt
-├── server/
-│   ├── routes.py        # /health、/skills/execute、/memory/* CRUD
-│   └── sse.py           # SSE 流式响应生成器
-├── skills/
-│   ├── engine.py        # LangGraph ReAct Agent 构建与流式执行
-│   └── prompts.py       # 4 个核心 Skill Prompt + 动态场景提示
-├── models/
-│   ├── router.py        # 双模型路由：Ollama 本地 / DeepSeek 云端
-│   └── __init__.py      # 仅导出 get_model_for_skill / stream_model
-├── tools/
-│   └── db_tools.py      # 6 个 LangChain 工具
-└── memory/
-    ├── store.py         # SQLite 记忆持久化 + 规则式记忆提取
-    ├── retriever.py     # 关键词匹配 + 类型加权 + 时间衰减检索
-    └── summarizer.py    # 本地模型对话历史压缩
-```
+| 参数 | 说明 |
+|------|------|
+| `skill` | `writing` / `analysis` / `research` / `polish` |
+| `book_id` / `message` | 目标作品与用户消息 |
+| `conversation_history` | 最近对话（最多 10 条 / 2000 字符，见下） |
+| `conversation_summary` | 已压缩的历史摘要（可选） |
+| `ai_config` | 模型配置（provider/endpoint/model/apiKey/thinking 等）；缺省默认 DeepSeek（`https://api.deepseek.com` + `deepseek-chat`） |
+| `request_id` | 前端生成的请求 ID（事件路由用） |
 
-### 4.2 Skill 执行引擎 `skills/engine.py`
+**上下文裁剪常量**：`MAX_HISTORY_ITEMS=10`、`MAX_HISTORY_CHARS=2000`、`MAX_TOOL_RESULT_CHARS=30000`、`MAX_ITERATIONS=15`。
+
+### 3.2 ReAct 循环流程
 
 ```
-execute_skill_stream(skill, book_id, message, ...)
-  ├─ _build_agent()
-  │    ├─ get_model_for_skill()              # 按 Skill 选本地/云端模型
-  │    ├─ get_dynamic_prompt()               # 核心 Prompt + 关键词匹配场景提示（最多 3 个）
-  │    ├─ MemoryRetriever.get_memory_prompt() # 注入相关记忆（≤600 tokens）
-  │    ├─ 拼接 System Prompt（KV Cache 友好：前缀结构稳定 + 时间戳 + 摘要段）
-  │    └─ 选择性工具集（SKILL_TOOLS_MAP 按 Skill 定制）
-  ├─ 历史消息清洗（剥离 reasoning_content，保留 tool_calls/ToolMessage 配对）
-  ├─ 历史压缩（前端已传摘要则跳过；否则本地 Ollama 压缩）
-  ├─ agent.astream_events()                  # LangGraph v2 事件流
-  │    ├─ on_tool_start / on_tool_end        # 工具调用追踪
-  │    └─ on_chat_model_stream               # 文本增量 yield（TTFT 监控）
-  └─ 异步保存记忆（extract_and_save，不阻塞响应）
+run_skill()
+  ├─ register_cancel_flag()（全局取消标志）
+  ├─ 组装 System Prompt
+  │    ├─ skill_base_prompt(skill)          # 技能核心指令
+  │    ├─ get_dynamic_prompt(skill, msg)    # 关键词匹配场景提示（≤3 条）
+  │    └─ memory_prompt(book, skill, msg)   # 注入相关记忆段（≤600 tokens）
+  ├─ 清理历史消息（剥离 reasoning_content）
+  ├─ react_loop()
+  │    ├─ POST /chat/completions（tools = build_tools_schema(skill)）
+  │    ├─ 解析 SSE data 行（文本增量 → emit chunk；tool_calls → 提取参数）
+  │    ├─ 有工具调用 → tools::execute_tool() → 追加 tool 消息 → 继续循环（≤15 轮）
+  │    └─ 无工具调用 → 文本流结束
+  ├─ emit('agent-stream-chunk', { event: 'done', ... })
+  └─ 异步 extract_and_save()（记忆沉淀，不阻塞响应）
 ```
 
-### 4.3 四个 Skill 与模型/工具映射
+**流式事件协议**（`agent-stream-chunk`，负载 `AgentStreamEvent { event, data, requestId }`）：
 
-| Skill | 标识 | 核心能力 | 模型层级 | 工具集 |
-|-------|------|---------|---------|--------|
-| 写作辅助 | `writing` | 大纲生成、情节建议、角色对话模拟、冲突设计 | 云端 DeepSeek | summary / chunk / list / search / context |
-| 内容分析 | `analysis` | 文风分析、连贯性检查、伏笔追踪、角色弧光、节奏评估 | 云端 DeepSeek | read / chunk / list / search / context |
-| 研究辅助 | `research` | 资料检索、世界观一致性校验、设定扩展、关系图谱 | 云端 DeepSeek | summary / list / search / context |
-| 润色优化 | `polish` | 语法纠错、文笔润色、风格统一、冗余精简 | **本地 Ollama** | read / chunk / context |
+| `event` | 含义 |
+|---------|------|
+| `chunk` | 文本增量（data 为增量字符串） |
+| `done` | 任务完成 |
+| `error` | 执行失败（data 为错误信息） |
+| `cancelled` | 用户取消 |
 
-映射定义于 `config.py` 的 `TASK_COMPLEXITY_MAP`。
+**超时与取消**：SSE 单行读取超时 60s、总超时 600s；`cancel_current_task()` 置位取消标志，循环在下一次迭代检查后终止并以 `cancelled` 事件收尾。
 
-### 4.4 动态 Prompt 机制
+---
 
-`prompts.py` 采用 **核心 Prompt + 场景提示** 分离，按需组合以节省 Token：
+## 4. 记忆系统（memory.rs）
 
+记忆持久化于主数据库 `time_write.db` 的 `memories` 表（v1.1 起由 Python 期独立 `agent_memory.db` 迁入）：
+
+```sql
+CREATE TABLE memories (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id          TEXT NOT NULL,
+    skill_type       TEXT NOT NULL,      -- writing / analysis / research / polish
+    memory_type      TEXT NOT NULL,      -- preference / decision / lesson
+    content          TEXT NOT NULL,
+    keywords         TEXT NOT NULL DEFAULT '',
+    relevance_score  REAL NOT NULL DEFAULT 1.0,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at       TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+-- 索引：idx_memories_book_skill (book_id, skill_type) / idx_memories_type (memory_type)
 ```
-核心 Prompt（固定，KV Cache 友好）
-   + 用户消息关键词匹配到的场景提示（最多 3 条）
-   = 最终 System Prompt
-```
 
-例如用户消息包含「大纲」时，`writing` 技能会追加「大纲生成指引」；包含「伏笔」时，`analysis` 技能会追加「伏笔分析指引」。
-
-### 4.5 双模型路由 `models/router.py`
-
-| 模型 | 配置 | 说明 |
-|------|------|------|
-| 本地 | `ChatOllama(qwen2.5:7b @ 127.0.0.1:11434)` | 懒加载单例，temperature 0.7，num_predict 4096 |
-| 云端 | 按请求 `ai_config` 动态创建 | 缓存 key = `(endpoint, model, api_key_hash, thinking_enabled, reasoning_effort)` |
-
-**DeepSeek 适配**：
-
-- `model_kwargs` 注入 `thinking: {type: enabled}` + `reasoning_effort: max`（Agent 工具调用场景推荐）
-- 兼容 camelCase（前端）/ snake_case（Python）双格式配置读取
-- **API Key 安全**：sha256 哈希做缓存键、首尾去空白、缺失时给出对应服务商的获取指引
-
-### 4.6 工具链 `tools/db_tools.py`
-
-6 个工具全部通过 HTTP 回调 Rust Bridge：
-
-| 工具 | 用途 | Token 优化 |
-|------|------|-----------|
-| `read_chapter` | 读取完整章节 | — |
-| `read_chapter_summary` | 仅摘要 | 摘要优先，无摘要时取前 500 字 |
-| `read_chapter_chunk` | 大章节分页读取 | 2000 字/段，返回分段位置与续读提示 |
-| `list_book_chapters` | 章节列表 | 仅标题 + 摘要，不含正文 |
-| `search_world_cards` | 世界观搜索 | 限 5 条，每条截断 300 字 |
-| `get_book_context` | 整书上下文 | 近 5 章摘要 + 世界观概览（每条 200 字） |
-
-**健壮性设计**：
-
-- `ToolCache`：请求级 LRU 缓存（32 条，TTL 300s）
-- Bridge 连接错误重试：3 次指数退避（0.5s → 1s → 2s），成功后重建 httpx 连接池
-- Bridge 业务错误（404/500）**不重试**，直接报错并输出详细诊断
-
-### 4.7 记忆体系统 `memory/`
-
-三层记忆类型：
+### 4.1 三种记忆类型
 
 | 类型 | 标识 | 含义 | 检索权重 |
 |------|------|------|:---:|
@@ -224,93 +155,132 @@ execute_skill_stream(skill, book_id, message, ...)
 | 历史决策 | `decision` | 曾做过什么选择、原因 | 1.0 |
 | 经验教训 | `lesson` | 什么有效、什么无效 | 0.8 |
 
-**store.py**：SQLite（`agent/data/agent_memory.db`）WAL 模式 + 单例 + 线程锁；`extract_and_save` 基于**规则**从对话中自动提取记忆（关键词触发，不消耗额外 LLM 调用）
+### 4.2 规则式提取（零 LLM 成本）
 
-**retriever.py**：检索策略 = 关键词交集打分 × 类型加权 × 时间衰减，受 Token 预算（600）约束
+`extract_and_save` 基于**关键词规则**在对话结束后自动提取，不消耗额外模型调用：
 
-```python
-score = relevance_score
-if 关键词交集 > 0:
-    score *= 1.0 + 0.3 * overlap
-score *= TYPE_WEIGHT[memory_type]
+- 用户侧消息含「喜欢 / 偏好 / 习惯 / 希望…」→ `preference`
+- 用户侧消息含「决定 / 选择 / 采用 / 打算…」→ `decision`
+- 助手侧消息含「建议 / 注意 / 教训 / 提醒…」→ `lesson`
+- 每条记忆截取最多 3 句；`extract_keywords` 用去停用词后的高频词生成 `keywords`
+
+### 4.3 检索策略
+
+`retrieve_memories(conn, book_id, skill_type, user_message, max_tokens, top_k)`：
+
+1. **候选集**：先取「本书 + 本技能」精确匹配（≤50 条）；不足时回退整本书（≤30 条）
+2. **打分**：关键词交集越多分越高（`score *= 1 + 0.3 × overlap`），再乘类型权重
+3. **裁剪**：按 Token 预算（默认 600，`DEFAULT_MAX_TOKENS`）截取，`top_k = 10`
+
+`memory_prompt(...)` 将检索结果格式化为可注入 System Prompt 的记忆段；命中为空则省略该段。
+
+### 4.4 旧库自动迁移
+
+`lib.rs` setup 阶段检测旧 Python 期 `agent_memory.db`（开发模式 `<cwd>/data/`、打包模式 `<app_data_dir>/`），存在即调用 `migrate_legacy_db()` 一次性导入：
+
+- **幂等**：目标 `memories` 表已有数据则跳过；旧库无 memories 表也跳过
+- 迁移失败仅记日志，**不阻断应用启动**
+
+---
+
+## 5. 技能与 Prompt（prompts.rs）
+
+### 5.1 四个技能
+
+| Skill | 标识 | 核心能力 |
+|-------|------|---------|
+| 写作辅助 | `writing` | 大纲生成、情节建议、角色对话模拟、冲突设计 |
+| 内容分析 | `analysis` | 文风分析、连贯性检查、伏笔追踪、角色弧光、节奏评估 |
+| 研究辅助 | `research` | 资料检索、世界观一致性校验、设定扩展、关系图谱 |
+| 润色优化 | `polish` | 语法纠错、文笔润色、风格统一、冗余精简 |
+
+`skill_base_prompt(skill)` 返回对应技能 Prompt；未知 skill 回退 `writing`。
+
+### 5.2 动态场景提示
+
+`get_dynamic_prompt(skill, user_message)` 采用 **核心 Prompt + 场景提示** 分离：
+
+```
+核心 Prompt（固定，前缀结构稳定，利于 KV Cache 命中）
+   + 用户消息关键词匹配到的场景提示（最多 3 条，来自 dynamic_hints 表）
+   = 最终 System Prompt
 ```
 
-**summarizer.py**：本地 Ollama 压缩对话（> 6 轮触发，保留最近 4 轮），结构化输出（关键决策 / 用户偏好 / 讨论要点 / 已确认设定）。本地模型不可用时自动降级跳过。
-
-### 4.8 追踪系统 `tracer.py`
-
-- 独立 logger `agent.tracer`（`propagate=False`），避免被 uvicorn 覆盖
-- `@trace` 装饰器自动记录函数传参/返参/耗时
-- `trace_event` 输出带 `[TRACE]` 前缀的结构化事件：`HTTP_REQUEST`、`SSE_PROGRESS`、`AGENT_TOOL_START`、`MEMORY_*`、`BRIDGE_RETRY`、`CACHE_HIT` 等
-- `AGENT_TRACE_LEVEL` 环境变量控制级别（DEBUG/INFO/WARN），默认 DEBUG
-- API Key 脱敏：仅输出长度与前 6 位
+例如消息含「大纲」追加大纲生成指引，含「伏笔」追加伏笔分析指引。`estimate_prompt_tokens` 按 `中文/1.5 + 其他/3.5` 估算 Prompt Token。
 
 ---
 
-## 5. HTTP API
+## 6. 工具链（tools.rs）
 
-### 5.1 Agent 服务（端口 9877）
+### 6.1 工具与技能映射
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/health` | 健康检查，返回模型配置、记忆条数、压缩开关、最大迭代数 |
-| POST | `/skills/execute` | 执行 Skill，返回 `text/event-stream` |
-| POST | `/skills/cancel` | 取消任务（**当前为占位实现**） |
-| GET | `/memory/list` | 列出记忆（`?book_id=&skill_type=`） |
-| PUT | `/memory/{id}` | 更新记忆 |
-| DELETE | `/memory/{id}` | 删除单条记忆 |
-| DELETE | `/memory/clear` | 清空指定作品的全部记忆 |
+6 个数据库工具，数据源全部经 **repository 层**（chapter_repo / world_card_repo / book_repo）直接查询 SQLite：
 
-> `/memory/clear` 必须定义在 `/memory/{memory_id}` **之前**，否则 FastAPI 会把 `clear` 当作 int 解析。
+| 工具 | 用途 | Token 优化 |
+|------|------|-----------|
+| `read_chapter` | 读取章节完整内容 | — |
+| `read_chapter_summary` | 仅章节摘要 | 摘要优先，无摘要时取前 500 字 |
+| `read_chapter_chunk` | 大章节分页读取 | 2000 字/段 |
+| `list_book_chapters` | 章节列表 | 仅标题 + 摘要 |
+| `search_world_cards` | 世界观搜索 | 限 5 条，FTS5 优先、LIKE 降级 |
+| `get_book_context` | 整书上下文 | 近 5 章摘要 + 世界观概览 |
 
-### 5.2 SSE 事件
+各技能按需裁剪工具集（`tools_for_skill`），减少 Prompt 体积与误调用：
 
-| 事件 | 载荷 | 说明 |
-|------|------|------|
-| `chunk` | 文本增量 | 流式输出 |
-| `done` | 完成标记 | 流结束 |
-| `cancelled` | — | 任务被取消 |
-| `error` | 错误信息 | 执行失败 |
+| Skill | 工具集 |
+|-------|--------|
+| `writing` | read_chapter_summary / read_chapter_chunk / list_book_chapters / search_world_cards / get_book_context |
+| `analysis` | read_chapter / read_chapter_chunk / list_book_chapters / search_world_cards / get_book_context |
+| `research` | read_chapter_summary / list_book_chapters / search_world_cards / get_book_context |
+| `polish` | read_chapter / read_chapter_chunk / get_book_context |
 
-Rust `client.rs` 解析后转发为 Tauri 事件 `agent-stream-chunk`，载荷 `{ event, data, requestId }`。前端按 `requestId` 过滤，使用 `requestAnimationFrame` 合并高频 chunk 后批量更新 UI。
+> 未知 skill 默认取 writing 工具集。
 
----
+### 6.2 执行与裁剪
 
-## 6. 关键配置
-
-`agent/config.py` 的 `AgentConfig`，全部支持环境变量覆盖：
-
-| 配置项 | 默认值 | 说明 |
-|--------|--------|------|
-| `host` / `port` | `127.0.0.1` / `9877` | 服务监听 |
-| `ollama_base_url` / `local_model_name` | `http://127.0.0.1:11434` / `qwen2.5:7b` | 本地模型 |
-| `cloud_api_base` / `cloud_model_name` | `https://api.deepseek.com` / `deepseek-chat` | 云端模型（`ai_config` 请求级配置优先） |
-| `cloud_thinking_enabled` / `cloud_reasoning_effort` | `true` / `max` | DeepSeek 思考模式 |
-| `max_iterations` | 15 | Agent 最大推理步数 |
-| `task_timeout_seconds` | 300 | 单任务超时 |
-| `max_context_chars` | 80000 | 上下文最大字符数 |
-| `rust_callback_url` | `http://127.0.0.1:9876` | Bridge 地址 |
-| `memory_db_path` / `memory_max_tokens` | `data/agent_memory.db` / 600 | 记忆配置 |
-| `history_compress_threshold` / `history_keep_recent` | 6 / 4 | 历史压缩阈值 |
+- `build_tools_schema(skill)` 生成 OpenAI function calling 格式的 `tools` 数组随请求发送
+- `execute_tool(conn, name, args)` 分发到各 `tool_*` 私有函数
+- 返回内容统一裁剪（单工具结果上限 200,000 字符），循环内再按 `MAX_TOOL_RESULT_CHARS`（30,000）压缩后作为 tool 消息回填
 
 ---
 
-## 7. 设计亮点
+## 7. 前端集成（components/agent/）
 
-1. **Python 不直接访问 SQLite** —— 通过 9876 Bridge 回调，数据库写操作唯一入口在 Rust，杜绝多进程写锁竞争
-2. **子进程全生命周期管理** —— 解释器探测规避 venv 符号链接陷阱、端口僵尸进程组清理、看门狗自动重启（3 次上限）、优雅关闭（SIGTERM → 10s → SIGKILL）
-3. **双模型路由按任务复杂度分配** —— 润色走本地 Ollama 省成本，写作/分析/研究走云端 DeepSeek
-4. **KV Cache 友好 Prompt** —— 前缀结构稳定，提升 DeepSeek 缓存命中率，降低成本与延迟
-5. **按 Skill 定制工具集** —— 只加载必要工具，减少 Prompt 体积与误调用
-6. **请求级工具缓存** —— LRU + TTL，避免同一数据被重复请求
-7. **记忆提取零 LLM 成本** —— 基于规则自动提取，不额外调用模型
-8. **前端 RAF 缓冲** —— 按帧合并高频 SSE chunk，避免大量重渲染
+| 文件 | 职责 |
+|------|------|
+| `useAgent.ts` | Agent 模式核心 hook：`execute_agent_skill` / `cancel_agent_skill` 调用，`listen('agent-stream-chunk')`，按 `requestId` 过滤 + RAF 缓冲合并 chunk |
+| `AgentMemoryPanel.tsx` | 记忆管理面板：list / update / delete / clear |
+| `AgentMessageBubble.tsx` | 消息气泡（Markdown、流式光标、复制/删除），纯展示 |
+| `types.ts` | `SkillType` / `AgentStreamEvent` / `MemoryInfo` / `SKILLS[]` 等类型与常量 |
+
+要点：
+
+- **状态恒为 running**：Agent 无外部进程可启停，`useAgent.status` 固定 `'running'`，Header 状态栏显示「已连接 · 模型服务就绪」
+- `aiConfig` 取自设置页对话配置，Agent 场景强制 `reasoningEffort: 'max'`
+- AI 侧面板（`AiSidePanel`）与工具箱在 Agent 模式下同样复用 `execute_agent_skill`
+
+> **约定例外**：以上 Agent invoke 直接由组件发起（未封装进 `tauri-bridge.ts`），
+> 与「唯一 IPC 入口」约定不一致，见 [架构总览](overview) 备注。
 
 ---
 
-## 8. 相关文档
+## 8. 与 v1.0 Python 实现的主要差异
 
-- [Agent 自动化使用指南](user-guide/agent-panel) — 面向用户
-- [AI 模块架构](architecture/AI-architecture) — Rust 侧 AI 对话（非 Agent）
-- [IPC 命令速查](development/ipc-api) — 9 个 Agent IPC 命令
-- [优化报告](meta/optimization-report) — Agent 相关待优化项（问题 27-31）
+| 维度 | v1.0（Python Agent） | v1.2（Rust 原生） |
+|------|---------------------|-------------------|
+| 运行形态 | 独立 FastAPI 子进程 @9877 | 内嵌 Rust 主进程 |
+| 数据访问 | 经 9876 Bridge HTTP 回调 | 同进程 repository 层直查 |
+| 运行时依赖 | Python + venv + uvicorn + LangChain | 无（纯 Rust + 云端模型 API） |
+| 记忆存储 | `data/agent_memory.db`（独立 SQLite） | `memories` 表（并入主库，自动迁移） |
+| 进程管理 | 解释器探测/看门狗/优雅关闭 | 无需（已删除） |
+| 启动流程 | Agent 异步启动 + Bridge 就绪等待 | 仅旧记忆库幂等迁移 |
+
+---
+
+## 9. 相关文档
+
+- [Agent 使用指南](../user-guide/agent-panel) — 面向用户
+- [AI 模块架构](AI-architecture) — AI 对话 / RAG（非 Agent）
+- [架构总览](overview) — 系统级双进程模型
+- [IPC 命令速查](../development/ipc-api) — Agent 相关命令与事件
+- [ADR-002（Bridge 只读架构，已废弃）](adr/ADR-002-agent-bridge-readonly) — v1.0 历史决策记录

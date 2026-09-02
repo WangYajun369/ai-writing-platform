@@ -1,54 +1,70 @@
-# 架构总览（v1.0 归档）
+# 架构总览
 
-> **适用版本**：`1.0.0`（Python Agent 三进程架构）。v1.1 起 Agent 已迁移为 Rust 原生引擎，
-> 运行时为**双进程**（WebView + Rust Core，Agent 内嵌于 Rust），本文仅作历史参考。
-> 最新架构说明见 [AI 架构](AI-architecture) 与 [代码结构](../development/project-structure)。
+> **适用版本**：`1.2.0`　|　**最后核对**：2026-09-02
+>
+> TimeWrite（MirageInk / 智写时光）运行时为**双进程模型**：WebView 前端 + Rust Core。
+> v1.1 起 Agent 已由 Python 外部子进程迁移为 **Rust 原生引擎**（见 [Agent 引擎架构](agent-architecture)），
+> 不再存在独立的 Agent 进程与 9877/9876 桥接端口。
 
 ---
 
-## 系统架构：三进程模型
+## 系统架构：双进程模型
 
-TimeWrite 运行时包含 **3 个独立进程**。Rust 是**唯一的数据拥有者**（SQLite 独占），前端只通过 IPC 访问数据，Python Agent 只通过 Bridge 回调读数据。
+TimeWrite 运行时包含 **2 个进程**。Rust 是**唯一的数据拥有者**（SQLite 独占），前端只通过 IPC 访问数据。
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  进程 1：WebView 前端（React 19 + TypeScript + TailwindCSS 4） │
 │  ┌───────────────────────────────────────────────────────┐  │
 │  │ pages/        components/       stores/                │  │
-│  │ 书库/编辑器/设置  10 个业务域组件   Zustand + Jotai       │  │
+│  │ 书库/编辑器/设置  业务域组件        Zustand + Jotai      │  │
 │  │        └──────────────┼──────────────┘                 │  │
-│  │        lib/tauri-bridge.ts（唯一 IPC 入口，11 个 API）   │  │
+│  │        lib/tauri-bridge.ts（唯一 IPC 入口，10+ 个 API）  │  │
 │  └───────────────────────┼───────────────────────────────┘  │
 └──────────────────────────┼──────────────────────────────────┘
                            │ Tauri IPC（invoke / event）
 ┌──────────────────────────┼──────────────────────────────────┐
 │  进程 2：Rust Core（Tauri v2）                                │
 │  ┌───────────────────────┴───────────────────────────────┐  │
-│  │ commands/    11 个模块，82 个 IPC 命令                   │  │
-│  │ service/     业务编排：事务边界 + SQL 审计日志            │  │
-│  │ repository/  数据访问：纯 SQL，无业务逻辑                 │  │
-│  │ db/          r2d2 连接池 + SQLite WAL + FTS5            │  │
-│  │ python/      AgentManager + Client + Bridge Server      │  │
-│  └──────┬────────────────────────────────┬────────────────┘  │
-└─────────┼────────────────────────────────┼───────────────────┘
-          │ HTTP SSE（9877）                │ HTTP 回调（9876）
-┌─────────┴────────────────────────────────┴───────────────────┐
-│  进程 3：Python Agent（FastAPI @ 127.0.0.1:9877）              │
-│  server/routes.py → skills/engine.py（LangGraph ReAct）       │
-│  models/router.py（Ollama 本地 / DeepSeek 云端双模型路由）      │
-│  tools/db_tools.py（6 个工具，经 9876 Bridge 回调 Rust 读数据） │
-│  memory/（SQLite 三层记忆）                                    │
-└───────────────────────────────────────────────────────────────┘
+│  │ commands/    12 个模块（book/volume/chapter/snapshot/  │  │
+│  │              world_card/ai/agent/io/image/window/...） │  │
+│  │ service/     业务编排：事务边界 + SQL 审计日志           │  │
+│  │ repository/  数据访问：纯 SQL，无业务逻辑               │  │
+│  │ db/          r2d2 连接池 + SQLite WAL + FTS5           │  │
+│  │ commands/agent/  Rust 原生 Agent 引擎                  │  │
+│  │   （engine/prompts/tools/memory/skills）                │  │
+│  └───────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
 ```
+
+> **历史演进**：v1.0 曾为三进程架构（Rust + Python FastAPI Agent @9877 + tiny_http Bridge @9876），
+> v1.1 已将 Agent 引擎整体内嵌 Rust，`agent/` 目录与 `src-tauri/src/python/` 一并移除。
 
 ### 端口分配
 
-| 端口 | 服务 | 方向 |
+| 端口 | 服务 | 说明 |
 |------|------|------|
-| **9877** | Python Agent（FastAPI） | Rust → Python |
-| **9876** | Rust Bridge（tiny_http） | Python → Rust（回调读库） |
-| 11434 | Ollama（可选） | Python → 本地模型 |
+| 11434 | Ollama（可选） | 本地模型（AI 对话本地服务商） |
 | 1420 | Vite 开发服务器 | 仅开发模式 |
+
+> 原 Agent 服务（9877）与 Bridge（9876）端口已随 Python Agent 移除，不再占用。
+
+---
+
+## Agent 引擎（v1.2 内嵌于 Rust）
+
+Agent 自动化能力由 `src-tauri/src/commands/agent/` 提供，**无外部进程、无需 Python 环境**：
+
+| 模块 | 职责 |
+|------|------|
+| `engine.rs` | SSE 流式 ReAct 工具循环（`run_skill` + 任务取消），调用云端模型 API |
+| `prompts.rs` | 4 个技能（writing/analysis/research/polish）的 System Prompt + 动态场景提示 |
+| `tools.rs` | 6 个数据库工具（读章节/摘要/分页/章节列表/世界观搜索/整书上下文） |
+| `memory.rs` | `memories` 表存取：CRUD、关键词检索、规则式记忆提取、旧库迁移 |
+| `skills.rs` | IPC 命令层：`execute_agent_skill` / `cancel_agent_skill` + 记忆管理命令 |
+
+Agent 执行时直接调用**同一 Rust 进程内**的 repository 层查询 SQLite（不再经 HTTP 回调），
+流式输出通过 Tauri 事件 `agent-stream-chunk` 推送前端。详见 [Agent 引擎架构](agent-architecture)。
 
 ---
 
@@ -59,9 +75,11 @@ TimeWrite 运行时包含 **3 个独立进程**。Rust 是**唯一的数据拥�
 | 层 | 职责 |
 |----|------|
 | 前端 | UI 渲染、用户交互、状态管理 |
-| Rust 后端 | 数据持久化、业务逻辑、AI 集成、子进程管理 |
-| 桥接层 | 类型安全的 IPC 封装（`tauri-bridge.ts` 是唯一 `invoke` 入口） |
-| Python Agent | AI 执行体，只读数据，不持有数据库 |
+| Rust 后端 | 数据持久化、业务逻辑、AI 集成（对话/RAG/Agent 引擎） |
+| 桥接层 | 类型安全的 IPC 封装（`tauri-bridge.ts` 是唯一 `invoke` 入口；Agent 调用为例外，见下） |
+
+> **约定例外**：`useAgent.ts` / `AgentMemoryPanel.tsx` 直接 `invoke('execute_agent_skill')` 等
+> Agent 命令（未走 `tauri-bridge.ts` 封装），与「唯一入口」约定不一致，列为待重构项。
 
 ### 2. 单向数据流
 
@@ -74,16 +92,17 @@ TimeWrite 运行时包含 **3 个独立进程**。Rust 是**唯一的数据拥�
 ### 3. 实时事件流
 
 ```
-Rust 命令 → app.emit('ai-stream-chunk')    → 前端 listen() → 更新 AI 消息
-Rust 命令 → app.emit('agent-stream-chunk') → 前端 listen() → 更新 Agent 消息
-Rust 命令 → app.emit('debug-log')          → 调试窗口 listen() → 追加日志
+Rust 命令 → app.emit('ai-stream-chunk')      → 前端 listen() → 更新 AI 消息
+Agent 引擎 → app.emit('agent-stream-chunk')   → 前端 listen() → 更新 Agent 消息（RAF 缓冲）
+Rust 命令 → app.emit('debug-log')             → 调试窗口 listen() → 追加日志
+窗口关闭  → app.emit('agent-status-changed')  → 前端 listen() → 显示退出遮罩（status=closing）
 ```
 
 ### 4. 数据主权
 
 - **Rust 独占写权限**：所有数据库写操作必须经 Rust
-- **Python 只读**：Agent 只能通过 Bridge 读取，杜绝多进程写锁竞争
 - **前端零直连**：前端不接触 SQL，只通过 IPC
+- **Agent 与数据同进程**：工具调用直接走 repository 层，无跨进程回调，天然规避写锁竞争
 
 ---
 
@@ -102,7 +121,7 @@ db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发�
 
 ## 数据库设计
 
-**6 张业务表 + 2 张 FTS5 虚拟表**
+**7 张业务表 + 2 张 FTS5 虚拟表**
 
 | 表 | 关键字段 | 说明 |
 |----|---------|------|
@@ -112,6 +131,7 @@ db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发�
 | `snapshots` | chapter_id (FK), content_html, type ('auto'/'milestone'), label | 版本快照 |
 | `world_cards` | book_id (FK), type（6 类）, content_html, tags, vectorized | 世界观卡片 |
 | `embeddings` | source_type, source_id, embedding (BLOB), model | 向量索引，`UNIQUE(source_type, source_id)` |
+| `memories` | book_id, skill_type, memory_type, content, keywords, relevance_score | Agent 记忆（v1.1 起并入主库） |
 | `chapters_fts` | FTS5（unicode61） | 章节全文搜索，由 3 个触发器自动同步 |
 | `world_cards_fts` | FTS5（unicode61） | 世界观全文搜索，由 3 个触发器自动同步 |
 
@@ -119,7 +139,7 @@ db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发�
 
 - r2d2 连接池（max_size=10，超时 10s，空闲 300s，最长存活 1800s）
 - 每连接 `PRAGMA foreign_keys=ON; journal_mode=WAL`
-- 幂等迁移：`safe_add_column()` 检测 duplicate column 后跳过
+- 幂等迁移：`safe_add_column()` 检测 duplicate column 后跳过；memories 表启动时自动建表 + 索引
 - 软删除统一使用 `deleted_at` 时间戳，配合回收站机制
 - FTS5 由 INSERT/UPDATE/DELETE 三触发器增量维护，**启动时无需重建索引**
 
@@ -127,22 +147,24 @@ db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发�
 
 ## IPC 模块映射
 
-共 **82 个命令**，11 个前端 API 对象。完整清单见 [IPC 命令速查](development/ipc-api)。
+前端 `tauri-bridge.ts` 暴露 10+ 个 API 对象，完整命令清单见 [IPC 命令速查](development/ipc-api)。
 
-| API 模块 | Rust 源文件 | 命令数 | 功能 |
-|---------|------------|:---:|------|
-| `bookApi` | `commands/book.rs` | 11 | 书籍 CRUD + 封面 + 回收站 |
-| `volumeApi` | `commands/volume.rs` | 8 | 卷管理 |
-| `chapterApi` | `commands/chapter.rs` | 16 | 章节 CRUD + 自动保存 + 总结/大纲 |
-| `snapshotApi` | `commands/snapshot.rs` | 5 | 版本快照 |
-| `worldCardApi` | `commands/world_card.rs` | 5 | 世界观卡片 + FTS5 搜索 |
-| `aiApi` | `commands/ai/` | 8 | 流式对话 + RAG + Embedding + 总结 |
-| `importExportApi` | `commands/io/` | 5 | 导入导出 + 加密备份 |
-| `imageApi` | `commands/image.rs` | 2 | 图片压缩与裁剪 |
-| `windowApi` | `commands/window/manager.rs` | 6 | 4 类独立窗口开关 |
-| `debugApi` | `commands/window/{debug,validate}.rs` | 6 | 调试控制台 + 数据库校验 |
-| `agentApi` | `commands/agent/skills.rs` | 9 | Agent 服务管理 + 技能执行 + 记忆管理 |
-| `systemApi` | `commands/system_check.rs` | 1 | 运行环境自检 |
+| API 模块 | Rust 源文件 | 功能 |
+|---------|------------|------|
+| `bookApi` | `commands/book.rs` | 书籍 CRUD + 封面 + 回收站 |
+| `volumeApi` | `commands/volume.rs` | 卷管理 |
+| `chapterApi` | `commands/chapter.rs` | 章节 CRUD + 自动保存 + 总结/大纲 |
+| `snapshotApi` | `commands/snapshot.rs` | 版本快照 |
+| `worldCardApi` | `commands/world_card.rs` | 世界观卡片 + FTS5 搜索 |
+| `aiApi` | `commands/ai/` | 流式对话 + RAG + Embedding（预留）+ 总结 |
+| `importExportApi` | `commands/io/` | 导入导出 + 加密备份 |
+| `imageApi` | `commands/image.rs` | 图片压缩与裁剪 |
+| `windowApi` | `commands/window/manager.rs` | 独立窗口开关 |
+| `debugApi` | `commands/window/{debug,validate}.rs` | 调试控制台 + 数据库校验 |
+| `systemApi` | `commands/system_check.rs` | 运行环境自检 |
+| **Agent（组件直接 invoke）** | `commands/agent/skills.rs` | `execute_agent_skill` / `cancel_agent_skill` / 记忆 CRUD（4 个） |
+
+> v1.1 起原 `get_agent_status` / `start_agent` / `stop_agent`（启停外部 Python 进程）已移除。
 
 ---
 
@@ -201,9 +223,9 @@ CSS 类组合由两者叠加而成（`.eyecare-warm`、`.dark.eyecare-green` 等
 
 | 主题 | 文档 |
 |------|------|
+| Agent 引擎（Rust 原生） | [Agent 引擎架构](agent-architecture) |
+| AI 对话 / RAG / 总结 | [AI 模块架构](AI-architecture) |
 | 目录结构与分层细节 | [项目结构](development/project-structure) |
-| 每个模块的实现 | [代码架构深度分析](architecture/code-architecture) |
-| AI 对话与 RAG | [AI 模块架构](architecture/AI-architecture) |
-| Python Agent 子系统 | [Agent 架构](architecture/agent-architecture) |
+| 每个模块的实现细节 | [代码架构深度分析](code-architecture) |
 | 全部 IPC 命令 | [IPC 命令速查](development/ipc-api) |
 | 已知问题与改进项 | [优化报告](meta/optimization-report) |

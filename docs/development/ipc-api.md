@@ -1,8 +1,8 @@
 # IPC 命令速查
 
-> **适用版本**：`1.0.0`　|　**最后核对**：2026-08-31
+> **适用版本**：`1.2.0`　|　**最后核对**：2026-09-02
 
-TimeWrite 共注册 **82 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用。
+TimeWrite 共注册 **81 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用（Agent 命令为例外，见文末说明）。
 
 > **架构约定**：`tauri-bridge.ts` 是全项目**唯一**允许调用 `invoke` 的模块。禁止在其他文件中直接 import `@tauri-apps/api` 的 `invoke`。
 
@@ -20,10 +20,10 @@ TimeWrite 共注册 **82 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的
 | [AI](#ai-commandsai) | 8 | `commands/ai/{test,embedding,chat,summarize}.rs` |
 | [导入导出](#导入导出-commandsio) | 5 | `commands/io/{export,import_txt,backup}.rs` |
 | [图片](#图片-image) | 2 | `commands/image.rs` |
-| [窗口](#窗口-commandswindow) | 12 | `commands/window/{manager,debug,validate}.rs` |
-| [Agent](#agent-commandsagent) | 9 | `commands/agent/skills.rs` |
+| [窗口](#窗口-commandswindow) | 14 | `commands/window/{manager,debug,validate}.rs` |
+| [Agent](#agent-commandsagent) | 6 | `commands/agent/skills.rs` |
 | [系统](#系统检查-system_check) | 1 | `commands/system_check.rs` |
-| **合计** | **82** | — |
+| **合计** | **81** | — |
 
 ---
 
@@ -206,13 +206,16 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 | `imageApi` | 2 |
 | `windowApi` | 6 |
 | `debugApi` | 6 |
-| `agentApi` | 6 |
 | `systemApi` | 1 |
+
+> **例外说明**：Agent 命令（`execute_agent_skill` / `cancel_agent_skill` / 记忆管理）**未封装进
+> `tauri-bridge.ts`**（无 `agentApi` 对象），由 `components/agent/useAgent.ts`、`AgentMemoryPanel.tsx`
+> 与 `useAiChat.ts` 直接 `invoke`——与「唯一 IPC 入口」约定不一致，列为待重构项。
 
 ---
 
 ## 相关文档
 
 - [项目结构](development/project-structure) — 目录组织与分层设计
-- [架构总览](architecture/overview) — 三进程架构与数据流
-- [AI 架构](architecture/AI-architecture) — Rust 原生 Agent 引擎（v1.1）
+- [架构总览](architecture/overview) — 双进程架构与数据流
+- [Agent 引擎架构](architecture/agent-architecture) — Rust 原生 Agent 引擎（v1.2）

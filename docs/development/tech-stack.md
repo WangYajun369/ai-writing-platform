@@ -19,10 +19,8 @@
 | **后端语言** | Rust | 2021 Edition |
 | **数据库** | SQLite（rusqlite bundled） | WAL 模式 |
 | **连接池** | r2d2 | — |
-| **Agent 运行时** | Python | ≥ 3.10 |
-| **Agent 框架** | FastAPI + LangGraph + LangChain | — |
+| **Agent 引擎** | Rust 原生（`commands/agent/`） | v1.1 起内嵌，无需 Python |
 | **包管理（前端）** | pnpm | ≥ 11 |
-| **包管理（Python）** | uv / pip（`pyproject.toml` + `uv.lock`） | — |
 
 ---
 
@@ -117,9 +115,8 @@ v1.0 的 Python Agent（FastAPI @9877）与 Bridge（tiny_http @9876）已随 Ag
 
 | 工具 | 说明 |
 |------|------|
-| `scripts/setup-agent.ts` | 创建 `.venv`、安装依赖、下载本地模型 |
-| `scripts/check.mjs` | 项目完整性自检 |
-| `scripts/check-{npm,python,rust}-versions.ts` | 三端依赖版本校验 |
+| `scripts/check.mjs` | 项目完整性自检（200 项，支持 `--fast`） |
+| `scripts/check-npm-versions.ts` / `check-rust-versions.ts` | 前端 / Rust 依赖版本校验 |
 | `scripts/node-manager.ts` | Node 版本管理 |
 | `scripts/clean.ts` | 构建产物清理 |
 

@@ -42,20 +42,21 @@ Agent 已内置为 Rust 原生引擎，无需安装或启动。若面板异常�
 
 ### Q: Agent 记忆保存在哪里？可以删除吗？
 
-保存在 `agent/data/agent_memory.db`（SQLite，WAL 模式），按作品隔离。可在 Agent 面板点击「记忆」按钮查看、编辑、删除单条记忆，或清空当前作品的全部记忆。
+保存在主数据库 `time_write.db` 的 `memories` 表中（v1.1 起并入主库，旧独立库 `agent_memory.db` 启动时自动迁移），按作品隔离。可在 Agent 面板点击「记忆」按钮查看、编辑、删除单条记忆，或清空当前作品的全部记忆。
 
 ### Q: Agent 和 AI 助手有什么区别？
 
-AI 助手是单轮/多轮对话工具，通过 RAG 检索片段作为上下文；Agent 会自主规划、多步调用 6 个数据库工具完成复杂任务，并拥有跨会话的三层记忆体。详见 [Agent 自动化](user-guide/agent-panel)。
+AI 助手是多轮对话工具（v1.2 起同样由 Rust Agent 引擎驱动，上下文经引擎工具检索，RAG 后端为预留能力）；Agent 会自主规划、多步调用 6 个数据库工具完成复杂任务，并拥有跨会话的三层记忆体。详见 [Agent 自动化](user-guide/agent-panel)。
 
 ## 开发相关
 
 ### Q: 开发环境需要什么？
 - Node.js ≥ 22
 - pnpm ≥ 11
-- Python ≥ 3.10（Agent 服务）
 - Rust 最新稳定版
 - macOS / Windows / Linux
+
+> v1.1 起 Agent 为 Rust 原生引擎，开发与运行均无需 Python。
 
 ### Q: 如何调试 Rust 后端？
 使用 `pnpm tauri dev` 启动开发模式，Rust 代码的 `println!` 输出会出现在终端中。

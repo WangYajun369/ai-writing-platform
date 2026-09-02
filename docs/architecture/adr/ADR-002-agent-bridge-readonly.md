@@ -1,6 +1,10 @@
-# ADR-002：Python Agent 经 Bridge 只读回调，不直连 SQLite
+# ADR-002：Python Agent 经 Bridge 只读回调，不直连 SQLite（已废弃）
 
-> **状态**：已采纳
+> **状态**：已废弃（superseded）
+>
+> v1.1 起 Python Agent 已迁移为 **Rust 原生引擎**（`src-tauri/src/commands/agent/`），
+> tiny_http Bridge（9876）与 Python 子进程（9877）整体删除，数据访问改为引擎内
+> repository 层直查 SQLite（单进程模型，无写锁竞争）。本 ADR 仅作 v1.0 历史决策记录。
 > **日期**：2026-08-XX（v1.0.0）
 > **影响范围**：Agent 进程 / 数据层
 

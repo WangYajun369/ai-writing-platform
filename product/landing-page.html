@@ -4,17 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>智写时光 TimeWrite — AI 小说写作平台</title>
-  <meta name="description" content="专业桌面端 AI 小说写作软件，内置 Agent 自动化写作子系统，提供书库管理、章节编辑、AI 辅助创作、世界观构建等完整写作工作流，支持 macOS 和 Windows。">
+  <meta name="description" content="专业桌面端 AI 小说写作软件，内置 AI 对话与 Rust 原生 Agent 写作引擎，提供书库管理、章节编辑、世界观构建、智能保存与加密备份的完整写作工作流，支持 macOS 和 Windows，完全免费。">
   <!-- Open Graph / 微信分享卡片 -->
   <meta property="og:type" content="website">
   <meta property="og:title" content="智写时光 TimeWrite — AI 小说写作平台">
-  <meta property="og:description" content="摸鱼半小时，日更万字。专为网文作者打造的桌面端 AI 写作工具，集成大模型流式对话、RAG 上下文检索与 Agent 智能体，让 AI 成为你的创作搭档。">
+  <meta property="og:description" content="摸鱼半小时，日更万字。专为网文作者打造的桌面端 AI 写作工具，内置 AI 对话工具箱与 Agent 智能体：自动读取作品设定、多步推理完成大纲/润色/一致性校验，让 AI 成为你的创作搭档。">
   <meta property="og:image" content="https://wangyajun369.github.io/ai-writing-platform/logo.png">
   <meta property="og:url" content="https://wangyajun369.github.io/ai-writing-platform/">
   <meta property="og:site_name" content="智写时光 TimeWrite">
   <!-- 微信专用 -->
   <meta itemprop="name" content="智写时光 TimeWrite — AI 小说写作平台">
-  <meta itemprop="description" content="摸鱼半小时，日更万字。专为网文作者打造的桌面端 AI 写作工具，内置 Agent 自动化写作助手。">
+  <meta itemprop="description" content="摸鱼半小时，日更万字。专为网文作者打造的桌面端 AI 写作工具，内置 Rust 原生 Agent 写作引擎，无需 Python 环境、开箱即用。">
   <meta itemprop="image" content="https://wangyajun369.github.io/ai-writing-platform/logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -42,7 +42,7 @@
 <section class="hero">
   <div class="hero-badge">
     <span class="hero-badge-dot"></span>
-    v1.0.0 里程碑版已发布 — macOS + Windows 双平台
+    v1.2.0 已发布 — macOS + Windows 双平台，Agent 引擎原生内嵌、免 Python 环境
   </div>
 
   <h1>
@@ -52,7 +52,8 @@
 
   <p class="hero-subtitle">
     智写时光（TimeWrite）是专为网络小说作者打造的专业桌面端写作平台。
-    集成大模型流式对话、RAG 上下文检索与 Agent 自动化写作智能体，
+    内置 AI 对话与 Agent 智能体：流式对话即问即答、AI 工具箱一键续写润色，
+    Agent 自动读取你的书库与世界观设定，多步推理完成大纲生成、文风分析与一致性校验。
     从灵感到成书，一站式完成创作。
   </p>
 
@@ -106,8 +107,8 @@
       <ul class="showcase-list">
         <li class="showcase-item">流式对话即时响应，续写润色一键触发</li>
         <li class="showcase-item highlight">29 个 AI 工具箱预设提示词</li>
-        <li class="showcase-item">RAG 检索注入作品设定，回答不跑偏</li>
-        <li class="showcase-item">Agent 智能体自动完成复杂写作任务</li>
+        <li class="showcase-item">对话经引擎自动读取章节与世界观，回答贴合设定</li>
+        <li class="showcase-item">Agent 智能体自动完成大纲、润色与一致性校验</li>
       </ul>
     </div>
     <div class="showcase-card">
@@ -157,11 +158,11 @@
       <div class="why-card-body">
         <div class="why-item">
           <h4>海量资料，智能查找</h4>
-          <p>智写时光内置 FTS5 全文搜索引擎与世界观资料库，人物、地点、势力等设定一键检索。结合 RAG 上下文检索，AI 能准确理解你的作品背景，想您所想，急您所急，大大节省查阅资料的时间。</p>
+          <p>智写时光内置 FTS5 全文搜索引擎与世界观资料库，人物、地点、势力等设定一键检索。AI 对话经引擎自动读取当前章节与设定卡片，准确理解你的作品背景，想您所想，急您所急，大大节省查阅资料的时间。</p>
         </div>
         <div class="why-item">
           <h4>Agent 智能体，自动干活</h4>
-          <p>v1.0.0 内置 Python Agent 自动化写作子系统：写作辅助、文学分析、设定研究、文字润色四大技能，直接连接你的书库与世界观数据，多步推理自动完成大纲生成、文风分析、一致性校验等复杂任务。</p>
+          <p>Agent 引擎原生内嵌 Rust（v1.2，无需 Python 环境）：写作辅助、内容分析、设定研究、文字润色四大技能，直接连接你的书库与世界观数据，多步推理自动完成大纲生成、文风分析、一致性校验等复杂任务。</p>
         </div>
         <div class="why-item">
           <h4>摸鱼时间轻松万字</h4>
@@ -276,11 +277,11 @@
     <div class="feature-card">
       <div class="feature-icon pink">🤖</div>
       <h3>Agent 自动化写作</h3>
-      <p>v1.0.0 里程碑能力：内置 Python Agent 子系统（FastAPI + LangGraph ReAct），四大写作技能自动调用数据库工具链，读取章节、搜索世界观设定，多步推理完成大纲生成、文风分析、一致性校验。三层记忆体系统让 AI 记住你的创作偏好，越用越懂你。</p>
+      <p>v1.2 原生引擎：Agent 已完整内嵌于 Rust，无需 Python 环境、开箱即用。四大写作技能自动调用数据库工具链，读取章节、搜索世界观设定，多步推理完成大纲生成、文风分析、一致性校验。三层记忆体并入主库，让 AI 记住你的创作偏好，越用越懂你。</p>
       <div class="feature-tags">
-        <span class="feature-tag">LangGraph ReAct</span>
+        <span class="feature-tag">Rust 原生引擎</span>
         <span class="feature-tag">记忆体系统</span>
-        <span class="feature-tag">双模型路由</span>
+        <span class="feature-tag">零配置即用</span>
       </div>
     </div>
 
@@ -301,7 +302,7 @@
 <section class="section ai-section" id="ai">
   <span class="section-label">AI 智能写作</span>
   <h2 class="section-title">大模型加持，突破创作瓶颈</h2>
-  <p class="section-desc">多服务商支持：智谱 BigModel、DeepSeek 与自定义 OpenAI 兼容端点（含 Ollama 本地模型），流式对话即时响应。RAG 上下文检索让 AI 了解你的作品背景，生成内容更贴合设定。</p>
+  <p class="section-desc">多服务商支持：智谱 GLM、DeepSeek 与自定义 OpenAI 兼容端点（含 Ollama 本地模型），流式对话即时响应。对话经引擎自动读取当前章节与世界观设定，生成内容更贴合你的作品。</p>
 
   <div class="ai-cards">
     <div class="ai-card">
@@ -311,8 +312,8 @@
     </div>
     <div class="ai-card">
       <div class="ai-card-icon">🔍</div>
-      <h4>RAG 上下文检索</h4>
-      <p>向量检索 + FTS5 双轨降级，自动将章节内容与世界观设定注入对话上下文，让 AI 的回答符合你的作品设定，生成不跑偏。</p>
+      <h4>作品设定感知</h4>
+      <p>对话经引擎工具自动读取当前章节与世界观卡片并注入上下文，设定始终在 AI 的视野内，回答贴合作品、不跑偏不胡编。</p>
     </div>
     <div class="ai-card">
       <div class="ai-card-icon">⚡</div>
@@ -322,7 +323,7 @@
     <div class="ai-card">
       <div class="ai-card-icon">🔧</div>
       <h4>灵活模型配置</h4>
-      <p>智谱 glm-5.1（默认）、DeepSeek 思考模型、Ollama 本地模型随心切换。对话与 RAG 配置完全解耦，API Key 按服务商独立管理。</p>
+      <p>智谱 GLM、DeepSeek 与 Ollama 本地模型随心切换，支持自定义 OpenAI 兼容端点。对话、总结与工具箱配置解耦，API Key 按服务商独立管理。</p>
     </div>
   </div>
 </section>
@@ -331,7 +332,7 @@
 <section class="section agent-section" id="agent">
   <span class="section-label">Agent 智能体</span>
   <h2 class="section-title">让 AI 替你干活，而不只是帮你打字</h2>
-  <p class="section-desc">v1.0.0 引入 Python Agent 自动化写作子系统（FastAPI + LangGraph ReAct），直接连接你的书库与世界观数据，自动完成复杂多步写作任务。</p>
+  <p class="section-desc">Agent 引擎原生内嵌于 Rust 主进程（v1.2），无需 Python、无需启动任何服务。直接连接你的书库与世界观数据，自动完成复杂多步写作任务。</p>
 
   <div class="agent-grid">
     <div class="agent-card">
@@ -380,29 +381,29 @@
     <div class="agent-feature">
       <span class="agent-feature-icon">🧠</span>
       <div>
-        <strong>记忆体系统</strong>
-        <span>三层记忆（偏好/决策/经验）SQLite 持久化，跨会话记住你的创作习惯，越用越懂你。</span>
+        <strong>三层记忆体</strong>
+        <span>偏好 / 决策 / 经验三层记忆并入主库 SQLite，跨会话记住你的创作习惯，越用越懂你；旧版记忆自动迁移。</span>
       </div>
     </div>
     <div class="agent-feature">
-      <span class="agent-feature-icon">🛤️</span>
+      <span class="agent-feature-icon">⚡</span>
       <div>
-        <strong>双模型路由</strong>
-        <span>本地 Ollama 处理润色 + 云端 DeepSeek 处理写作/分析/研究，按任务复杂度自动分配，省钱又高效。</span>
+        <strong>零依赖，开箱即用</strong>
+        <span>引擎随应用内嵌运行：无 Python 环境、无后台服务、无端口占用，下载即用；按你的 AI 配置直连 DeepSeek / 智谱等大模型。</span>
       </div>
     </div>
     <div class="agent-feature">
       <span class="agent-feature-icon">🛡️</span>
       <div>
-        <strong>数据只读安全</strong>
-        <span>Agent 经 Rust Bridge 仅读数据，所有写操作唯一入口在 Rust 侧，你的创作数据绝对安全。</span>
+        <strong>同进程只读安全</strong>
+        <span>Agent 工具与主程序同进程运行，经 repository 层只读访问数据库——无本地端口暴露、无跨进程写锁，你的创作数据绝对安全。</span>
       </div>
     </div>
     <div class="agent-feature">
-      <span class="agent-feature-icon">🔄</span>
+      <span class="agent-feature-icon">⏹️</span>
       <div>
-        <strong>看门狗自愈</strong>
-        <span>异常崩溃自动检测与重启（最多 3 次），对话历史超长自动压缩，长时间写作也不卡顿。</span>
+        <strong>全程尽在掌握</strong>
+        <span>生成过程中可一键停止（全局取消标志即时生效），SSE 流式输出逐字呈现，无需管理进程与端口，专注写作不卡顿。</span>
       </div>
     </div>
   </div>
@@ -447,7 +448,7 @@
 <section class="section" style="text-align:center;">
   <span class="section-label">技术架构</span>
   <h2 class="section-title">高性能原生应用</h2>
-  <p class="section-desc" style="margin: 0 auto;">基于 Tauri v2 + React 19 构建，Rust 驱动 SQLite 数据引擎（FTS5 全文检索），<br>三进程架构集成 Python Agent 服务，启动快、内存省、原生体验。</p>
+  <p class="section-desc" style="margin: 0 auto;">基于 Tauri v2 + React 19 构建，Rust 驱动 SQLite 数据引擎（FTS5 全文检索），<br>双进程架构 + Rust 原生 Agent 引擎，启动快、内存省、原生体验。</p>
 
   <div class="tech-row">
     <span class="tech-badge"><span class="dot"></span> Tauri v2</span>
@@ -459,7 +460,7 @@
     <span class="tech-badge"><span class="dot"></span> TailwindCSS 4</span>
     <span class="tech-badge"><span class="dot"></span> Zustand + Jotai</span>
     <span class="tech-badge"><span class="dot"></span> Vite 8</span>
-    <span class="tech-badge"><span class="dot"></span> FastAPI + LangGraph</span>
+    <span class="tech-badge"><span class="dot"></span> Rust Agent 引擎</span>
   </div>
 </section>
 
@@ -520,7 +521,7 @@
 <!-- Footer -->
 <footer class="footer">
   <p>
-    <strong>智写时光 TimeWrite</strong> &nbsp;·&nbsp; v1.0.0 &nbsp;·&nbsp;
+    <strong>智写时光 TimeWrite</strong> &nbsp;·&nbsp; v1.2.0 &nbsp;·&nbsp;
     <a href="https://github.com/WangYajun369/ai-writing-platform" target="_blank" rel="noopener">GitHub</a> &nbsp;·&nbsp;
     <a href="https://github.com/WangYajun369/ai-writing-platform/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
   </p>

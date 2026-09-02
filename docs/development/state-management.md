@@ -122,22 +122,22 @@ TimeWrite 采用**双层状态管理**架构：Zustand 承载业务数据，Jota
 
 ## useAgent：Agent 局部状态
 
-Agent 面板的状态**不进入全局 store**，由 `components/agent/useAgent.ts` 以局部 Hook 管理：
+Agent 状态**不进入全局 store**，由 `components/agent/useAgent.ts` 以局部 Hook 管理。
+v1.1 起 Agent 为 Rust 原生引擎（内嵌主进程），**无启停流程**，`status` 恒为 `running`：
 
 | 状态/方法 | 说明 |
 |----------|------|
-| `status` | `stopped` / `starting` / `running` / `crashed` |
+| `status` | 恒为 `'running'`（引擎内嵌 Rust，无外部进程状态机） |
 | `messages` | `AgentMessage[]`（role / content / skill / isStreaming / error） |
 | `isStreaming` | 是否正在接收流式输出 |
 | `error` | 错误信息 |
-| `startAgent()` / `stopAgent()` | 启停 Python 子进程 |
-| `executeSkill(skill, bookId, message, history)` | 执行技能（生成 requestId，注入 aiConfig） |
-| `cancelSkill()` | 取消任务 |
+| `executeSkill(skill, bookId, message, history)` | 执行技能 → `invoke('execute_agent_skill')`（生成 requestId，注入 aiConfig） |
+| `cancelSkill()` | 取消任务 → `invoke('cancel_agent_skill')` |
 | `clearMessages()` | 清空对话 |
 
 **流式渲染优化**：监听 Tauri 事件 `agent-stream-chunk`，按 `requestId` 过滤，用 `requestAnimationFrame` 合并高频 chunk 后批量更新 UI，避免大量重渲染。
 
-> Agent 数据不持久化的原因：对话历史与记忆均由 Python 侧 `memory/` 模块持久化到 SQLite，前端重启后可从记忆恢复上下文。
+> Agent 对话为会话内临时上下文；跨会话记忆沉淀于 Rust 主库 `memories` 表（见下），由 `AgentMemoryPanel` 管理。
 
 ---
 
@@ -149,7 +149,7 @@ Agent 面板的状态**不进入全局 store**，由 `components/agent/useAgent.
 | AI 对话记录 | `localStorage` | 按 `bookId` 分组；流式更新仅写内存，流结束后一次性写盘 |
 | AI 配置 / 偏好设置 | `localStorage` | 应用启动时恢复，自动兼容旧版格式迁移 |
 | 编辑器状态（章节/滚动/光标） | `localStorage` | 按 `bookId` 保存，打开作品时恢复 |
-| Agent 记忆 | SQLite（`agent/data/agent_memory.db`） | Python 侧管理，跨会话持久 |
+| Agent 记忆 | SQLite（`time_write.db` 的 `memories` 表） | Rust 引擎管理；旧独立库（`agent_memory.db`）启动时自动迁移 |
 | UI 瞬态（Jotai） | 仅内存 | **不持久化** |
 
 ### AI 对话写盘时机
