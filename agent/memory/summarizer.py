@@ -8,9 +8,10 @@
 """
 
 import logging
-from typing import Optional
+from typing import ClassVar
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_ollama import ChatOllama
 
 from ..config import config
 from ..tracer import trace, trace_event
@@ -49,13 +50,12 @@ class HistorySummarizer:
     使用本地 Ollama 模型进行压缩，不消耗云端 API 额度。
     """
 
-    _model = None
+    _model: ClassVar[ChatOllama | None] = None
 
     @classmethod
-    def _get_model(cls):
+    def _get_model(cls) -> ChatOllama:
         """延迟加载本地压缩模型"""
         if cls._model is None:
-            from langchain_ollama import ChatOllama
             cls._model = ChatOllama(
                 model=config.local_model_name,
                 base_url=config.ollama_base_url,
@@ -74,7 +74,7 @@ class HistorySummarizer:
     async def summarize(
         cls,
         messages: list[BaseMessage],
-    ) -> Optional[str]:
+    ) -> str | None:
         """压缩消息列表为摘要"""
         conv_msgs = [m for m in messages if not isinstance(m, SystemMessage)]
 
@@ -93,8 +93,7 @@ class HistorySummarizer:
         if not to_summarize:
             return None
 
-        total_chars = sum(len(m.content) if hasattr(m, 'content') else 0
-                         for m in to_summarize)
+        total_chars = sum(len(m.content) for m in to_summarize)
         trace_event(
             "COMPRESS_START",
             f"压缩 {len(to_summarize)} 条消息 (总 {total_chars} chars, {turns} 轮)",
@@ -111,14 +110,18 @@ class HistorySummarizer:
                 SystemMessage(content=SUMMARIZE_SYSTEM),
                 HumanMessage(content=f"请压缩以下对话：\n\n{summarize_text}"),
             ])
-            summary = response.content if hasattr(response, "content") else str(response)
+            summary = (
+                response.content
+                if isinstance(response.content, str)
+                else str(response)
+            )
             trace_event(
                 "COMPRESS_DONE",
                 f"压缩完成: {total_chars} chars → {len(summary)} chars "
-                f"(压缩比 {len(summary)/max(total_chars,1)*100:.1f}%)",
+                + f"(压缩比 {len(summary)/max(total_chars,1)*100:.1f}%)",
             )
             return summary.strip()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - 模型调用失败时降级为不压缩，保证主流程可用
             trace_event(
                 "COMPRESS_ERROR",
                 f"压缩失败: {e}，将使用原始历史",
@@ -131,7 +134,7 @@ class HistorySummarizer:
     def compress_messages(
         cls,
         messages: list[BaseMessage],
-        summary: Optional[str],
+        summary: str | None,
     ) -> list[BaseMessage]:
         """用摘要替换压缩部分的消息"""
         if summary is None:
@@ -142,11 +145,11 @@ class HistorySummarizer:
 
         recent = conv_msgs[-KEEP_RECENT * 2:]
 
-        compressed = list(sys_msgs)
+        compressed: list[BaseMessage] = list(sys_msgs)
 
         summary_msg = HumanMessage(
             content=f"[对话历史摘要]\n{summary}\n\n"
-                    f"以上是之前对话的摘要。请基于此摘要和接下来的对话继续工作。"
+                    + "以上是之前对话的摘要。请基于此摘要和接下来的对话继续工作。"
         )
         compressed.append(summary_msg)
         compressed.extend(recent)
@@ -154,6 +157,6 @@ class HistorySummarizer:
         trace_event(
             "COMPRESS_MSGS",
             f"消息压缩: {len(messages)} → {len(compressed)} 条 "
-            f"(节省 {len(messages) - len(compressed)} 条)",
+            + f"(节省 {len(messages) - len(compressed)} 条)",
         )
         return compressed

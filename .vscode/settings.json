@@ -1,5 +1,5 @@
 {
-  "python.defaultInterpreterPath": "/opt/miniconda3/bin/python",
+  "python.defaultInterpreterPath": "${workspaceFolder}/agent/.venv/bin/python",
   "python.analysis.extraPaths": ["${workspaceFolder}"],
   "css.lint.unknownAtRules": "ignore"
 }

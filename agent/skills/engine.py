@@ -15,20 +15,31 @@
 """
 
 import logging
-from typing import AsyncIterator
-from datetime import datetime
-
+import time
 import uuid
+from collections.abc import AsyncIterator
+from datetime import datetime, timezone
+from typing import Any, cast
 
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
+from langchain.agents import (
+    create_agent,  # pyright: ignore[reportUnknownVariableType] — langchain 泛型重载含未绑定 ContextT
+)
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
+from langchain_core.tools import BaseTool
 from langgraph.checkpoint.memory import MemorySaver as LangGraphMemorySaver
 
-from ..config import config, SkillType
+from ..config import SkillType, config
+from ..memory import HistorySummarizer, MemoryRetriever, MemoryStore
 from ..models import get_model_for_skill
 from ..tools import DB_TOOLS, SKILL_TOOLS_MAP
-from ..memory import MemoryStore, MemoryRetriever, HistorySummarizer
-from ..tracer import trace, trace_event, start_request, end_request
-from .prompts import SKILL_PROMPTS, get_dynamic_prompt, estimate_prompt_tokens
+from ..tracer import end_request, start_request, trace, trace_event
+from .prompts import estimate_prompt_tokens, get_dynamic_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +65,9 @@ def _get_memory_retriever() -> MemoryRetriever:
     return _memory_retriever
 
 
-def _get_tools_for_skill(skill: SkillType) -> list:
+def _get_tools_for_skill(skill: SkillType) -> list[BaseTool]:
     """获取 Skill 专属工具集"""
-    tools = SKILL_TOOLS_MAP.get(skill, DB_TOOLS)
+    tools: list[BaseTool] = SKILL_TOOLS_MAP.get(skill, DB_TOOLS)
     trace_event(
         "TOOLS_SELECT",
         f"Skill={skill.value} → {len(tools)}/{len(DB_TOOLS)} 工具: "
@@ -66,7 +77,7 @@ def _get_tools_for_skill(skill: SkillType) -> list:
     return tools
 
 
-def _clean_history_for_context(history: list[dict]) -> list[dict]:
+def _clean_history_for_context(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """清理历史消息，遵循 DeepSeek 多轮对话最佳实践。
 
     参考：https://api-docs.deepseek.com/zh-cn/guides/thinking_mode
@@ -79,7 +90,7 @@ def _clean_history_for_context(history: list[dict]) -> list[dict]:
       历史消息时会报 INVALID_CHAT_HISTORY（AIMessage 有 tool_calls
       但缺少对应 ToolMessage）
     """
-    cleaned = []
+    cleaned: list[dict[str, Any]] = []
     for msg in history:
         cleaned_msg = {k: v for k, v in msg.items() if k != "reasoning_content"}
         cleaned.append(cleaned_msg)
@@ -87,10 +98,8 @@ def _clean_history_for_context(history: list[dict]) -> list[dict]:
 
 
 @trace(log_args=False, log_result=False, log_time=True)
-async def _build_agent(skill: SkillType, book_id: str, user_message: str, ai_config: dict | None = None, conversation_summary: str | None = None):
+async def _build_agent(skill: SkillType, book_id: str, user_message: str, ai_config: dict[str, Any] | None = None, conversation_summary: str | None = None) -> tuple[Any, str]:
     """构建 LangGraph ReAct Agent"""
-    from langgraph.prebuilt import create_react_agent
-
     model = get_model_for_skill(skill, ai_config=ai_config)
 
     # 1. 动态 Prompt
@@ -124,7 +133,7 @@ async def _build_agent(skill: SkillType, book_id: str, user_message: str, ai_con
     full_system = f"""{system_prompt}
 :{memory_prompt}
 {summary_section}当前书籍 ID: {book_id}
-当前时间: {datetime.now().strftime('%Y年%m月%d日 %H:%M')}
+当前时间: {datetime.now(timezone.utc).astimezone().strftime('%Y年%m月%d日 %H:%M')}
 
 重要提示：
 - 使用工具读取数据时，务必传入正确的 book_id
@@ -143,10 +152,13 @@ async def _build_agent(skill: SkillType, book_id: str, user_message: str, ai_con
         f"System Prompt: {len(full_system)} chars, ~{prompt_tokens} tokens",
     )
 
-    agent = create_react_agent(
-        model=model,
-        tools=tools,
-        checkpointer=_memory,
+    agent = cast(
+        Any,
+        create_agent(
+            model=model,
+            tools=tools,
+            checkpointer=_memory,
+        ),
     )
     return agent, full_system
 
@@ -155,8 +167,8 @@ async def execute_skill_stream(
     skill: SkillType,
     book_id: str,
     user_message: str,
-    conversation_history: list[dict] | None = None,
-    ai_config: dict | None = None,
+    conversation_history: list[dict[str, Any]] | None = None,
+    ai_config: dict[str, Any] | None = None,
     conversation_summary: str | None = None,
 ) -> AsyncIterator[str]:
     """流式执行 Agent Skill
@@ -188,7 +200,7 @@ async def execute_skill_stream(
         agent, system_prompt = await _build_agent(skill, book_id, user_message, ai_config, conversation_summary)
 
         # 构建消息列表
-        messages = [SystemMessage(content=system_prompt)]
+        messages: list[BaseMessage] = [SystemMessage(content=system_prompt)]
 
         if conversation_history:
             # 清理历史消息：剥离 reasoning_content（DeepSeek 特有字段）
@@ -233,7 +245,7 @@ async def execute_skill_stream(
                     messages=messages,
                     summary=summary,
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 — 兜底降级：压缩失败不阻断对话
                 trace_event(
                     "COMPRESS_FALLBACK",
                     f"压缩失败({e})，使用原始历史",
@@ -269,7 +281,6 @@ async def execute_skill_stream(
         stream_start_time = None
         first_token_time = None
 
-        import time
         stream_start_time = time.perf_counter()
 
         async for event in agent.astream_events(
@@ -334,8 +345,8 @@ async def execute_skill_stream(
             f"{type(e).__name__}: {e}",
             logging.ERROR,
         )
-        logger.error(f"Agent 执行异常: {e}", exc_info=True)
-        yield f"\n\n[错误] Agent 执行失败: {str(e)}"
+        logger.exception("Agent 执行异常")
+        yield f"\n\n[错误] Agent 执行失败: {e!s}"
 
     # 异步保存记忆（不阻塞响应）
     if full_response_parts:
@@ -347,7 +358,7 @@ async def execute_skill_stream(
                 user_message=user_message,
                 assistant_response=full_response,
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — 兜底降级：记忆保存失败不阻断响应
             trace_event(
                 "MEMORY_SAVE_ERROR",
                 f"记忆保存失败: {e}",

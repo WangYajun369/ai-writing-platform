@@ -8,7 +8,7 @@
 """
 
 import logging
-from typing import Optional
+from typing import ClassVar
 
 from ..config import SkillType
 from ..tracer import trace, trace_event
@@ -31,11 +31,15 @@ class MemoryRetriever:
     5. 限制返回 Token 数
     """
 
-    TYPE_WEIGHT: dict[MemoryType, float] = {
+    # 记忆类型加权（类级常量，仅只读，标注 ClassVar 明确语义）
+    TYPE_WEIGHT: ClassVar[dict[MemoryType, float]] = {
         MemoryType.PREFERENCE: 1.2,
         MemoryType.DECISION: 1.0,
         MemoryType.LESSON: 0.8,
     }
+
+    # 记忆存储实例（构造时初始化，显式注解满足基于 pyright 的类属性检查）
+    _store: MemoryStore
 
     def __init__(self, store: MemoryStore | None = None):
         self._store = store or MemoryStore()
@@ -68,7 +72,7 @@ class MemoryRetriever:
             trace_event("MEMORY_RETRIEVE", "无候选记忆")
             return []
 
-        user_keywords = set(MemoryStore._extract_keywords(user_message, max_words=10))
+        user_keywords = set(MemoryStore.extract_keywords(user_message, max_words=10))
         trace_event(
             "MEMORY_RETRIEVE",
             f"候选={len(candidates)} 用户关键词={user_keywords}",
@@ -89,7 +93,7 @@ class MemoryRetriever:
             trace_event(
                 "MEMORY_SCORE",
                 f"#{i+1} score={score:.3f} type={mem.memory_type.value} "
-                f"keywords='{mem.keywords}'",
+                + f"keywords='{mem.keywords}'",
                 logging.DEBUG,
             )
 
@@ -114,9 +118,9 @@ class MemoryRetriever:
         """计算单条记忆的相关性分"""
         score = memory.relevance_score
 
-        mem_keywords = set(
+        mem_keywords = {
             kw.strip() for kw in memory.keywords.split(",") if kw.strip()
-        )
+        }
         if user_keywords and mem_keywords:
             overlap = len(user_keywords & mem_keywords)
             if overlap > 0:

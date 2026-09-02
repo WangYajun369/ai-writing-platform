@@ -7,10 +7,10 @@
 """
 
 import asyncio
-import json
 import logging
 import time
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 from sse_starlette.sse import EventSourceResponse
 
@@ -25,10 +25,10 @@ async def sse_event_generator(
     skill: SkillType,
     book_id: str,
     user_message: str,
-    conversation_history: list[dict] | None = None,
-    ai_config: dict | None = None,
+    conversation_history: list[dict[str, Any]] | None = None,
+    ai_config: dict[str, Any] | None = None,
     conversation_summary: str | None = None,
-) -> AsyncIterator[dict]:
+) -> AsyncIterator[dict[str, Any]]:
     """生成 SSE 事件流
 
     Events:
@@ -76,7 +76,7 @@ async def sse_event_generator(
         yield {"event": "cancelled", "data": "任务已被用户取消"}
     except Exception as e:
         trace_event("SSE_ERROR", f"{type(e).__name__}: {e}", logging.ERROR)
-        logger.error(f"SSE 流异常: {e}", exc_info=True)
+        logger.exception("SSE 流异常")
         yield {"event": "error", "data": str(e)}
 
 
@@ -84,8 +84,8 @@ def create_sse_response(
     skill: SkillType,
     book_id: str,
     user_message: str,
-    conversation_history: list[dict] | None = None,
-    ai_config: dict | None = None,
+    conversation_history: list[dict[str, Any]] | None = None,
+    ai_config: dict[str, Any] | None = None,
     conversation_summary: str | None = None,
 ) -> EventSourceResponse:
     """创建 SSE 响应对象"""
