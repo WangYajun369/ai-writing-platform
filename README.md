@@ -159,7 +159,7 @@ Agent 系统基于 LangGraph ReAct 架构，调用 AI 模型 + 数据库工具�
 |------|------|
 | 应用名称 | TimeWrite |
 | 应用标识 | `com.ukcoder.timewrite` |
-| 版本 | 1.0.2 |
+| 版本 | 1.1.0 |
 | 窗口默认尺寸 | 1280 × 800 |
 | 窗口最小尺寸 | 800 × 600 |
 | 深度链接协议 | `com.ukcoder.timewrite://` |

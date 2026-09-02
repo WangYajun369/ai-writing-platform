@@ -1,5 +1,14 @@
 # 更新日志
 
+## v1.1.0 (2026-09-02)
+
+### 优化
+- **Agent Python 后端类型标注全面强化**：新增 `pyrightconfig.json` strict 检查配置（venv 指向 `agent/.venv`），`.vscode/settings.json` 解释器由 conda 切换为项目 venv
+- **API 与生命周期现代化**：`main.py` 由废弃的 `on_event(shutdown)` 重构为 FastAPI lifespan 上下文管理器；`server/routes.py` 请求/响应模型补全泛型标注，嵌套路由函数加 pyright ignore 说明
+- **类型安全修复**：`tracer.py` 修复 `@trace` 无括号用法与 `functools.wraps` 绑定，async 包装 cast 收窄为 Callable 契约；`memory/store.py` 提取 `_row_to_memory` 收窄 `sqlite3.Row` 索引类型并补 `ClassVar`/lastrowid 空值防护；`summarizer.py` 改用 isinstance 收窄类型判断
+- **LangChain 新 API 迁移**：`skills/engine.py` 的 `create_react_agent` 切换为 langchain `create_agent` 新 API，当前时间改为 timezone 感知；`tools/db_tools.py` 用 pydantic v2 `model_validate` 替换解包构造
+- **导出规范化**：`agent/__init__.py` 及各子包新增 `__all__` 与模块 docstring，统一包级导出
+
 ## v1.0.2 (2026-09-01)
 
 ### 修复
