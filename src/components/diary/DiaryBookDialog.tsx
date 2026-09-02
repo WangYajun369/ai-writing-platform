@@ -151,7 +151,7 @@ export default function DiaryBookDialog({ onClose }: DiaryBookDialogProps) {
   const renderDiaryPage = (meta: DiaryMeta, side: 'left' | 'right') => {
     const cached = cacheRef.current.get(meta.diaryDate) as CachedDiary | undefined
     const loading = cached === undefined || cached === 'pending'
-    const diary = !loading && cached !== 'pending' ? cached : null
+    const diary = cached !== undefined && cached !== 'pending' ? cached : null
     const isToday = meta.diaryDate === todayKey
     return (
       <div
