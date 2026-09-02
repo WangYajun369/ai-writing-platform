@@ -22,6 +22,7 @@ import type { Book } from '@/types'
 import BookCard from '@/components/library/BookCard'
 import NewBookDialog from '@/components/library/NewBookDialog'
 import TrashModal from '@/components/library/TrashModal'
+import DiaryPanel from '@/components/diary/DiaryPanel'
 import { closeAllMenus } from '@/components/common/ContextMenu'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
@@ -480,8 +481,9 @@ export default function LibraryPage() {
         </TooltipWrap>
       </header>
 
-      {/* 主体内容（虚拟化滚动容器） */}
-      <main ref={parentRef} className="flex-1 overflow-y-auto p-6" onContextMenu={handleBlankContextMenu}>
+      {/* 主体内容：左作品网格 + 右日记模块 */}
+      <div className="flex-1 min-h-0 flex">
+      <main ref={parentRef} className="flex-1 min-w-0 overflow-y-auto p-6 border-r" onContextMenu={handleBlankContextMenu}>
         {isLoadingBooks ? (
           <div className="flex items-center justify-center h-64">
             <div className="text-muted-foreground animate-pulse">加载中…</div>
@@ -530,6 +532,10 @@ export default function LibraryPage() {
           </div>
         )}
       </main>
+
+      {/* 右侧日记模块 */}
+      <DiaryPanel />
+      </div>
 
       {/* 底部状态栏 */}
       <footer className="border-t px-6 py-2 text-xs text-muted-foreground flex items-center gap-4">

@@ -7,6 +7,8 @@ pub mod volume;
 pub mod chapter;
 pub mod snapshot;
 pub mod world_card;
+pub mod diary;
+pub mod schedule;
 pub mod ai;
 pub mod io;
 pub mod image;

@@ -206,6 +206,17 @@ pub fn run() {
             commands::world_card::update_world_card,
             commands::world_card::delete_world_card,
             commands::world_card::search_world_cards,
+            // ══════ 日记管理 ══════
+            commands::diary::list_month_diaries,
+            commands::diary::list_all_diaries,
+            commands::diary::get_diary,
+            commands::diary::save_diary,
+            commands::diary::delete_diary,
+            // ══════ 日程管理 ══════
+            commands::schedule::list_schedules_by_date,
+            commands::schedule::list_schedules_by_month,
+            commands::schedule::save_schedule,
+            commands::schedule::delete_schedule,
             // ══════ AI — 连接测试 ══════
             commands::ai::test::test_ai_connection,
             // ══════ AI — RAG / Embedding ══════

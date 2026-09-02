@@ -6,7 +6,7 @@
  * 所有 IPC 调用必须通过此模块的 API 对象进行。
  */
 import { invoke } from '@tauri-apps/api/core'
-import type { Book, Chapter, Volume, Snapshot, WorldCard, CreateBookParams, UpdateBookParams } from '@/types'
+import type { Book, Chapter, Volume, Snapshot, WorldCard, Diary, DiaryMeta, CreateBookParams, UpdateBookParams, SaveDiaryParams, Schedule, SaveScheduleParams } from '@/types'
 
 // ==================== 书籍管理 ====================
 
@@ -225,6 +225,59 @@ export const worldCardApi = {
   /** FTS5 全文搜索世界观卡片 */
   async search(bookId: string, query: string): Promise<WorldCard[]> {
     return invoke<WorldCard[]>('search_world_cards', { bookId, query })
+  },
+}
+
+// ==================== 日记管理 ====================
+
+export const diaryApi = {
+  /** 列出指定年月（1-12）的日记摘要，按日期升序 */
+  async listMonth(year: number, month: number): Promise<DiaryMeta[]> {
+    return invoke<DiaryMeta[]>('list_month_diaries', { year, month })
+  },
+
+  /** 列出全部日记摘要（不含正文），按日期升序（书页式「看日记」浏览用） */
+  async listAll(): Promise<DiaryMeta[]> {
+    return invoke<DiaryMeta[]>('list_all_diaries')
+  },
+
+  /** 按日期（YYYY-MM-DD）获取日记全文，不存在时返回 null */
+  async get(date: string): Promise<Diary | null> {
+    return invoke<Diary | null>('get_diary', { date })
+  },
+
+  /** 保存日记（该日期已存在则覆盖，否则新建） */
+  async save(params: SaveDiaryParams): Promise<Diary> {
+    return invoke<Diary>('save_diary', { params })
+  },
+
+  /** 按日期删除日记 */
+  async delete(date: string): Promise<void> {
+    return invoke<void>('delete_diary', { date })
+  },
+}
+
+// ==================== 日程管理 ====================
+
+export const scheduleApi = {
+  /** 列出某日期下的全部日程 */
+  async listByDate(date: string): Promise<Schedule[]> {
+    return invoke<Schedule[]>('list_schedules_by_date', { date })
+  },
+
+  /** 列出某年某月下的全部日程（日历状态点用） */
+  async listMonth(year: number, month: number): Promise<Schedule[]> {
+    return invoke<Schedule[]>('list_schedules_by_month', { year, month })
+  },
+
+  /** 保存日程（id 存在则更新，否则新建） */
+  async save(params: SaveScheduleParams): Promise<Schedule> {
+    return invoke<Schedule>('save_schedule', { params })
+  },
+
+  /** 按 id 删除日程 */
+  async delete(id: string): Promise<void> {
+    return invoke<void>('delete_schedule', { id })
   },
 }
 

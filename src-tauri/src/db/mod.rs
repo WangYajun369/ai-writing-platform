@@ -188,6 +188,27 @@ impl AppDb {
                 created_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
                 updated_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
             );
+
+            -- 日记（每天最多一篇，diary_date 唯一）
+            CREATE TABLE IF NOT EXISTS diaries (
+                id           TEXT PRIMARY KEY,
+                diary_date   TEXT NOT NULL UNIQUE,
+                content_html TEXT NOT NULL DEFAULT '',
+                word_count   INTEGER NOT NULL DEFAULT 0,
+                keywords     TEXT NOT NULL DEFAULT '[]',
+                created_at   TEXT NOT NULL,
+                updated_at   TEXT NOT NULL
+            );
+
+            -- 日程（某天可有多条）
+            CREATE TABLE IF NOT EXISTS schedules (
+                id            TEXT PRIMARY KEY,
+                schedule_date TEXT NOT NULL,
+                content       TEXT NOT NULL,
+                done          INTEGER NOT NULL DEFAULT 0,
+                created_at    TEXT NOT NULL,
+                updated_at    TEXT NOT NULL
+            );
         "#).context("创建数据表失败")?;
 
         // FTS5 全文搜索虚拟表（章节 + 世界观卡片）
@@ -282,6 +303,8 @@ impl AppDb {
             CREATE INDEX IF NOT EXISTS idx_embeddings_source ON embeddings(source_type, source_id);
             CREATE INDEX IF NOT EXISTS idx_memories_book_skill ON memories(book_id, skill_type);
             CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(memory_type);
+            CREATE INDEX IF NOT EXISTS idx_diaries_date ON diaries(diary_date);
+            CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules(schedule_date);
         "#).context("创建索引失败")?;
 
         Ok(())

@@ -77,6 +77,59 @@ export interface Snapshot {
   createdAt: string
 }
 
+/** 日记 — 每天一篇，diaryDate 格式 YYYY-MM-DD */
+export interface Diary {
+  id: string
+  /** 日记日期 YYYY-MM-DD */
+  diaryDate: string
+  /** HTML 富文本内容 */
+  contentHtml: string
+  wordCount: number
+  /** 关键字列表 */
+  keywords: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+/** 日记摘要 — 日历/列表场景，不含正文 */
+export interface DiaryMeta {
+  id: string
+  /** 日记日期 YYYY-MM-DD */
+  diaryDate: string
+  wordCount: number
+  /** 关键字列表 */
+  keywords: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+/** 保存日记参数（对齐 Rust SaveDiaryParams） */
+export interface SaveDiaryParams {
+  diaryDate: string
+  contentHtml: string
+  wordCount: number
+  keywords: string[]
+}
+
+/** 日程 — 对应 schedules 表，某天可有多条 */
+export interface Schedule {
+  id: string
+  /** 日程日期 YYYY-MM-DD */
+  scheduleDate: string
+  content: string
+  done: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+/** 保存日程参数（对齐 Rust SaveScheduleParams） */
+export interface SaveScheduleParams {
+  id?: string
+  scheduleDate: string
+  content: string
+  done: boolean
+}
+
 /** 世界观卡片类型 */
 export type WorldCardType = 'character' | 'location' | 'timeline' | 'faction' | 'item' | 'misc'
 

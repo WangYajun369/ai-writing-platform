@@ -115,3 +115,54 @@ pub struct WorldCard {
     #[serde(rename = "updatedAt")]
     pub updated_at: String,
 }
+
+/// 日记 — 对应 `diaries` 表，每天最多一篇（diary_date 唯一索引约束）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Diary {
+    pub id: String,
+    /// 日记日期 YYYY-MM-DD
+    #[serde(rename = "diaryDate")]
+    pub diary_date: String,
+    #[serde(rename = "contentHtml")]
+    pub content_html: String,
+    #[serde(rename = "wordCount")]
+    pub word_count: i64,
+    /// 关键字列表（存 TEXT JSON）
+    pub keywords: Vec<String>,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+}
+
+/// 日记摘要 — 列表/日历场景，不含正文
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DiaryMeta {
+    pub id: String,
+    /// 日记日期 YYYY-MM-DD
+    #[serde(rename = "diaryDate")]
+    pub diary_date: String,
+    #[serde(rename = "wordCount")]
+    pub word_count: i64,
+    /// 关键字列表
+    pub keywords: Vec<String>,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+}
+
+/// 日程 — 对应 schedules 表，某天可有多条日程
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Schedule {
+    pub id: String,
+    /// 日程日期 YYYY-MM-DD
+    #[serde(rename = "scheduleDate")]
+    pub schedule_date: String,
+    pub content: String,
+    pub done: bool,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+}

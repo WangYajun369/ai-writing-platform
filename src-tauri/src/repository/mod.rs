@@ -11,3 +11,5 @@ pub mod chapter_repo;
 pub mod snapshot_repo;
 pub mod world_card_repo;
 pub mod embedding_repo;
+pub mod diary_repo;
+pub mod schedule_repo;

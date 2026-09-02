@@ -12,3 +12,5 @@ pub mod chapter_service;
 pub mod snapshot_service;
 pub mod world_card_service;
 pub mod search_service;
+pub mod diary_service;
+pub mod schedule_service;
