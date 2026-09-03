@@ -1,6 +1,6 @@
 # 架构总览
 
-> **适用版本**：`1.2.0`　|　**最后核对**：2026-09-02
+> **适用版本**：`1.4.0`　|　**最后核对**：2026-09-03
 >
 > TimeWrite（MirageInk / 智写时光）运行时为**双进程模型**：WebView 前端 + Rust Core。
 > v1.1 起 Agent 已由 Python 外部子进程迁移为 **Rust 原生引擎**（见 [Agent 引擎架构](agent-architecture)），
@@ -121,7 +121,7 @@ db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发�
 
 ## 数据库设计
 
-**9 张业务表 + 2 张 FTS5 虚拟表**
+**11 张业务表 + 2 张 FTS5 虚拟表**
 
 | 表 | 关键字段 | 说明 |
 |----|---------|------|
@@ -134,6 +134,8 @@ db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发�
 | `memories` | book_id, skill_type, memory_type, content, keywords, relevance_score | Agent 记忆（v1.1 起并入主库） |
 | `diaries` | diary_date (UNIQUE), content_html, word_count, keywords, created_at, updated_at | 日记（每天至多一篇） |
 | `schedules` | schedule_date, content, done (0/1), created_at, updated_at | 个人日程（某天多条） |
+| `vocab_words` | word (UNIQUE), phonetic, meanings JSON, example / example_zh, details_json（AI 精讲缓存）, ease_factor / repetitions / interval_days / queue / due_at, status (learning/mastered/suspended) | 生词本 + SM-2 记忆参数（v1.4.0） |
+| `vocab_reviews` | word_id (FK), rating (0-3), interval_days, reviewed_at | 复习日志（v1.4.0） |
 | `chapters_fts` | FTS5（unicode61） | 章节全文搜索，由 3 个触发器自动同步 |
 | `world_cards_fts` | FTS5（unicode61） | 世界观全文搜索，由 3 个触发器自动同步 |
 
@@ -149,7 +151,7 @@ db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发�
 
 ## IPC 模块映射
 
-前端 `tauri-bridge.ts` 暴露 13 个 API 对象，完整命令清单见 [IPC 命令速查](development/ipc-api)。
+前端 `tauri-bridge.ts` 暴露 16 个 API 对象，完整命令清单见 [IPC 命令速查](development/ipc-api)。
 
 | API 模块 | Rust 源文件 | 功能 |
 |---------|------------|------|
@@ -160,6 +162,9 @@ db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发�
 | `worldCardApi` | `commands/world_card.rs` | 世界观卡片 + FTS5 搜索 |
 | `diaryApi` | `commands/diary.rs` | 日记按月/全部摘要、全文读写与删除 |
 | `scheduleApi` | `commands/schedule.rs` | 个人日程按日/按月读写与删除 |
+| `vocabApi` | `commands/vocab.rs` | 生词本 CRUD + SM-2 复习 + 统计（v1.4.0） |
+| `dictApi` | `commands/vocab_dict.rs` | 离线词典查询 / 导入 / AI 释义（v1.4.0） |
+| `ttsApi` | `commands/tts.rs` | 豆包语音合成（v1.4.0） |
 | `aiApi` | `commands/ai/` | 流式对话 + RAG + Embedding（预留）+ 总结 |
 | `importExportApi` | `commands/io/` | 导入导出 + 加密备份 |
 | `imageApi` | `commands/image.rs` | 图片压缩与裁剪 |

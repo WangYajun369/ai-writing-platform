@@ -1,6 +1,6 @@
 # 状态管理
 
-> **适用版本**：`1.0.0`　|　**最后核对**：2026-08-31
+> **适用版本**：`1.4.0`　|　**最后核对**：2026-09-03
 
 TimeWrite 采用**双层状态管理**架构：Zustand 承载业务数据，Jotai 承载 UI 瞬态。
 
@@ -18,6 +18,10 @@ TimeWrite 采用**双层状态管理**架构：Zustand 承载业务数据，Jota
 │  ┌──────────────┐                                    │
 │  │ pluginStore  │  插件启用状态                        │
 │  └──────────────┘                                    │
+│  ┌──────────────────────────┐                        │
+│  │ vocabStore / ttsConfig   │  英语字典（v1.4.0）      │
+│  │ 生词数据 / 语音合成配置   │  独立 store，窗口内使用  │
+│  └──────────────────────────┘                        │
 ├──────────────────────────────────────────────────────┤
 │                   Jotai（UI 层，21 个 atom）           │
 │  编辑器类 4 · 面板类 4 · 独立窗口 5 · 其他 8            │
@@ -45,6 +49,8 @@ TimeWrite 采用**双层状态管理**架构：Zustand 承载业务数据，Jota
 | `aiSlice` | `stores/aiSlice.ts` | AI 对话消息、配置、RAG、总结、连接状态 |
 | `preferencesSlice` | `stores/preferencesSlice.ts` | 主题/护眼/字体/网格/编辑器宽度（localStorage 持久化） |
 | `pluginStore` | `stores/pluginStore.ts` | 插件启用状态（独立 store） |
+| `vocabStore` | `stores/vocabStore.ts` | 英语生词数据：`words` / `due` / `stats` 三查询 + `refreshAll` 全量刷新（v1.4.0，独立 store） |
+| `ttsConfig` | `stores/ttsConfig.ts` | 豆包语音合成配置：API Key / 音色（localStorage 持久化，独立 store） |
 
 ### 主要状态字段
 
@@ -105,6 +111,8 @@ TimeWrite 采用**双层状态管理**架构：Zustand 承载业务数据，Jota
 | `aiToolboxWindowOpenAtom` | AI 工具箱 |
 | `debugWindowOpenAtom` | 调试控制台 |
 
+> 英语字典窗口开关**不在** Jotai 中 —— 作为插件状态存放于 `src/plugins/dictionary/windowState.ts`（模块级布尔 + 角标计数源），避免把插件状态耦合进主程序；主窗口入口与词典窗口通过 Tauri 事件（`vocab-due-updated` 等）双向同步。
+
 ### 其他（8）
 
 | atom | 类型 | 说明 |
@@ -150,6 +158,8 @@ v1.1 起 Agent 为 Rust 原生引擎（内嵌主进程），**无启停流程**�
 | AI 配置 / 偏好设置 | `localStorage` | 应用启动时恢复，自动兼容旧版格式迁移 |
 | 编辑器状态（章节/滚动/光标） | `localStorage` | 按 `bookId` 保存，打开作品时恢复 |
 | Agent 记忆 | SQLite（`time_write.db` 的 `memories` 表） | Rust 引擎管理；旧独立库（`agent_memory.db`）启动时自动迁移 |
+| 英语生词 / 复习记录 | SQLite（`vocab_words` / `vocab_reviews` 表） | Rust 管理（SM-2 排程）；前端 `vocabStore` 仅为缓存 |
+| TTS 语音配置 | `localStorage` | `ttsConfig` store（豆包 API Key / 音色） |
 | UI 瞬态（Jotai） | 仅内存 | **不持久化** |
 
 ### AI 对话写盘时机

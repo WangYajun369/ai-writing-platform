@@ -7,7 +7,7 @@ window.addEventListener('scroll', () => {
 // ──────────────── Share Utilities ────────────────
 
 const PAGE_TITLE = '智写时光 TimeWrite — AI 小说写作平台';
-const PAGE_DESC = '智写时光 TimeWrite：内置 AI 对话工具箱与 Rust 原生 Agent 智能体，自动读取作品设定、多步完成大纲/润色/校验，专为网文作者打造，免费下载。';
+const PAGE_DESC = '智写时光 TimeWrite：内置 AI 对话工具箱与 Rust 原生 Agent 智能体，自动读取作品设定、多步完成大纲/润色/校验；还带日记日程与英语生词本（AI 精讲、语音朗读、间隔复习）。专为网文作者打造，免费下载。';
 const PAGE_URL = window.location.href;
 
 // 检测是否在微信内置浏览器中

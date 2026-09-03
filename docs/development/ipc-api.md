@@ -1,8 +1,8 @@
 # IPC 命令速查
 
-> **适用版本**：`1.2.0`　|　**最后核对**：2026-09-02
+> **适用版本**：`1.4.0`　|　**最后核对**：2026-09-03
 
-TimeWrite 共注册 **90 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用（Agent 命令为例外，见文末说明）。
+TimeWrite 共注册 **109 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用（Agent 命令为例外，见文末说明）。
 
 > **架构约定**：`tauri-bridge.ts` 是全项目**唯一**允许调用 `invoke` 的模块。禁止在其他文件中直接 import `@tauri-apps/api` 的 `invoke`。
 
@@ -19,13 +19,16 @@ TimeWrite 共注册 **90 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的
 | [世界观](#世界观-world_card) | 5 | `commands/world_card.rs` |
 | [日记](#日记-diary) | 5 | `commands/diary.rs` |
 | [日程](#日程-schedule) | 4 | `commands/schedule.rs` |
+| [生词本](#生词本-vocab) | 10 | `commands/vocab.rs` |
+| [离线词典](#离线词典-vocab_dict) | 5 | `commands/vocab_dict.rs` |
+| [语音合成](#语音合成-tts) | 1 | `commands/tts.rs` |
 | [AI](#ai-commandsai) | 8 | `commands/ai/{test,embedding,chat,summarize}.rs` |
 | [导入导出](#导入导出-commandsio) | 5 | `commands/io/{export,import_txt,backup}.rs` |
 | [图片](#图片-image) | 2 | `commands/image.rs` |
-| [窗口](#窗口-commandswindow) | 14 | `commands/window/{manager,debug,validate}.rs` |
+| [窗口](#窗口-commandswindow) | 17 | `commands/window/{manager,debug,validate}.rs` |
 | [Agent](#agent-commandsagent) | 6 | `commands/agent/skills.rs` |
 | [系统](#系统检查-system_check) | 1 | `commands/system_check.rs` |
-| **合计** | **90** | — |
+| **合计** | **109** | — |
 
 ---
 
@@ -132,6 +135,43 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 | `save_schedule` | 新增或更新日程（含完成状态） |
 | `delete_schedule` | 删除日程 |
 
+## 生词本 `vocab`
+
+> v1.4.0 新增。业务集中在 `service/vocab_service.rs`；每次影响「今日待复习数」的写操作后向主窗口广播 `vocab-due-updated`（首页入口角标实时刷新）。
+
+| 命令 | 说明 |
+|------|------|
+| `vocab_add` | 收录生词（单词已存在则更新释义并返回；参数含 phonetics/meanings/例句/例句翻译/可选 AI 学习知识/来源） |
+| `vocab_update` | 编辑音标 / 释义 / 例句 / AI 知识 |
+| `vocab_set_status` | 切换状态（learning / mastered / suspended） |
+| `vocab_delete` | 删除生词（复习记录级联删除） |
+| `vocab_list` | 列出生词（status 过滤 + 单词模糊搜索） |
+| `vocab_due` | 今日到期复习队列 |
+| `vocab_get` | 单条生词详情 |
+| `vocab_review` | 提交复习反馈（rating：0 忘记 / 1 模糊 / 2 记得 / 3 轻松），按 SM-2 推进调度 |
+| `vocab_logs` | 某生词的复习历史记录 |
+| `vocab_stats` | 生词本统计（首页角标与统计页共用） |
+
+## 离线词典 `vocab_dict`
+
+> v1.4.0 新增。ECDICT 离线词库（sqlite 导入）查询为主；未命中 / 未导入时走 DeepSeek AI 释义兜底。
+
+| 命令 | 说明 |
+|------|------|
+| `dict_status` | 词库安装状态（是否导入、词条规模） |
+| `dict_import` | 导入 ECDICT 离线词库（source_path → 建表并复制到应用目录） |
+| `dict_lookup` | 离线查词（音标 + 释义 + 例句） |
+| `check_word_ai` | 单词拼写检查 + 首条英文释义 + 例句翻译（AI，兜底与录入提示用） |
+| `dict_explain_ai` | AI 精讲：词根词缀 / 同反义词 / 固定搭配 / 词形变化 / 词性例句（DeepSeek） |
+
+## 语音合成 `tts`
+
+> v1.4.0 新增。豆包语音合成（seed-tts-2.0）接口封装，前端经 `tts-player.ts` 合成并本地播放。
+
+| 命令 | 说明 |
+|------|------|
+| `tts_speak` | 合成文本为音频并返回本地临时文件路径（支持 speaker 音色参数） |
+
 ## AI `commands/ai/`
 
 | 命令 | 源文件 | 说明 |
@@ -157,6 +197,8 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 | `debug-window-closed` | Rust → main | `()` |
 | `chapter-summary-done` | Rust → 前端 | `()` |
 | `agent-status-changed` | Rust → main | `{ status, message }`（关闭流程发出；`status=closing` 时前端显示退出遮罩） |
+| `vocab-due-updated` | Rust → 所有窗口 | `()` —— 影响「今日待复习数」的写操作后广播，首页入口角标实时刷新 |
+| `vocab-window-closed` | Rust → main | `()` —— 英语字典窗口被关闭 |
 
 ## 导入导出 `commands/io/`
 
@@ -183,6 +225,7 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 | `open_history_window` / `close_history_window` | `window/manager.rs` | 版本历史窗口 |
 | `open_summary_window` / `close_summary_window` | `window/manager.rs` | 章节总结窗口 |
 | `open_ai_toolbox_window` / `close_ai_toolbox_window` | `window/manager.rs` | AI 工具箱窗口 |
+| `open_vocab_window` / `close_vocab_window` / `is_vocab_window_open` | `window/manager.rs` | 英语字典·生词本窗口（v1.4.0；关闭时广播 `vocab-window-closed`） |
 | `open_debug_window` / `close_debug_window` | `window/debug.rs` | 调试控制台窗口 |
 | `log_message` | `window/debug.rs` | 前端日志上报（写入 LOG_BUFFER + 广播） |
 | `get_debug_logs` | `window/debug.rs` | 获取历史日志（缓冲区上限 1000 条） |
@@ -213,7 +256,7 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 
 ## 前端桥接层 API 模块
 
-`src/lib/tauri-bridge.ts` 中对应的 13 个 API 对象：
+`src/lib/tauri-bridge.ts` 中对应的 16 个 API 对象：
 
 | API 对象 | 覆盖命令数 |
 |----------|:---:|
@@ -224,10 +267,13 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 | `worldCardApi` | 5 |
 | `diaryApi` | 5 |
 | `scheduleApi` | 4 |
+| `vocabApi` | 10 |
+| `dictApi` | 5 |
+| `ttsApi` | 1 |
 | `aiApi` | 8 |
 | `importExportApi` | 5 |
 | `imageApi` | 2 |
-| `windowApi` | 6 |
+| `windowApi` | 11 |
 | `debugApi` | 6 |
 | `systemApi` | 1 |
 

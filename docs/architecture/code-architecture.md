@@ -1,6 +1,6 @@
 # TimeWrite（智写时光）代码架构深度分析
 
-> **适用版本**：`1.2.0`　|　**最后核对**：2026-09-02
+> **适用版本**：`1.4.0`　|　**最后核对**：2026-09-03
 >
 > 基于当前源码（前端 `src/`、Rust 后端 `src-tauri/`、脚本 `scripts/`）整理。
 > v1.1 起 Agent 已迁移为 **Rust 原生引擎**（`src-tauri/src/commands/agent/`），
@@ -20,7 +20,7 @@
 │  │ components/ (按业务域分组的 UI 组件)                                │  │
 │  │ stores/ (Zustand 业务状态 + Jotai UI 原子状态)                      │  │
 │  │ plugins/ (PluginManager 扩展点系统)                                │  │
-│  │ lib/tauri-bridge.ts (唯一 IPC 调用入口，13 个 API 模块)              │  │
+│  │ lib/tauri-bridge.ts (唯一 IPC 调用入口，16 个 API 模块)              │  │
 │  └───────────────────────────┬──────────────────────────────────────┘  │
 │                              │ Tauri IPC (invoke / event)              │
 ├──────────────────────────────┼─────────────────────────────────────────┤
@@ -119,6 +119,9 @@ main.tsx
 | `chapterApi` | chapter.rs | 章节 CRUD、保存、总结、大纲 |
 | `snapshotApi` | snapshot.rs | 版本快照 |
 | `worldCardApi` | world_card.rs | 世界观卡片 + FTS5 搜索 |
+| `vocabApi` | vocab.rs | 生词本 CRUD + SM-2 复习 + 统计（v1.4.0） |
+| `dictApi` | vocab_dict.rs | 离线词典查询 / 导入 / AI 释义（v1.4.0） |
+| `ttsApi` | tts.rs | 豆包语音合成（v1.4.0） |
 | `aiApi` | ai/ (chat/embedding/summarize/test) | 流式对话、RAG、Embedding（预留）、总结 |
 | `importExportApi` | io/ (export/import_txt/backup) | 格式导出、TXT 导入、加密备份 |
 | `imageApi` | image.rs | 图片压缩/裁剪 |
@@ -131,11 +134,12 @@ main.tsx
 
 ### 2.5 插件系统（plugins/）
 
-- 6 个扩展点：`editor-toolbar` / `editor-sidebar` / `library-card` / `export-format` / `ai-prompt` / `command-palette`
+- 7 个扩展点：`editor-toolbar` / `editor-sidebar` / `library-card` / `export-format` / `ai-prompt` / `command-palette` / `home-header`（v1.4.0；支持入口激活态 `isActive` 与角标 `badgeCount`）
 - `PluginManager` 单例：register → enable（调用 init）→ executeCommand → disable（调用 destroy）→ unregister
 - 插件生命周期：`installed → active → disabled → error`
 - 运行时上下文 `PluginContext` 提供 `app`（书籍/章节获取、通知）、`editor`（选中文本、插入）、`storage`（独立 key-value 存储）
-- 内置示例：字符统计插件（`plugins/examples/`）
+- 内置引导 `plugins/bootstrap.ts`（v1.4.0）：首个 home-header 插件「英语字典·生词本」，窗口状态存放于 `dictionary/windowState.ts`
+- 示例插件：字符统计（`plugins/examples/charCounter.ts`，不随内置引导启用）
 
 ---
 
@@ -158,11 +162,11 @@ db/         连接与 Schema —— r2d2 连接池、迁移、FTS5 触发器、�
 2. **数据库初始化**：`app_data_dir/time_write.db` → `AppDb::new()`（建表 + 迁移 + 索引）
 3. **旧版 Agent 记忆库迁移**：检测旧 `agent_memory.db`（`<cwd>/data/` 与 `<app_data_dir>/`），存在则将存量记忆导入 `memories` 表（幂等，失败仅记日志）
 4. **窗口关闭拦截**：CloseRequested → prevent_close → emit `agent-status-changed {status:"closing"}` → 关调试窗口 → 真正关闭（AtomicBool 防死循环）
-5. 注册约 90 个 IPC 命令（books / volumes / chapters / snapshots / world_cards / diaries / schedules / ai / io / image / window / agent / system_check）
+5. 注册约 109 个 IPC 命令（books / volumes / chapters / snapshots / world_cards / diaries / schedules / vocab / vocab_dict / tts / ai / io / image / window / agent / system_check）
 
 ### 3.3 数据库设计（db/schema.rs + db/mod.rs）
 
-**9 张业务表 + 2 张 FTS5 虚拟表**（v1.1 起新增 `memories`；开发分支新增 `diaries` / `schedules`）：
+**11 张业务表 + 2 张 FTS5 虚拟表**（v1.1 起新增 `memories`；v1.3 新增 `diaries` / `schedules`；v1.4 新增 `vocab_words` / `vocab_reviews`）：
 
 | 表 | 关键字段 | 说明 |
 |----|---------|------|
@@ -175,6 +179,8 @@ db/         连接与 Schema —— r2d2 连接池、迁移、FTS5 触发器、�
 | `memories` | book_id, skill_type, memory_type, content, keywords, relevance_score | Agent 记忆（索引：book_skill / type） |
 | `diaries` | diary_date(UNIQUE), content_html, word_count, keywords(JSON 数组文本), created_at, updated_at | 日记（每天至多一篇） |
 | `schedules` | schedule_date, content, done(0/1), created_at, updated_at | 个人日程（某天多条） |
+| `vocab_words` | word(唯一), phonetic, meanings JSON, example/example_zh, details_json（AI 精讲缓存）, SM-2 参数（ease_factor/repetitions/interval_days/queue/due_at）, status | 生词本（v1.4.0） |
+| `vocab_reviews` | word_id(FK), rating(0-3), interval_days, reviewed_at | 复习日志（v1.4.0） |
 | `chapters_fts` / `world_cards_fts` | FTS5 (unicode61) | 全文搜索，INSERT/UPDATE/DELETE 三触发器自动同步 |
 
 技术要点：
@@ -328,7 +334,7 @@ Agent 面板/AI 侧面板发送消息
 MirageInk/
 ├── src/                      # 🔵 前端（React 19 + TS 6）
 │   ├── pages/                #   LibraryPage / EditorPage / SettingsPage
-│   ├── components/           #   11 个业务域组件目录 + ErrorBoundary
+│   ├── components/           #   12 个业务域组件目录 + ErrorBoundary
 │   ├── stores/               #   Zustand 3 slices + Jotai 21 atoms + pluginStore
 │   ├── lib/                  #   tauri-bridge.ts（IPC 入口）/ utils / toast / image
 │   ├── hooks/                #   useAppVersion / useConsoleInterceptor / useResizeHandle / useThemeFontInit

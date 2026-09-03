@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>智写时光 TimeWrite — AI 小说写作平台</title>
-  <meta name="description" content="专业桌面端 AI 小说写作软件，内置 AI 对话与 Rust 原生 Agent 写作引擎，提供书库管理、章节编辑、世界观构建、智能保存与加密备份的完整写作工作流，支持 macOS 和 Windows，完全免费。">
+  <meta name="description" content="专业桌面端 AI 小说写作软件，内置 AI 对话与 Rust 原生 Agent 写作引擎，提供书库管理、章节编辑、世界观构建、日记日程、英语生词本（AI 精讲 + 语音朗读 + 间隔复习）、智能保存与加密备份的完整写作工作流，支持 macOS 和 Windows，完全免费。">
   <!-- Open Graph / 微信分享卡片 -->
   <meta property="og:type" content="website">
   <meta property="og:title" content="智写时光 TimeWrite — AI 小说写作平台">
@@ -42,7 +42,7 @@
 <section class="hero">
   <div class="hero-badge">
     <span class="hero-badge-dot"></span>
-    v1.2.0 已发布 — macOS + Windows 双平台，Agent 引擎原生内嵌、免 Python 环境
+    v1.4.0 已发布 — 新增英语字典·生词本：AI 精讲、SM-2 间隔复习、豆包语音朗读
   </div>
 
   <h1>
@@ -53,7 +53,8 @@
   <p class="hero-subtitle">
     智写时光（TimeWrite）是专为网络小说作者打造的专业桌面端写作平台。
     内置 AI 对话与 Agent 智能体：流式对话即问即答、AI 工具箱一键续写润色，
-    Agent 自动读取你的书库与世界观设定，多步推理完成大纲生成、文风分析与一致性校验。
+    Agent 自动读取你的书库与世界观设定，多步推理完成大纲生成、文风分析与一致性校验；
+    还有书库首页日记日历、随写随查的英语生词本与语音朗读，写作学习两不误。
     从灵感到成书，一站式完成创作。
   </p>
 
@@ -188,7 +189,7 @@
     <div class="stat-label">世界观卡片类型</div>
   </div>
   <div class="stat-item">
-    <div class="stat-value">5</div>
+    <div class="stat-value">6</div>
     <div class="stat-label">独立悬浮窗口</div>
   </div>
   <div class="stat-item">
@@ -253,6 +254,29 @@
     </div>
 
     <div class="feature-card">
+      <div class="feature-icon slate">📔</div>
+      <h3>日记与日程</h3>
+      <p>书库首页右栏按月日历，每天一篇日记随手记录灵感与创作进度：TipTap 富文本编辑、关键词小结自动生成。翻页式「看日记」支持跨月浏览往日岁月；个人日程按日管理，完成即勾选，创作节奏尽在掌握。</p>
+      <div class="feature-tags">
+        <span class="feature-tag">每日日记</span>
+        <span class="feature-tag">书页浏览</span>
+        <span class="feature-tag">个人日程</span>
+      </div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon indigo">📖</div>
+      <h3>英语字典·生词本</h3>
+      <p>写作时随手查词：ECDICT 离线词库秒级返回释义，未命中自动走 AI 兜底；一键收录生词并生成 AI 精讲（词根词缀、同反义词、固定搭配、词形变化）。豆包语音朗读标准发音，SM-2 间隔重复算法自动安排每日复习，词汇量在写作中悄然增长。</p>
+      <div class="feature-tags">
+        <span class="feature-tag">离线词典</span>
+        <span class="feature-tag">AI 精讲</span>
+        <span class="feature-tag">SM-2 复习</span>
+        <span class="feature-tag">语音朗读</span>
+      </div>
+    </div>
+
+    <div class="feature-card">
       <div class="feature-icon blue">📤</div>
       <h3>导入导出与备份</h3>
       <p>灵活的内容迁移：支持导出为 TXT、Markdown、HTML 三种格式；导入 TXT 自动通过正则识别章节分隔符，智能拆分长篇内容。数据备份采用 AES-256-GCM 加密（密钥不硬编码），支持全量/单作品导出与完整恢复。</p>
@@ -288,10 +312,10 @@
     <div class="feature-card">
       <div class="feature-icon cyan">🔌</div>
       <h3>开放与安全</h3>
-      <p>5 种独立悬浮窗口（世界观/版本历史/章节总结/AI 工具箱/调试控制台），插件系统提供 6 个扩展点。深度链接协议（com.ukcoder.timewrite://）支持外部唤起直达作品，更新包经 minisign 签名校验，备份加密存储，数据安全可信。</p>
+      <p>6 种独立悬浮窗口（世界观/版本历史/章节总结/AI 工具箱/英语字典·生词本/调试控制台），内置插件系统提供 7 个扩展点，首个内置插件「英语字典·生词本」已落地首页入口。深度链接协议（com.ukcoder.timewrite://）支持外部唤起直达作品，更新包经 minisign 签名校验，备份加密存储，数据安全可信。</p>
       <div class="feature-tags">
-        <span class="feature-tag">5 种悬浮窗口</span>
-        <span class="feature-tag">插件系统</span>
+        <span class="feature-tag">6 种悬浮窗口</span>
+        <span class="feature-tag">内置插件落地</span>
         <span class="feature-tag">签名更新</span>
       </div>
     </div>
@@ -521,7 +545,7 @@
 <!-- Footer -->
 <footer class="footer">
   <p>
-    <strong>智写时光 TimeWrite</strong> &nbsp;·&nbsp; v1.2.0 &nbsp;·&nbsp;
+    <strong>智写时光 TimeWrite</strong> &nbsp;·&nbsp; v1.4.0 &nbsp;·&nbsp;
     <a href="https://github.com/WangYajun369/ai-writing-platform" target="_blank" rel="noopener">GitHub</a> &nbsp;·&nbsp;
     <a href="https://github.com/WangYajun369/ai-writing-platform/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
   </p>

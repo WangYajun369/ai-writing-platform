@@ -1,6 +1,6 @@
 # 项目结构
 
-> **适用版本**：`1.2.0`　|　**最后核对**：2026-09-02
+> **适用版本**：`1.4.0`　|　**最后核对**：2026-09-03
 >
 > 本文档描述 TimeWrite 的目录组织与分层设计。IPC 命令清单见 [IPC 命令速查](development/ipc-api)。
 
@@ -38,7 +38,7 @@ repository/ 数据访问层   —— 纯 SQL，接受 &Connection，无业务逻
 db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发器、索引
 ```
 
-各层职责边界在对应 `mod.rs` 注释中明确约定。共注册 **90 个 IPC 命令**（`#[tauri::command]` 计数）。
+各层职责边界在对应 `mod.rs` 注释中明确约定。共注册 **109 个 IPC 命令**（`#[tauri::command]` 计数）。
 
 ---
 
@@ -50,8 +50,8 @@ src/
 ├── App.tsx                   # 根组件：JotaiProvider + 主题/字体初始化 + 窗口类型检测
 ├── vite-env.d.ts             # Vite 环境类型声明
 ├── pages/                    # 页面级组件
-├── components/               # UI 组件（11 个业务域目录 + ErrorBoundary）
-├── stores/                   # Zustand（3 slice + pluginStore）+ Jotai（21 atom）
+├── components/               # UI 组件（12 个业务域目录 + ErrorBoundary）
+├── stores/                   # Zustand（3 slice + plugin/vocab/tts stores）+ Jotai（21 atom）
 ├── lib/                      # 工具库（tauri-bridge.ts / utils / toast / image-utils）
 ├── hooks/                    # 自定义 Hooks
 ├── types/                    # TypeScript 类型定义
@@ -60,12 +60,13 @@ src/
 └── styles/                   # CSS（TailwindCSS v4 + HSL 主题变量）
 ```
 
-### 组件 `components/`（11 个业务域）
+### 组件 `components/`（12 个业务域）
 
 | 目录 | 核心文件 | 职责 |
 |------|---------|------|
 | `library/` | `BookCard`、`NewBookDialog`、`EditBookDialog`、`CoverPicker`、`TrashModal` | 书库网格/列表、封面裁剪、回收站 |
 | `diary/` | `DiaryPanel`、`DiaryDialog`、`DiaryBookDialog`、`ScheduleManager` | 书库首页右栏：按月日历、TipTap 日记编辑器、「看日记」书页浏览、个人日程 |
+| `vocabulary/` | `VocabularyWindow`、`tab/WordBookTab`、`tab/ReviewTab`、`tab/StatsTab`、`dialog/*`、`SpeakButton`、`VocabKnowledgeView`、`vocab-utils` | 英语字典·生词本独立窗口：生词本 / SM-2 复习 / 统计，含 AI 精讲与语音朗读（v1.4.0） |
 | `outline/` | `OutlinePanel`（842 行） | 卷-章两级目录树、拖拽排序（@dnd-kit）、虚拟滚动、回收站 |
 | `editor/` | `RichTextEditor`、`EditorToolbar`、`SnapshotPanel`、`ImageCropperDialog`、`ImageViewerDialog` | TipTap 编辑、工具栏、版本快照、图片处理 |
 | `ai/` | `AiSidePanel`、`AiToolboxPanel`、`MessageBubble`、`RequestDetailModal`、`useAiChat`（425 行）、`panel/*` | AI 对话面板、工具箱、请求详情 |
@@ -85,6 +86,8 @@ src/
 | `aiSlice.ts` | AI 对话消息、配置、RAG、总结、连接状态 |
 | `preferencesSlice.ts` | 主题/护眼/字体/网格/编辑器宽度（localStorage 持久化） |
 | `pluginStore.ts` | 插件启用状态 |
+| `vocabStore.ts` | 英语字典数据：`words` / `due` / `stats` 三组查询 + `refreshAll` 全量刷新 |
+| `ttsConfig.ts` | 豆包语音合成配置（API Key / 音色，localStorage 持久化） |
 | `uiAtoms.ts` | **21 个** Jotai atom（UI 瞬态 + 5 个独立窗口开关） |
 
 详见 [状态管理](development/state-management)。
@@ -93,7 +96,8 @@ src/
 
 | 文件 | 说明 |
 |------|------|
-| `tauri-bridge.ts` | **全项目唯一允许调用 `invoke` 的模块**，13 个类型安全 API 对象 |
+| `tauri-bridge.ts` | **全项目唯一允许调用 `invoke` 的模块**，16 个类型安全 API 对象 |
+| `tts-player.ts` | 豆包语音合成：合成请求封装与 `playAudioFile` 本地播放 |
 | `utils.ts` | `cn()` 类名合并、字数统计、HTML 清洗、日期格式化 |
 | `image-utils.ts` | 图片压缩、Base64 转换、尺寸获取 |
 | `toast.ts` | Toast 通知（成功/错误/警告/信息） |
@@ -110,7 +114,17 @@ React Router v7，懒加载：
 
 ### 插件系统 `plugins/`
 
-基于**扩展点（Extension Point）**的插件架构，6 个扩展点：`editor-toolbar` / `editor-sidebar` / `library-card` / `export-format` / `ai-prompt` / `command-palette`。详见 [插件系统](development/plugin-system)。
+基于**扩展点（Extension Point）**的插件架构，7 个扩展点：`editor-toolbar` / `editor-sidebar` / `library-card` / `export-format` / `ai-prompt` / `command-palette` / `home-header`。
+
+| 文件 / 目录 | 说明 |
+|------|------|
+| `types.ts` | 插件类型：`PluginManifest`、`Plugin`、`PluginCommand`、`CommandContext`、`PluginContext`、`ExtensionPoint` |
+| `PluginManager.ts` | 单例：注册 / 启用 / 禁用 / 卸载与生命周期管理 |
+| `bootstrap.ts` | 主窗口内置插件引导（模块级 Promise 幂等）：注册并启用「英语字典·生词本」，为 home-header 注入角标计数源 |
+| `dictionary/` | 首个 home-header 内置插件：`plugin.ts` 命令声明 + `windowState.ts` 模块级窗口开关状态 |
+| `examples/` | `charCounter.ts` 参考示例（不随内置引导启用） |
+
+详见 [插件系统](development/plugin-system)。
 
 ---
 
@@ -120,7 +134,7 @@ React Router v7，懒加载：
 src-tauri/
 ├── Cargo.toml
 ├── build.rs
-├── tauri.conf.json           # 应用配置（版本 1.2.0、窗口 1280×800、dmg/nsis 打包）
+├── tauri.conf.json           # 应用配置（版本 1.4.0、窗口 1280×800、dmg/nsis 打包）
 ├── entitlements.plist
 ├── capabilities/
 │   └── default.json          # 安全权限声明（CSP / FS / Shell / HTTP）
@@ -128,13 +142,13 @@ src-tauri/
 ├── icons/                    # 应用图标（25 PNG + ICNS + ICO）
 └── src/
     ├── main.rs               # 程序入口
-    ├── lib.rs                # Tauri Builder：6 插件 + 数据库 + 记忆迁移 + 90 命令注册
+    ├── lib.rs                # Tauri Builder：6 插件 + 数据库 + 记忆迁移 + 109 命令注册
     ├── error.rs              # AppError 统一错误枚举（10 种变体）
     ├── logging.rs            # 日志模块
     ├── utils.rs              # HTTP 客户端工厂、HTML 工具、FTS5 转义、字段校验
-    ├── commands/             # IPC 命令层（13 个模块，30 个 .rs 文件）
-    ├── service/              # 业务编排层（8 个服务）
-    ├── repository/           # 数据访问层（8 个仓库）
+    ├── commands/             # IPC 命令层（16 个模块，33 个 .rs 文件）
+    ├── service/              # 业务编排层（9 个服务）
+    ├── repository/           # 数据访问层（9 个仓库）
     ├── db/                   # r2d2 连接池 + Schema + FTS5 触发器
     ├── models/               # Serde 数据模型（统一 camelCase）
     └── commands/agent/       # Rust 原生 Agent 引擎（engine/prompts/tools/memory/skills）
@@ -151,11 +165,14 @@ src-tauri/
 | 世界观 | `world_card.rs` | 5 |
 | 日记 | `diary.rs` | 5 |
 | 日程 | `schedule.rs` | 4 |
+| 生词本 | `vocab.rs` | 10 |
+| 离线词典 | `vocab_dict.rs` | 5 |
+| 语音合成 | `tts.rs` | 1 |
 | 图片 | `image.rs` | 2 |
 | 系统检查 | `system_check.rs` | 1 |
 | AI | `ai/{mod,chat,embedding,summarize,test}.rs` | 8 |
 | 导入导出 | `io/{mod,export,import_txt,backup,crypto}.rs` | 5 |
-| 窗口 | `window/{mod,manager,debug,validate}.rs` | 14 |
+| 窗口 | `window/{mod,manager,debug,validate}.rs` | 17 |
 | Agent | `agent/{mod,engine,prompts,tools,memory,skills}.rs` | 6 |
 
 ### 业务服务 `service/`
@@ -170,14 +187,15 @@ src-tauri/
 | `world_card_service.rs` | 世界观 CRUD + 搜索 |
 | `diary_service.rs` | 日记保存（字数统计、关键字校验与入库）、查询、删除 |
 | `schedule_service.rs` | 个人日程 CRUD |
+| `vocab_service.rs` | 生词簿 CRUD、SM-2 排程与复习、统计聚合（v1.4.0） |
 
 ### 数据仓库 `repository/`
 
-纯 SQL 访问层，不含业务逻辑：`book_repo.rs` / `chapter_repo.rs` / `volume_repo.rs` / `snapshot_repo.rs` / `world_card_repo.rs` / `diary_repo.rs` / `schedule_repo.rs` / `embedding_repo.rs`。
+纯 SQL 访问层，不含业务逻辑：`book_repo.rs` / `chapter_repo.rs` / `volume_repo.rs` / `snapshot_repo.rs` / `world_card_repo.rs` / `diary_repo.rs` / `schedule_repo.rs` / `vocab_repo.rs` / `embedding_repo.rs`。
 
 ### 数据库 `db/`
 
-9 张业务表（v1.1 起含 `memories`；开发分支新增 `diaries` / `schedules`）+ 2 张 FTS5 虚拟表：
+11 张业务表（v1.1 起含 `memories`；v1.3 新增 `diaries` / `schedules`；v1.4 新增 `vocab_words` / `vocab_reviews`）+ 2 张 FTS5 虚拟表：
 
 | 表 | 关键字段 |
 |----|---------|
@@ -190,6 +208,8 @@ src-tauri/
 | `memories` | book_id, skill_type, memory_type(preference/decision/lesson), content, keywords, relevance_score（v1.1 起，Agent 记忆并入主库） |
 | `diaries` | diary_date(UNIQUE), content_html, word_count, keywords(JSON 数组文本), created_at, updated_at（每天至多一篇） |
 | `schedules` | schedule_date, content, done(0/1), created_at, updated_at（某天可有多条） |
+| `vocab_words` | word(唯一), phonetic, meanings JSON, example / example_zh, details_json（AI 精讲缓存）, ease_factor / repetitions / interval_days / queue / due_at（SM-2 记忆参数）, status（learning/mastered/suspended）, created_at |
+| `vocab_reviews` | word_id(FK), rating(0-3 对应忘记/模糊/记得/轻松), interval_days, reviewed_at — 复习日志，用于详情时间线与统计曲线 |
 | `chapters_fts` / `world_cards_fts` | FTS5（unicode61），由 6 个 CREATE TRIGGER 自动同步 |
 
 技术要点：
@@ -230,7 +250,7 @@ Python Agent（`agent/`）与 Bridge（`src-tauri/src/python/`）已删除，Age
 
 ## 相关文档
 
-- [IPC 命令速查](development/ipc-api) — 90 条命令完整清单
+- [IPC 命令速查](development/ipc-api) — 109 条命令完整清单
 - [技术栈](development/tech-stack)
 - [架构总览](architecture/overview)
 - [代码架构深度分析](architecture/code-architecture)

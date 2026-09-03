@@ -1,6 +1,6 @@
 # 文档地图
 
-> **最后更新**：2026-09-02　|　**当前版本**：`1.2.0`
+> **最后更新**：2026-09-03　|　**当前版本**：`1.4.0`
 
 本页是 TimeWrite 文档的**索引与维护规范**。如果你想找某篇文档、或想知道该如何新增/更新文档，从这一页开始。
 
@@ -15,6 +15,7 @@
 | 快速上手 | [快速开始](user-guide/quick-start) |
 | 管理作品与封面 | [书库管理](user-guide/library-management) |
 | 记日记、管理个人日程 | [日记与个人日程](user-guide/diary) |
+| 背单词、管理生词本 | [英语字典·生词本](user-guide/vocabulary) |
 | 写章节、插图、调格式 | [章节编辑](user-guide/chapter-editing) |
 | 安静地码字 | [专注模式](user-guide/focus-mode) |
 | 管理人物/设定 | [世界观资料库](user-guide/worldbuilding) |
@@ -68,9 +69,9 @@
 | `_Sidebar.md` | Wiki 侧边栏导航 |
 | `_Footer.md` | Wiki 页脚 |
 
-### `user-guide/`（11 篇）
+### `user-guide/`（12 篇）
 
-`quick-start` · `library-management` · `diary` · `chapter-editing` · `focus-mode` · `worldbuilding` · `ai-assistant` · `agent-panel` · `version-management` · `import-export` · `personalization`
+`quick-start` · `library-management` · `diary` · `vocabulary` · `chapter-editing` · `focus-mode` · `worldbuilding` · `ai-assistant` · `agent-panel` · `version-management` · `import-export` · `personalization`
 
 ### `features/`（2 篇）
 
@@ -96,7 +97,7 @@
 
 ---
 
-**合计 36 篇**（根级 6 + `user-guide/` 11 + `features/` 2 + `development/` 8 + `architecture/` 4 + `architecture/adr/` 4 + `meta/` 1）
+**合计 37 篇**（根级 6 + `user-guide/` 12 + `features/` 2 + `development/` 8 + `architecture/` 4 + `architecture/adr/` 4 + `meta/` 1）
 
 ---
 
