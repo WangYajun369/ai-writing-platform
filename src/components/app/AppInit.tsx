@@ -12,6 +12,7 @@ import {
   detectDebugWindow,
   detectVocabWindow,
   detectTasksWindow,
+  detectDiaryBookWindow,
 } from './windowDetection'
 import { useAppVersion } from '@/hooks/useAppVersion'
 import { useConsoleInterceptor } from '@/hooks/useConsoleInterceptor'
@@ -24,6 +25,7 @@ import AiToolboxPanel from '@/components/ai/AiToolboxPanel'
 import DebugPanel from '@/components/common/DebugPanel'
 import VocabularyWindow from '@/components/vocabulary/VocabularyWindow'
 import TaskCardsWindow from '@/components/taskCards/TaskCardsWindow'
+import DiaryBookPage from '@/components/diary/DiaryBookPage'
 import ToastContainer from '@/components/common/ToastContainer'
 import AppClosingOverlay from './AppClosingOverlay'
 import PluginHost from './PluginHost'
@@ -53,6 +55,7 @@ export default function AppInit() {
   const debugWin = detectDebugWindow()
   const vocabWin = detectVocabWindow()
   const tasksWin = detectTasksWindow()
+  const diaryBookWin = detectDiaryBookWindow()
 
   // 非调试窗口启用 console 拦截
   useConsoleInterceptor(debugWin.isDebug)
@@ -102,6 +105,14 @@ export default function AppInit() {
     return (
       <WindowShell>
         <TaskCardsWindow />
+      </WindowShell>
+    )
+  }
+
+  if (diaryBookWin.isDiaryBook) {
+    return (
+      <WindowShell>
+        <DiaryBookPage />
       </WindowShell>
     )
   }

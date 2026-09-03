@@ -5,7 +5,7 @@
  * 详情模式：字段即时保存（文本 onBlur、选择项即时），并提供
  * 移动项目 / 复制 / 删除 / 完成任务 等操作。
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   BellIcon,
   CalendarIcon,
@@ -16,12 +16,18 @@ import {
   Trash2Icon,
   XIcon,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, htmlToPlainText } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 import { taskCardApi } from '@/lib/tauri-bridge'
+import TaskDescriptionEditor from './TaskDescriptionEditor'
+import CompleteSummaryModal from './CompleteSummaryModal'
 import { useTaskCardsStore } from '@/stores/taskCardsStore'
 import { fromInputValue, toInputValue } from '@/lib/taskCardsTime'
 import { PRIORITY_META, STATUS_META, STATUS_ORDER } from '@/lib/taskCardsMeta'
+import SubtaskList from './SubtaskList'
+import AttachmentsBox from './AttachmentsBox'
+import ActivityTimeline from './ActivityTimeline'
+import RecurrencePicker from './RecurrencePicker'
 import type { TaskCard, TaskPriority, TaskStatus, TaskTag } from '@/types'
 
 interface Props {
@@ -37,6 +43,7 @@ interface Props {
 export default function TaskModal({ task, projectId, defaultPlannedToday, onClose }: Props) {
   const projects = useTaskCardsStore((s) => s.projects)
   const tags = useTaskCardsStore((s) => s.tags)
+  const tasksByProject = useTaskCardsStore((s) => s.tasksByProject)
   const createTask = useTaskCardsStore((s) => s.createTask)
   const updateTask = useTaskCardsStore((s) => s.updateTask)
   const deleteTask = useTaskCardsStore((s) => s.deleteTask)
@@ -45,6 +52,8 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
 
   const [busy, setBusy] = useState(false)
   const [savedAt, setSavedAt] = useState<number>(0)
+  // 详情内点「已完成」→ 弹出完成总结对话框
+  const [completing, setCompleting] = useState(false)
   // 标签即时新建（9.5.2）
   const [tagCreating, setTagCreating] = useState(false)
   const [tagName, setTagName] = useState('')
@@ -63,14 +72,37 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
   const [startTime, setStartTime] = useState(toInputValue(task?.planStartTime))
   const [tagIds, setTagIds] = useState<string[]>(task?.tags.map((t) => t.id) ?? [])
   const [selProjectId, setSelProjectId] = useState(task?.projectId ?? projectId ?? '')
+  // 父任务（同项目内；''=顶层任务）
+  const [parentId, setParentId] = useState(task?.parentId ?? '')
+
+  // 父任务候选：当前项目全部任务按「父在前」树序展开，排除自己及其后代（防环）
+  const parentRows = useMemo<{ id: string; title: string; prefix: string }[]>(() => {
+    const list = tasksByProject[selProjectId] ?? []
+    if (!list.length) return []
+    return collectParentRows(list, task?.id ?? null)
+  }, [tasksByProject, selProjectId, task])
   // 任务级提醒（9.5.2 / 9.11.2）：跟随全局 / 不提醒 / 自定义单点
   const [remindChoice, setRemindChoice] = useState<'global' | 'off' | 'custom'>(() => {
     const rt = task?.remindType ?? ''
     return rt === 'off' || rt === 'custom' ? rt : 'global'
   })
   const [remindTime, setRemindTime] = useState(toInputValue(task?.remindAt))
+  // 重复规则 JSON（P2）
+  const [recurrence, setRecurrence] = useState(task?.recurrence ?? '')
 
   const firstTitle = useRef<string>(task?.title ?? '')
+
+  // 详情内尽量使用 store 最新版本（完成任务后 completedTime / completionSummary 同步展示）
+  const liveTask = useMemo(() => {
+    if (!task) return task
+    return tasksByProject[task.projectId]?.find((t) => t.id === task.id) ?? task
+  }, [task, tasksByProject])
+
+  // 跟随 store 内最新状态（如经完成总结弹窗置为已完成）
+  useEffect(() => {
+    if (isEdit && liveTask && liveTask.status !== status) setStatus(liveTask.status)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveTask?.status])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -160,8 +192,9 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
     try {
       const created = await createTask({
         projectId: selProjectId,
+        parentId: parentId || undefined,
         title: t,
-        description: description.trim() || undefined,
+        description: description && htmlToPlainText(description) ? description : undefined,
         note: note.trim() || undefined,
         priority,
         status,
@@ -169,6 +202,7 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
         dueTime: fromInputValue(dueTime),
         planStartTime: fromInputValue(startTime),
         tagIds: tagIds.length ? tagIds : undefined,
+        recurrence: recurrence || undefined,
       })
       toast.success('任务已创建')
       onClose()
@@ -214,7 +248,9 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
     setBusy(true)
     try {
       await moveTaskToProject(task.id, nextProjectId)
-      toast.success('已移动任务')
+      // 后端迁移整棵子树；若原父不在目标项目则父引用被解除，同步重置选择
+      setParentId('')
+      toast.success('已移动任务（含其子任务）')
     } catch (err) {
       setSelProjectId(task.projectId)
       toast.error(typeof err === 'string' ? err : '移动失败')
@@ -269,6 +305,11 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
                 key={st}
                 onClick={() => {
                   if (!isEdit || st === status) return
+                  // 勾选完成 → 弹出总结对话框（总结随完成一并保存）
+                  if (st === 'done') {
+                    setCompleting(true)
+                    return
+                  }
                   setStatus(st)
                   void patch({ status: st })
                 }}
@@ -281,10 +322,26 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
                 {STATUS_META[st].label}
               </button>
             ))}
-            {isEdit && status === 'done' && task.completedTime && (
-              <span className="ml-auto text-[11px] text-zinc-500">完成于 {task.completedTime.slice(0, 16).replace('T', ' ')}</span>
+            {isEdit && status === 'done' && (liveTask?.completedTime ?? task?.completedTime) && (
+              <span className="ml-auto text-[11px] text-zinc-500">
+                完成于 {(liveTask?.completedTime ?? task?.completedTime)!.slice(0, 16).replace('T', ' ')}
+              </span>
             )}
           </div>
+
+          {/* 完成总结（已完成且有总结时展示） */}
+          {isEdit && status === 'done' && liveTask?.completionSummary && (
+            <div className="rounded-lg border border-emerald-500/15 bg-emerald-500/5 px-3 py-2">
+              <div className="mb-1 flex items-center gap-2 text-[11px] font-medium text-emerald-300/90">
+                完成总结
+                <span className="font-normal text-zinc-600">本次完成的回顾，重新打开后仍会保留</span>
+              </div>
+              <div
+                className="task-desc-prose summary-readonly max-h-[30vh] overflow-y-auto pr-1"
+                dangerouslySetInnerHTML={{ __html: liveTask.completionSummary }}
+              />
+            </div>
+          )}
 
           {/* 优先级 */}
           <div className="flex items-center gap-1.5">
@@ -306,6 +363,38 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
                 {PRIORITY_META[pr].label}
               </button>
             ))}
+          </div>
+
+          {/* 父任务（层级关联，甘特图铺路；同项目内可选，可留空=顶层） */}
+          <div className="flex items-center gap-1.5">
+            <span className="w-14 shrink-0 text-[11.5px] text-zinc-500">父任务</span>
+            <select
+              value={parentId}
+              onChange={(e) => {
+                const v = e.target.value
+                setParentId(v)
+                if (isEdit && v !== (task?.parentId ?? '')) void patch({ parentId: v || '' })
+              }}
+              className="flex-1 rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5 text-[12.5px] text-zinc-300 outline-none scheme-dark"
+            >
+              <option value="">顶层任务（无父任务）</option>
+              {parentRows.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.prefix}· {r.title}
+                </option>
+              ))}
+            </select>
+            {isEdit && parentId && (
+              <button
+                onClick={() => {
+                  setParentId('')
+                  void patch({ parentId: '' })
+                }}
+                className="text-[11px] text-zinc-500 hover:text-rose-300"
+              >
+                解除
+              </button>
+            )}
           </div>
 
           {/* 时间 */}
@@ -362,18 +451,16 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
             </div>
           </div>
 
-          {/* 描述 */}
+          {/* 描述（TipTap 富文本；编辑框右下角可拖拽调整高度） */}
           <div>
             <label className="mb-1.5 block text-[11.5px] font-medium text-zinc-500">任务描述</label>
-            <textarea
+            <TaskDescriptionEditor
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              onBlur={() => {
-                if (isEdit && description !== task.description) void patch({ description })
+              onChange={(html) => setDescription(html)}
+              onSave={(html) => {
+                if (isEdit && html !== task.description) void patch({ description: html })
               }}
-              rows={2}
               placeholder="补充任务内容或验收标准…"
-              className="w-full resize-none rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-[13px] outline-none placeholder:text-zinc-600 focus:border-rose-400/60"
             />
           </div>
 
@@ -466,6 +553,17 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
                   </button>
                   </div>
 
+                  {/* 重复（P2；详情模式即时保存） */}
+                  <div>
+                    <RecurrencePicker
+                      value={recurrence}
+                      onChange={(json) => {
+                        setRecurrence(json)
+                        if (isEdit) void patch({ recurrence: json })
+                      }}
+                    />
+                  </div>
+
                   {/* 提醒（任务级，9.5.2 / 9.11.2；仅详情模式） */}
                   {isEdit && (
                   <div className="rounded-lg border border-white/8 bg-white/3 px-3 py-2.5">
@@ -510,6 +608,23 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
                   )}
                   </div>
                   )}
+
+                  {/* 任务清单（子任务，P2；仅详情模式） */}
+                  {isEdit && (
+                    <div className="rounded-lg border border-white/8 bg-white/3 px-3 py-2.5">
+                      <SubtaskList taskId={task.id} />
+                    </div>
+                  )}
+
+                  {/* 附件（P2；仅详情模式） */}
+                  {isEdit && (
+                    <div className="rounded-lg border border-white/8 bg-white/3 px-3 py-2.5">
+                      <AttachmentsBox taskId={task.id} />
+                    </div>
+                  )}
+
+                  {/* 操作记录 / 执行时间线（P2；仅详情模式） */}
+                  {isEdit && <ActivityTimeline taskId={task.id} />}
 
                   {/* 备注 */}
           <div>
@@ -595,9 +710,59 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
             </>
           )}
         </div>
+
+        {/* 点「已完成」弹出的总结对话框（覆盖在详情之上） */}
+        {completing && task && (
+          <CompleteSummaryModal task={liveTask ?? task} onClose={() => setCompleting(false)} />
+        )}
       </div>
     </div>
   )
+}
+
+/**
+ * 父任务树形候选：按「父在前」层级展开，子任务以全角空格缩进示意层级。
+ * excludeId 非空时（详情模式）排除该任务及其全部后代，避免形成循环引用。
+ */
+function collectParentRows(list: TaskCard[], excludeId: string | null): { id: string; title: string; prefix: string }[] {
+  const byId = new Map(list.map((t) => [t.id, t]))
+  const childrenOf = new Map<string, TaskCard[]>()
+  for (const t of list) {
+    if (t.parentId && byId.has(t.parentId)) {
+      const arr = childrenOf.get(t.parentId) ?? []
+      arr.push(t)
+      childrenOf.set(t.parentId, arr)
+    }
+  }
+  // 排除集 = 自己 + 全部后代（防环）
+  const blocked = new Set<string>()
+  if (excludeId) {
+    const stack = [excludeId]
+    while (stack.length) {
+      const cur = stack.pop()!
+      if (blocked.has(cur)) continue
+      blocked.add(cur)
+      for (const c of childrenOf.get(cur) ?? []) stack.push(c.id)
+    }
+  }
+  const rows: { id: string; title: string; prefix: string }[] = []
+  const seen = new Set<string>()
+  const walk = (id: string, prefix: string) => {
+    if (blocked.has(id) || seen.has(id)) return
+    seen.add(id)
+    const t = byId.get(id)
+    if (t) rows.push({ id, title: t.title, prefix })
+    for (const c of childrenOf.get(id) ?? []) walk(c.id, prefix + '　')
+  }
+  // 顶层任务（无父或父不在列表）按列表原序展开其整棵子树
+  for (const t of list) {
+    if (!t.parentId || !byId.has(t.parentId)) walk(t.id, '')
+  }
+  // 兜底：仍在排除集外且未出现过的（异常孤儿）也作为候选
+  for (const t of list) {
+    if (!blocked.has(t.id) && !seen.has(t.id)) rows.push({ id: t.id, title: t.title, prefix: '' })
+  }
+  return rows
 }
 
 /** 标签即时新建的候选色盘（自动挑未使用的颜色） */

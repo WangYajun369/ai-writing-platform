@@ -269,6 +269,7 @@ impl AppDb {
             CREATE TABLE IF NOT EXISTS tasks (
                 id              TEXT PRIMARY KEY,
                 project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                parent_id       TEXT,
                 title           TEXT NOT NULL,
                 description     TEXT NOT NULL DEFAULT '',
                 status          TEXT NOT NULL DEFAULT 'todo',
@@ -280,6 +281,11 @@ impl AppDb {
                 note            TEXT NOT NULL DEFAULT '',
                 remind_at       TEXT,
                 remind_type     TEXT NOT NULL DEFAULT '',
+                recurrence      TEXT NOT NULL DEFAULT '',
+                note_html       TEXT NOT NULL DEFAULT '',
+                completion_summary TEXT NOT NULL DEFAULT '',
+                started_at      TEXT,
+                work_seconds    INTEGER NOT NULL DEFAULT 0,
                 sort_order      INTEGER NOT NULL DEFAULT 0,
                 deleted_at      TEXT,
                 created_at      TEXT NOT NULL,
@@ -309,6 +315,71 @@ impl AppDb {
                 key        TEXT PRIMARY KEY,
                 value      TEXT NOT NULL,
                 updated_at TEXT NOT NULL
+            );
+
+            -- ══════ 任务卡 P2 扩展（v1.6+）══════
+            -- 子任务/任务清单（隶属某任务卡，随任务级联删除）
+            CREATE TABLE IF NOT EXISTS task_subtasks (
+                id         TEXT PRIMARY KEY,
+                task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                title      TEXT NOT NULL,
+                done       INTEGER NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            -- 附件（本地文件实体，见 PRD 12.4；文件存放应用数据目录 attachments/，与 time_write.db 同数据根）
+            CREATE TABLE IF NOT EXISTS attachments (
+                id         TEXT PRIMARY KEY,
+                task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                file_name  TEXT NOT NULL,
+                file_type  TEXT NOT NULL DEFAULT '',
+                file_size  INTEGER NOT NULL DEFAULT 0,
+                local_path TEXT NOT NULL,
+                deleted    INTEGER NOT NULL DEFAULT 0,
+                deleted_at TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            -- 操作日志 / 执行记录时间线（task_id 或 project_id 至少一个非空，用于详情动态与周报）
+            CREATE TABLE IF NOT EXISTS task_activity_logs (
+                id         TEXT PRIMARY KEY,
+                task_id    TEXT,
+                project_id TEXT,
+                action     TEXT NOT NULL,
+                summary    TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+
+            -- 任务模板（一键套用创建相似任务；subtask_titles 存子任务标题 JSON 数组）
+            CREATE TABLE IF NOT EXISTS task_templates (
+                id              TEXT PRIMARY KEY,
+                name            TEXT NOT NULL,
+                project_id      TEXT,
+                title           TEXT NOT NULL DEFAULT '',
+                description     TEXT NOT NULL DEFAULT '',
+                priority        TEXT NOT NULL DEFAULT 'medium',
+                note            TEXT NOT NULL DEFAULT '',
+                due_offset_days INTEGER NOT NULL DEFAULT 0,
+                tag_ids         TEXT NOT NULL DEFAULT '[]',
+                subtask_titles  TEXT NOT NULL DEFAULT '[]',
+                created_at      TEXT NOT NULL,
+                updated_at      TEXT NOT NULL
+            );
+
+            -- 项目里程碑/阶段（隶属项目；status: planned / doing / done）
+            CREATE TABLE IF NOT EXISTS project_milestones (
+                id          TEXT PRIMARY KEY,
+                project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                name        TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                color       TEXT NOT NULL DEFAULT '',
+                status      TEXT NOT NULL DEFAULT 'planned',
+                due_date    TEXT,
+                sort_order  INTEGER NOT NULL DEFAULT 0,
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL
             );
         "#).context("创建数据表失败")?;
 
@@ -379,6 +450,15 @@ impl AppDb {
             ("chapters", "outline", "TEXT NOT NULL DEFAULT ''"),
             ("vocab_words", "ai_details", "TEXT NOT NULL DEFAULT ''"),
             ("vocab_words", "example_zh", "TEXT NOT NULL DEFAULT ''"),
+            // 任务卡 P2 补列
+            ("tasks", "recurrence", "TEXT NOT NULL DEFAULT ''"),
+            ("tasks", "note_html", "TEXT NOT NULL DEFAULT ''"),
+            ("tasks", "started_at", "TEXT"),
+            ("tasks", "work_seconds", "INTEGER NOT NULL DEFAULT 0"),
+            // 任务卡父子任务（甘特图铺路）：parent_id 引用同表任务的 id
+            ("tasks", "parent_id", "TEXT"),
+            // 任务完成总结（富文本 HTML；勾选完成时填写）
+            ("tasks", "completion_summary", "TEXT NOT NULL DEFAULT ''"),
         ] {
             if safe_add_column(&conn, table, column, column_def)? {
                 added_columns.push(format!("{}.{}", table, column));
@@ -418,6 +498,13 @@ impl AppDb {
             CREATE INDEX IF NOT EXISTS idx_tasks_deleted_at ON tasks(deleted_at);
             CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_time);
             CREATE INDEX IF NOT EXISTS idx_task_tags_tag_id ON task_tags(tag_id);
+            -- 任务卡 P2 扩展索引
+            CREATE INDEX IF NOT EXISTS idx_task_subtasks_task ON task_subtasks(task_id, sort_order);
+            CREATE INDEX IF NOT EXISTS idx_attachments_task ON attachments(task_id);
+            CREATE INDEX IF NOT EXISTS idx_activity_logs_task ON task_activity_logs(task_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_activity_logs_project ON task_activity_logs(project_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_milestones_project ON project_milestones(project_id, sort_order);
+            CREATE INDEX IF NOT EXISTS idx_templates_project ON task_templates(project_id);
         "#).context("创建索引失败")?;
 
         Ok(())

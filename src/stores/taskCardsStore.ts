@@ -56,7 +56,7 @@ interface TaskCardsState {
   // ── 任务操作 ──
   createTask: (args: CreateTaskArgs) => Promise<TaskCard>
   updateTask: (id: string, args: UpdateTaskArgs) => Promise<TaskCard>
-  setStatus: (id: string, status: TaskStatus) => Promise<void>
+  setStatus: (id: string, status: TaskStatus, completionSummary?: string) => Promise<void>
   dragTask: (id: string, toStatus: TaskStatus, orderedIds: string[]) => Promise<void>
   copyTask: (id: string) => Promise<void>
   moveTaskToProject: (id: string, toProjectId: string) => Promise<void>
@@ -180,8 +180,8 @@ export const useTaskCardsStore = create<TaskCardsState>((set, get) => ({
     return task
   },
 
-  setStatus: async (id, status) => {
-    const task = await taskCardApi.setTaskStatus(id, status)
+  setStatus: async (id, status, completionSummary) => {
+    const task = await taskCardApi.setTaskStatus(id, status, completionSummary ?? null)
     await get().refreshTaskArea(task.projectId)
   },
 

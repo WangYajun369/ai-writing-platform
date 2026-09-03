@@ -3,7 +3,7 @@
  * 字段：名称、emoji 图标、颜色、描述、计划开始/结束日期、状态（编辑时）、钉置
  */
 import { useEffect, useState } from 'react'
-import { Loader2Icon, PinIcon, XIcon } from 'lucide-react'
+import { CalendarDays, Infinity as InfinityIcon, Loader2Icon, PinIcon, XIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 import { useTaskCardsStore } from '@/stores/taskCardsStore'
@@ -43,6 +43,8 @@ export default function ProjectFormModal({
   const [description, setDescription] = useState(editProject?.description ?? '')
   const [planStart, setPlanStart] = useState(editProject?.planStartDate ?? '')
   const [planEnd, setPlanEnd] = useState(editProject?.planEndDate ?? '')
+  // 计划结束二态：永久（默认）或指定日期；有值即编辑为「指定日期」
+  const [endMode, setEndMode] = useState<'forever' | 'date'>(editProject?.planEndDate ? 'date' : 'forever')
   const [status, setStatus] = useState<ProjectStatus>(editProject?.status ?? 'active')
   const [pinned, setPinned] = useState(editProject?.pinned ?? false)
   const [saving, setSaving] = useState(false)
@@ -68,8 +70,10 @@ export default function ProjectFormModal({
         description: description.trim() || undefined,
         color,
         icon,
-        planStartDate: planStart || undefined,
-        planEndDate: planEnd || undefined,
+        // 日期字段直接传原值：空串在后端归一为空（清除）；不能转 undefined，
+        // 否则序列化时被省略，后端视为「未修改」，已设的日期将无法清除
+        planStartDate: planStart,
+        planEndDate: planEnd,
       }
       if (editProject) {
         const updated = await updateProject(editProject.id, { ...common, status, pinned })
@@ -161,7 +165,8 @@ export default function ProjectFormModal({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          {/* 计划开始 / 计划结束 上下两行（计划结束控件较多，独占一行更舒展） */}
+          <div className="space-y-3">
             <div>
               <label className="mb-1.5 block text-[11.5px] font-medium text-zinc-400">计划开始</label>
               <input
@@ -173,12 +178,60 @@ export default function ProjectFormModal({
             </div>
             <div>
               <label className="mb-1.5 block text-[11.5px] font-medium text-zinc-400">计划结束</label>
-              <input
-                type="date"
-                value={planEnd}
-                onChange={(e) => setPlanEnd(e.target.value)}
-                className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-[13px] outline-none focus:border-rose-400/60 scheme-dark"
-              />
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => {
+                    setEndMode('forever')
+                    setPlanEnd('')
+                  }}
+                  title="长期进行，无结束日期"
+                  className={cn(
+                    'flex items-center justify-center gap-1 rounded-lg border px-3 py-1.5 text-[12px] transition',
+                    endMode === 'forever'
+                      ? 'border-white/15 bg-white/8 text-zinc-100'
+                      : 'border-white/10 text-zinc-400 hover:bg-white/5',
+                  )}
+                >
+                  <InfinityIcon className="h-3 w-3" />
+                  永久
+                </button>
+                <button
+                  onClick={() => setEndMode('date')}
+                  title="设置一个计划结束日期"
+                  className={cn(
+                    'flex items-center justify-center gap-1 rounded-lg border px-3 py-1.5 text-[12px] transition',
+                    endMode === 'date'
+                      ? 'border-rose-400/50 bg-rose-500/15 text-rose-200'
+                      : 'border-white/10 text-zinc-400 hover:bg-white/5',
+                  )}
+                >
+                  <CalendarDays className="h-3 w-3" />
+                  指定日期
+                </button>
+              </div>
+              {endMode === 'date' && (
+                <div className="relative mt-1.5">
+                  <input
+                    type="date"
+                    value={planEnd}
+                    onChange={(e) => setPlanEnd(e.target.value)}
+                    title="计划结束日期；留空表示长期（永久）进行"
+                    className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-[13px] outline-none focus:border-rose-400/60 scheme-dark"
+                  />
+                  {planEnd && (
+                    <button
+                      onClick={() => {
+                        setPlanEnd('')
+                        setEndMode('forever')
+                      }}
+                      title="清除日期（回到永久）"
+                      className="absolute right-1 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-zinc-500 transition hover:bg-white/10 hover:text-zinc-200"
+                    >
+                      <XIcon className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

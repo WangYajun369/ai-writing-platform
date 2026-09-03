@@ -102,3 +102,13 @@ export function detectTasksWindow(): TasksWindowInfo {
   const section = s === 'all' || s === 'today' ? s : undefined
   return { isTasks: true, section }
 }
+
+export interface DiaryBookWindowInfo {
+  isDiaryBook: boolean
+}
+
+export function detectDiaryBookWindow(): DiaryBookWindowInfo {
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('diarybookwin') === '1') return { isDiaryBook: true }
+  return { isDiaryBook: false }
+}

@@ -26,9 +26,10 @@ import {
   PlusIcon,
   SearchIcon,
   Trash2Icon,
+  BarChart3 as BarChart3Icon,
   XIcon,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, htmlToPlainText } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 import { useTaskCardsStore } from '@/stores/taskCardsStore'
 import type { ProjectView, TaskCard, TaskPriority, TaskStatus } from '@/types'
@@ -36,7 +37,9 @@ import { STATUS_META, STATUS_ORDER } from '@/lib/taskCardsMeta'
 import { isOverdue, isToday } from '@/lib/taskCardsTime'
 import TaskCardView from './TaskCardView'
 import TaskModal from './TaskModal'
+import ProjectReportModal from './ProjectReportModal'
 import ProjectFormModal from './ProjectFormModal'
+import { useCompleteFlow } from './useCompleteFlow'
 
 const COLUMN_HINT: Record<TaskStatus, string> = {
   todo: '待开始的任务',
@@ -132,15 +135,16 @@ export default function ProjectDetailView({
   const tasksByProject = useTaskCardsStore((s) => s.tasksByProject)
   const tasks = tasksByProject[project.id] ?? []
   const tags = useTaskCardsStore((s) => s.tags)
-  const setStatus = useTaskCardsStore((s) => s.setStatus)
   const dragTask = useTaskCardsStore((s) => s.dragTask)
   const deleteProject = useTaskCardsStore((s) => s.deleteProject)
   const createTask = useTaskCardsStore((s) => s.createTask)
+  const { toggleDone, completeModal } = useCompleteFlow()
 
   const [openTask, setOpenTask] = useState<TaskCard | null>(null)
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
   const [activeDragTask, setActiveDragTask] = useState<TaskCard | null>(null)
   const [editing, setEditing] = useState(false)
+  const [showReport, setShowReport] = useState(false)
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board')
   const [sortMode, setSortMode] = useState<SortMode>(loadSortMode)
   // 筛选：标签单选 / 关键词 / 优先级 / 截止范围
@@ -168,7 +172,7 @@ export default function ProjectDetailView({
       if (selTag && !t.tags.some((x) => x.id === selTag)) return false
       if (selPriority !== 'all' && t.priority !== selPriority) return false
       if (dueFilter !== 'all' && !matchDue(t, dueFilter)) return false
-      if (q && !`${t.title} ${t.note ?? ''} ${t.description ?? ''}`.toLowerCase().includes(q)) return false
+      if (q && !`${t.title} ${t.note ?? ''} ${htmlToPlainText(t.description ?? '')}`.toLowerCase().includes(q)) return false
       return true
     })
   }, [tasks, selTag, selPriority, dueFilter, keyword])
@@ -190,10 +194,6 @@ export default function ProjectDetailView({
     setKeyword('')
     setSelPriority('all')
     setDueFilter('all')
-  }
-
-  async function toggleDone(task: TaskCard) {
-    await setStatus(task.id, task.status === 'done' ? 'todo' : 'done').catch(() => {})
   }
 
   /** 列内全量 id（按当前 sort_order 的存储顺序，供拖拽落点计算） */
@@ -317,10 +317,17 @@ export default function ProjectDetailView({
               <span className="flex items-center gap-1">
                 <CalendarRangeIcon className="h-3.5 w-3.5" />
                 {project.planStartDate ?? '…'}
-                {project.planEndDate ? ` ~ ${project.planEndDate}` : ''}
+                {project.planEndDate ? ` ~ ${project.planEndDate}` : project.planStartDate ? ' ~ 永久' : ''}
               </span>
             ) : null}
           </div>
+          <button
+            onClick={() => setShowReport(true)}
+            title="项目周报 / 动态"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-white/8 hover:text-zinc-100"
+          >
+            <BarChart3Icon className="h-4 w-4" />
+          </button>
           <button
             onClick={() => setEditing(true)}
             title="编辑项目"
@@ -571,6 +578,7 @@ export default function ProjectDetailView({
 
       {/* 弹层 */}
       {openTask && <TaskModal task={openTask} onClose={() => setOpenTask(null)} />}
+      {completeModal}
       {editing && (
         <ProjectFormModal
           editId={project.id}
@@ -578,6 +586,7 @@ export default function ProjectDetailView({
           onSaved={() => setEditing(false)}
         />
       )}
+      {showReport && <ProjectReportModal project={project} onClose={() => setShowReport(false)} />}
     </div>
   )
 }

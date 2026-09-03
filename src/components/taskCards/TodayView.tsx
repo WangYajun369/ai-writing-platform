@@ -23,6 +23,7 @@ import { isOverdue, isToday } from '@/lib/taskCardsTime'
 import type { TaskCard } from '@/types'
 import TaskCardView from './TaskCardView'
 import TaskModal from './TaskModal'
+import { useCompleteFlow } from './useCompleteFlow'
 
 type GroupKey = 'overdue' | 'doing' | 'dueToday' | 'planned' | 'done'
 
@@ -67,8 +68,8 @@ export default function TodayView({
   const tasksByProject = useTaskCardsStore((s) => s.tasksByProject)
   const overview = useTaskCardsStore((s) => s.overview)
   const loaded = useTaskCardsStore((s) => s.loaded)
-  const setStatus = useTaskCardsStore((s) => s.setStatus)
   const updateTask = useTaskCardsStore((s) => s.updateTask)
+  const { toggleDone, completeModal } = useCompleteFlow()
 
   const [openTask, setOpenTask] = useState<TaskCard | null>(null)
   const [collapsedDone, setCollapsedDone] = useState(true)
@@ -143,10 +144,6 @@ export default function TodayView({
   const now = new Date()
   const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
   const dateLabel = `${now.getMonth() + 1}月${now.getDate()}日 · ${weekdays[now.getDay()]}`
-
-  async function toggleDone(task: TaskCard) {
-    await setStatus(task.id, task.status === 'done' ? 'todo' : 'done').catch(() => {})
-  }
 
   async function postpone(task: TaskCard) {
     try {
@@ -380,6 +377,7 @@ export default function TodayView({
       </div>
 
       {openTask && <TaskModal task={openTask} onClose={() => setOpenTask(null)} />}
+      {completeModal}
     </div>
   )
 }

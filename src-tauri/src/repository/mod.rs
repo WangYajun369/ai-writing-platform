@@ -19,3 +19,7 @@ pub mod project_repo;
 pub mod task_repo;
 pub mod tag_repo;
 pub mod task_meta_repo;
+pub mod subtask_repo;
+pub mod template_repo;
+pub mod attachment_repo;
+pub mod activity_log_repo;

@@ -13,15 +13,18 @@ import {
   FlagIcon,
   ListFilterIcon,
   Loader2Icon,
+  RepeatIcon,
   SearchIcon,
   XIcon,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, htmlToPlainText } from '@/lib/utils'
 import { useTaskCardsStore } from '@/stores/taskCardsStore'
 import type { TaskCard, TaskPriority } from '@/types'
 import { STATUS_META } from '@/lib/taskCardsMeta'
 import { fmtDueText } from '@/lib/taskCardsTime'
+import { describeRule } from '@/lib/recurrence'
 import TaskModal from './TaskModal'
+import { useCompleteFlow } from './useCompleteFlow'
 
 type StatusFilter = 'all' | TaskCard['status']
 type PriorityFilter = 'all' | TaskPriority
@@ -132,8 +135,8 @@ export default function AllTasksView() {
   const projects = useTaskCardsStore((s) => s.projects)
   const tasksByProject = useTaskCardsStore((s) => s.tasksByProject)
   const tags = useTaskCardsStore((s) => s.tags)
-  const setStatus = useTaskCardsStore((s) => s.setStatus)
   const loaded = useTaskCardsStore((s) => s.loaded)
+  const { toggleDone, completeModal } = useCompleteFlow()
 
   const [keyword, setKeyword] = useState('')
   const [status, setStatusFilter] = useState<StatusFilter>('all')
@@ -159,7 +162,7 @@ export default function AllTasksView() {
         if (dueRange !== 'all' && !matchDue(task, dueRange)) continue
         if (q) {
           const tagNames = task.tags.map((t) => t.name).join(' ')
-          const hay = `${task.title} ${task.note ?? ''} ${task.description ?? ''} ${tagNames} ${pn}`.toLowerCase()
+          const hay = `${task.title} ${task.note ?? ''} ${htmlToPlainText(task.description ?? '')} ${tagNames} ${pn}`.toLowerCase()
           if (!hay.includes(q)) continue
         }
         list.push({ task, projectName: pn })
@@ -333,7 +336,9 @@ export default function AllTasksView() {
             {results.map(({ task, projectName }) => {
               const p = projectMap.get(task.projectId)
               const due = fmtDueText(task.dueTime, task.status === 'done')
-              const descHit = q && task.description && task.description.toLowerCase().includes(q)
+              const recurDesc = task.recurrence ? describeRule(task.recurrence) : ''
+              const descText = htmlToPlainText(task.description ?? '')
+              const descHit = q && descText.toLowerCase().includes(q)
               const noteHit = q && task.note && task.note.toLowerCase().includes(q)
               return (
                 <div
@@ -345,7 +350,7 @@ export default function AllTasksView() {
                 >
                   {/* 完成勾选 */}
                   <button
-                    onClick={() => void setStatus(task.id, task.status === 'done' ? 'todo' : 'done')}
+                    onClick={() => toggleDone(task)}
                     className={cn(
                       'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition',
                       task.status === 'done'
@@ -377,13 +382,22 @@ export default function AllTasksView() {
                     {/* 描述命中时展示命中片段 */}
                     {descHit && (
                       <div className="mt-0.5 truncate text-[11px] text-zinc-500">
-                        描述：{mark(descSnippet(task.description ?? '', q), q)}
+                        描述：{mark(descSnippet(descText, q), q)}
                       </div>
                     )}
                     <div className="mt-0.5 flex items-center gap-2 text-[11px] text-zinc-500">
                       <span className="inline-flex items-center gap-1 rounded bg-white/5 px-1.5 py-0.5 text-zinc-400">
                         {p?.icon ?? '📁'} {mark(projectName, q)}
                       </span>
+                      {task.recurrence && (
+                        <span
+                          title={recurDesc ? `重复任务 · ${recurDesc}` : '重复任务'}
+                          className="inline-flex items-center gap-1 rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-400"
+                        >
+                          <RepeatIcon className="h-2.5 w-2.5" />
+                          重复
+                        </span>
+                      )}
                       <span className={cn('flex items-center gap-1', due.cls)}>
                         {task.dueTime ? <Clock3Icon className="h-3 w-3" /> : null}
                         {due.text}
@@ -437,6 +451,7 @@ export default function AllTasksView() {
       </div>
 
       {openTask && <TaskModal task={openTask} onClose={() => setOpenTask(null)} />}
+      {completeModal}
     </div>
   )
 }

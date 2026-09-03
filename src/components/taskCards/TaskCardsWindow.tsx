@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import {
   BellIcon,
+  CalendarRange as CalendarRangeIcon,
   CheckCheckIcon,
   ClipboardListIcon,
   ListFilterIcon,
@@ -482,6 +483,15 @@ function ProjectNavRow({
         )}
         {pending && <Loader2Icon className="h-3 w-3 animate-spin text-zinc-500" />}
       </div>
+      {/* 计划周期：开始 ~ 结束；无结束日期显示「永久」 */}
+      {(project.planStartDate || project.planEndDate) && (
+        <div className="mt-1 flex items-center gap-1.5 pl-7 text-[10px] text-zinc-500">
+          <CalendarRangeIcon className="h-3 w-3 shrink-0 text-zinc-600" />
+          <span className="truncate">
+            {project.planStartDate ?? '…'} ~ {project.planEndDate ?? '永久'}
+          </span>
+        </div>
+      )}
       {total > 0 && (
         <div className="mt-1 flex items-center gap-1.5 pl-7">
           <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/6">

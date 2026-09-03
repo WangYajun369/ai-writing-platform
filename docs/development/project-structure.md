@@ -65,7 +65,7 @@ src/
 | 目录 | 核心文件 | 职责 |
 |------|---------|------|
 | `library/` | `BookCard`、`NewBookDialog`、`EditBookDialog`、`CoverPicker`、`TrashModal` | 书库网格/列表、封面裁剪、回收站 |
-| `diary/` | `DiaryPanel`、`DiaryDialog`、`DiaryBookDialog`、`ScheduleManager` | 书库首页右栏：按月日历、TipTap 日记编辑器、「看日记」书页浏览、个人日程 |
+| `diary/` | `DiaryPanel`、`DiaryDialog`、`DiaryBookPage`、`ScheduleManager` | 书库首页右栏：按月日历、TipTap 日记编辑器；「看日记」书页浏览为独立窗口（diary-book）、个人日程 |
 | `vocabulary/` | `VocabularyWindow`、`tab/WordBookTab`、`tab/ReviewTab`、`tab/StatsTab`、`dialog/*`、`SpeakButton`、`VocabKnowledgeView`、`vocab-utils` | 英语字典·生词本独立窗口：生词本 / SM-2 复习 / 统计，含 AI 精讲与语音朗读（v1.4.0） |
 | `outline/` | `OutlinePanel`（842 行） | 卷-章两级目录树、拖拽排序（@dnd-kit）、虚拟滚动、回收站 |
 | `editor/` | `RichTextEditor`、`EditorToolbar`、`SnapshotPanel`、`ImageCropperDialog`、`ImageViewerDialog` | TipTap 编辑、工具栏、版本快照、图片处理 |

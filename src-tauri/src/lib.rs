@@ -70,6 +70,10 @@ pub fn run() {
             // 打开 SQLite 数据库连接，交由 Tauri 状态管理（全局访问）
             let db = AppDb::new(db_path_str)
                 .map_err(|e| format!("数据库初始化失败: {e}"))?;
+            // 附件存储初始化：附件目录与 db 同数据根（attachments/），
+            // 并自动迁移旧版 task-attachments 目录、清洗历史绝对路径为相对路径
+            crate::service::attachment_service::ensure_store(app.handle(), &db)
+                .map_err(|e| format!("附件存储初始化失败: {e}"))?;
             app.manage(db);
 
             // ========== 1.5 备份加密密钥初始化 ==========
@@ -170,6 +174,13 @@ pub fn run() {
                             }
                             Err(e) => {
                                 crate::app_log!("[提醒] 本轮扫描失败（自动忽略）: {e}");
+                            }
+                        }
+                        // 回收站 30 天自动清理（内部按自然日守卫，每天实际执行一次）
+                        {
+                            let db = app.state::<crate::db::AppDb>();
+                            if let Err(e) = crate::service::task_service::purge_expired_trash(&app, &db) {
+                                crate::app_log!("[回收站] 自动清理失败（自动忽略）: {e}");
                             }
                         }
                         tokio::time::sleep(Duration::from_secs(60)).await;
@@ -300,6 +311,8 @@ pub fn run() {
             commands::window::manager::open_tasks_window,
             commands::window::manager::close_tasks_window,
             commands::window::manager::is_tasks_window_open,
+            commands::window::manager::open_diary_book_window,
+            commands::window::manager::close_diary_book_window,
             // ══════ 任务卡模块 ══════
             commands::project::project_list,
             commands::project::project_get,
@@ -324,6 +337,7 @@ pub fn run() {
             commands::task::task_hard_delete,
             commands::task::task_list_deleted,
             commands::task::task_clear_trash,
+            commands::task::task_purge_expired_trash,
             commands::task::task_roll_planned_today,
             commands::task::task_today_overview,
             commands::tag::tag_list,
@@ -336,6 +350,25 @@ pub fn run() {
             commands::task_meta::reminder_prefs_set,
             commands::reminder::reminder_check,
             commands::migrate::migrate_schedules,
+            commands::subtask::subtask_list,
+            commands::subtask::subtask_create,
+            commands::subtask::subtask_update,
+            commands::subtask::subtask_set_done,
+            commands::subtask::subtask_reorder,
+            commands::subtask::subtask_delete,
+            commands::template::template_list,
+            commands::template::template_create,
+            commands::template::template_update,
+            commands::template::template_delete,
+            commands::template::task_create_from_template,
+            commands::attachment::attachment_list,
+            commands::attachment::attachment_pick_and_add,
+            commands::attachment::attachment_open,
+            commands::attachment::attachment_delete,
+            commands::attachment::attachment_cleanup_orphans,
+            commands::activity::activity_list_task,
+            commands::activity::activity_list_project,
+            commands::activity::project_weekly_stats,
             // ══════ 窗口管理 — 调试控制台 ══════
             commands::window::debug::open_debug_window,
             commands::window::debug::close_debug_window,

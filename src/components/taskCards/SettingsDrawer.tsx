@@ -11,6 +11,7 @@ import {
   BellIcon,
   BellRingIcon,
   CheckIcon,
+  LayoutTemplateIcon,
   Loader2Icon,
   PencilIcon,
   PlusIcon,
@@ -18,6 +19,7 @@ import {
   Trash2Icon,
   XIcon,
 } from 'lucide-react'
+import TemplatesTab from './TemplatesTab'
 import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 import { taskCardApi } from '@/lib/tauri-bridge'
@@ -35,7 +37,7 @@ const DEFAULT_PREFS: ReminderPrefs = {
   dailyTime: '09:00',
 }
 
-type TabKey = 'tags' | 'migrate' | 'reminder'
+type TabKey = 'tags' | 'templates' | 'migrate' | 'reminder'
 
 export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<TabKey>('tags')
@@ -166,6 +168,7 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
 
   const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
     { key: 'tags', label: '标签管理', icon: <TagsIcon className="h-4 w-4" /> },
+    { key: 'templates', label: '任务模板', icon: <LayoutTemplateIcon className="h-4 w-4" /> },
     { key: 'migrate', label: '日程迁移', icon: <ArrowLeftRightIcon className="h-4 w-4" /> },
     { key: 'reminder', label: '提醒偏好', icon: <BellIcon className="h-4 w-4" /> },
   ]
@@ -331,6 +334,16 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
           )}
 
           {/* ── 日程迁移 ── */}
+          {tab === 'templates' && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 px-1 text-[11.5px] text-zinc-600">
+                <LayoutTemplateIcon className="h-3.5 w-3.5" />
+                把常做的任务存成模板，在下方选择项目后一键套用
+              </div>
+              <TemplatesTab onTaskCreated={onClose} />
+            </div>
+          )}
+
           {tab === 'migrate' && (
             <div className="space-y-3">
               <div className="rounded-xl border border-sky-500/20 bg-sky-500/8 p-4 text-[12.5px] leading-relaxed text-zinc-300">

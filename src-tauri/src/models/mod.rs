@@ -412,6 +412,9 @@ pub struct TaskCard {
     pub id: String,
     #[serde(rename = "projectId")]
     pub project_id: String,
+    /// 父任务 id（同表自引用，NULL=顶层任务；甘特图铺路，P2）
+    #[serde(rename = "parentId")]
+    pub parent_id: Option<String>,
     pub title: String,
     pub description: String,
     pub status: String,
@@ -430,12 +433,27 @@ pub struct TaskCard {
     pub completed_time: Option<String>,
     /// 个人备注（纯文本）
     pub note: String,
+    /// 完成任务时的富文本总结（HTML 片段，可为空；重新打开后仍保留）
+    #[serde(rename = "completionSummary")]
+    pub completion_summary: String,
     /// 下次提醒时间（本地时间字符串）
     #[serde(rename = "remindAt")]
     pub remind_at: Option<String>,
     /// 提醒类型：due_before / due_day / overdue / daily（空表示未启用）
     #[serde(rename = "remindType")]
     pub remind_type: String,
+    /// 重复规则 JSON：{"freq":"daily|weekly|monthly","interval":1,"weekdays":[...],
+    /// "monthDay":15,"endDate":"YYYY-MM-DD"|""}；'' 表示非重复（P2）
+    pub recurrence: String,
+    /// 富文本备注（HTML 片段；note 保留纯文本用于搜索与降级渲染，P2）
+    #[serde(rename = "noteHtml")]
+    pub note_html: String,
+    /// 最近一次进入「进行中」的时间（工时统计锚点，P2）
+    #[serde(rename = "startedAt")]
+    pub started_at: Option<String>,
+    /// 累计工时（秒，P2 轻量计时）
+    #[serde(rename = "workSeconds")]
+    pub work_seconds: i64,
     #[serde(rename = "sortOrder")]
     pub sort_order: i64,
     #[serde(rename = "deletedAt")]
@@ -446,6 +464,89 @@ pub struct TaskCard {
     pub updated_at: String,
     /// 聚合标签（查询时由 service 填充，可为空数组）
     pub tags: Vec<Tag>,
+}
+
+/// 子任务 / 任务清单项 — 对应 task_subtasks 表（P2，隶属某任务卡）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TaskSubtask {
+    pub id: String,
+    #[serde(rename = "taskId")]
+    pub task_id: String,
+    pub title: String,
+    pub done: bool,
+    #[serde(rename = "sortOrder")]
+    pub sort_order: i64,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+}
+
+/// 附件 — 对应 attachments 表（P2，PRD 12.4）
+/// 文件实体存放于应用数据目录 attachments/（与 time_write.db 同数据根），
+/// 记录仅存元数据与相对数据根的 local_path。
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Attachment {
+    pub id: String,
+    #[serde(rename = "taskId")]
+    pub task_id: String,
+    #[serde(rename = "fileName")]
+    pub file_name: String,
+    #[serde(rename = "fileType")]
+    pub file_type: String,
+    #[serde(rename = "fileSize")]
+    pub file_size: i64,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+}
+
+/// 操作日志 / 执行记录 — 对应 task_activity_logs 表（P2）
+/// 用于任务详情动态时间线与项目动态/周报。task_id 与 project_id 至少一个非空。
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ActivityLog {
+    pub id: String,
+    #[serde(rename = "taskId")]
+    pub task_id: Option<String>,
+    #[serde(rename = "projectId")]
+    pub project_id: Option<String>,
+    pub action: String,
+    pub summary: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+}
+
+/// 项目周统计（周报用；week_start 为周一日期 YYYY-MM-DD，created/completed 为该周动作数）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProjectWeeklyStat {
+    #[serde(rename = "weekStart")]
+    pub week_start: String,
+    pub created: i64,
+    pub completed: i64,
+}
+
+/// 任务模板 — 对应 task_templates 表（P2，一键套用创建任务）
+/// tag_ids / subtask_titles 存 JSON 数组，解析时还原为 Vec
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TaskTemplate {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "projectId")]
+    pub project_id: Option<String>,
+    pub title: String,
+    pub description: String,
+    pub priority: String,
+    pub note: String,
+    /// 套用时截止日偏移（天，0 = 不自动设截止）
+    #[serde(rename = "dueOffsetDays")]
+    pub due_offset_days: i64,
+    #[serde(rename = "tagIds")]
+    pub tag_ids: Vec<String>,
+    #[serde(rename = "subtaskTitles")]
+    pub subtask_titles: Vec<String>,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
 }
 
 /// 项目实时统计（由任务实时聚合，不落库）

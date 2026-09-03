@@ -2,11 +2,13 @@
  * 任务卡片（看板 / 今日列表共用）
  * 左侧完成勾选，中部标题+标签+时间提示，点击卡片打开详情。
  */
-import { ArrowRightIcon, CheckIcon, Clock3Icon, FlagIcon, MessageSquareIcon } from 'lucide-react'
+import { ArrowRightIcon, CheckIcon, Clock3Icon, FlagIcon, GitBranchIcon, LayersIcon, MessageSquareIcon, NotebookPenIcon, RepeatIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { TaskCard, TaskProject } from '@/types'
 import { fmtDateTime, isOverdue } from '@/lib/taskCardsTime'
 import { PRIORITY_META } from '@/lib/taskCardsMeta'
+import { describeRule } from '@/lib/recurrence'
+import { useTaskCardsStore } from '@/stores/taskCardsStore'
 
 export default function TaskCardView({
   task,
@@ -30,6 +32,13 @@ export default function TaskCardView({
   const overdue = isOverdue(task.dueTime, task.status)
   const priority = PRIORITY_META[task.priority]
   const accent = project?.color || '#e11d48'
+  // 重复规则文案（如「每周 一、三」；无规则时为空串）
+  const recurDesc = task.recurrence ? describeRule(task.recurrence) : ''
+
+  // 层级徽标（同项目内自查，父任务标题 / 直接子任务数）
+  const siblings = useTaskCardsStore((s) => s.tasksByProject[task.projectId]) ?? []
+  const parent = task.parentId ? siblings.find((t) => t.id === task.parentId) : undefined
+  const childCount = siblings.filter((t) => t.parentId === task.id).length
 
   return (
     <div
@@ -88,6 +97,24 @@ export default function TaskCardView({
 
           {/* 元信息行 */}
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            {parent && (
+              <span
+                title={`父任务：${parent.title}`}
+                className="inline-flex max-w-[11rem] items-center gap-1 truncate rounded border border-cyan-500/25 bg-cyan-500/12 px-1.5 py-0.5 text-[10.5px] text-cyan-300/90"
+              >
+                <GitBranchIcon className="h-2.5 w-2.5 shrink-0" />
+                <span className="truncate">{parent.title}</span>
+              </span>
+            )}
+            {childCount > 0 && (
+              <span
+                title={`包含 ${childCount} 个子任务`}
+                className="inline-flex items-center gap-1 rounded border border-violet-500/25 bg-violet-500/12 px-1.5 py-0.5 text-[10.5px] text-violet-300/90"
+              >
+                <LayersIcon className="h-2.5 w-2.5" />
+                {childCount}
+              </span>
+            )}
             {project && (
               <span className="inline-flex items-center gap-1 rounded border border-white/8 bg-white/4 px-1.5 py-0.5 text-[10.5px] text-zinc-400">
                 <span className="h-1.5 w-1.5 rounded-full" style={{ background: accent }} />
@@ -111,6 +138,15 @@ export default function TaskCardView({
                 进行中
               </span>
             )}
+            {task.recurrence ? (
+              <span
+                title={recurDesc ? `重复任务 · ${recurDesc}` : '重复任务'}
+                className="inline-flex items-center gap-1 rounded border border-sky-500/25 bg-sky-500/12 px-1.5 py-0.5 text-[10.5px] text-sky-300/90"
+              >
+                <RepeatIcon className="h-2.5 w-2.5" />
+                重复
+              </span>
+            ) : null}
             {task.dueTime && (
               <span
                 className={cn(
@@ -148,6 +184,15 @@ export default function TaskCardView({
             {task.note ? (
               <MessageSquareIcon className="h-3 w-3 text-zinc-500" />
             ) : null}
+            {done && task.completionSummary && !/^\s*$/.test(task.completionSummary.replace(/<[^>]*>/g, '')) && (
+              <span
+                title="点击查看本次完成总结（在详情中展示）"
+                className="inline-flex items-center gap-1 rounded border border-emerald-500/20 bg-emerald-500/8 px-1.5 py-0.5 text-[10.5px] text-emerald-300/80"
+              >
+                <NotebookPenIcon className="h-2.5 w-2.5" />
+                总结
+              </span>
+            )}
           </div>
         </div>
       </div>

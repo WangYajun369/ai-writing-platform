@@ -588,6 +588,8 @@ export interface TaskTag {
 export interface TaskCard {
   id: string
   projectId: string
+  /** 父任务 id（顶层任务为空/undefined）；父子层级为甘特图铺路 */
+  parentId?: string | null
   title: string
   description: string
   status: TaskStatus
@@ -602,16 +604,124 @@ export interface TaskCard {
   completedTime?: string
   /** 个人备注 */
   note: string
+  /** 完成任务时的富文本总结（HTML；空字符串 = 无总结，重新打开后仍保留） */
+  completionSummary: string
   /** 下次提醒时间（未启用提醒为空） */
   remindAt?: string
   /** 提醒类型：due_before / due_day / overdue / daily（空=未启用） */
   remindType: string
+  /** 重复规则 JSON 字符串；'' = 不重复（P2） */
+  recurrence: string
+  /** 富文本备注（HTML；空则用纯文本 note，P2） */
+  noteHtml: string
+  /** 最近一次进入「进行中」时间（工时统计锚点，P2） */
+  startedAt?: string
+  /** 累计工时（秒，P2） */
+  workSeconds: number
   sortOrder: number
   deletedAt?: string
   createdAt: string
   updatedAt: string
   /** 聚合标签 */
   tags: TaskTag[]
+}
+
+/** 重复规则（任务卡 P2；存 tasks.recurrence 的 JSON 字符串） */
+export interface RecurrenceRule {
+  /** daily 每天 / weekly 每周 / monthly 每月 */
+  freq: 'daily' | 'weekly' | 'monthly'
+  /** 间隔：每 N 天 / 周 / 月 */
+  interval: number
+  /** weekly 时限定周几，1=周一 … 7=周日；留空表示每 interval 周的同一天 */
+  weekdays: number[]
+  /** monthly 时每月触发的日号（1-31，可多选；空数组 = 沿用锚点日，超限取月末） */
+  monthDays: number[]
+  /** 结束日期 YYYY-MM-DD；空表示长期重复（无结束日期） */
+  endDate: string
+}
+
+/** 任务模板（P2，一键套用创建任务） */
+export interface TaskTemplate {
+  id: string
+  name: string
+  /** 模板默认项目（套用时可临时改选） */
+  projectId?: string
+  title: string
+  description: string
+  priority: TaskPriority
+  note: string
+  /** 套用时截止日偏移天数（0 = 不自动设截止） */
+  dueOffsetDays: number
+  tagIds: string[]
+  subtaskTitles: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+/** 创建任务模板参数 */
+export interface CreateTemplateArgs {
+  name: string
+  projectId?: string
+  title?: string
+  description?: string
+  priority?: TaskPriority
+  note?: string
+  dueOffsetDays?: number
+  tagIds?: string[]
+  subtaskTitles?: string[]
+}
+
+/** 更新任务模板参数（全可选） */
+export interface UpdateTemplateArgs {
+  name?: string
+  projectId?: string | null
+  title?: string
+  description?: string
+  priority?: TaskPriority
+  note?: string
+  dueOffsetDays?: number
+  tagIds?: string[]
+  subtaskTitles?: string[]
+}
+
+/** 子任务 / 任务清单项（P2，隶属某任务卡） */
+export interface TaskSubtask {
+  id: string
+  taskId: string
+  title: string
+  done: boolean
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** 附件（P2，PRD 12.4） */
+export interface Attachment {
+  id: string
+  taskId: string
+  fileName: string
+  /** 扩展名（小写，无点） */
+  fileType: string
+  fileSize: number
+  createdAt: string
+}
+
+/** 操作日志 / 执行记录（P2） */
+export interface ActivityLog {
+  id: string
+  taskId?: string
+  projectId?: string
+  /** 动作分类：task.created / task.completed / task.reopened / task.updated / task.deleted / task.restored / task.moved / task.archived / subtask.* / attachment.* … */
+  action: string
+  summary: string
+  createdAt: string
+}
+
+/** 项目周统计（weekStart 为该周周一 YYYY-MM-DD） */
+export interface ProjectWeeklyStat {
+  weekStart: string
+  created: number
+  completed: number
 }
 
 /** 今日任务概览 */
@@ -666,6 +776,8 @@ export interface UpdateProjectArgs {
 /** 创建任务参数 */
 export interface CreateTaskArgs {
   projectId: string
+  /** 父任务 id（必须与任务同项目；留空 = 顶层任务） */
+  parentId?: string | null
   title: string
   description?: string
   status?: TaskStatus
@@ -676,12 +788,16 @@ export interface CreateTaskArgs {
   note?: string
   /** 标签 id 列表 */
   tagIds?: string[]
+  /** 重复规则 JSON；'' = 不重复 */
+  recurrence?: string
 }
 
 /** 更新任务参数（部分更新） */
 export interface UpdateTaskArgs {
   title?: string
   description?: string
+  /** 父任务 id：传 '' 或 null 解除关联成顶层任务；不传则不修改 */
+  parentId?: string | null
   status?: TaskStatus
   priority?: TaskPriority
   planStartTime?: string
@@ -694,6 +810,8 @@ export interface UpdateTaskArgs {
   remindType?: string
   /** 自定义提醒时间（YYYY-MM-DDTHH:MM），仅 remindType='custom' 时生效 */
   remindAt?: string
+  /** 重复规则 JSON；传 '' 取消重复 */
+  recurrence?: string
 }
 
 /** 更新标签参数 */

@@ -39,7 +39,8 @@ import { dayOf, localToday } from '@/lib/taskCardsTime'
 import type { Diary, DiaryMeta, TaskCard, TaskProject } from '@/types'
 import DiaryDialog from './DiaryDialog'
 import DayTasksPanel from './DayTasksPanel'
-import DiaryBookDialog from './DiaryBookDialog'
+import CompleteSummaryModal from '@/components/taskCards/CompleteSummaryModal'
+import { countUnfinishedSubtasks } from '@/lib/subtaskGuard'
 
 /** 今日日期键（页面挂载时计算一次） */
 const todayKey = toDateKey(new Date())
@@ -67,8 +68,8 @@ export default function DiaryPanel() {
   const [selLoading, setSelLoading] = useState(false)
   /** 正在编辑的日期（控制 DiaryDialog 开关） */
   const [editingDate, setEditingDate] = useState<string | null>(null)
-  /** 「看日记」书页式浏览弹窗开关 */
-  const [bookOpen, setBookOpen] = useState(false)
+  /** 正在填写完成总结的任务（非 null 时弹出总结对话框） */
+  const [completingTask, setCompletingTask] = useState<TaskCard | null>(null)
   /** 请求序号：避免快速切换日期时旧请求覆盖新结果 */
   const selectedReqRef = useRef(0)
 
@@ -163,20 +164,40 @@ export default function DiaryPanel() {
     [viewYear, viewMonth, selectedDate, loadEntries, loadSelected],
   )
 
-  /** 勾选完成 / 重新打开：写后端 → 重拉数据 → 广播任务变更（角标等同步） */
+  /** 勾选完成 → 弹出总结对话框；已完成任务 → 直接重新打开（不弹总结） */
   const handleToggleTask = useCallback(
-    async (task: TaskCard) => {
-      try {
-        await taskCardApi.setTaskStatus(task.id, task.status === 'done' ? 'todo' : 'done')
-        await loadTaskData()
-        void emit('tasks-data-updated')
-      } catch (err) {
-        console.error('更新任务失败', err)
-        toast.error(`更新任务失败：${err instanceof Error ? err.message : err}`)
+    (task: TaskCard) => {
+      if (task.status === 'done') {
+        void taskCardApi
+          .setTaskStatus(task.id, 'todo')
+          .then(async () => {
+            await loadTaskData()
+            void emit('tasks-data-updated')
+          })
+          .catch((err) => {
+            console.error('重新打开任务失败', err)
+            toast.error(`重新打开任务失败：${err instanceof Error ? err.message : err}`)
+          })
+      } else {
+        // 未完成 → 先校验子任务是否全部完成；有未完成项则不允许完成
+        void (async () => {
+          const pending = await countUnfinishedSubtasks(task.id)
+          if (pending > 0) {
+            toast.error(`还有 ${pending} 项子任务未完成，请先完成全部子任务后再勾选完成`)
+            return
+          }
+          setCompletingTask(task)
+        })()
       }
     },
     [loadTaskData],
   )
+
+  /** 总结对话框保存完成后：重拉数据 + 广播（角标/任务卡窗口同步） */
+  const handleTaskCompleted = useCallback(() => {
+    void loadTaskData()
+    void emit('tasks-data-updated')
+  }, [loadTaskData])
 
   const goPrevMonth = () => {
     if (viewMonth === 1) {
@@ -277,9 +298,9 @@ export default function DiaryPanel() {
         {loading && <Loader2Icon className="w-3.5 h-3.5 text-muted-foreground animate-spin" />}
         <div className="flex items-center gap-1.5 shrink-0">
           <button
-            onClick={() => setBookOpen(true)}
+            onClick={() => void windowApi.openDiaryBook()}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition-opacity"
-            title="像翻书一样翻阅全部日记（仅展示）"
+            title="在独立窗口中像翻书一样翻阅全部日记（仅展示）"
           >
             <BookOpenIcon className="w-3.5 h-3.5" />
             看日记
@@ -531,8 +552,14 @@ export default function DiaryPanel() {
         />
       )}
 
-      {/* ─── 「看日记」书页式只读浏览弹窗 ─── */}
-      {bookOpen && <DiaryBookDialog onClose={() => setBookOpen(false)} />}
+      {/* ─── 任务完成总结弹窗（日记页快速勾选完成时） ─── */}
+      {completingTask && (
+        <CompleteSummaryModal
+          task={completingTask}
+          onCompleted={handleTaskCompleted}
+          onClose={() => setCompletingTask(null)}
+        />
+      )}
     </aside>
   )
 }

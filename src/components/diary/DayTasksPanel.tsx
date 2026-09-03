@@ -8,9 +8,10 @@
  * 数据由父级 DiaryPanel 注入（已按选中日期过滤），本组件只做展示与勾选交互。
  */
 import { useMemo } from 'react'
-import { CheckIcon, ClipboardListIcon, ExternalLinkIcon, Loader2Icon } from 'lucide-react'
+import { CheckIcon, ClipboardListIcon, ExternalLinkIcon, Loader2Icon, RepeatIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { dayOf, fmtDateTime, isOverdue, localToday } from '@/lib/taskCardsTime'
+import { describeRule } from '@/lib/recurrence'
 import type { TaskCard, TaskProject } from '@/types'
 
 interface Props {
@@ -109,6 +110,7 @@ export default function DayTasksPanel({ date, tasks, projectMap, loading, onTogg
               const due = dueCls(task.dueTime, done)
               const overdue = !done && isOverdue(task.dueTime, task.status)
               const isPlanned = !done && task.plannedToday && isToday
+              const recurDesc = task.recurrence ? describeRule(task.recurrence) : ''
               return (
                 <li key={task.id} className="group flex items-start gap-2 py-1.5 px-1.5 -mx-1.5 rounded-lg transition-colors hover:bg-muted/60">
                   <button
@@ -141,6 +143,15 @@ export default function DayTasksPanel({ date, tasks, projectMap, loading, onTogg
                       {isPlanned && (
                         <span className="inline-flex items-center px-1 py-px rounded text-[9.5px] font-medium bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
                           计划今日
+                        </span>
+                      )}
+                      {task.recurrence && (
+                        <span
+                          title={recurDesc ? `重复任务 · ${recurDesc}` : '重复任务'}
+                          className="inline-flex items-center gap-0.5 px-1 py-px rounded text-[9.5px] font-medium bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20"
+                        >
+                          <RepeatIcon className="h-2.5 w-2.5" />
+                          重复
                         </span>
                       )}
                     </div>

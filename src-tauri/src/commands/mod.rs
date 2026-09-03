@@ -25,3 +25,7 @@ pub mod tag;
 pub mod task_meta;
 pub mod migrate;
 pub mod reminder;
+pub mod subtask;
+pub mod template;
+pub mod attachment;
+pub mod activity;

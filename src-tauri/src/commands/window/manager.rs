@@ -279,3 +279,31 @@ pub async fn close_tasks_window(app: AppHandle) -> Result<(), AppError> {
 pub fn is_tasks_window_open(app: AppHandle) -> bool {
     app.get_webview_window(TASKS_CONFIG.label).is_some()
 }
+
+// ---- 看日记（书页式只读浏览）----
+
+const DIARY_BOOK_CONFIG: WindowConfig = WindowConfig {
+    label: "diary-book",
+    title: "看日记",
+    width: 1180.0,
+    height: 780.0,
+    min_width: 920.0,
+    min_height: 600.0,
+    query_param: "diarybookwin",
+    close_event: "diary-book-window-closed",
+};
+
+/// 打开/切换「看日记」独立窗口（已打开则关闭，未打开则创建）
+#[tauri::command]
+pub async fn open_diary_book_window(app: AppHandle) -> Result<(), AppError> {
+    if let Some(w) = app.get_webview_window(DIARY_BOOK_CONFIG.label) {
+        w.close().map_err(|e| AppError::Business(format!("关闭旧窗口失败: {}", e)))?;
+        return Ok(());
+    }
+    create_sub_window(&app, &DIARY_BOOK_CONFIG, "")
+}
+
+#[tauri::command]
+pub async fn close_diary_book_window(app: AppHandle) -> Result<(), AppError> {
+    close_sub_window(&app, DIARY_BOOK_CONFIG.label, DIARY_BOOK_CONFIG.close_event)
+}

@@ -6,7 +6,7 @@
  * 所有 IPC 调用必须通过此模块的 API 对象进行。
  */
 import { invoke } from '@tauri-apps/api/core'
-import type { Book, Chapter, Volume, Snapshot, WorldCard, Diary, DiaryMeta, CreateBookParams, UpdateBookParams, SaveDiaryParams, Schedule, SaveScheduleParams, VocabWord, VocabStats, VocabReviewLog, AddVocabWordArgs, UpdateVocabWordArgs, DictStatus, DictLookupResult, AiWordExplain, ExplainWordArgs, WordCheckResult, TtsSpeakResult, TaskProject, ProjectView, TaskCard, TaskTag, TaskStatus, TodayOverview, MigrateResult, DeletedTaskItem, ProjectStatus, CreateProjectArgs, UpdateProjectArgs, CreateTaskArgs, UpdateTaskArgs, UpdateTagArgs } from '@/types'
+import type { Book, Chapter, Volume, Snapshot, WorldCard, Diary, DiaryMeta, CreateBookParams, UpdateBookParams, SaveDiaryParams, Schedule, SaveScheduleParams, VocabWord, VocabStats, VocabReviewLog, AddVocabWordArgs, UpdateVocabWordArgs, DictStatus, DictLookupResult, AiWordExplain, ExplainWordArgs, WordCheckResult, TtsSpeakResult, TaskProject, ProjectView, TaskCard, TaskSubtask, TaskTag, TaskStatus, TaskTemplate, TodayOverview, MigrateResult, DeletedTaskItem, ProjectStatus, CreateProjectArgs, UpdateProjectArgs, CreateTaskArgs, UpdateTaskArgs, CreateTemplateArgs, UpdateTemplateArgs, Attachment, ActivityLog, ProjectWeeklyStat, UpdateTagArgs } from '@/types'
 
 // ==================== 书籍管理 ====================
 
@@ -361,6 +361,16 @@ export const windowApi = {
   /** 任务卡窗口当前是否打开 */
   async isTasksOpen(): Promise<boolean> {
     return invoke<boolean>('is_tasks_window_open')
+  },
+
+  /** 打开/切换「看日记」书页浏览独立窗口（已打开则关闭，未打开则创建） */
+  async openDiaryBook(): Promise<void> {
+    return invoke<void>('open_diary_book_window')
+  },
+
+  /** 关闭「看日记」书页浏览独立窗口 */
+  async closeDiaryBook(): Promise<void> {
+    return invoke<void>('close_diary_book_window')
   },
 }
 
@@ -820,9 +830,9 @@ export const taskCardApi = {
   async updateTask(id: string, args: UpdateTaskArgs): Promise<TaskCard> {
     return invoke<TaskCard>('task_update', { id, args })
   },
-  /** 状态切换 / 勾选完成 / 重新打开 */
-  async setTaskStatus(id: string, status: TaskStatus): Promise<TaskCard> {
-    return invoke<TaskCard>('task_set_status', { id, status })
+  /** 状态切换 / 勾选完成 / 重新打开；勾选完成可携带富文本总结（HTML，空串=清空，null=不改动） */
+  async setTaskStatus(id: string, status: TaskStatus, completionSummary: string | null = null): Promise<TaskCard> {
+    return invoke<TaskCard>('task_set_status', { id, status, completionSummary })
   },
   /** 看板拖拽：跨列改状态 + 按目标列最终顺序重排 */
   async dragTask(id: string, toStatus: TaskStatus, orderedIds: string[]): Promise<void> {
@@ -855,6 +865,90 @@ export const taskCardApi = {
   /** 清空任务回收站 */
   async clearTaskTrash(): Promise<number> {
     return invoke<number>('task_clear_trash')
+  },
+  /** 回收站自动清理（硬删删除超 30 天的任务与项目），返回清理条数 */
+  async purgeExpiredTrash(): Promise<number> {
+    return invoke<number>('task_purge_expired_trash')
+  },
+
+  // ── 子任务 ──
+  /** 列出某任务全部子任务 */
+  async listSubtasks(taskId: string): Promise<TaskSubtask[]> {
+    return invoke<TaskSubtask[]>('subtask_list', { taskId })
+  },
+  /** 创建子任务 */
+  async createSubtask(taskId: string, title: string): Promise<TaskSubtask> {
+    return invoke<TaskSubtask>('subtask_create', { taskId, title })
+  },
+  /** 重命名子任务 */
+  async updateSubtask(id: string, title: string): Promise<TaskSubtask> {
+    return invoke<TaskSubtask>('subtask_update', { id, title })
+  },
+  /** 勾选 / 取消完成 */
+  async setSubtaskDone(id: string, done: boolean): Promise<TaskSubtask> {
+    return invoke<TaskSubtask>('subtask_set_done', { id, done })
+  },
+  /** 删除子任务 */
+  async deleteSubtask(id: string): Promise<void> {
+    return invoke<void>('subtask_delete', { id })
+  },
+
+  // ── 任务模板 ──
+  /** 列出全部模板 */
+  async listTemplates(): Promise<TaskTemplate[]> {
+    return invoke<TaskTemplate[]>('template_list')
+  },
+  /** 创建模板 */
+  async createTemplate(args: CreateTemplateArgs): Promise<TaskTemplate> {
+    return invoke<TaskTemplate>('template_create', { args })
+  },
+  /** 更新模板 */
+  async updateTemplate(id: string, args: UpdateTemplateArgs): Promise<TaskTemplate> {
+    return invoke<TaskTemplate>('template_update', { id, args })
+  },
+  /** 删除模板 */
+  async deleteTemplate(id: string): Promise<void> {
+    return invoke<void>('template_delete', { id })
+  },
+  /** 一键套用模板创建任务 */
+  async createTaskFromTemplate(
+    templateId: string,
+    projectId: string,
+    dueTime?: string,
+  ): Promise<TaskCard> {
+    return invoke<TaskCard>('task_create_from_template', { templateId, projectId, dueTime })
+  },
+
+  // ── 附件 ──
+  /** 列出某任务的附件 */
+  async listAttachments(taskId: string): Promise<Attachment[]> {
+    return invoke<Attachment[]>('attachment_list', { taskId })
+  },
+  /** 系统对话框选择文件并添加为附件；取消返回 null */
+  async pickAndAddAttachment(taskId: string): Promise<Attachment | null> {
+    return invoke<Attachment | null>('attachment_pick_and_add', { taskId })
+  },
+  /** 用系统默认应用打开附件 */
+  async openAttachment(id: string): Promise<void> {
+    return invoke<void>('attachment_open', { id })
+  },
+  /** 删除附件（记录 + 文件） */
+  async deleteAttachment(id: string): Promise<void> {
+    return invoke<void>('attachment_delete', { id })
+  },
+
+  // ── 操作日志 ──
+  /** 某任务的动态时间线（最新在前） */
+  async listTaskActivity(taskId: string, limit?: number): Promise<ActivityLog[]> {
+    return invoke<ActivityLog[]>('activity_list_task', { taskId, limit })
+  },
+  /** 某项目的动态时间线（最新在前） */
+  async listProjectActivity(projectId: string, limit?: number): Promise<ActivityLog[]> {
+    return invoke<ActivityLog[]>('activity_list_project', { projectId, limit })
+  },
+  /** 项目近 N 周新增/完成统计（默认 8 周） */
+  async projectWeeklyStats(projectId: string, weeks?: number): Promise<ProjectWeeklyStat[]> {
+    return invoke<ProjectWeeklyStat[]>('project_weekly_stats', { projectId, weeks })
   },
 
   // ── 今日任务 ──

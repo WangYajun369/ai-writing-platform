@@ -1,0 +1,130 @@
+/* 任务卡 · 描述富文本编辑器（TaskDescriptionEditor）内容与缩放样式 */
+
+/* 内容排版：紧凑、适配任务卡深色弹层 */
+.task-desc-prose {
+  font-size: 13px;
+  line-height: 1.75;
+  color: #d4d4d8;
+  caret-color: #fb7185;
+}
+.task-desc-prose:focus {
+  outline: none;
+}
+.task-desc-prose p {
+  margin: 0.3em 0;
+}
+.task-desc-prose h1,
+.task-desc-prose h2,
+.task-desc-prose h3,
+.task-desc-prose h4 {
+  color: #e4e4e7;
+  font-weight: 600;
+  margin: 0.7em 0 0.3em;
+}
+.task-desc-prose h1 {
+  font-size: 1.25em;
+}
+.task-desc-prose h2 {
+  font-size: 1.15em;
+}
+.task-desc-prose h3 {
+  font-size: 1.05em;
+}
+.task-desc-prose ul {
+  list-style: disc;
+  padding-left: 1.35em;
+  margin: 0.3em 0;
+}
+.task-desc-prose ol {
+  list-style: decimal;
+  padding-left: 1.35em;
+  margin: 0.3em 0;
+}
+.task-desc-prose ul ul {
+  list-style: circle;
+}
+.task-desc-prose ul ul ul {
+  list-style: square;
+}
+.task-desc-prose li {
+  margin: 0.15em 0;
+}
+.task-desc-prose li > p {
+  margin: 0;
+}
+.task-desc-prose strong {
+  font-weight: 600;
+}
+.task-desc-prose em {
+  font-style: italic;
+}
+.task-desc-prose u {
+  text-decoration: underline;
+}
+.task-desc-prose s {
+  text-decoration: line-through;
+}
+.task-desc-prose blockquote {
+  border-left: 2px solid rgba(251, 113, 133, 0.45);
+  margin: 0.5em 0;
+  padding-left: 0.9em;
+  color: #a1a1aa;
+}
+.task-desc-prose code {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  font-size: 0.9em;
+  color: #fda4af;
+}
+.task-desc-prose pre {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  margin: 0.5em 0;
+  overflow: auto;
+  padding: 0.6em 0.8em;
+}
+.task-desc-prose pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+.task-desc-prose a {
+  color: #67e8f9;
+  text-decoration: underline;
+}
+
+/* 可调整高度的编辑区（右下角拖拽） */
+.task-desc-resizer {
+  resize: vertical;
+  overflow: auto;
+  min-height: 108px;
+  max-height: 55vh;
+}
+.task-desc-resizer::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.task-desc-resizer::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+
+/* 完成总结 / 详情展示：图片、内联块自适应 */
+.task-desc-prose img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.5em 0;
+  border-radius: 8px;
+}
+.task-desc-prose .ProseMirror-selectednode {
+  outline: 2px solid rgba(251, 113, 133, 0.55);
+  border-radius: 8px;
+}
+/* 完成总结：只读展示区（详情）滚动与留白 */
+.summary-readonly {
+  overflow: auto;
+  max-height: 30vh;
+}

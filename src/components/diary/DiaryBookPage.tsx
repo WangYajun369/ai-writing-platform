@@ -1,5 +1,5 @@
 /**
- * DiaryBookDialog — 「看日记」书页式浏览弹窗（仅展示，只读）
+ * DiaryBookPage — 「看日记」独立窗口页面（书页式浏览，仅展示，只读）
  *
  * 像翻一本真正的书一样回看全部日记：
  * - 按月分章：每个月从新的一页开始，左侧为空白页、右侧为该月第一篇日记
@@ -9,6 +9,9 @@
  * - 顶栏年月选择器可跳转到任意有日记月份的开篇页
  * - 点左右箭头 / ← → 方向键往前（更早）或往后（更晚）翻
  * - 正文用 tiptap-editor 排版样式只读渲染，不可编辑
+ *
+ * 由主窗口「看日记」入口以独立窗口（diary-book）打开，关闭按钮 / Esc 调用
+ * windowApi.closeDiaryBook() 销毁自身窗口。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -20,15 +23,11 @@ import {
   NotebookPenIcon,
   XIcon,
 } from 'lucide-react'
-import { diaryApi } from '@/lib/tauri-bridge'
+import { diaryApi, windowApi } from '@/lib/tauri-bridge'
 import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { formatDiaryTime, formatFullDateLabel, toDateKey } from '@/lib/diary-utils'
 import type { Diary, DiaryMeta } from '@/types'
-
-interface DiaryBookDialogProps {
-  onClose: () => void
-}
 
 /** 缓存中日记内容的状态：'pending' = 加载中，null = 该日无记录 */
 type CachedDiary = Diary | null | 'pending'
@@ -47,7 +46,7 @@ const ymOfDate = (date: string) => date.slice(0, 7)
 /** 月份中文名（index 0 → 一月） */
 const zhMonths = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二']
 
-export default function DiaryBookDialog({ onClose }: DiaryBookDialogProps) {
+export default function DiaryBookPage() {
   /** 全部日记摘要（按日期升序，最早的在前） */
   const [metas, setMetas] = useState<DiaryMeta[] | null>(null)
   /** 当前展开书页在 pages 中的下标 */
@@ -59,6 +58,11 @@ export default function DiaryBookDialog({ onClose }: DiaryBookDialogProps) {
   const [, setTick] = useState(0)
 
   const n = metas?.length ?? 0
+
+  /** 关闭独立窗口（销毁自身） */
+  const closeWindow = useCallback(() => {
+    void windowApi.closeDiaryBook()
+  }, [])
 
   /**
    * 把日记列表排成书页（按月分章）：
@@ -212,8 +216,8 @@ export default function DiaryBookDialog({ onClose }: DiaryBookDialogProps) {
     [metas, n, pages, pageIdx],
   )
 
-  const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
+  const closeWindowRef = useRef(closeWindow)
+  closeWindowRef.current = closeWindow
   const goPrevRef = useRef(goPrev)
   goPrevRef.current = goPrev
   const goNextRef = useRef(goNext)
@@ -223,7 +227,7 @@ export default function DiaryBookDialog({ onClose }: DiaryBookDialogProps) {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
-        onCloseRef.current()
+        closeWindowRef.current()
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault()
         goPrevRef.current()
@@ -393,8 +397,8 @@ export default function DiaryBookDialog({ onClose }: DiaryBookDialogProps) {
   // ── 目录加载中 ──
   if (metas === null) {
     return (
-      <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px] flex items-center justify-center p-6">
-        <div className="w-[min(560px,92vw)] bg-background rounded-2xl border shadow-2xl h-[min(50vh,420px)] flex flex-col items-center justify-center gap-3">
+      <div className="h-full w-full bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center justify-center gap-3">
           <Loader2Icon className="w-6 h-6 text-primary animate-spin" />
           <p className="text-sm text-muted-foreground">正在打开日记…</p>
         </div>
@@ -405,19 +409,19 @@ export default function DiaryBookDialog({ onClose }: DiaryBookDialogProps) {
   // ── 一篇日记都没有 ──
   if (n === 0) {
     return (
-      <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px] flex items-center justify-center p-6">
-        <div className="relative w-[min(560px,92vw)] bg-background rounded-2xl border shadow-2xl flex flex-col items-center justify-center gap-3 py-16 px-8">
-          <button
-            onClick={onClose}
-            className="absolute top-3 right-3 p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-            title="关闭 (Esc)"
-          >
-            <XIcon className="w-4 h-4" />
-          </button>
+      <div className="relative h-full w-full bg-background flex items-center justify-center">
+        <button
+          onClick={closeWindow}
+          className="absolute top-3 right-3 p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          title="关闭 (Esc)"
+        >
+          <XIcon className="w-4 h-4" />
+        </button>
+        <div className="flex flex-col items-center justify-center gap-3 py-16 px-8">
           <NotebookPenIcon className="w-8 h-8 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">还没有写过日记</p>
           <p className="text-xs text-muted-foreground/60">
-            在日历上选中某一天，点击「写这一天的日记」开始记录
+            回到首页日历，选中某一天点击「写这一天的日记」开始记录
           </p>
         </div>
       </div>
@@ -430,136 +434,129 @@ export default function DiaryBookDialog({ onClose }: DiaryBookDialogProps) {
   const animCls = dir === 'prev' ? 'diary-anim-prev' : dir === 'next' ? 'diary-anim-next' : ''
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px] flex items-center justify-center p-6"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
-      <div className="bg-background rounded-2xl border shadow-2xl flex flex-col overflow-hidden w-[min(1200px,96vw)] h-[min(84vh,780px)]">
-        {/* ─── 顶栏 ─── */}
-        <div className="h-11 px-3 border-b bg-card flex items-center gap-2 shrink-0">
-          <BookOpenIcon className="w-4 h-4 text-primary shrink-0" />
-          <span className="text-sm font-semibold">看日记</span>
-          <span className="text-[10px] px-1.5 py-px rounded-full bg-muted text-muted-foreground shrink-0">
-            仅展示
-          </span>
-          <div className="flex-1" />
+    <div className="h-full w-full flex flex-col bg-background overflow-hidden">
+      {/* ─── 顶栏 ─── */}
+      <div className="h-11 px-3 border-b bg-card flex items-center gap-2 shrink-0">
+        <BookOpenIcon className="w-4 h-4 text-primary shrink-0" />
+        <span className="text-sm font-semibold">看日记</span>
+        <span className="text-[10px] px-1.5 py-px rounded-full bg-muted text-muted-foreground shrink-0">
+          仅展示
+        </span>
+        <div className="flex-1" />
 
-          {/* 翻页控件 */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={goPrev}
-              disabled={!canPrev}
-              title="翻向更早（←）"
-              className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
-            >
-              <ChevronLeftIcon className="w-4 h-4" />
-            </button>
-            <span className="text-xs text-muted-foreground/90 tabular-nums whitespace-nowrap px-1">
-              第 {pageNo} / {pageTotal} 页 · 共 {n} 篇
-            </span>
-            <button
-              onClick={goNext}
-              disabled={!canNext}
-              title="翻向更晚（→）"
-              className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
-            >
-              <ChevronRightIcon className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* 年月选择：跳转到该月第一篇日记 */}
-          {months.length > 1 && (
-            <select
-              value={viewMonthKey}
-              onChange={(e) => jumpToMonth(e.target.value)}
-              title="跳到有日记的月份"
-              className="ml-1 h-7 max-w-44 rounded-lg bg-muted px-2 text-xs text-muted-foreground outline-none cursor-pointer whitespace-nowrap"
-            >
-              {months.map((m) => (
-                <option key={m.key} value={m.key}>
-                  {m.label} · {m.count} 篇
-                </option>
-              ))}
-            </select>
-          )}
-
-          <div className="w-px h-5 bg-border mx-0.5 shrink-0" />
-
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
-            title="关闭 (Esc)"
-          >
-            <XIcon className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* ─── 书页主体 ─── */}
-        <div className="flex-1 min-h-0 relative flex items-center justify-center px-12 py-5 bg-muted/15">
-          {/* 左右浮动翻页大按钮 */}
+        {/* 翻页控件 */}
+        <div className="flex items-center gap-1">
           <button
             onClick={goPrev}
             disabled={!canPrev}
-            title="翻向更早"
-            className={cn(
-              'absolute left-2 top-1/2 -translate-y-1/2 z-10 w-9 h-16 rounded-lg border bg-background/90 shadow-md flex items-center justify-center transition-colors',
-              canPrev
-                ? 'text-foreground hover:bg-primary hover:text-primary-foreground'
-                : 'text-muted-foreground/30 cursor-not-allowed',
-            )}
+            title="翻向更早（←）"
+            className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
           >
-            <ChevronLeftIcon className="w-5 h-5" />
+            <ChevronLeftIcon className="w-4 h-4" />
           </button>
+          <span className="text-xs text-muted-foreground/90 tabular-nums whitespace-nowrap px-1">
+            第 {pageNo} / {pageTotal} 页 · 共 {n} 篇
+          </span>
           <button
             onClick={goNext}
             disabled={!canNext}
-            title="翻向更晚"
-            className={cn(
-              'absolute right-2 top-1/2 -translate-y-1/2 z-10 w-9 h-16 rounded-lg border bg-background/90 shadow-md flex items-center justify-center transition-colors',
-              canNext
-                ? 'text-foreground hover:bg-primary hover:text-primary-foreground'
-                : 'text-muted-foreground/30 cursor-not-allowed',
-            )}
+            title="翻向更晚（→）"
+            className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
           >
-            <ChevronRightIcon className="w-5 h-5" />
+            <ChevronRightIcon className="w-4 h-4" />
           </button>
+        </div>
 
-          {/* 展开的书：按月分章，左旧右新，无内容的一侧留白 */}
-          <div key={`${pageIdx}-${dir ?? 'init'}`} className={cn('h-full w-full max-w-[1060px] flex', animCls)}>
-            {/* 左半区 */}
-            <div className="flex-1 min-w-0 flex">
-              {leftMeta ? renderDiaryPage(leftMeta, 'left') : renderBlankPage('left', rightMeta)}
-            </div>
+        {/* 年月选择：跳转到该月第一篇日记 */}
+        {months.length > 1 && (
+          <select
+            value={viewMonthKey}
+            onChange={(e) => jumpToMonth(e.target.value)}
+            title="跳到有日记的月份"
+            className="ml-1 h-7 max-w-44 rounded-lg bg-muted px-2 text-xs text-muted-foreground outline-none cursor-pointer whitespace-nowrap"
+          >
+            {months.map((m) => (
+              <option key={m.key} value={m.key}>
+                {m.label} · {m.count} 篇
+              </option>
+            ))}
+          </select>
+        )}
 
-            {/* 书脊 */}
-            <div className="w-9 shrink-0 relative z-10">
-              <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-linear-to-b from-transparent via-border to-transparent" />
-              <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 ml-1.5 w-1.5 bg-linear-to-b from-transparent via-black/10 to-transparent" />
-            </div>
+        <div className="w-px h-5 bg-border mx-0.5 shrink-0" />
 
-            {/* 右半区 */}
-            <div className="flex-1 min-w-0 flex">
-              {rightMeta ? renderDiaryPage(rightMeta, 'right') : renderBlankPage('right', leftMeta)}
-            </div>
+        <button
+          onClick={closeWindow}
+          className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
+          title="关闭 (Esc)"
+        >
+          <XIcon className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* ─── 书页主体 ─── */}
+      <div className="flex-1 min-h-0 relative flex items-center justify-center px-12 py-5 bg-muted/15">
+        {/* 左右浮动翻页大按钮 */}
+        <button
+          onClick={goPrev}
+          disabled={!canPrev}
+          title="翻向更早"
+          className={cn(
+            'absolute left-2 top-1/2 -translate-y-1/2 z-10 w-9 h-16 rounded-lg border bg-background/90 shadow-md flex items-center justify-center transition-colors',
+            canPrev
+              ? 'text-foreground hover:bg-primary hover:text-primary-foreground'
+              : 'text-muted-foreground/30 cursor-not-allowed',
+          )}
+        >
+          <ChevronLeftIcon className="w-5 h-5" />
+        </button>
+        <button
+          onClick={goNext}
+          disabled={!canNext}
+          title="翻向更晚"
+          className={cn(
+            'absolute right-2 top-1/2 -translate-y-1/2 z-10 w-9 h-16 rounded-lg border bg-background/90 shadow-md flex items-center justify-center transition-colors',
+            canNext
+              ? 'text-foreground hover:bg-primary hover:text-primary-foreground'
+              : 'text-muted-foreground/30 cursor-not-allowed',
+          )}
+        >
+          <ChevronRightIcon className="w-5 h-5" />
+        </button>
+
+        {/* 展开的书：按月分章，左旧右新，无内容的一侧留白 */}
+        <div key={`${pageIdx}-${dir ?? 'init'}`} className={cn('h-full w-full max-w-[1060px] flex', animCls)}>
+          {/* 左半区 */}
+          <div className="flex-1 min-w-0 flex">
+            {leftMeta ? renderDiaryPage(leftMeta, 'left') : renderBlankPage('left', rightMeta)}
           </div>
 
-          {/* 翻页入场动画（局部样式，不污染全局） */}
-          <style>{`
-            @keyframes diaryPageInNext { from { opacity: 0.25; transform: translateX(28px); } to { opacity: 1; transform: none; } }
-            @keyframes diaryPageInPrev { from { opacity: 0.25; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
-            .diary-anim-next { animation: diaryPageInNext 260ms ease-out; }
-            .diary-anim-prev { animation: diaryPageInPrev 260ms ease-out; }
-          `}</style>
+          {/* 书脊 */}
+          <div className="w-9 shrink-0 relative z-10">
+            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-linear-to-b from-transparent via-border to-transparent" />
+            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 ml-1.5 w-1.5 bg-linear-to-b from-transparent via-black/10 to-transparent" />
+          </div>
+
+          {/* 右半区 */}
+          <div className="flex-1 min-w-0 flex">
+            {rightMeta ? renderDiaryPage(rightMeta, 'right') : renderBlankPage('right', leftMeta)}
+          </div>
         </div>
 
-        {/* ─── 底栏 ─── */}
-        <div className="h-8 px-4 border-t bg-card flex items-center justify-center gap-3 text-[11px] text-muted-foreground/70 shrink-0">
-          <span>← → 方向键或点击两侧箭头翻页</span>
-          <span className="text-muted-foreground/25">·</span>
-          <span>Esc 关闭</span>
-        </div>
+        {/* 翻页入场动画（局部样式，不污染全局） */}
+        <style>{`
+          @keyframes diaryPageInNext { from { opacity: 0.25; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+          @keyframes diaryPageInPrev { from { opacity: 0.25; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+          .diary-anim-next { animation: diaryPageInNext 260ms ease-out; }
+          .diary-anim-prev { animation: diaryPageInPrev 260ms ease-out; }
+        `}</style>
+      </div>
+
+      {/* ─── 底栏 ─── */}
+      <div className="h-8 px-4 border-t bg-card flex items-center justify-center gap-3 text-[11px] text-muted-foreground/70 shrink-0">
+        <span>← → 方向键或点击两侧箭头翻页</span>
+        <span className="text-muted-foreground/25">·</span>
+        <span>Esc 关闭</span>
       </div>
     </div>
   )

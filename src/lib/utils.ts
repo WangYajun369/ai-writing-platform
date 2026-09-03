@@ -36,6 +36,27 @@ export function countWordsFromHtml(html: string): number {
   return text.replace(/\s/g, '').length
 }
 
+/** HTML → 纯文本（保留换行），用于搜索与摘要；旧纯文本数据原样返回 */
+export function htmlToPlainText(html: string): string {
+  if (!html) return ''
+  if (!/^\s*</.test(html)) return html.trim()
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  const text = doc.body.innerText ?? doc.body.textContent ?? ''
+  return text.replace(/\u00a0/g, ' ').trim()
+}
+
+/** 兼容编辑：旧数据纯文本 → 可被 TipTap 解析的 HTML（按行拆段、转义实体） */
+export function legacyTextToHtml(text: string | null | undefined): string {
+  const t = (text ?? '').trim()
+  if (!t) return ''
+  if (/^\s*</.test(t)) return t
+  const esc = t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return esc
+    .split(/\r?\n+/)
+    .map((l) => `<p>${l}</p>`)
+    .join('')
+}
+
 /** 计算全书总字数，可覆盖指定章节的字数 */
 export function calcBookWordCount(
   chapters: Chapter[],

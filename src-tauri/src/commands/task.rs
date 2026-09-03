@@ -51,15 +51,23 @@ pub fn task_update(
     task_service::update_task(&app, &state, &id, args)
 }
 
-/// 状态切换 / 勾选完成 / 重新打开（移动到目标列尾）
+/// 状态切换 / 勾选完成 / 重新打开（移动到目标列尾）。
+/// `completion_summary`：勾选完成时前端携带的富文本总结（HTML，可为空串；None = 不改动）。
 #[tauri::command]
 pub fn task_set_status(
     app: AppHandle,
     state: State<AppDb>,
     id: String,
     status: String,
+    completion_summary: Option<String>,
 ) -> Result<TaskCard, AppError> {
-    task_service::set_task_status(&app, &state, &id, &status)
+    task_service::set_task_status(
+        &app,
+        &state,
+        &id,
+        &status,
+        completion_summary.as_deref(),
+    )
 }
 
 /// 看板拖拽：跨列改状态 + 按目标列顺序重排
@@ -122,6 +130,12 @@ pub fn task_list_deleted(
 #[tauri::command]
 pub fn task_clear_trash(app: AppHandle, state: State<AppDb>) -> Result<u32, AppError> {
     task_service::clear_task_trash(&app, &state)
+}
+
+/// 回收站自动清理（手动触发）：硬删除删除时间超过 30 天的项目与任务
+#[tauri::command]
+pub fn task_purge_expired_trash(app: AppHandle, state: State<AppDb>) -> Result<u32, AppError> {
+    task_service::purge_expired_trash(&app, &state)
 }
 
 /// 「计划今日」滚动清理（自然日切换后由前端触发）

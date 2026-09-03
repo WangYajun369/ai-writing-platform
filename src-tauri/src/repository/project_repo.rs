@@ -159,3 +159,13 @@ pub fn clear_trash(conn: &Connection) -> Result<()> {
     conn.execute("DELETE FROM projects WHERE deleted_at IS NOT NULL", [])?;
     Ok(())
 }
+
+/// 回收站自动清理：硬删除删除时间早于 cutoff 的项目（PRD 9.12.2 保留 30 天）。
+/// 其下任务 / 附件 / 里程碑 / 操作日志由外键级联删除。
+/// deleted_at 为 UTC RFC3339 字符串（与 cutoff 同格式，可字典序比较）。
+pub fn purge_expired(conn: &Connection, cutoff: &str) -> Result<usize> {
+    conn.execute(
+        "DELETE FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < ?1",
+        params![cutoff],
+    )
+}

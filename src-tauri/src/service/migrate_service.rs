@@ -95,7 +95,7 @@ pub fn migrate_schedules(app: &AppHandle, db: &AppDb) -> Result<MigrateResult, A
         let planned = if s.schedule_date == today { 1 } else { 0 };
         let sort_order = task_repo::next_sort_order(&tx, &pid, status)?;
         task_repo::insert(
-            &tx, &id, &pid, &truncate_title(&s.content), "", status, "medium",
+            &tx, &id, &pid, None, &truncate_title(&s.content), "", status, "medium",
             None, Some(&due), planned, "", sort_order, &ts,
         )?;
         if s.done {
