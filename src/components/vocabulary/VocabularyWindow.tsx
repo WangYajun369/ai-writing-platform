@@ -10,7 +10,6 @@ import { useEffect, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
 import {
-  XIcon,
   BookOpenIcon,
   PlayCircleIcon,
   BarChart3Icon,
@@ -21,7 +20,7 @@ import {
   SparklesIcon,
   Volume2Icon,
 } from 'lucide-react'
-import { dictApi, windowApi } from '@/lib/tauri-bridge'
+import { dictApi } from '@/lib/tauri-bridge'
 import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { useVocabStore } from '@/stores/vocabStore'
