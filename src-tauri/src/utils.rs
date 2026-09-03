@@ -3,7 +3,7 @@
 //! 提供跨命令模块共享的时间戳、HTML 剥离、HTTP 客户端工厂、字数聚合等工具函数。
 
 use std::sync::OnceLock;
-use chrono::Utc;
+use chrono::{Local, Utc};
 use crate::error::AppError;
 
 // ---- 时间戳 ----
@@ -11,6 +11,20 @@ use crate::error::AppError;
 /// 获取当前 UTC 时间的 RFC 3339 字符串表示
 pub fn now() -> String {
     Utc::now().to_rfc3339()
+}
+
+/// 获取当前本地时间的紧凑字符串 `YYYY-MM-DDTHH:MM:SS`（无时区后缀）。
+///
+/// 用于任务卡模块的业务时间字段（截止时间/开始时间/完成时间/提醒时间等）。
+/// 本地单机场景下采用本地时间可让"今天到期/已逾期"等判断直接按字符串字典序
+/// 比较即可正确（UTC 时间会在跨天边界造成误判）。
+pub fn local_now() -> String {
+    Local::now().format("%Y-%m-%dT%H:%M:%S").to_string()
+}
+
+/// 当前本地日期 `YYYY-MM-DD`
+pub fn local_today() -> String {
+    Local::now().format("%Y-%m-%d").to_string()
 }
 
 // ---- HTML 处理 ----

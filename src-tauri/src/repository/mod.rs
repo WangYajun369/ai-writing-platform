@@ -14,3 +14,8 @@ pub mod embedding_repo;
 pub mod diary_repo;
 pub mod schedule_repo;
 pub mod vocab_repo;
+// ── 任务卡模块 ──
+pub mod project_repo;
+pub mod task_repo;
+pub mod tag_repo;
+pub mod task_meta_repo;

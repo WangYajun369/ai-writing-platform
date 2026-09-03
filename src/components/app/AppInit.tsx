@@ -11,6 +11,7 @@ import {
   detectAiToolboxWindow,
   detectDebugWindow,
   detectVocabWindow,
+  detectTasksWindow,
 } from './windowDetection'
 import { useAppVersion } from '@/hooks/useAppVersion'
 import { useConsoleInterceptor } from '@/hooks/useConsoleInterceptor'
@@ -22,6 +23,7 @@ import { ChapterSummaryPanel } from '@/components/editor/ChapterSummaryHeader'
 import AiToolboxPanel from '@/components/ai/AiToolboxPanel'
 import DebugPanel from '@/components/common/DebugPanel'
 import VocabularyWindow from '@/components/vocabulary/VocabularyWindow'
+import TaskCardsWindow from '@/components/taskCards/TaskCardsWindow'
 import ToastContainer from '@/components/common/ToastContainer'
 import AppClosingOverlay from './AppClosingOverlay'
 import PluginHost from './PluginHost'
@@ -50,6 +52,7 @@ export default function AppInit() {
   const aiToolboxWin = detectAiToolboxWindow()
   const debugWin = detectDebugWindow()
   const vocabWin = detectVocabWindow()
+  const tasksWin = detectTasksWindow()
 
   // 非调试窗口启用 console 拦截
   useConsoleInterceptor(debugWin.isDebug)
@@ -91,6 +94,14 @@ export default function AppInit() {
     return (
       <WindowShell>
         <VocabularyWindow />
+      </WindowShell>
+    )
+  }
+
+  if (tasksWin.isTasks) {
+    return (
+      <WindowShell>
+        <TaskCardsWindow />
       </WindowShell>
     )
   }

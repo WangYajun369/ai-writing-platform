@@ -362,3 +362,136 @@ pub struct VocabKnowledge {
     /// 按词性区分的例句（帮助结合语境理解）
     pub examples: Vec<VocabSentence>,
 }
+
+// ══════════ 任务卡模块（个人项目管理）══════════
+
+/// 项目 — 对应 projects 表
+/// status: active（进行中）/ completed（已完成）/ archived（已归档）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Project {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub color: String,
+    pub icon: String,
+    pub status: String,
+    /// 计划开始日期 YYYY-MM-DD
+    #[serde(rename = "planStartDate")]
+    pub plan_start_date: Option<String>,
+    /// 计划结束日期 YYYY-MM-DD
+    #[serde(rename = "planEndDate")]
+    pub plan_end_date: Option<String>,
+    pub pinned: bool,
+    #[serde(rename = "sortOrder")]
+    pub sort_order: i64,
+    #[serde(rename = "deletedAt")]
+    pub deleted_at: Option<String>,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+}
+
+/// 标签 — 对应 tags 表，status: enabled / disabled
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Tag {
+    pub id: String,
+    pub name: String,
+    pub color: String,
+    pub status: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+}
+
+/// 任务卡 — 对应 tasks 表（tags 由 service 聚合填充）
+/// status: todo / doing / done；priority: high / medium / low
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TaskCard {
+    pub id: String,
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    pub title: String,
+    pub description: String,
+    pub status: String,
+    pub priority: String,
+    /// 计划开始时间（本地时间字符串）
+    #[serde(rename = "planStartTime")]
+    pub plan_start_time: Option<String>,
+    /// 截止时间（本地时间字符串）
+    #[serde(rename = "dueTime")]
+    pub due_time: Option<String>,
+    /// 计划今日（每天自然日切换时由滚动规则清理）
+    #[serde(rename = "plannedToday")]
+    pub planned_today: bool,
+    /// 完成时间（本地时间字符串，重新打开时清空）
+    #[serde(rename = "completedTime")]
+    pub completed_time: Option<String>,
+    /// 个人备注（纯文本）
+    pub note: String,
+    /// 下次提醒时间（本地时间字符串）
+    #[serde(rename = "remindAt")]
+    pub remind_at: Option<String>,
+    /// 提醒类型：due_before / due_day / overdue / daily（空表示未启用）
+    #[serde(rename = "remindType")]
+    pub remind_type: String,
+    #[serde(rename = "sortOrder")]
+    pub sort_order: i64,
+    #[serde(rename = "deletedAt")]
+    pub deleted_at: Option<String>,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+    /// 聚合标签（查询时由 service 填充，可为空数组）
+    pub tags: Vec<Tag>,
+}
+
+/// 项目实时统计（由任务实时聚合，不落库）
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct ProjectStats {
+    pub total: i64,
+    pub todo: i64,
+    pub doing: i64,
+    pub done: i64,
+    /// 逾期未完成任务数
+    pub overdue: i64,
+}
+
+/// 项目 + 实时统计（列表/详情返回形态）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProjectView {
+    #[serde(flatten)]
+    pub project: Project,
+    pub stats: ProjectStats,
+}
+
+/// 日程迁移结果报告
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct MigrateResult {
+    /// 本次迁移的日程条数（幂等命中时为 0）
+    pub migrated: i64,
+    /// 其中已完成的日程条数
+    pub completed: i64,
+    /// 默认项目 id（复用已存在的"个人事务"项目）
+    #[serde(rename = "projectId")]
+    pub project_id: String,
+    /// 是否此前已完成过迁移（幂等提示）
+    pub already: bool,
+}
+
+/// 今日任务概览（今日任务页顶部与 home-header 角标使用）
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct TodayOverview {
+    /// 今日应完成（今天到期 + 计划今日 + 逾期未完成）
+    #[serde(rename = "dueToday")]
+    pub due_today: i64,
+    /// 今日已完成（completed_time 为今天）
+    #[serde(rename = "doneToday")]
+    pub done_today: i64,
+    /// 逾期未完成任务数
+    pub overdue: i64,
+    /// 需要提醒的未完成任务数（角标：今日到期 + 逾期 + 计划今日）
+    pub badge: i64,
+}

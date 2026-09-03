@@ -1,7 +1,7 @@
 {
   "identifier": "default",
   "description": "Default capability for TimeWrite main and feature windows",
-  "windows": ["main", "world", "history", "summary", "ai-toolbox"],
+  "windows": ["main", "world", "history", "summary", "ai-toolbox", "vocab", "tasks"],
   "permissions": [
     "core:default",
     "shell:allow-open",
@@ -23,6 +23,7 @@
     { "identifier": "fs:allow-read-dir", "scope": ["$APPDATA/**", "$RESOURCE/**"] },
     { "identifier": "fs:allow-stat", "scope": ["$APPDATA/**", "$RESOURCE/**"] },
     "deep-link:default",
-    "http:default"
+    "http:default",
+    "notification:default"
   ]
 }

@@ -88,3 +88,17 @@ export function detectVocabWindow(): VocabWindowInfo {
   if (params.get('vocabwin') === '1') return { isVocab: true }
   return { isVocab: false }
 }
+
+export interface TasksWindowInfo {
+  isTasks: boolean
+  /** 命令面板深链目标视图区段：今日 / 全部任务 */
+  section?: 'today' | 'all'
+}
+
+export function detectTasksWindow(): TasksWindowInfo {
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('taskswin') !== '1') return { isTasks: false }
+  const s = params.get('section')
+  const section = s === 'all' || s === 'today' ? s : undefined
+  return { isTasks: true, section }
+}

@@ -45,6 +45,25 @@ pub fn list_by_month(conn: &Connection, prefix: &str) -> Result<Vec<Schedule>> {
     items.collect()
 }
 
+/// 列出全部日程（任务卡模块迁移用：一次性读取所有未删除日程）
+pub fn list_all(conn: &Connection) -> Result<Vec<Schedule>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, schedule_date, content, done, created_at, updated_at \
+         FROM schedules ORDER BY schedule_date ASC, created_at ASC",
+    )?;
+    let items = stmt.query_map([], |row| {
+        Ok(Schedule {
+            id: row.get(0)?,
+            schedule_date: row.get(1)?,
+            content: row.get(2)?,
+            done: row.get::<_, i64>(3)? != 0,
+            created_at: row.get(4)?,
+            updated_at: row.get(5)?,
+        })
+    })?;
+    items.collect()
+}
+
 /// 保存日程：id 已存在则更新，否则插入新记录；返回保存后的完整记录
 pub fn save(
     conn: &Connection,

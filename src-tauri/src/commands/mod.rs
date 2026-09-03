@@ -18,3 +18,10 @@ pub mod image;
 pub mod window;
 pub mod agent;
 pub mod system_check;
+// ── 任务卡模块 ──
+pub mod project;
+pub mod task;
+pub mod tag;
+pub mod task_meta;
+pub mod migrate;
+pub mod reminder;

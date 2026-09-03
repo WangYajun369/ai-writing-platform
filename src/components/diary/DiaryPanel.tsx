@@ -1,14 +1,16 @@
 /**
- * DiaryPanel — 首页右侧「日记 + 个人日程管理」模块
+ * DiaryPanel — 首页右侧「日记 + 当日任务」模块（任务卡数据驱动）
  *
  * 布局（自上而下）：
  * - 模块标题栏 + 「今日日记」快捷入口
- * - 按月日历（点击某天：仅将下方切换到该日的日记与日程，不自动弹窗）
+ * - 按月日历（点击某天：仅将下方切换到该日的日记与任务，不自动弹窗）
  * - 第一行「日记」：所选日期的日记卡片（无日记则显示空态写日记入口，
  *   点击「写日记 / 编辑日记」才打开 DiaryDialog）
- * - 第二行「个人日程管理」：所选日期的日程（新增 / 完成 / 删除 / 双击编辑）
+ * - 第二行「当日任务」：所选日期的任务卡任务（截止落在该日的任务；为今天时
+ *   并入「计划今日」），支持快速勾选完成 / 重新打开，完整操作跳转任务卡窗口
  *
  * 点击任意日期后，下方两行内容同步切换到那一天。
+ * 日历下的状态点由任务卡数据驱动（逾期红 / 今日绿 / 未来蓝 / 已完成灰）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -19,7 +21,8 @@ import {
   NotebookPenIcon,
   PenLineIcon,
 } from 'lucide-react'
-import { diaryApi, scheduleApi } from '@/lib/tauri-bridge'
+import { emit, listen } from '@tauri-apps/api/event'
+import { diaryApi, taskCardApi, windowApi } from '@/lib/tauri-bridge'
 import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import {
@@ -32,9 +35,10 @@ import {
   toDateKey,
   WEEKDAY_LABELS,
 } from '@/lib/diary-utils'
-import type { Diary, DiaryMeta, Schedule } from '@/types'
+import { dayOf, localToday } from '@/lib/taskCardsTime'
+import type { Diary, DiaryMeta, TaskCard, TaskProject } from '@/types'
 import DiaryDialog from './DiaryDialog'
-import ScheduleManager from './ScheduleManager'
+import DayTasksPanel from './DayTasksPanel'
 import DiaryBookDialog from './DiaryBookDialog'
 
 /** 今日日期键（页面挂载时计算一次） */
@@ -52,9 +56,11 @@ export default function DiaryPanel() {
   /** 本月日记摘要（用于日历上的已写标记点） */
   const [entries, setEntries] = useState<DiaryMeta[]>([])
   const [loading, setLoading] = useState(false)
-  /** 当前视图月的全部日程（用于日历日程状态点） */
-  const [monthSchedules, setMonthSchedules] = useState<Schedule[]>([])
-  /** 当前选中的日期（驱动下方日记与日程两行联动切换） */
+  /** 全量未删除任务（当日任务 / 日历状态点的数据源；null=尚未加载） */
+  const [allTasks, setAllTasks] = useState<TaskCard[] | null>(null)
+  /** 全部未删除项目（渲染任务归属） */
+  const [projects, setProjects] = useState<TaskProject[]>([])
+  /** 当前选中的日期（驱动下方日记与任务两行联动切换） */
   const [selectedDate, setSelectedDate] = useState<string>(todayKey)
   /** 选中日期当天的日记全文（无则为 null） */
   const [selectedDiary, setSelectedDiary] = useState<Diary | null>(null)
@@ -79,14 +85,18 @@ export default function DiaryPanel() {
     }
   }, [])
 
-  /** 加载当前视图月的全部日程（供日历状态点使用） */
-  const loadMonthSchedules = useCallback(async (year: number, month: number) => {
+  /** 加载全量任务与项目（当日任务面板与日历状态点共用，数据量小、直接全量） */
+  const loadTaskData = useCallback(async () => {
     try {
-      const list = await scheduleApi.listMonth(year, month)
-      setMonthSchedules(list)
+      const [tasks, projs] = await Promise.all([
+        taskCardApi.listAllTasks(),
+        taskCardApi.listProjects().catch(() => []),
+      ])
+      setAllTasks(tasks)
+      setProjects(projs)
     } catch (err) {
-      console.error('加载当月日程失败', err)
-      toast.error(`加载当月日程失败：${err instanceof Error ? err.message : err}`)
+      console.error('加载任务卡数据失败', err)
+      toast.error(`加载当日任务失败：${err instanceof Error ? err.message : err}`)
     }
   }, [])
 
@@ -109,11 +119,21 @@ export default function DiaryPanel() {
     }
   }, [])
 
-  // 切换年月后自动重新加载该月日记与日程
+  // 切换年月后自动重新加载该月日记
   useEffect(() => {
     void loadEntries(viewYear, viewMonth)
-    void loadMonthSchedules(viewYear, viewMonth)
-  }, [viewYear, viewMonth, loadEntries, loadMonthSchedules])
+  }, [viewYear, viewMonth, loadEntries])
+
+  // 挂载加载任务数据 + 监听任务卡数据变更 / 窗口关闭（跨窗口操作后日历与当日任务同步）
+  useEffect(() => {
+    void loadTaskData()
+    const unTasksData = listen('tasks-data-updated', () => void loadTaskData())
+    const unTasksClosed = listen('tasks-window-closed', () => void loadTaskData())
+    return () => {
+      void unTasksData.then((fn) => fn())
+      void unTasksClosed.then((fn) => fn())
+    }
+  }, [loadTaskData])
 
   // 选中日期变化后加载该日日记
   useEffect(() => {
@@ -143,6 +163,21 @@ export default function DiaryPanel() {
     [viewYear, viewMonth, selectedDate, loadEntries, loadSelected],
   )
 
+  /** 勾选完成 / 重新打开：写后端 → 重拉数据 → 广播任务变更（角标等同步） */
+  const handleToggleTask = useCallback(
+    async (task: TaskCard) => {
+      try {
+        await taskCardApi.setTaskStatus(task.id, task.status === 'done' ? 'todo' : 'done')
+        await loadTaskData()
+        void emit('tasks-data-updated')
+      } catch (err) {
+        console.error('更新任务失败', err)
+        toast.error(`更新任务失败：${err instanceof Error ? err.message : err}`)
+      }
+    },
+    [loadTaskData],
+  )
+
   const goPrevMonth = () => {
     if (viewMonth === 1) {
       setViewYear((v) => v - 1)
@@ -167,30 +202,58 @@ export default function DiaryPanel() {
   }
   /** 本月已写日记的日期集合（日历圆点） */
   const writtenSet = useMemo(() => new Set(entries.map((e) => e.diaryDate)), [entries])
-  /** 日程按日期分组 */
-  const scheduleMap = useMemo(() => {
-    const map = new Map<string, Schedule[]>()
-    for (const s of monthSchedules) {
-      const arr = map.get(s.scheduleDate)
-      if (arr) arr.push(s)
-      else map.set(s.scheduleDate, [s])
+  /** 任务卡任务按截止日期分组（日历状态点数据源；无截止日期的任务不落日历） */
+  const taskDayMap = useMemo(() => {
+    const map = new Map<string, TaskCard[]>()
+    if (!allTasks) return map
+    for (const t of allTasks) {
+      const d = dayOf(t.dueTime)
+      if (!d) continue
+      const arr = map.get(d)
+      if (arr) arr.push(t)
+      else map.set(d, [t])
     }
     return map
-  }, [monthSchedules])
+  }, [allTasks])
+  /** 项目 id → 项目 */
+  const projectMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects])
+  /** 今天存在「计划今日」的未完成任务（截止不在今天，日期 map 未覆盖） */
+  const todayPlannedOpen = useMemo(() => {
+    if (!allTasks) return false
+    const today = localToday()
+    return allTasks.some((t) => t.plannedToday && t.status !== 'done' && dayOf(t.dueTime) !== today)
+  }, [allTasks])
 
   /**
-   * 某日期“数字下方”的日程状态点颜色（有日程才显示）：
-   * 过去有未完成=红 / 过去全部完成=灰 / 今天=绿 / 未来=蓝
+   * 某日期“数字下方”的任务状态点颜色（该日有任务才显示）：
+   * 过去仍有未完成（已逾期）=红 / 该日任务全部完成=灰 / 今天有待办=绿 / 未来有待办=蓝
    */
-  const schedDotClassFor = (key: string): string | null => {
-    const list = scheduleMap.get(key)
-    if (!list || list.length === 0) return null
-    if (key < todayKey) {
-      return list.some((s) => !s.done) ? 'bg-destructive' : 'bg-muted-foreground/40'
-    }
+  const taskDotClassFor = (key: string): string | null => {
+    const list = taskDayMap.get(key)
+    const exists = (!!list && list.length > 0) || (key === todayKey && todayPlannedOpen)
+    if (!exists) return null
+    const hasOpen = (!!list && list.some((t) => t.status !== 'done')) || (key === todayKey && todayPlannedOpen)
+    if (!hasOpen) return 'bg-muted-foreground/40'
+    if (key < todayKey) return 'bg-destructive'
     if (key === todayKey) return 'bg-green-500'
     return 'bg-blue-500'
   }
+  /** 选中日任务：截止落在该日；若为今天再并入「计划今日」的未完成任务（按 id 去重） */
+  const dayTasks = useMemo(() => {
+    if (!allTasks) return []
+    const today = localToday()
+    const out: TaskCard[] = []
+    const seen = new Set<string>()
+    for (const t of allTasks) {
+      const inDay = dayOf(t.dueTime) === selectedDate
+      const plannedNow = selectedDate === today && t.plannedToday && t.status !== 'done'
+      if ((inDay || plannedNow) && !seen.has(t.id)) {
+        seen.add(t.id)
+        out.push(t)
+      }
+    }
+    return out
+  }, [allTasks, selectedDate])
   /** 选中日是否为今天 */
   const isTodayKey = selectedDate === todayKey
   /** 当日正文纯文本预览 */
@@ -277,7 +340,7 @@ export default function DiaryPanel() {
           ))}
         </div>
 
-        {/* 日期网格：点击仅切换选中日期（下方日记与日程联动），不弹窗 */}
+        {/* 日期网格：点击仅切换选中日期（下方日记与任务联动），不弹窗 */}
         <div className="grid grid-cols-7 pb-2">
           {monthCells.map((day, i) => {
             if (day === 0) return <div key={`empty-${i}`} className="h-8" />
@@ -285,21 +348,23 @@ export default function DiaryPanel() {
             const hasDiary = writtenSet.has(key)
             const today = key === todayKey
             const selected = key === selectedDate
-            const schedDotClass = schedDotClassFor(key)
-            const schedList = scheduleMap.get(key)
-            const hasSched = !!schedList && schedList.length > 0
-            const schedHint = hasSched
-              ? key < todayKey
-                ? schedList!.some((s) => !s.done)
-                  ? '有逾期未完成的日程'
-                  : '该日日程已全部完成'
-                : key === todayKey
-                  ? '有今日日程'
-                  : '有未来日程安排'
+            const taskDotClass = taskDotClassFor(key)
+            const taskList = taskDayMap.get(key)
+            const hasTasks = (!!taskList && taskList.length > 0) || (key === todayKey && todayPlannedOpen)
+            const dayOpen =
+              (!!taskList && taskList.some((t) => t.status !== 'done')) || (key === todayKey && todayPlannedOpen)
+            const taskHint = hasTasks
+              ? dayOpen
+                ? key < todayKey
+                  ? '有逾期未完成的任务'
+                  : key === todayKey
+                    ? '有今日待办任务'
+                    : '有任务安排'
+                : '该日任务已全部完成'
               : null
             const hint =
-              [schedHint, hasDiary ? '已写日记' : null].filter(Boolean).join(' · ') ||
-              '查看当日日记与日程'
+              [taskHint, hasDiary ? '已写日记' : null].filter(Boolean).join(' · ') ||
+              '查看当日日记与任务'
             return (
               <div key={key} className="flex justify-center">
                 <button
@@ -326,12 +391,12 @@ export default function DiaryPanel() {
                       )}
                     />
                   )}
-                  {/* 日程状态点：数字下方 */}
-                  {schedDotClass && (
+                  {/* 任务状态点：数字下方 */}
+                  {taskDotClass && (
                     <span
                       className={cn(
                         'absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full',
-                        schedDotClass,
+                        taskDotClass,
                       )}
                     />
                   )}
@@ -446,10 +511,14 @@ export default function DiaryPanel() {
           </div>
         </section>
 
-        {/* ─── 第二行：当日个人日程管理 ─── */}
-        <ScheduleManager
+        {/* ─── 第二行：当日任务（任务卡数据，快速勾选完成/重开，完整操作去任务卡窗口） ─── */}
+        <DayTasksPanel
           date={selectedDate}
-          onChanged={() => void loadMonthSchedules(viewYear, viewMonth)}
+          tasks={dayTasks}
+          projectMap={projectMap}
+          loading={allTasks === null}
+          onToggleDone={(task) => void handleToggleTask(task)}
+          onOpenTasks={() => void windowApi.openTasks()}
         />
       </div>
 

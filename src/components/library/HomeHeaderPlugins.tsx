@@ -12,46 +12,18 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
-import {
-  BookMarkedIcon,
-  LanguagesIcon,
-  BookOpenIcon,
-  CalendarIcon,
-  ClipboardListIcon,
-  FlameIcon,
-  LightbulbIcon,
-  PuzzleIcon,
-  Loader2Icon,
-  type LucideIcon,
-} from 'lucide-react'
+import { Loader2Icon } from 'lucide-react'
 import { PluginManager } from '@/plugins/PluginManager'
+import { COMMAND_ICON_MAP, FALLBACK_COMMAND_ICON } from '@/plugins/commandIcons'
 import type { PluginCommand } from '@/plugins/types'
 import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
-
-/** 可映射的图标名 → lucide 组件（未匹配时回退 Puzzle） */
-const ICON_MAP: Record<string, LucideIcon> = {
-  BookMarked: BookMarkedIcon,
-  Languages: LanguagesIcon,
-  BookOpen: BookOpenIcon,
-  Calendar: CalendarIcon,
-  ClipboardList: ClipboardListIcon,
-  Flame: FlameIcon,
-  Lightbulb: LightbulbIcon,
-}
 
 export default function HomeHeaderPlugins() {
   const [commands, setCommands] = useState<PluginCommand[]>([])
   const [badges, setBadges] = useState<Record<string, number>>({})
   const [active, setActive] = useState<Record<string, boolean>>({})
   const [busyId, setBusyId] = useState<string | null>(null)
-
-  // 监听插件注册变化
-  useEffect(() => {
-    const update = () => setCommands(PluginManager.getCommandsByExtensionPoint('home-header'))
-    update()
-    return PluginManager.subscribe(update)
-  }, [])
 
   /** 拉取所有入口的角标与激活态 */
   const pullState = useCallback(async () => {
@@ -82,15 +54,30 @@ export default function HomeHeaderPlugins() {
     setActive(nextActive)
   }, [])
 
+  // 监听插件注册变化：命令出现/变化时立即刷新角标
+  // （启动竞态下挂载时的首轮拉取可能早于插件注册完成，这里兜底，无需等 20s 轮询）
+  useEffect(() => {
+    const refresh = () => {
+      setCommands(PluginManager.getCommandsByExtensionPoint('home-header'))
+      void pullState()
+    }
+    refresh()
+    return PluginManager.subscribe(refresh)
+  }, [pullState])
+
   // 挂载拉取 + 事件刷新 + 兜底轮询
   useEffect(() => {
     void pullState()
     const unDue = listen('vocab-due-updated', () => void pullState())
     const unClosed = listen('vocab-window-closed', () => void pullState())
+    const unTasksClosed = listen('tasks-window-closed', () => void pullState())
+    const unTasksData = listen('tasks-data-updated', () => void pullState())
     const timer = window.setInterval(() => void pullState(), 20_000)
     return () => {
       void unDue.then((fn) => fn())
       void unClosed.then((fn) => fn())
+      void unTasksClosed.then((fn) => fn())
+      void unTasksData.then((fn) => fn())
       window.clearInterval(timer)
     }
   }, [pullState])
@@ -116,7 +103,7 @@ export default function HomeHeaderPlugins() {
   return (
     <>
       {commands.map((cmd) => {
-        const Icon = ICON_MAP[cmd.icon ?? ''] ?? PuzzleIcon
+        const Icon = COMMAND_ICON_MAP[cmd.icon ?? ''] ?? FALLBACK_COMMAND_ICON
         const badge = badges[cmd.id] ?? 0
         const isActive = Boolean(active[cmd.id])
         const isBusy = busyId === cmd.id

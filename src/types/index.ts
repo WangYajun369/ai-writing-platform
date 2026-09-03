@@ -530,3 +530,203 @@ export interface TtsSpeakResult {
   cached: boolean
 }
 
+// ==================== 任务卡 · 个人项目管理 ====================
+
+/** 项目状态 */
+export type ProjectStatus = 'active' | 'completed' | 'archived'
+
+/** 任务状态（三态） */
+export type TaskStatus = 'todo' | 'doing' | 'done'
+
+/** 任务优先级 */
+export type TaskPriority = 'high' | 'medium' | 'low'
+
+/** 项目 */
+export interface TaskProject {
+  id: string
+  name: string
+  description: string
+  color: string
+  icon: string
+  status: ProjectStatus
+  /** 计划开始日期 YYYY-MM-DD */
+  planStartDate?: string
+  /** 计划结束日期 YYYY-MM-DD */
+  planEndDate?: string
+  pinned: boolean
+  sortOrder: number
+  deletedAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+/** 项目实时统计 */
+export interface ProjectStats {
+  total: number
+  todo: number
+  doing: number
+  done: number
+  overdue: number
+}
+
+/** 项目 + 统计（列表/详情返回形态） */
+export interface ProjectView extends TaskProject {
+  stats: ProjectStats
+}
+
+/** 任务标签 */
+export interface TaskTag {
+  id: string
+  name: string
+  color: string
+  status: 'enabled' | 'disabled'
+  createdAt: string
+  updatedAt: string
+}
+
+/** 任务卡 */
+export interface TaskCard {
+  id: string
+  projectId: string
+  title: string
+  description: string
+  status: TaskStatus
+  priority: TaskPriority
+  /** 计划开始时间（本地时间字符串） */
+  planStartTime?: string
+  /** 截止时间（本地时间字符串） */
+  dueTime?: string
+  /** 计划今日 */
+  plannedToday: boolean
+  /** 完成时间（本地时间字符串，重新打开时清空） */
+  completedTime?: string
+  /** 个人备注 */
+  note: string
+  /** 下次提醒时间（未启用提醒为空） */
+  remindAt?: string
+  /** 提醒类型：due_before / due_day / overdue / daily（空=未启用） */
+  remindType: string
+  sortOrder: number
+  deletedAt?: string
+  createdAt: string
+  updatedAt: string
+  /** 聚合标签 */
+  tags: TaskTag[]
+}
+
+/** 今日任务概览 */
+export interface TodayOverview {
+  /** 今日应完成（未完成欠账 + 今日已完成） */
+  dueToday: number
+  /** 今日已完成 */
+  doneToday: number
+  /** 逾期未完成任务数 */
+  overdue: number
+  /** 角标（今日到期 + 计划今日 + 逾期 的未完成数） */
+  badge: number
+}
+
+/** 日程迁移结果 */
+export interface MigrateResult {
+  migrated: number
+  completed: number
+  projectId: string
+  already: boolean
+}
+
+/** 回收站任务条目（含所属项目名） */
+export interface DeletedTaskItem extends TaskCard {
+  projectName?: string
+}
+
+/** 创建项目参数 */
+export interface CreateProjectArgs {
+  name: string
+  description?: string
+  color?: string
+  icon?: string
+  status?: ProjectStatus
+  planStartDate?: string
+  planEndDate?: string
+  pinned?: boolean
+}
+
+/** 更新项目参数（部分更新；可空字段传空串清除） */
+export interface UpdateProjectArgs {
+  name?: string
+  description?: string
+  color?: string
+  icon?: string
+  status?: ProjectStatus
+  planStartDate?: string
+  planEndDate?: string
+  pinned?: boolean
+}
+
+/** 创建任务参数 */
+export interface CreateTaskArgs {
+  projectId: string
+  title: string
+  description?: string
+  status?: TaskStatus
+  priority?: TaskPriority
+  planStartTime?: string
+  dueTime?: string
+  plannedToday?: boolean
+  note?: string
+  /** 标签 id 列表 */
+  tagIds?: string[]
+}
+
+/** 更新任务参数（部分更新） */
+export interface UpdateTaskArgs {
+  title?: string
+  description?: string
+  status?: TaskStatus
+  priority?: TaskPriority
+  planStartTime?: string
+  dueTime?: string
+  plannedToday?: boolean
+  note?: string
+  /** 传数组则整体替换标签 */
+  tagIds?: string[]
+  /** 任务级提醒类型：''=跟随全局 / 'off'=不提醒 / 'due_before'|'due_day'|'overdue'=指定类别 / 'custom'=自定义（配合 remindAt） */
+  remindType?: string
+  /** 自定义提醒时间（YYYY-MM-DDTHH:MM），仅 remindType='custom' 时生效 */
+  remindAt?: string
+}
+
+/** 更新标签参数 */
+export interface UpdateTagArgs {
+  name?: string
+  color?: string
+  status?: 'enabled' | 'disabled'
+}
+
+/** 提醒偏好（任务卡设置） */
+export interface ReminderPrefs {
+  /** 全局开关 */
+  enabled: boolean
+  /** 截止前一天 09:00 提醒 */
+  dueBeforeDay: boolean
+  /** 截止当天 09:00 提醒 */
+  dueDay: boolean
+  /** 逾期后每日 09:00 提醒 */
+  overdueDaily: boolean
+  /** 每日待办提醒（默认关，9.11.1-4） */
+  dailyEnabled: boolean
+  /** 每日待办提醒时间 HH:MM（默认 09:00） */
+  dailyTime: string
+}
+
+/** 站内提醒记录（铃铛中心，后端任务卡提醒写入 taskcard:remind_log） */
+export interface RemindLogEntry {
+  id: string
+  kind: 'before' | 'due' | 'overdue' | 'custom' | 'daily' | string
+  title: string
+  taskId?: string | null
+  projectId?: string | null
+  /** 本地时间 YYYY-MM-DDTHH:MM:SS */
+  time: string
+}
+

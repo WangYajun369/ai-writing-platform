@@ -8,7 +8,9 @@ import { PluginManager } from './PluginManager'
 import type { PluginContext } from './types'
 import { vocabDictionaryPlugin } from './dictionary/plugin'
 import { setVocabBadgeSource } from './dictionary/windowState'
-import { vocabApi } from '@/lib/tauri-bridge'
+import { taskCardsPlugin } from './taskCards/plugin'
+import { setTaskCardsBadgeSource } from './taskCards/windowState'
+import { vocabApi, taskCardApi } from '@/lib/tauri-bridge'
 import { toast } from '@/lib/toast'
 
 let bootstrapPromise: Promise<void> | null = null
@@ -63,8 +65,20 @@ async function doBootstrap(): Promise<void> {
     }
   })
 
+  // 注入徽标计数源：今日应办数（今日到期 + 计划今日 + 逾期 的未完成数）
+  setTaskCardsBadgeSource(async (): Promise<number> => {
+    try {
+      const overview = await taskCardApi.todayOverview()
+      return overview.badge
+    } catch {
+      return 0
+    }
+  })
+
   PluginManager.register(vocabDictionaryPlugin)
   await PluginManager.enable(vocabDictionaryPlugin.manifest.id, buildContext())
+  PluginManager.register(taskCardsPlugin)
+  await PluginManager.enable(taskCardsPlugin.manifest.id, buildContext())
 }
 
 /** 幂等执行内置插件引导 */

@@ -1,11 +1,13 @@
 /**
  * PluginHost — 主窗口插件宿主
  *
- * 挂载时引导内置插件（注册 + 启用），提供 home-header 扩展点的渲染数据。
+ * 挂载时引导内置插件（注册 + 启用）；
+ * 渲染全局命令面板宿主（command-palette 扩展点），Ctrl/⌘+Shift+P 唤起。
  */
 import { useEffect } from 'react'
 import { bootstrapBuiltinPlugins } from '@/plugins/bootstrap'
 import { PluginManager } from '@/plugins/PluginManager'
+import CommandPalette from '@/components/common/CommandPalette'
 
 export default function PluginHost() {
   useEffect(() => {
@@ -20,5 +22,5 @@ export default function PluginHost() {
     return PluginManager.subscribe(() => {})
   }, [])
 
-  return null
+  return <CommandPalette />
 }

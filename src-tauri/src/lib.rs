@@ -52,6 +52,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())  // 应用自动更新
         .plugin(tauri_plugin_deep_link::init())    // 深度链接
         .plugin(tauri_plugin_http::init())         // HTTP 请求
+        .plugin(tauri_plugin_notification::init()) // 系统通知（任务卡到期提醒）
         // ────────── 应用启动配置 ──────────
         .setup(|app| {
             // ========== 1. 数据库初始化 ==========
@@ -147,6 +148,31 @@ pub fn run() {
                         if let Some(w) = handle.get_webview_window("main") {
                             let _ = w.close();
                         }
+                    }
+                });
+            }
+
+            // ========== 3. 任务卡到期提醒后台循环 ==========
+            // 应用启动 20 秒后开始，每 60 秒扫描一次；偏好关闭时内部自动跳过。
+            // 注意：提醒需要应用保持运行，Tauri 窗口全部关闭后进程退出，循环随之停止。
+            {
+                use std::time::Duration;
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(Duration::from_secs(20)).await;
+                    loop {
+                        let app = handle.clone();
+                        match crate::service::reminder_service::run_once(&app) {
+                            Ok(sent) => {
+                                if sent > 0 {
+                                    crate::app_log!("[提醒] 本轮发出 {sent} 条到期提醒");
+                                }
+                            }
+                            Err(e) => {
+                                crate::app_log!("[提醒] 本轮扫描失败（自动忽略）: {e}");
+                            }
+                        }
+                        tokio::time::sleep(Duration::from_secs(60)).await;
                     }
                 });
             }
@@ -271,6 +297,45 @@ pub fn run() {
             commands::window::manager::open_vocab_window,
             commands::window::manager::close_vocab_window,
             commands::window::manager::is_vocab_window_open,
+            commands::window::manager::open_tasks_window,
+            commands::window::manager::close_tasks_window,
+            commands::window::manager::is_tasks_window_open,
+            // ══════ 任务卡模块 ══════
+            commands::project::project_list,
+            commands::project::project_get,
+            commands::project::project_create,
+            commands::project::project_update,
+            commands::project::project_delete,
+            commands::project::project_restore,
+            commands::project::project_hard_delete,
+            commands::project::project_list_deleted,
+            commands::project::project_clear_trash,
+            commands::task::task_list,
+            commands::task::task_list_all,
+            commands::task::task_get,
+            commands::task::task_create,
+            commands::task::task_update,
+            commands::task::task_set_status,
+            commands::task::task_drag,
+            commands::task::task_copy,
+            commands::task::task_move_to_project,
+            commands::task::task_delete,
+            commands::task::task_restore,
+            commands::task::task_hard_delete,
+            commands::task::task_list_deleted,
+            commands::task::task_clear_trash,
+            commands::task::task_roll_planned_today,
+            commands::task::task_today_overview,
+            commands::tag::tag_list,
+            commands::tag::tag_create,
+            commands::tag::tag_update,
+            commands::tag::tag_delete,
+            commands::task_meta::task_meta_get,
+            commands::task_meta::task_meta_set,
+            commands::task_meta::reminder_prefs_get,
+            commands::task_meta::reminder_prefs_set,
+            commands::reminder::reminder_check,
+            commands::migrate::migrate_schedules,
             // ══════ 窗口管理 — 调试控制台 ══════
             commands::window::debug::open_debug_window,
             commands::window::debug::close_debug_window,

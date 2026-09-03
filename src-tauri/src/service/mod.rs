@@ -15,3 +15,10 @@ pub mod search_service;
 pub mod diary_service;
 pub mod schedule_service;
 pub mod vocab_service;
+// ── 任务卡模块 ──
+pub mod project_service;
+pub mod task_service;
+pub mod tag_service;
+pub mod task_meta_service;
+pub mod migrate_service;
+pub mod reminder_service;

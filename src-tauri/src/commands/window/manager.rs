@@ -224,3 +224,58 @@ pub async fn close_vocab_window(app: AppHandle) -> Result<(), AppError> {
 pub fn is_vocab_window_open(app: AppHandle) -> bool {
     app.get_webview_window(VOCAB_CONFIG.label).is_some()
 }
+
+// ---- 任务卡（个人项目管理）----
+
+const TASKS_CONFIG: WindowConfig = WindowConfig {
+    label: "tasks",
+    title: "任务卡 · 项目管理",
+    width: 960.0,
+    height: 700.0,
+    min_width: 760.0,
+    min_height: 540.0,
+    query_param: "taskswin",
+    close_event: "tasks-window-closed",
+};
+
+/// 任务卡窗口可直达的视图区段（命令面板深链 / tasks-nav 导航事件）
+pub const TASK_SECTION_TODAY: &str = "today";
+pub const TASK_SECTION_ALL: &str = "all";
+
+#[tauri::command]
+pub async fn open_tasks_window(app: AppHandle, section: Option<String>) -> Result<(), AppError> {
+    // 校验区段白名单
+    if let Some(s) = section.as_deref() {
+        if s != TASK_SECTION_TODAY && s != TASK_SECTION_ALL {
+            return Err(AppError::Business(format!("无效的任务卡视图区段: {}", s)));
+        }
+    }
+
+    if let Some(w) = app.get_webview_window(TASKS_CONFIG.label) {
+        if let Some(s) = section {
+            // 窗口已打开：定向导航（命令面板"打开今日/全部任务"语义）
+            app.emit_to(TASKS_CONFIG.label, "tasks-nav", s)
+                .map_err(|e| AppError::Business(format!("任务卡导航失败: {}", e)))?;
+            w.set_focus().ok();
+            return Ok(());
+        }
+        // 无区段：维持原 toggle 语义（点击首页入口开→再点关）
+        w.close().map_err(|e| AppError::Business(format!("关闭旧窗口失败: {}", e)))?;
+        return Ok(());
+    }
+    let extra = section
+        .map(|s| format!("&section={}", s))
+        .unwrap_or_default();
+    create_sub_window(&app, &TASKS_CONFIG, &extra)
+}
+
+#[tauri::command]
+pub async fn close_tasks_window(app: AppHandle) -> Result<(), AppError> {
+    close_sub_window(&app, TASKS_CONFIG.label, TASKS_CONFIG.close_event)
+}
+
+/// 查询任务卡窗口是否打开（供主窗口头部徽标/按钮状态使用）
+#[tauri::command]
+pub fn is_tasks_window_open(app: AppHandle) -> bool {
+    app.get_webview_window(TASKS_CONFIG.label).is_some()
+}

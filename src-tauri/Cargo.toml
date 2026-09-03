@@ -24,6 +24,7 @@ tauri-plugin-fs = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-http = "2"
+tauri-plugin-notification = "2"
 reqwest = { version = "0.12", default-features = false, features = ["stream", "json", "rustls-tls", "gzip", "brotli", "http2", "charset"] }
 futures-util = "0.3"
 serde = { version = "1", features = ["derive"] }

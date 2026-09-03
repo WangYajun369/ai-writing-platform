@@ -6,7 +6,7 @@
  * 所有 IPC 调用必须通过此模块的 API 对象进行。
  */
 import { invoke } from '@tauri-apps/api/core'
-import type { Book, Chapter, Volume, Snapshot, WorldCard, Diary, DiaryMeta, CreateBookParams, UpdateBookParams, SaveDiaryParams, Schedule, SaveScheduleParams, VocabWord, VocabStats, VocabReviewLog, AddVocabWordArgs, UpdateVocabWordArgs, DictStatus, DictLookupResult, AiWordExplain, ExplainWordArgs, WordCheckResult, TtsSpeakResult } from '@/types'
+import type { Book, Chapter, Volume, Snapshot, WorldCard, Diary, DiaryMeta, CreateBookParams, UpdateBookParams, SaveDiaryParams, Schedule, SaveScheduleParams, VocabWord, VocabStats, VocabReviewLog, AddVocabWordArgs, UpdateVocabWordArgs, DictStatus, DictLookupResult, AiWordExplain, ExplainWordArgs, WordCheckResult, TtsSpeakResult, TaskProject, ProjectView, TaskCard, TaskTag, TaskStatus, TodayOverview, MigrateResult, DeletedTaskItem, ProjectStatus, CreateProjectArgs, UpdateProjectArgs, CreateTaskArgs, UpdateTaskArgs, UpdateTagArgs } from '@/types'
 
 // ==================== 书籍管理 ====================
 
@@ -346,6 +346,21 @@ export const windowApi = {
   /** 英语字典窗口当前是否打开 */
   async isVocabOpen(): Promise<boolean> {
     return invoke<boolean>('is_vocab_window_open')
+  },
+
+  /** 打开任务卡（项目管理）独立窗口；传 section 时窗口已开则直接导航到该区段 */
+  async openTasks(section?: 'today' | 'all'): Promise<void> {
+    return invoke<void>('open_tasks_window', { section: section ?? null })
+  },
+
+  /** 关闭任务卡独立窗口 */
+  async closeTasks(): Promise<void> {
+    return invoke<void>('close_tasks_window')
+  },
+
+  /** 任务卡窗口当前是否打开 */
+  async isTasksOpen(): Promise<boolean> {
+    return invoke<boolean>('is_tasks_window_open')
   },
 }
 
@@ -740,5 +755,161 @@ export const dictApi = {
   /** AI 单词形态检查（轻量模型判定：完整单词 / 简写 / 缩写 / 不存在） */
   async checkWord(args: ExplainWordArgs): Promise<WordCheckResult> {
     return invoke<WordCheckResult>('check_word_ai', { args })
+  },
+}
+
+// ==================== 任务卡 · 个人项目管理 ====================
+
+export const taskCardApi = {
+  // ── 项目 ──
+  /** 列出项目（可按状态过滤），含实时统计 */
+  async listProjects(status?: ProjectStatus | null): Promise<ProjectView[]> {
+    return invoke<ProjectView[]>('project_list', { status: status ?? null })
+  },
+  /** 获取单个项目（含统计） */
+  async getProject(id: string): Promise<ProjectView> {
+    return invoke<ProjectView>('project_get', { id })
+  },
+  /** 创建项目 */
+  async createProject(args: CreateProjectArgs): Promise<TaskProject> {
+    return invoke<TaskProject>('project_create', { args })
+  },
+  /** 更新项目（部分更新） */
+  async updateProject(id: string, args: UpdateProjectArgs): Promise<TaskProject> {
+    return invoke<TaskProject>('project_update', { id, args })
+  },
+  /** 软删除项目（连带任务进入回收站） */
+  async deleteProject(id: string): Promise<void> {
+    return invoke<void>('project_delete', { id })
+  },
+  /** 恢复项目（连带任务） */
+  async restoreProject(id: string): Promise<void> {
+    return invoke<void>('project_restore', { id })
+  },
+  /** 彻底删除项目 */
+  async hardDeleteProject(id: string): Promise<void> {
+    return invoke<void>('project_hard_delete', { id })
+  },
+  /** 列出回收站中的项目 */
+  async listDeletedProjects(): Promise<TaskProject[]> {
+    return invoke<TaskProject[]>('project_list_deleted')
+  },
+  /** 清空项目回收站 */
+  async clearProjectTrash(): Promise<number> {
+    return invoke<number>('project_clear_trash')
+  },
+
+  // ── 任务 ──
+  /** 列出某项目全部任务（含标签） */
+  async listTasks(projectId: string): Promise<TaskCard[]> {
+    return invoke<TaskCard[]>('task_list', { projectId })
+  },
+  /** 列出全部未删除任务（跨项目） */
+  async listAllTasks(): Promise<TaskCard[]> {
+    return invoke<TaskCard[]>('task_list_all')
+  },
+  /** 获取单个任务 */
+  async getTask(id: string): Promise<TaskCard> {
+    return invoke<TaskCard>('task_get', { id })
+  },
+  /** 创建任务 */
+  async createTask(args: CreateTaskArgs): Promise<TaskCard> {
+    return invoke<TaskCard>('task_create', { args })
+  },
+  /** 更新任务（部分更新） */
+  async updateTask(id: string, args: UpdateTaskArgs): Promise<TaskCard> {
+    return invoke<TaskCard>('task_update', { id, args })
+  },
+  /** 状态切换 / 勾选完成 / 重新打开 */
+  async setTaskStatus(id: string, status: TaskStatus): Promise<TaskCard> {
+    return invoke<TaskCard>('task_set_status', { id, status })
+  },
+  /** 看板拖拽：跨列改状态 + 按目标列最终顺序重排 */
+  async dragTask(id: string, toStatus: TaskStatus, orderedIds: string[]): Promise<void> {
+    return invoke<void>('task_drag', { id, toStatus, orderedIds })
+  },
+  /** 复制任务 */
+  async copyTask(id: string): Promise<TaskCard> {
+    return invoke<TaskCard>('task_copy', { id })
+  },
+  /** 移动任务到其他项目 */
+  async moveTaskToProject(id: string, toProjectId: string): Promise<TaskCard> {
+    return invoke<TaskCard>('task_move_to_project', { id, toProjectId })
+  },
+  /** 软删除任务 */
+  async deleteTask(id: string): Promise<void> {
+    return invoke<void>('task_delete', { id })
+  },
+  /** 恢复任务 */
+  async restoreTask(id: string): Promise<void> {
+    return invoke<void>('task_restore', { id })
+  },
+  /** 彻底删除任务 */
+  async hardDeleteTask(id: string): Promise<void> {
+    return invoke<void>('task_hard_delete', { id })
+  },
+  /** 列出回收站中的任务（含所属项目名） */
+  async listDeletedTasks(): Promise<DeletedTaskItem[]> {
+    return invoke<DeletedTaskItem[]>('task_list_deleted')
+  },
+  /** 清空任务回收站 */
+  async clearTaskTrash(): Promise<number> {
+    return invoke<number>('task_clear_trash')
+  },
+
+  // ── 今日任务 ──
+  /** 「计划今日」滚动清理（自然日切换后调用） */
+  async rollPlannedToday(): Promise<number> {
+    return invoke<number>('task_roll_planned_today')
+  },
+  /** 今日任务概览 */
+  async todayOverview(): Promise<TodayOverview> {
+    return invoke<TodayOverview>('task_today_overview')
+  },
+
+  // ── 标签 ──
+  /** 列出全部标签 */
+  async listTags(): Promise<TaskTag[]> {
+    return invoke<TaskTag[]>('tag_list')
+  },
+  /** 创建标签 */
+  async createTag(name: string, color: string): Promise<TaskTag> {
+    return invoke<TaskTag>('tag_create', { name, color })
+  },
+  /** 更新标签 */
+  async updateTag(id: string, args: UpdateTagArgs): Promise<TaskTag> {
+    return invoke<TaskTag>('tag_update', { id, args })
+  },
+  /** 删除标签（返回被移除的关联数） */
+  async deleteTag(id: string): Promise<number> {
+    return invoke<number>('tag_delete', { id })
+  },
+
+  // ── 设置（key-value / 提醒偏好） ──
+  /** 读取任意 key */
+  async getMeta(key: string): Promise<string | null> {
+    return invoke<string | null>('task_meta_get', { key })
+  },
+  /** 写入任意 key */
+  async setMeta(key: string, value: string): Promise<void> {
+    return invoke<void>('task_meta_set', { key, value })
+  },
+  /** 读取提醒偏好（JSON） */
+  async getReminderPrefs(): Promise<string | null> {
+    return invoke<string | null>('reminder_prefs_get')
+  },
+  /** 保存提醒偏好（JSON 整体覆盖） */
+  async setReminderPrefs(json: string): Promise<void> {
+    return invoke<void>('reminder_prefs_set', { json })
+  },
+  /** 手动触发一次到期/逾期提醒扫描（调试用），返回发送条数 */
+  async reminderCheck(): Promise<number> {
+    return invoke<number>('reminder_check')
+  },
+
+  // ── 个人日程迁移 ──
+  /** 执行个人日程 → 任务卡迁移（幂等） */
+  async migrateSchedules(): Promise<MigrateResult> {
+    return invoke<MigrateResult>('migrate_schedules')
   },
 }

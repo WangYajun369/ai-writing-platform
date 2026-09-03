@@ -244,6 +244,72 @@ impl AppDb {
                 ease_factor   REAL NOT NULL,
                 reviewed_at   TEXT NOT NULL
             );
+
+            -- ══════ 任务卡模块（个人项目管理）══════
+            -- 项目：任务的容器；status: active / completed / archived；软删除 deleted_at
+            CREATE TABLE IF NOT EXISTS projects (
+                id              TEXT PRIMARY KEY,
+                name            TEXT NOT NULL,
+                description     TEXT NOT NULL DEFAULT '',
+                color           TEXT NOT NULL DEFAULT '',
+                icon            TEXT NOT NULL DEFAULT '',
+                status          TEXT NOT NULL DEFAULT 'active',
+                plan_start_date TEXT,
+                plan_end_date   TEXT,
+                pinned          INTEGER NOT NULL DEFAULT 0,
+                sort_order      INTEGER NOT NULL DEFAULT 0,
+                deleted_at      TEXT,
+                created_at      TEXT NOT NULL,
+                updated_at      TEXT NOT NULL
+            );
+
+            -- 任务卡：必属于某项目；status: todo / doing / done
+            -- 业务时间（due_time/plan_start_time/completed_time/remind_at）存本地时间字符串
+            -- 优先比较与"今天"判断（见 utils::local_now）
+            CREATE TABLE IF NOT EXISTS tasks (
+                id              TEXT PRIMARY KEY,
+                project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                title           TEXT NOT NULL,
+                description     TEXT NOT NULL DEFAULT '',
+                status          TEXT NOT NULL DEFAULT 'todo',
+                priority        TEXT NOT NULL DEFAULT 'medium',
+                plan_start_time TEXT,
+                due_time        TEXT,
+                planned_today   INTEGER NOT NULL DEFAULT 0,
+                completed_time  TEXT,
+                note            TEXT NOT NULL DEFAULT '',
+                remind_at       TEXT,
+                remind_type     TEXT NOT NULL DEFAULT '',
+                sort_order      INTEGER NOT NULL DEFAULT 0,
+                deleted_at      TEXT,
+                created_at      TEXT NOT NULL,
+                updated_at      TEXT NOT NULL
+            );
+
+            -- 标签：name 唯一；status: enabled / disabled
+            CREATE TABLE IF NOT EXISTS tags (
+                id         TEXT PRIMARY KEY,
+                name       TEXT NOT NULL UNIQUE,
+                color      TEXT NOT NULL DEFAULT '',
+                status     TEXT NOT NULL DEFAULT 'enabled',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            -- 任务-标签关联（联合主键，删除标签可级联清理）
+            CREATE TABLE IF NOT EXISTS task_tags (
+                task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                tag_id     TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (task_id, tag_id)
+            );
+
+            -- 模块级 key-value（提醒偏好、日程迁移幂等标记等）
+            CREATE TABLE IF NOT EXISTS task_meta (
+                key        TEXT PRIMARY KEY,
+                value      TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
         "#).context("创建数据表失败")?;
 
         // FTS5 全文搜索虚拟表（章节 + 世界观卡片）
@@ -346,6 +412,12 @@ impl AppDb {
             CREATE INDEX IF NOT EXISTS idx_vocab_words_status ON vocab_words(status);
             CREATE INDEX IF NOT EXISTS idx_vocab_reviews_word ON vocab_reviews(word_id);
             CREATE INDEX IF NOT EXISTS idx_vocab_reviews_date ON vocab_reviews(review_date);
+            CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+            CREATE INDEX IF NOT EXISTS idx_projects_deleted_at ON projects(deleted_at);
+            CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id, status, sort_order);
+            CREATE INDEX IF NOT EXISTS idx_tasks_deleted_at ON tasks(deleted_at);
+            CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_time);
+            CREATE INDEX IF NOT EXISTS idx_task_tags_tag_id ON task_tags(tag_id);
         "#).context("创建索引失败")?;
 
         Ok(())
