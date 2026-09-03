@@ -447,6 +447,7 @@ body {
 .feature-icon.cyan   { background: rgba(64, 224, 208, 0.15); }
 .feature-icon.slate  { background: rgba(134, 150, 170, 0.15); }
 .feature-icon.indigo { background: rgba(94, 108, 252, 0.15); }
+.feature-icon.rose   { background: rgba(251, 113, 133, 0.15); }
 
 .feature-card h3 {
   font-size: 16px;
