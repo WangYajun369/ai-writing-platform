@@ -8,6 +8,7 @@ use super::urlencoding;
 use crate::error::AppError;
 
 /// 窗口配置参数
+#[derive(Clone, Copy)]
 struct WindowConfig {
     label: &'static str,
     title: &'static str,
@@ -190,4 +191,36 @@ pub async fn open_ai_toolbox_window(app: AppHandle) -> Result<(), AppError> {
 #[tauri::command]
 pub async fn close_ai_toolbox_window(app: AppHandle) -> Result<(), AppError> {
     close_sub_window(&app, AI_TOOLBOX_CONFIG.label, AI_TOOLBOX_CONFIG.close_event)
+}
+
+// ---- 英语字典（生词本 / 艾宾浩斯复习）----
+
+const VOCAB_CONFIG: WindowConfig = WindowConfig {
+    label: "vocab",
+    title: "英语字典 · 生词本",
+    width: 920.0,
+    height: 680.0,
+    min_width: 720.0,
+    min_height: 520.0,
+    query_param: "vocabwin",
+    close_event: "vocab-window-closed",
+};
+
+#[tauri::command]
+pub async fn open_vocab_window(app: AppHandle) -> Result<(), AppError> {
+    if let Some(w) = app.get_webview_window(VOCAB_CONFIG.label) {
+        w.close().map_err(|e| AppError::Business(format!("关闭旧窗口失败: {}", e)))?;
+    }
+    create_sub_window(&app, &VOCAB_CONFIG, "")
+}
+
+#[tauri::command]
+pub async fn close_vocab_window(app: AppHandle) -> Result<(), AppError> {
+    close_sub_window(&app, VOCAB_CONFIG.label, VOCAB_CONFIG.close_event)
+}
+
+/// 查询英语字典窗口是否打开（供主窗口头部徽标/按钮状态使用）
+#[tauri::command]
+pub fn is_vocab_window_open(app: AppHandle) -> bool {
+    app.get_webview_window(VOCAB_CONFIG.label).is_some()
 }

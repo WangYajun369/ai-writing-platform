@@ -101,11 +101,13 @@ function GradientButton({
   onClick,
   icon,
   label,
+  showDot = true,
 }: {
   active: boolean
   onClick: () => void
   icon: React.ReactNode
   label: string
+  showDot?: boolean
 }) {
   return (
     <button
@@ -119,7 +121,7 @@ function GradientButton({
     >
       {icon}
       <span className="tracking-wide">{label}</span>
-      {!active && (
+      {showDot && !active && (
         <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
       )}
     </button>
@@ -598,6 +600,7 @@ export default function EditorToolbar() {
           onClick={handleToggleAiToolboxWindow}
           icon={<WrenchIcon className="w-3.5 h-3.5" />}
           label="AI 工具箱"
+          showDot={false}
         />
       </TooltipWrap>
 
@@ -607,6 +610,7 @@ export default function EditorToolbar() {
           onClick={() => setAiPanelOpen((v) => !v)}
           icon={<BotIcon className="w-3.5 h-3.5" />}
           label="AI 助手"
+          showDot={false}
         />
       </TooltipWrap>
 

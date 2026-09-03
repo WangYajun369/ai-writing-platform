@@ -13,3 +13,4 @@ pub mod world_card_repo;
 pub mod embedding_repo;
 pub mod diary_repo;
 pub mod schedule_repo;
+pub mod vocab_repo;

@@ -22,6 +22,7 @@ import type { Book } from '@/types'
 import BookCard from '@/components/library/BookCard'
 import NewBookDialog from '@/components/library/NewBookDialog'
 import TrashModal from '@/components/library/TrashModal'
+import HomeHeaderPlugins from '@/components/library/HomeHeaderPlugins'
 import DiaryPanel from '@/components/diary/DiaryPanel'
 import { closeAllMenus } from '@/components/common/ContextMenu'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -444,7 +445,7 @@ export default function LibraryPage() {
           <button
             onClick={handleToggleAiToolboxWindow}
             className={cn(
-              'relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 shrink-0 whitespace-nowrap',
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 shrink-0 whitespace-nowrap',
               aiToolboxWindowOpen
                 ? 'bg-linear-to-r from-primary/90 to-primary text-primary-foreground shadow-md shadow-primary/25'
                 : 'bg-linear-to-r from-primary/15 via-primary/10 to-primary/15 text-primary border border-primary/20 hover:border-primary/40 hover:shadow-sm hover:shadow-primary/10',
@@ -452,11 +453,11 @@ export default function LibraryPage() {
           >
             <WrenchIcon className="w-4 h-4" />
             <span className="text-xs font-semibold tracking-wide">AI 工具箱</span>
-            {!aiToolboxWindowOpen && (
-              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary animate-pulse" />
-            )}
           </button>
         </TooltipWrap>
+
+        {/* home-header 扩展点：插件入口（英语字典·生词本等） */}
+        <HomeHeaderPlugins />
 
         {/* 调试控制台 */}
         <TooltipWrap title="调试控制台">

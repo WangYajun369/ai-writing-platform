@@ -165,15 +165,6 @@ export default function DiaryPanel() {
     setViewMonth(now.getMonth() + 1)
     setSelectedDate(todayKey)
   }
-  /** 打开“今天”的日记编辑窗，并把视图切回本月 */
-  const writeToday = () => {
-    const now = new Date()
-    setViewYear(now.getFullYear())
-    setViewMonth(now.getMonth() + 1)
-    setSelectedDate(todayKey)
-    setEditingDate(todayKey)
-  }
-
   /** 本月已写日记的日期集合（日历圆点） */
   const writtenSet = useMemo(() => new Set(entries.map((e) => e.diaryDate)), [entries])
   /** 日程按日期分组 */
@@ -229,13 +220,6 @@ export default function DiaryPanel() {
           >
             <BookOpenIcon className="w-3.5 h-3.5" />
             看日记
-          </button>
-          <button
-            onClick={writeToday}
-            className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-            title="写 / 编辑今日日记"
-          >
-            <PenLineIcon className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>

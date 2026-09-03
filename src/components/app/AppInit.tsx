@@ -10,6 +10,7 @@ import {
   detectSummaryWindow,
   detectAiToolboxWindow,
   detectDebugWindow,
+  detectVocabWindow,
 } from './windowDetection'
 import { useAppVersion } from '@/hooks/useAppVersion'
 import { useConsoleInterceptor } from '@/hooks/useConsoleInterceptor'
@@ -20,8 +21,10 @@ import SnapshotPanel from '@/components/editor/SnapshotPanel'
 import { ChapterSummaryPanel } from '@/components/editor/ChapterSummaryHeader'
 import AiToolboxPanel from '@/components/ai/AiToolboxPanel'
 import DebugPanel from '@/components/common/DebugPanel'
+import VocabularyWindow from '@/components/vocabulary/VocabularyWindow'
 import ToastContainer from '@/components/common/ToastContainer'
 import AppClosingOverlay from './AppClosingOverlay'
+import PluginHost from './PluginHost'
 
 /** 独立窗口容器包装 */
 function WindowShell({ children }: { children: React.ReactNode }) {
@@ -46,6 +49,7 @@ export default function AppInit() {
   const summaryWin = detectSummaryWindow()
   const aiToolboxWin = detectAiToolboxWindow()
   const debugWin = detectDebugWindow()
+  const vocabWin = detectVocabWindow()
 
   // 非调试窗口启用 console 拦截
   useConsoleInterceptor(debugWin.isDebug)
@@ -83,6 +87,14 @@ export default function AppInit() {
     )
   }
 
+  if (vocabWin.isVocab) {
+    return (
+      <WindowShell>
+        <VocabularyWindow />
+      </WindowShell>
+    )
+  }
+
   if (debugWin.isDebug) {
     return (
       <WindowShell>
@@ -105,6 +117,7 @@ export default function AppInit() {
       className="h-screen flex flex-col overflow-hidden bg-background"
       onContextMenu={(e) => e.preventDefault()}
     >
+      <PluginHost />
       <AppRouter />
       <ToastContainer />
       <AppClosingOverlay />

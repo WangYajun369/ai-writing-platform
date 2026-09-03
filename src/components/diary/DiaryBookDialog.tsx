@@ -2,9 +2,11 @@
  * DiaryBookDialog — 「看日记」书页式浏览弹窗（仅展示，只读）
  *
  * 像翻一本真正的书一样回看全部日记：
- * - 每次展开“左右两页”，左侧 = 较早日、右侧 = 较晚日（左旧右新）
- * - 只有写过日记的日子才占一页，无日记的日子自动跳过
- * - 打开时定位到最近写的日记；奇数篇时最后一篇单独占右页（左侧为装饰封面）
+ * - 按月分章：每个月从新的一页开始，左侧为空白页、右侧为该月第一篇日记
+ * - 同月内日记左右两篇成页（左旧右新），页面按时间顺序向前/向后流动
+ * - 月份结束时若剩单篇，则单独占左半页（右半页留白）
+ * - 打开时定位到「本月第一篇」所在书页（左空白、右日记）；本月无日记则落到最近一个有日记的月份
+ * - 顶栏年月选择器可跳转到任意有日记月份的开篇页
  * - 点左右箭头 / ← → 方向键往前（更早）或往后（更晚）翻
  * - 正文用 tiptap-editor 排版样式只读渲染，不可编辑
  */
@@ -13,6 +15,7 @@ import {
   BookOpenIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  FeatherIcon,
   Loader2Icon,
   NotebookPenIcon,
   XIcon,
@@ -33,13 +36,22 @@ type CachedDiary = Diary | null | 'pending'
 /** 翻页动画方向 */
 type FlipDir = 'prev' | 'next' | null
 
+/** 一页展开的双页：left/right 为 metas 下标，null 表示该半页留白 */
+type BookPage = { left: number | null; right: number | null }
+
 const todayKey = toDateKey(new Date())
+
+/** 提取日期所属的年月键 'YYYY-MM' */
+const ymOfDate = (date: string) => date.slice(0, 7)
+
+/** 月份中文名（index 0 → 一月） */
+const zhMonths = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二']
 
 export default function DiaryBookDialog({ onClose }: DiaryBookDialogProps) {
   /** 全部日记摘要（按日期升序，最早的在前） */
   const [metas, setMetas] = useState<DiaryMeta[] | null>(null)
-  /** 当前“左页”在列表中的下标；奇数篇末篇单独成页时它即该篇下标 */
-  const [leftIndex, setLeftIndex] = useState(0)
+  /** 当前展开书页在 pages 中的下标 */
+  const [pageIdx, setPageIdx] = useState(0)
   /** 翻页方向（驱动入场动画） */
   const [dir, setDir] = useState<FlipDir>(null)
   /** 全文缓存（date → Diary） */
@@ -47,16 +59,44 @@ export default function DiaryBookDialog({ onClose }: DiaryBookDialogProps) {
   const [, setTick] = useState(0)
 
   const n = metas?.length ?? 0
-  /** 最靠右的合法左页下标：奇数篇时末篇单独成右页 */
-  const lastLeft = useMemo(() => {
-    if (n <= 1) return 0
-    return n % 2 === 1 ? n - 1 : n - 2
-  }, [n])
 
-  const showLeft = leftIndex < n - 1
-  const rightIndex = Math.min(leftIndex + 1, n - 1)
+  /**
+   * 把日记列表排成书页（按月分章）：
+   * - 每个月的第一篇总是新起一页：左半页留白、右半页为当月第一篇
+   * - 同月其余日记依次填入“左 → 右”成页；某月结束时若剩单篇，则单独占左半页
+   */
+  const pages = useMemo<BookPage[]>(() => {
+    if (!metas || metas.length === 0) return []
+    const out: BookPage[] = []
+    let cur: BookPage | null = null
+    const closeCur = () => {
+      if (cur) {
+        out.push(cur)
+        cur = null
+      }
+    }
+    let prevKey: string | null = null
+    metas.forEach((m, i) => {
+      const key = ymOfDate(m.diaryDate)
+      const monthStart = key !== prevKey
+      prevKey = key
+      if (monthStart) {
+        closeCur()
+        out.push({ left: null, right: i })
+        return
+      }
+      if (!cur) cur = { left: null, right: null }
+      if (cur.left === null) cur.left = i
+      else {
+        cur.right = i
+        closeCur()
+      }
+    })
+    closeCur()
+    return out
+  }, [metas])
 
-  // 初次打开：加载全部摘要并定位到最近的一两篇
+  // 初次打开：加载全部摘要
   useEffect(() => {
     let cancelled = false
     void (async () => {
@@ -64,9 +104,6 @@ export default function DiaryBookDialog({ onClose }: DiaryBookDialogProps) {
         const list = await diaryApi.listAll()
         if (cancelled) return
         setMetas(list)
-        const first =
-          list.length <= 1 ? 0 : list.length % 2 === 1 ? list.length - 1 : list.length - 2
-        setLeftIndex(first)
       } catch (err) {
         console.error('加载日记目录失败', err)
         toast.error(`加载日记失败：${err instanceof Error ? err.message : String(err)}`)
@@ -93,35 +130,87 @@ export default function DiaryBookDialog({ onClose }: DiaryBookDialogProps) {
     }
   }, [])
 
-  // 当前两页正文 + 相邻两页预取
+  // 当前书页正文 + 相邻两页预取
   useEffect(() => {
-    if (!metas || n === 0) return
-    const dates = [metas[rightIndex].diaryDate]
-    if (showLeft) dates.push(metas[leftIndex].diaryDate)
-    if (leftIndex - 2 >= 0) dates.push(metas[leftIndex - 2].diaryDate, metas[leftIndex - 1].diaryDate)
-    if (leftIndex + 2 <= lastLeft) {
-      dates.push(metas[leftIndex + 2]?.diaryDate, metas[leftIndex + 3]?.diaryDate)
+    if (!metas || pages.length === 0) return
+    const idxs = new Set<number>()
+    const collect = (pg: BookPage | undefined) => {
+      if (!pg) return
+      if (pg.left != null) idxs.add(pg.left)
+      if (pg.right != null) idxs.add(pg.right)
     }
-    for (const d of dates) {
-      if (d) void loadDate(d)
-    }
-  }, [metas, leftIndex, lastLeft, n, rightIndex, showLeft, loadDate])
+    collect(pages[pageIdx])
+    collect(pages[pageIdx - 1])
+    collect(pages[pageIdx + 1])
+    for (const i of idxs) void loadDate(metas[i].diaryDate)
+  }, [metas, pages, pageIdx, loadDate])
 
-  const canPrev = leftIndex > 0
-  const canNext = leftIndex < lastLeft
-  const pageTotal = Math.max(1, Math.ceil(n / 2))
-  const pageNo = n === 0 ? 0 : 1 + Math.floor((lastLeft - leftIndex) / 2)
+  const canPrev = pageIdx > 0
+  const canNext = pageIdx < pages.length - 1
+  const pageTotal = Math.max(1, pages.length)
+  const pageNo = pages.length === 0 ? 0 : pageIdx + 1
 
   const goPrev = useCallback(() => {
-    if (leftIndex <= 0) return
+    if (pageIdx <= 0) return
     setDir('prev')
-    setLeftIndex((l) => Math.max(0, l - 2))
-  }, [leftIndex])
+    setPageIdx(pageIdx - 1)
+  }, [pageIdx])
   const goNext = useCallback(() => {
-    if (leftIndex >= lastLeft) return
+    if (pageIdx >= pages.length - 1) return
     setDir('next')
-    setLeftIndex((l) => Math.min(lastLeft, l + 2))
-  }, [leftIndex, lastLeft])
+    setPageIdx(pageIdx + 1)
+  }, [pageIdx, pages.length])
+
+  /** 已写过日记的月份（按时间升序）及各自篇数，供年月选择器使用 */
+  const months = useMemo(() => {
+    if (!metas) return []
+    const out: { key: string; label: string; count: number }[] = []
+    for (const m of metas) {
+      const key = ymOfDate(m.diaryDate)
+      const last = out[out.length - 1]
+      if (last && last.key === key) last.count += 1
+      else {
+        const [y, mo] = key.split('-').map(Number)
+        out.push({ key, label: `${y}年${mo}月`, count: 1 })
+      }
+    }
+    return out
+  }, [metas])
+
+  /** 首次定位：打开到「本月（无则最近有日记的月份）第一篇」的开篇页，即左空白、右为该月第一篇 */
+  const positionedRef = useRef(false)
+  useEffect(() => {
+    if (positionedRef.current || !metas || n === 0 || pages.length === 0) return
+    positionedRef.current = true
+    const thisMonth = ymOfDate(todayKey)
+    const month = months.find((m) => m.key === thisMonth) ?? months[months.length - 1]
+    const i = metas.findIndex((m) => ymOfDate(m.diaryDate) === month.key)
+    const target = pages.findIndex((pg) => pg.left === i || pg.right === i)
+    setPageIdx(target >= 0 ? target : 0)
+  }, [metas, n, pages, months])
+
+  /** 当前书页“最早出现”的那篇所属月份（年月选择器当前值） */
+  const viewMonthKey = useMemo(() => {
+    if (!metas || pages.length === 0) return ''
+    const pg = pages[Math.min(pageIdx, pages.length - 1)]
+    const di = pg.left ?? pg.right
+    if (di == null) return ''
+    return ymOfDate(metas[di].diaryDate)
+  }, [metas, pages, pageIdx])
+
+  /** 跳到某月第一篇日记的开篇页 */
+  const jumpToMonth = useCallback(
+    (key: string) => {
+      if (!metas || n === 0 || pages.length === 0) return
+      const i = metas.findIndex((m) => ymOfDate(m.diaryDate) === key)
+      if (i < 0) return
+      const target = pages.findIndex((pg) => pg.left === i || pg.right === i)
+      if (target < 0 || target === pageIdx) return
+      setDir(target > pageIdx ? 'next' : 'prev')
+      setPageIdx(target)
+    },
+    [metas, n, pages, pageIdx],
+  )
 
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
@@ -231,14 +320,75 @@ export default function DiaryBookDialog({ onClose }: DiaryBookDialogProps) {
     )
   }
 
-  /** 左侧装饰封面（最末一篇单独占右页时使用） */
-  const renderCoverPage = () => (
-    <div className="flex-1 min-w-0 h-full rounded-l-2xl border-r border-border/60 bg-background flex flex-col items-center justify-center gap-3 text-muted-foreground/45 select-none shadow-[inset_-14px_0_16px_-16px_rgba(0,0,0,0.25)]">
-      <BookOpenIcon className="w-10 h-10" />
-      <p className="text-xs tracking-[0.3em]">翻 阅 · 记 录 日 常</p>
-      <p className="text-[10px] text-muted-foreground/40">这已经是最近的一篇日记了</p>
-    </div>
-  )
+  /**
+   * 装饰空白页（对开留白）：
+   * - 左侧空白 = 新月份开篇页，右侧为该月第一篇日记
+   * - 右侧空白 = 月份收尾（单篇占左页时）
+   * 用 neighbor（对侧那篇日记）标出所属年月，做成素雅的“纸张扉页”
+   */
+  const renderBlankPage = (side: 'left' | 'right', neighbor: DiaryMeta | null) => {
+    const keyOf = neighbor ? ymOfDate(neighbor.diaryDate) : ''
+    const [year, monthNum] = keyOf ? keyOf.split('-').map(Number) : [null, null]
+    const zhMonth = monthNum ? `${zhMonths[monthNum - 1]}月` : '时光'
+    const opener = side === 'left'
+    return (
+      <div
+        key={`blank-${side}`}
+        className={cn(
+          'relative flex-1 min-w-0 h-full overflow-hidden bg-background border-border/60 select-none',
+          side === 'left'
+            ? 'rounded-l-2xl border-r shadow-[inset_-14px_0_16px_-16px_rgba(0,0,0,0.25)]'
+            : 'rounded-r-2xl border-l shadow-[inset_14px_0_16px_-16px_rgba(0,0,0,0.25)]',
+        )}
+      >
+        {/* 纸张质感：上缘柔光 + 淡淡纵向明暗，模拟纸页起伏 */}
+        <div className="pointer-events-none absolute inset-0 bg-linear-to-b from-foreground/4 via-transparent to-foreground/2" />
+        {/* 内框装饰线，呼应版面 */}
+        <div className="pointer-events-none absolute inset-5 rounded-lg border border-foreground/5" />
+
+        {/* 中央扉页内容 */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 px-8 py-10 text-center">
+          {/* 圆环 + 羽毛笔 */}
+          <div className="relative h-20 w-20">
+            <div className="absolute inset-0 rounded-full border border-foreground/10" />
+            <div className="absolute inset-[7px] rounded-full border border-dashed border-foreground/7" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <FeatherIcon className={cn('h-7 w-7 text-primary/40', side === 'right' && '-scale-x-100')} />
+            </div>
+          </div>
+
+          {/* 年月 */}
+          <div className="leading-tight">
+            <p className="text-[11px] tracking-[0.5em] pl-[0.5em] text-muted-foreground/40">
+              {year ?? ''}
+            </p>
+            <p className="mt-1.5 text-4xl font-light tracking-[0.3em] pl-[0.3em] text-muted-foreground/30">
+              {zhMonth}
+            </p>
+          </div>
+
+          {/* 点缀分割 */}
+          <div className="flex items-center gap-2 text-muted-foreground/25">
+            <span className="h-px w-8 bg-current" />
+            <span className="h-1 w-1 rotate-45 bg-current" />
+            <span className="h-px w-8 bg-current" />
+          </div>
+
+          {/* 页语 */}
+          <p className="text-[11px] tracking-[0.35em] pl-[0.35em] text-muted-foreground/45">
+            {opener ? '新 的 一 月' : '本 月 终 章'}
+          </p>
+        </div>
+
+        {/* 底部留白小点 */}
+        <div className="pointer-events-none absolute bottom-4 inset-x-0 flex items-center justify-center gap-1.5 text-foreground/10">
+          <span className="h-1 w-1 rounded-full bg-current" />
+          <span className="h-1 w-1 rounded-full bg-current" />
+          <span className="h-1 w-1 rounded-full bg-current" />
+        </div>
+      </div>
+    )
+  }
 
   // ── 目录加载中 ──
   if (metas === null) {
@@ -274,8 +424,9 @@ export default function DiaryBookDialog({ onClose }: DiaryBookDialogProps) {
     )
   }
 
-  const leftMeta = showLeft ? metas[leftIndex] : null
-  const rightMeta = metas[rightIndex]
+  const curPage = pages[Math.min(pageIdx, pages.length - 1)]
+  const leftMeta = curPage.left != null ? metas[curPage.left] : null
+  const rightMeta = curPage.right != null ? metas[curPage.right] : null
   const animCls = dir === 'prev' ? 'diary-anim-prev' : dir === 'next' ? 'diary-anim-next' : ''
 
   return (
@@ -318,6 +469,22 @@ export default function DiaryBookDialog({ onClose }: DiaryBookDialogProps) {
             </button>
           </div>
 
+          {/* 年月选择：跳转到该月第一篇日记 */}
+          {months.length > 1 && (
+            <select
+              value={viewMonthKey}
+              onChange={(e) => jumpToMonth(e.target.value)}
+              title="跳到有日记的月份"
+              className="ml-1 h-7 max-w-44 rounded-lg bg-muted px-2 text-xs text-muted-foreground outline-none cursor-pointer whitespace-nowrap"
+            >
+              {months.map((m) => (
+                <option key={m.key} value={m.key}>
+                  {m.label} · {m.count} 篇
+                </option>
+              ))}
+            </select>
+          )}
+
           <div className="w-px h-5 bg-border mx-0.5 shrink-0" />
 
           <button
@@ -359,11 +526,11 @@ export default function DiaryBookDialog({ onClose }: DiaryBookDialogProps) {
             <ChevronRightIcon className="w-5 h-5" />
           </button>
 
-          {/* 展开的书：左旧右新 */}
-          <div key={`${leftIndex}-${dir ?? 'init'}`} className={cn('h-full w-full max-w-[1060px] flex', animCls)}>
+          {/* 展开的书：按月分章，左旧右新，无内容的一侧留白 */}
+          <div key={`${pageIdx}-${dir ?? 'init'}`} className={cn('h-full w-full max-w-[1060px] flex', animCls)}>
             {/* 左半区 */}
             <div className="flex-1 min-w-0 flex">
-              {leftMeta ? renderDiaryPage(leftMeta, 'left') : renderCoverPage()}
+              {leftMeta ? renderDiaryPage(leftMeta, 'left') : renderBlankPage('left', rightMeta)}
             </div>
 
             {/* 书脊 */}
@@ -374,7 +541,7 @@ export default function DiaryBookDialog({ onClose }: DiaryBookDialogProps) {
 
             {/* 右半区 */}
             <div className="flex-1 min-w-0 flex">
-              {renderDiaryPage(rightMeta, 'right')}
+              {rightMeta ? renderDiaryPage(rightMeta, 'right') : renderBlankPage('right', leftMeta)}
             </div>
           </div>
 

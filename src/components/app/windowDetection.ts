@@ -32,6 +32,10 @@ export interface DebugWindowInfo {
   isDebug: boolean
 }
 
+export interface VocabWindowInfo {
+  isVocab: boolean
+}
+
 export function detectWorldWindow(): WorldWindowInfo {
   const params = new URLSearchParams(window.location.search)
   if (params.get('worldwin') === '1') {
@@ -77,4 +81,10 @@ export function detectDebugWindow(): DebugWindowInfo {
   const params = new URLSearchParams(window.location.search)
   if (params.get('debugwin') === '1') return { isDebug: true }
   return { isDebug: false }
+}
+
+export function detectVocabWindow(): VocabWindowInfo {
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('vocabwin') === '1') return { isVocab: true }
+  return { isVocab: false }
 }

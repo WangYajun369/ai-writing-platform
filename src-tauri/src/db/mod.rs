@@ -209,6 +209,41 @@ impl AppDb {
                 created_at    TEXT NOT NULL,
                 updated_at    TEXT NOT NULL
             );
+
+            -- 英语生词本（word 小写唯一；SM-2 动态间隔复习）
+            CREATE TABLE IF NOT EXISTS vocab_words (
+                id             TEXT PRIMARY KEY,
+                word           TEXT NOT NULL UNIQUE,
+                phonetic       TEXT NOT NULL DEFAULT '',
+                meanings       TEXT NOT NULL DEFAULT '[]',
+                example        TEXT NOT NULL DEFAULT '',
+                example_zh     TEXT NOT NULL DEFAULT '',
+                repetition     INTEGER NOT NULL DEFAULT 0,
+                interval_days  INTEGER NOT NULL DEFAULT 0,
+                ease_factor    REAL NOT NULL DEFAULT 2.5,
+                status         TEXT NOT NULL DEFAULT 'learning',
+                next_review_at TEXT,
+                last_review_at TEXT,
+                review_count   INTEGER NOT NULL DEFAULT 0,
+                correct_count  INTEGER NOT NULL DEFAULT 0,
+                source         TEXT NOT NULL DEFAULT 'manual',
+                -- DeepSeek AI 翻译生成的学习知识 JSON（词根词缀/近反义词/词组/动词变形/词性例句）
+                ai_details     TEXT NOT NULL DEFAULT '',
+                created_at     TEXT NOT NULL,
+                updated_at     TEXT NOT NULL
+            );
+
+            -- 复习记录（每次复习一条，用于统计曲线）
+            CREATE TABLE IF NOT EXISTS vocab_reviews (
+                id            TEXT PRIMARY KEY,
+                word_id       TEXT NOT NULL REFERENCES vocab_words(id) ON DELETE CASCADE,
+                review_date   TEXT NOT NULL,
+                rating        INTEGER NOT NULL,
+                repetition    INTEGER NOT NULL,
+                interval_days INTEGER NOT NULL,
+                ease_factor   REAL NOT NULL,
+                reviewed_at   TEXT NOT NULL
+            );
         "#).context("创建数据表失败")?;
 
         // FTS5 全文搜索虚拟表（章节 + 世界观卡片）
@@ -276,6 +311,8 @@ impl AppDb {
             ("chapters", "summary_at", "TEXT"),
             ("books", "outline", "TEXT NOT NULL DEFAULT ''"),
             ("chapters", "outline", "TEXT NOT NULL DEFAULT ''"),
+            ("vocab_words", "ai_details", "TEXT NOT NULL DEFAULT ''"),
+            ("vocab_words", "example_zh", "TEXT NOT NULL DEFAULT ''"),
         ] {
             if safe_add_column(&conn, table, column, column_def)? {
                 added_columns.push(format!("{}.{}", table, column));
@@ -305,6 +342,10 @@ impl AppDb {
             CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(memory_type);
             CREATE INDEX IF NOT EXISTS idx_diaries_date ON diaries(diary_date);
             CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules(schedule_date);
+            CREATE INDEX IF NOT EXISTS idx_vocab_words_next ON vocab_words(next_review_at);
+            CREATE INDEX IF NOT EXISTS idx_vocab_words_status ON vocab_words(status);
+            CREATE INDEX IF NOT EXISTS idx_vocab_reviews_word ON vocab_reviews(word_id);
+            CREATE INDEX IF NOT EXISTS idx_vocab_reviews_date ON vocab_reviews(review_date);
         "#).context("创建索引失败")?;
 
         Ok(())

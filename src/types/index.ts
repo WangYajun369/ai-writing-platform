@@ -320,3 +320,213 @@ export interface UpdateBookParams {
   dailyTarget?: number
   tags?: string[]
 }
+
+// ==================== 英语生词本（艾宾浩斯 / SM-2）====================
+
+/** 单条释义 {pos: 词性, def: 释义}（对齐 Rust VocabMeaning） */
+export interface VocabMeaning {
+  pos: string
+  def: string
+}
+
+/** 词根词缀分析项（kind: prefix / root / suffix） */
+export interface VocabMorphItem {
+  kind: 'prefix' | 'root' | 'suffix' | string
+  /** 词缀片段，如 un- / -able / -ion */
+  part: string
+  /** 中文含义说明 */
+  meaning: string
+}
+
+/** 常用词组短语 {phrase: 英文词组, meaning: 中文含义} */
+export interface VocabPhrase {
+  phrase: string
+  meaning: string
+}
+
+/** 词性例句 {pos: 词性, sentence: 英文例句, translation: 中文译文} */
+export interface VocabSentence {
+  pos: string
+  sentence: string
+  translation: string
+}
+
+/** 生词学习知识集合（DeepSeek AI 翻译生成，对齐 Rust VocabKnowledge） */
+export interface VocabKnowledge {
+  /** 词根词缀（前缀 prefix / 词根 root / 后缀 suffix） */
+  morphology: VocabMorphItem[]
+  /** 近义词（条目可含中文小注，如 "happy（高兴的）"） */
+  synonyms: string[]
+  /** 反义词 */
+  antonyms: string[]
+  /** 常用词组短语 */
+  phrases: VocabPhrase[]
+  /** 动词变形（仅动词词条），如 "第三人称单数: works" */
+  verbForms: string[]
+  /** 按词性区分的例句 */
+  examples: VocabSentence[]
+}
+
+/** 生词状态 */
+export type VocabStatus = 'learning' | 'mastered' | 'suspended'
+
+/** 复习自评档位：0 忘记 / 1 模糊 / 2 记得 / 3 轻松 */
+export type VocabRating = 0 | 1 | 2 | 3
+
+/** 生词（对齐 Rust VocabWord） */
+export interface VocabWord {
+  id: string
+  word: string
+  phonetic: string
+  meanings: VocabMeaning[]
+  example: string
+  /** 例句中文翻译 */
+  exampleZh: string
+  /** SM-2 连续答对次数 */
+  repetition: number
+  /** 当前复习间隔（天） */
+  intervalDays: number
+  /** SM-2 难度系数 EF（1.3 ~ 2.5+） */
+  easeFactor: number
+  status: VocabStatus
+  /** 下次复习日期 YYYY-MM-DD */
+  nextReviewAt: string | null
+  lastReviewAt: string | null
+  reviewCount: number
+  correctCount: number
+  source: string
+  createdAt: string
+  updatedAt: string
+  /** DeepSeek 翻译附带的学习知识（词根词缀/近反义词/词组/动词变形/词性例句），无则为 null */
+  knowledge: VocabKnowledge | null
+}
+
+/** 复习记录（对齐 Rust VocabReviewLog） */
+export interface VocabReviewLog {
+  id: string
+  wordId: string
+  reviewDate: string
+  rating: VocabRating
+  repetition: number
+  intervalDays: number
+  easeFactor: number
+  reviewedAt: string
+}
+
+/** 每日复习计数（折线图） */
+export interface StatsDay {
+  date: string
+  count: number
+}
+
+/** 生词本统计（对齐 Rust VocabStats） */
+export interface VocabStats {
+  total: number
+  learning: number
+  mastered: number
+  suspended: number
+  dueToday: number
+  reviewedToday: number
+  newThisWeek: number
+  reviewHistory: StatsDay[]
+}
+
+/** 收录生词参数 */
+export interface AddVocabWordArgs {
+  word: string
+  phonetic?: string
+  meanings?: VocabMeaning[]
+  example?: string
+  /** 例句中文翻译 */
+  exampleZh?: string
+  /** DeepSeek 翻译附带的学习知识 */
+  knowledge?: VocabKnowledge | null
+  source?: string
+}
+
+/** 编辑生词参数 */
+export interface UpdateVocabWordArgs {
+  id: string
+  phonetic?: string
+  meanings?: VocabMeaning[]
+  example?: string
+  /** 例句中文翻译 */
+  exampleZh?: string
+  /** DeepSeek 翻译附带的学习知识；缺省清空 */
+  knowledge?: VocabKnowledge | null
+}
+
+/** 离线词典词条（ECDICT stardict） */
+export interface DictHit {
+  word: string
+  phonetic: string
+  translation: string
+  definition: string
+  exchange: string
+}
+
+/** 离线词典状态 */
+export interface DictStatus {
+  installed: boolean
+  wordCount: number
+  dbPath: string
+}
+
+/** 词典查询结果 */
+export interface DictLookupResult {
+  hit: DictHit | null
+  suggestions: DictHit[]
+}
+
+/** AI 兜底释义结果（DeepSeek 生成） */
+export interface AiWordExplain {
+  phonetic: string
+  meanings: VocabMeaning[]
+  example: string
+  /** 例句中文翻译 */
+  exampleZh: string
+  /** AI 翻译附带的学习知识 */
+  knowledge: VocabKnowledge
+}
+
+/** AI 释义请求参数（复用设置的 AI 配置） */
+export interface ExplainWordArgs {
+  word: string
+  endpoint: string
+  model: string
+  apiKey?: string
+  temperature?: number
+  /** 释义语言：zh（默认）/ en */
+  lang?: string
+}
+
+/** AI 单词形态检查结果类型 */
+export type WordCheckKind = 'word' | 'inflected' | 'abbreviation' | 'acronym' | 'not_a_word'
+
+/** AI 单词形态检查结果（DeepSeek flash 等轻量模型判定） */
+export interface WordCheckResult {
+  kind: WordCheckKind
+  /** 完整形式（简写/缩写时给出，如 lab → laboratory；其余为空） */
+  canonical: string
+  /** 简短中文说明 */
+  note: string
+}
+
+// ==================== TTS 朗读（豆包语音合成 seed-tts） ====================
+
+/** 朗读配置（前端 localStorage 存储，调用时逐项传给后端） */
+export interface TtsConfig {
+  /** 豆包语音控制台 API Key（UUID，鉴权头 X-Api-Key） */
+  apiKey: string
+  /** 音色 ID（seed-tts 大模型音色，如 zh_female_vv_uranus_bigtts），空则用后端默认 */
+  speaker: string
+}
+
+/** 朗读结果 */
+export interface TtsSpeakResult {
+  /** 音频文件绝对路径（前端 convertFileSrc 后播放） */
+  audioPath: string
+  /** 是否命中本地缓存 */
+  cached: boolean
+}
+

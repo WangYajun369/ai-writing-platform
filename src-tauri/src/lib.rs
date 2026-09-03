@@ -229,6 +229,25 @@ pub fn run() {
             // ══════ AI — 内容总结 ══════
             commands::ai::summarize::summarize_chapter,
             commands::ai::summarize::summarize_conversation,
+            // ══════ 英语生词本（艾宾浩斯 / SM-2 复习）══════
+            commands::vocab::vocab_add,
+            commands::vocab::vocab_update,
+            commands::vocab::vocab_set_status,
+            commands::vocab::vocab_delete,
+            commands::vocab::vocab_list,
+            commands::vocab::vocab_due,
+            commands::vocab::vocab_get,
+            commands::vocab::vocab_review,
+            commands::vocab::vocab_logs,
+            commands::vocab::vocab_stats,
+            // ══════ 英语字典（离线词库 + AI 释义）══════
+            commands::vocab_dict::dict_status,
+            commands::vocab_dict::dict_import,
+            commands::vocab_dict::dict_lookup,
+            commands::vocab_dict::dict_explain_ai,
+            commands::vocab_dict::check_word_ai,
+            // ══════ TTS 朗读（豆包语音合成）══════
+            commands::tts::tts_speak,
             // ══════ 导入导出 — 格式导出 ══════
             commands::io::export::export_book,
             // ══════ 导入导出 — TXT 导入 ══════
@@ -249,6 +268,9 @@ pub fn run() {
             commands::window::manager::close_summary_window,
             commands::window::manager::open_ai_toolbox_window,
             commands::window::manager::close_ai_toolbox_window,
+            commands::window::manager::open_vocab_window,
+            commands::window::manager::close_vocab_window,
+            commands::window::manager::is_vocab_window_open,
             // ══════ 窗口管理 — 调试控制台 ══════
             commands::window::debug::open_debug_window,
             commands::window::debug::close_debug_window,

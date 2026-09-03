@@ -166,3 +166,199 @@ pub struct Schedule {
     #[serde(rename = "updatedAt")]
     pub updated_at: String,
 }
+
+// ══════════ 英语生词本（艾宾浩斯 / SM-2 复习）══════════
+
+/// 单条释义 {pos: 词性, def: 释义}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VocabMeaning {
+    /// 词性，如 "n." / "v."，可空
+    pub pos: String,
+    /// 释义文本
+    pub def: String,
+}
+
+/// 生词条目 — 对应 `vocab_words` 表
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VocabWord {
+    pub id: String,
+    /// 单词（小写规范化存储）
+    pub word: String,
+    /// 音标，如 /ˈwɜːd/
+    pub phonetic: String,
+    /// 释义列表（存 TEXT JSON）
+    pub meanings: Vec<VocabMeaning>,
+    /// 例句
+    pub example: String,
+    /// 例句中文翻译
+    #[serde(rename = "exampleZh")]
+    pub example_zh: String,
+    /// SM-2 连续答对次数（阶段）
+    pub repetition: i64,
+    /// 当前复习间隔（天）
+    #[serde(rename = "intervalDays")]
+    pub interval_days: i64,
+    /// SM-2 难度系数 EF（初始 2.5，最低 1.3）
+    #[serde(rename = "easeFactor")]
+    pub ease_factor: f64,
+    /// learning / mastered / suspended
+    pub status: String,
+    /// 下次复习日期 YYYY-MM-DD，可为空（新词未排期）
+    #[serde(rename = "nextReviewAt")]
+    pub next_review_at: Option<String>,
+    /// 上次复习时间 RFC3339
+    #[serde(rename = "lastReviewAt")]
+    pub last_review_at: Option<String>,
+    #[serde(rename = "reviewCount")]
+    pub review_count: i64,
+    #[serde(rename = "correctCount")]
+    pub correct_count: i64,
+    /// 收录来源 manual / editor / import
+    pub source: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+    /// AI 翻译附带的学习知识（词根词缀/近反义词/词组/动词变形/词性例句），无则为 None
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub knowledge: Option<VocabKnowledge>,
+}
+
+/// 复习记录 — 对应 `vocab_reviews` 表
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VocabReviewLog {
+    pub id: String,
+    #[serde(rename = "wordId")]
+    pub word_id: String,
+    /// 复习日期 YYYY-MM-DD
+    #[serde(rename = "reviewDate")]
+    pub review_date: String,
+    /// 自评 0忘记 1模糊 2记得 3轻松
+    pub rating: i64,
+    /// 本次复习后的 SM-2 repetition
+    pub repetition: i64,
+    #[serde(rename = "intervalDays")]
+    pub interval_days: i64,
+    #[serde(rename = "easeFactor")]
+    pub ease_factor: f64,
+    #[serde(rename = "reviewedAt")]
+    pub reviewed_at: String,
+}
+
+/// 复习统计中的每日数据（折线图用）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct StatsDay {
+    /// YYYY-MM-DD
+    pub date: String,
+    pub count: i64,
+}
+
+/// 生词本统计概览
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VocabStats {
+    pub total: i64,
+    pub learning: i64,
+    pub mastered: i64,
+    pub suspended: i64,
+    /// 今日待复习数（含逾期）
+    #[serde(rename = "dueToday")]
+    pub due_today: i64,
+    /// 今日已复习数
+    #[serde(rename = "reviewedToday")]
+    pub reviewed_today: i64,
+    /// 近 7 天新收录
+    #[serde(rename = "newThisWeek")]
+    pub new_this_week: i64,
+    /// 近 30 天复习量分布（升序）
+    #[serde(rename = "reviewHistory")]
+    pub review_history: Vec<StatsDay>,
+}
+
+/// 离线词典词条命中（ECDICT stardict）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DictHit {
+    pub word: String,
+    pub phonetic: String,
+    /// 中文释义（可能多行，\n 分隔）
+    pub translation: String,
+    /// 英文释义（可为空）
+    pub definition: String,
+    /// 词形变化
+    pub exchange: String,
+}
+
+/// 离线词典状态
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DictStatus {
+    /// 词典文件是否已就绪
+    pub installed: bool,
+    /// 词条总数（未安装为 0）
+    #[serde(rename = "wordCount")]
+    pub word_count: i64,
+    /// 词典文件路径（未安装为空串）
+    #[serde(rename = "dbPath")]
+    pub db_path: String,
+}
+
+/// AI 兜底释义结果（DeepSeek 生成）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AiWordExplain {
+    pub phonetic: String,
+    pub meanings: Vec<VocabMeaning>,
+    pub example: String,
+    /// 例句中文翻译
+    #[serde(rename = "exampleZh", default)]
+    pub example_zh: String,
+    /// AI 翻译附带的学习知识（词根词缀/近反义词/词组/动词变形/词性例句）
+    #[serde(default)]
+    pub knowledge: VocabKnowledge,
+}
+
+// ══════════ 生词学习知识（DeepSeek AI 翻译生成，可选存 ai_details 列）══════════
+
+/// 词根词缀分析项，kind 取值：prefix / root / suffix
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct VocabMorphItem {
+    /// prefix / root / suffix
+    pub kind: String,
+    /// 词缀片段，如 un- / -able / -ion
+    pub part: String,
+    /// 中文含义说明
+    pub meaning: String,
+}
+
+/// 常用词组短语 {phrase: 英文词组, meaning: 中文含义}
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct VocabPhrase {
+    pub phrase: String,
+    pub meaning: String,
+}
+
+/// 词性例句 {pos: 词性, sentence: 英文例句, translation: 中文译文}
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct VocabSentence {
+    pub pos: String,
+    pub sentence: String,
+    pub translation: String,
+}
+
+/// 生词学习知识集合（DeepSeek 翻译生成，尽量完整的词典信息）
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct VocabKnowledge {
+    /// 词根词缀（前缀 prefix / 词根 root / 后缀 suffix）
+    pub morphology: Vec<VocabMorphItem>,
+    /// 近义词（条目可含中文小注，如 "happy（高兴的）"）
+    pub synonyms: Vec<String>,
+    /// 反义词
+    pub antonyms: Vec<String>,
+    /// 常用词组短语
+    pub phrases: Vec<VocabPhrase>,
+    /// 动词变形（如 ["第三人称单数: works", "现在分词: working"]），仅动词词条生成
+    pub verb_forms: Vec<String>,
+    /// 按词性区分的例句（帮助结合语境理解）
+    pub examples: Vec<VocabSentence>,
+}

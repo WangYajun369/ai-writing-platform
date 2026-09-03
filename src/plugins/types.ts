@@ -12,6 +12,7 @@ export type ExtensionPoint =
   | 'export-format'     // 导出格式扩展
   | 'ai-prompt'         // AI 提示词模板
   | 'command-palette'   // 命令面板条目
+  | 'home-header'       // 首页头部入口按钮（支持角标/激活态）
 
 /** 插件注册的命令/操作 */
 export interface PluginCommand {
@@ -27,6 +28,17 @@ export interface PluginCommand {
   icon?: string
   /** 命令执行处理函数 */
   handler: (context: CommandContext) => Promise<void> | void
+  // ── 以下为 home-header 扩展点专用（其余扩展点忽略）──
+  /** 入口是否处于激活状态（如：对应子窗口已打开），可选 */
+  isActive?: () => boolean
+  /**
+   * 入口角标计数源（如：今日待复习单词数）。
+   * 返回 0 / undefined 时不显示角标；返回非 0 时显示数字。
+   * 支持同步或异步；平台会定期与收到事件后重新拉取。
+   */
+  badgeCount?: () => number | Promise<number> | undefined
+  /** 自定义主色类名（如 "text-blue-500"），可选，用于高亮图标 */
+  activeClassName?: string
 }
 
 /** 命令执行上下文 */

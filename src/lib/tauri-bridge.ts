@@ -6,7 +6,7 @@
  * 所有 IPC 调用必须通过此模块的 API 对象进行。
  */
 import { invoke } from '@tauri-apps/api/core'
-import type { Book, Chapter, Volume, Snapshot, WorldCard, Diary, DiaryMeta, CreateBookParams, UpdateBookParams, SaveDiaryParams, Schedule, SaveScheduleParams } from '@/types'
+import type { Book, Chapter, Volume, Snapshot, WorldCard, Diary, DiaryMeta, CreateBookParams, UpdateBookParams, SaveDiaryParams, Schedule, SaveScheduleParams, VocabWord, VocabStats, VocabReviewLog, AddVocabWordArgs, UpdateVocabWordArgs, DictStatus, DictLookupResult, AiWordExplain, ExplainWordArgs, WordCheckResult, TtsSpeakResult } from '@/types'
 
 // ==================== 书籍管理 ====================
 
@@ -332,6 +332,21 @@ export const windowApi = {
   async closeAiToolbox(): Promise<void> {
     return invoke<void>('close_ai_toolbox_window')
   },
+
+  /** 打开英语字典（生词本）独立窗口（已打开则关闭，即 toggle） */
+  async openVocab(): Promise<void> {
+    return invoke<void>('open_vocab_window')
+  },
+
+  /** 关闭英语字典独立窗口 */
+  async closeVocab(): Promise<void> {
+    return invoke<void>('close_vocab_window')
+  },
+
+  /** 英语字典窗口当前是否打开 */
+  async isVocabOpen(): Promise<boolean> {
+    return invoke<boolean>('is_vocab_window_open')
+  },
 }
 
 // ==================== AI & 向量检索 ====================
@@ -625,5 +640,105 @@ export const systemApi = {
   /** 执行系统环境检查（Python/Node/Rust 版本、系统信息、安装路径） */
   async check(): Promise<SystemCheckResult> {
     return invoke<SystemCheckResult>('system_check')
+  },
+}
+
+// ==================== 英语生词本（vocabApi） ====================
+
+export const vocabApi = {
+  /** 收录生词（同词已存在时更新释义并返回） */
+  async add(args: AddVocabWordArgs): Promise<VocabWord> {
+    return invoke<VocabWord>('vocab_add', { args })
+  },
+
+  /** 编辑生词音标/释义/例句 */
+  async update(args: UpdateVocabWordArgs): Promise<VocabWord> {
+    return invoke<VocabWord>('vocab_update', { args })
+  },
+
+  /** 切换状态（learning / mastered / suspended） */
+  async setStatus(id: string, status: VocabWord['status']): Promise<VocabWord> {
+    return invoke<VocabWord>('vocab_set_status', { id, status })
+  },
+
+  /** 删除生词（复习记录级联删除） */
+  async delete(id: string): Promise<void> {
+    return invoke<void>('vocab_delete', { id })
+  },
+
+  /** 列表（status: all/learning/mastered/suspended；query 单词模糊搜索） */
+  async list(status?: string, query?: string): Promise<VocabWord[]> {
+    return invoke<VocabWord[]>('vocab_list', { status: status ?? null, query: query ?? null })
+  },
+
+  /** 今日到期复习队列 */
+  async due(): Promise<VocabWord[]> {
+    return invoke<VocabWord[]>('vocab_due')
+  },
+
+  /** 单条详情 */
+  async get(id: string): Promise<VocabWord> {
+    return invoke<VocabWord>('vocab_get', { id })
+  },
+
+  /** 提交复习反馈（0 忘记 / 1 模糊 / 2 记得 / 3 轻松），返回更新后的词条 */
+  async review(wordId: string, rating: 0 | 1 | 2 | 3): Promise<VocabWord> {
+    return invoke<VocabWord>('vocab_review', { wordId, rating })
+  },
+
+  /** 某生词的复习历史 */
+  async logs(wordId: string): Promise<VocabReviewLog[]> {
+    return invoke<VocabReviewLog[]>('vocab_logs', { wordId })
+  },
+
+  /** 生词本统计 */
+  async stats(): Promise<VocabStats> {
+    return invoke<VocabStats>('vocab_stats')
+  },
+}
+
+// ==================== TTS 朗读（豆包语音合成 seed-tts） ====================
+
+export const ttsApi = {
+  /**
+   * 朗读文本：后端调用豆包语音合成（seed-tts）合成 MP3 并缓存到本地（幂等），返回文件路径
+   */
+  async speak(text: string, apiKey: string, speaker?: string): Promise<TtsSpeakResult> {
+    return invoke<TtsSpeakResult>('tts_speak', {
+      args: {
+        text,
+        apiKey,
+        speaker: speaker || null,
+      },
+    })
+  },
+}
+
+// ==================== 英语字典（离线词库 + AI 释义） ====================
+
+export const dictApi = {
+  /** 离线词典状态（是否已安装 ECDICT 词库） */
+  async status(): Promise<DictStatus> {
+    return invoke<DictStatus>('dict_status')
+  },
+
+  /** 导入离线词典文件（ECDICT sqlite） */
+  async import(sourcePath: string): Promise<DictStatus> {
+    return invoke<DictStatus>('dict_import', { sourcePath })
+  },
+
+  /** 离线查词（精确命中 + 前缀建议） */
+  async lookup(word: string): Promise<DictLookupResult> {
+    return invoke<DictLookupResult>('dict_lookup', { word })
+  },
+
+  /** AI 兜底释义（DeepSeek，需已配置 AI） */
+  async explainAi(args: ExplainWordArgs): Promise<AiWordExplain> {
+    return invoke<AiWordExplain>('dict_explain_ai', { args })
+  },
+
+  /** AI 单词形态检查（轻量模型判定：完整单词 / 简写 / 缩写 / 不存在） */
+  async checkWord(args: ExplainWordArgs): Promise<WordCheckResult> {
+    return invoke<WordCheckResult>('check_word_ai', { args })
   },
 }
