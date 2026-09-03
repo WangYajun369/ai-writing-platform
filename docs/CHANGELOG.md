@@ -1,5 +1,20 @@
 # 更新日志
 
+## v1.4.0 (2026-09-03)
+
+### 新增
+- **英语字典·生词本模块**：书库首页右上角新增「英语字典」入口（玫红主题，基于首页头部插件扩展点 `HomeHeaderPlugins`）；`VocabularyWindow` 独立悬浮窗口内置「生词本 / 复习 / 统计」页签，支持添加生词（在线释义查询）、单词详情（音标/例句/读音）、间隔重复式分组复习与掌握度统计；后端新增 `vocab.rs`、`vocab_dict.rs` 命令与 `vocab_repo.rs` / `vocab_service.rs`（词库、生词簿 CRUD、复习计划与统计聚合）
+- **TTS 朗读**：新增 `tts-player.ts`（Web Speech 封装）与后端 `tts.rs` 命令，生词与复习场景一键朗读，语速/语音可配置（`ttsConfig` store 持久化）
+- **首页插件宿主**：新增 `PluginHost` 与 `plugins/bootstrap.ts` 插件注册引导（含 vite 配置扩展、插件类型声明），首个内置插件为英语字典，独立窗口状态经 Jotai 跨窗口同步
+
+### 优化
+- **「看日记」留白页改版**：月份开篇/收尾的空白对开页改为素雅「纸张扉页」——纸张质感明暗渐变、内框细线、圆环羽毛笔装饰，居中显示中文年月大字；左侧空白页语「新 的 一 月」、右侧「本 月 终 章」
+- **顶栏按钮提示清理**：移除「AI 工具箱」（书库首页）与「AI 助手」（编辑器顶栏）按钮右上角的呼吸小圆点，`GradientButton` 新增 `showDot` 开关按需控制
+
+### 工程
+- Rust：新增 `commands/tts.rs`、`commands/vocab.rs`、`commands/vocab_dict.rs` 与 `repository/vocab_repo.rs`、`service/vocab_service.rs`，`models/mod.rs` 与 `db/mod.rs` 注册生词相关数据表，`window/manager.rs` / `lib.rs` / `commands/mod.rs` 完成窗口与命令接线
+- IPC：`tauri-bridge` 新增 `vocabApi` / `ttsApi` 等桥接；前端新增 `vocabStore` / `ttsConfig` store、`components/vocabulary/` 组件目录与生词数据工具
+
 ## v1.3.0 (2026-09-02)
 
 ### 新增

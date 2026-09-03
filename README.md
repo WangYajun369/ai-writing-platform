@@ -164,7 +164,7 @@ Agent 引擎已完全内置于 Rust 后端（无 Python / 外部进程依赖）�
 |------|------|
 | 应用名称 | TimeWrite |
 | 应用标识 | `com.ukcoder.timewrite` |
-| 版本 | 1.3.0 |
+| 版本 | 1.4.0 |
 | 窗口默认尺寸 | 1280 × 800 |
 | 窗口最小尺寸 | 800 × 600 |
 | 深度链接协议 | `com.ukcoder.timewrite://` |
