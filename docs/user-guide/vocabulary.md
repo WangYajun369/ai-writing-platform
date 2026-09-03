@@ -1,6 +1,6 @@
 # 英语字典·生词本
 
-> **适用版本**：`1.4.0`　|　**最后核对**：2026-09-03
+> **适用版本**：`1.5.0`　|　**最后核对**：2026-09-03
 
 TimeWrite 在 v1.4.0 内置了「英语字典 · 生词本」插件：把阅读 / 写作时遇到的生词**集中收录 → 智能复习 → 逐步掌握**，数据全部保存在本机 `time_write.db`（`vocab_words` / `vocab_reviews` 表），离线可用。
 
@@ -83,4 +83,4 @@ TimeWrite 在 v1.4.0 内置了「英语字典 · 生词本」插件：把阅读 
 ## 相关文档
 
 - [功能清单](features/feature-list) — v1.4.0 新增能力一览
-- [插件系统](development/plugin-system) — 作为首个 home-header 内置插件的实现细节
+- [插件系统](development/plugin-system) — 作为 home-header 内置插件的实现细节

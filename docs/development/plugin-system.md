@@ -1,8 +1,8 @@
 # 插件系统
 
-> **适用版本**：`1.4.0`　|　**最后核对**：2026-09-03
+> **适用版本**：`1.5.0`　|　**最后核对**：2026-09-03
 
-TimeWrite 内置基于**扩展点（Extension Point）**的插件系统：插件声明元信息与命令，经 `PluginManager`（单例）注册、启用后，命令会出现在对应扩展点的 UI 位置。v1.4.0 起内置插件引导 `bootstrap.ts` 自动注册首个 home-header 插件「英语字典·生词本」，插件系统从框架阶段进入实际落地阶段。
+TimeWrite 内置基于**扩展点（Extension Point）**的插件系统：插件声明元信息与命令，经 `PluginManager`（单例）注册、启用后，命令会出现在对应扩展点的 UI 位置。v1.4.0 起内置插件引导 `bootstrap.ts` 自动注册 home-header 插件「英语字典·生词本」，v1.5.0 再注册「任务卡·项目管理」，两个内置插件在书库首页头部各占一个入口按钮（图标 + 角标），插件系统进入实际落地阶段。
 
 ## 扩展点（7 个）
 
@@ -30,7 +30,8 @@ TimeWrite 内置基于**扩展点（Extension Point）**的插件系统：插件
 | `src/plugins/PluginManager.ts` | 单例管理器：注册 / 启用 / 禁用 / 卸载、按扩展点取命令、订阅状态 |
 | `src/plugins/index.ts` | 对外导出（含 `definePlugin` 帮助函数） |
 | `src/plugins/bootstrap.ts` | 主窗口内置插件引导：注册并启用内置插件、为 home-header 注入角标计数源 |
-| `src/plugins/dictionary/` | 首个内置插件「英语字典·生词本」（`plugin.ts` + `windowState.ts`） |
+| `src/plugins/dictionary/` | 内置插件「英语字典·生词本」（v1.4.0，`plugin.ts` + `windowState.ts`） |
+| `src/plugins/taskCards/` | 内置插件「任务卡·项目管理」（v1.5.0，`plugin.ts` + `windowState.ts`） |
 | `src/plugins/examples/` | `charCounter.ts` 参考示例 |
 
 ## 插件结构
@@ -97,16 +98,26 @@ PluginManager.subscribe(listener)                   // 订阅状态变化
 
 仅主窗口执行一次，模块级 Promise 保证幂等（StrictMode 双挂载安全）：
 
-1. 注入字典插件角标计数源：`vocabApi.stats() → dueToday`
-2. `PluginManager.register(vocabDictionaryPlugin)`
-3. `PluginManager.enable(id, buildContext())`（插件 context：storage 走 localStorage，前缀 `tw:plugin:`）
+1. 注册并启用「英语字典·生词本」插件（v1.4.0）
+2. 注册并启用「任务卡·项目管理」插件（v1.5.0）
+3. 为每个 home-header 插件注入角标计数源（词典：`vocabApi.stats() → dueToday`；任务卡：今日应办数统计）
+4. `PluginManager.enable(id, buildContext())`（插件 context：storage 走 localStorage，前缀 `tw:plugin:`）
 
-「英语字典·生词本」插件要点（可直接作为新插件参考）：
+「英语字典·生词本」插件要点：
 
 - `extensionPoints: ['home-header']`，命令 `vocab-dictionary.open`：`windowApi.openVocab()` 打开独立窗口
 - 窗口开关状态存于 `plugins/dictionary/windowState.ts`（模块级），不污染主程序 `uiAtoms`
 - 后端到期广播事件（`vocab-due-updated`）会触发角标计数源重新拉取，主窗口角标 ⇄ 词典窗口实时同步
 - 词典窗口页面位于 `src/components/vocabulary/`（业务组件目录），`components/app/AppInit.tsx` 负责识别 `?vocabwin=1` 路由
+
+「任务卡·项目管理」插件要点（v1.5.0，multi-command 参考）：
+
+- `id: 'task-cards'`，声明 4 个 `command-palette` 命令：`task-cards.open`（打开 / 切换窗口）、`task-cards.open-palette`（直达今日）、`task-cards.goto-today`、`task-cards.goto-all`，深链参数 `?taskswin=1&section=today|all`
+- `home-header` 入口复用激活态判断 + 今日应办数角标（`getTaskCardsBadgeCount()`，监听 `tasks-data-updated` 刷新）
+- 窗口开关状态存于 `plugins/taskCards/windowState.ts`（模块级），业务数据在 `components/taskCards/TaskCardsWindow.tsx` 挂载时经 `taskCardApi` 拉取进 `taskCardsStore`
+- 任务卡窗口页面位于 `src/components/taskCards/`，`AppInit.tsx` 识别 `?taskswin=1`；「看日记」窗口（`diarybookwin=1`）直接由 `windowApi.openDiaryBookWindow()` 打开（非插件入口）
+
+> 两个插件的差异点：词典为「单命令 + 事件驱动角标」，任务卡为「多命令 + 深链直达 + store 数据流」——新插件可按自身形态取舍。
 
 ## 示例插件
 
@@ -123,5 +134,6 @@ PluginManager.subscribe(listener)                   // 订阅状态变化
 ## 相关文档
 
 - [项目结构](development/project-structure) — `plugins/` 目录位置
-- [用户指南 · 英语字典·生词本](user-guide/vocabulary) — 首个内置插件的使用说明
+- [用户指南 · 英语字典·生词本](user-guide/vocabulary) — 内置插件使用说明（v1.4.0）
+- [用户指南 · 任务卡·项目管理](user-guide/task-cards) — 内置插件使用说明（v1.5.0）
 - [状态管理](development/state-management) — PluginManager 与 `pluginStore` 的关系

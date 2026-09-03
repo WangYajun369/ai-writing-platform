@@ -1,6 +1,6 @@
 # TimeWrite（智写时光）代码架构深度分析
 
-> **适用版本**：`1.4.0`　|　**最后核对**：2026-09-03
+> **适用版本**：`1.5.0`　|　**最后核对**：2026-09-03
 >
 > 基于当前源码（前端 `src/`、Rust 后端 `src-tauri/`、脚本 `scripts/`）整理。
 > v1.1 起 Agent 已迁移为 **Rust 原生引擎**（`src-tauri/src/commands/agent/`），
@@ -19,15 +19,15 @@
 │  │ pages/ (书库/编辑器/设置)                                          │  │
 │  │ components/ (按业务域分组的 UI 组件)                                │  │
 │  │ stores/ (Zustand 业务状态 + Jotai UI 原子状态)                      │  │
-│  │ plugins/ (PluginManager 扩展点系统)                                │  │
-│  │ lib/tauri-bridge.ts (唯一 IPC 调用入口，16 个 API 模块)              │  │
+│  │ plugins/ (PluginManager 扩展点系统 + 2 个内置插件)                   │  │
+│  │ lib/tauri-bridge.ts (唯一 IPC 调用入口，17 个 API 模块)              │  │
 │  └───────────────────────────┬──────────────────────────────────────┘  │
 │                              │ Tauri IPC (invoke / event)              │
 ├──────────────────────────────┼─────────────────────────────────────────┤
 │  进程 2: Rust Core（Tauri v2）                                           │
 │  ┌───────────────────────────┴──────────────────────────────────────┐  │
 │  │ lib.rs (Builder / 插件注册 / 状态注入 / 事件)                      │  │
-│  │ commands/  (IPC 命令层，约 90 个命令)                              │  │
+│  │ commands/  (IPC 命令层，169 个命令 / 26 个模块)                     │  │
 │  │ service/   (业务编排层: 事务、审计日志、业务规则)                    │  │
 │  │ repository/(数据访问层: 纯 SQL，无业务逻辑)                         │  │
 │  │ db/        (r2d2 连接池 + SQLite WAL + FTS5，含 memories 表)       │  │
@@ -61,7 +61,7 @@ main.tsx
 ```
 
 关键点：
-- **AppInit 是"窗口路由器"**：通过 URL 参数（`?worldwin=1`、`?historywin=1`、`?summarywin=1`、`?aitoolboxwin=1`、`?debugwin=1`）决定渲染哪个独立窗口面板，主窗口则渲染 `AppRouter`。
+- **AppInit 是"窗口路由器"**：通过 URL 参数（`?worldwin=1`、`?historywin=1`、`?summarywin=1`、`?aitoolboxwin=1`、`?debugwin=1`、`?vocabwin=1`、`?taskswin=1`、`?diarybookwin=1`）决定渲染哪个独立窗口面板（v1.5.0 起 8 种），主窗口则渲染 `AppRouter`。
 - **路由**：React Router v7，`/`（书库）、`/editor/:bookId`（编辑器）、`/settings`（设置），Editor/Settings 懒加载。
 
 ### 2.2 状态管理：Zustand（业务）+ Jotai（UI）双轨制
@@ -74,6 +74,8 @@ main.tsx
 | `aiSlice` | `stores/aiSlice.ts` | AI 对话消息、配置、RAG、总结、连接状态 |
 | `preferencesSlice` | `stores/preferencesSlice.ts` | 主题/护眼/字体/网格/编辑器宽度等个性化偏好（localStorage 持久化） |
 | `pluginStore` | `stores/pluginStore.ts` | 插件启用状态 |
+| `vocabStore` / `ttsConfig` | `stores/vocabStore.ts` / `ttsConfig.ts` | 英语字典数据 + TTS 配置（v1.4.0，独立 store） |
+| `taskCardsStore` | `stores/taskCardsStore.ts` | 任务卡窗口数据（v1.5.0，独立 store，不持久化，经 `taskCardApi` 拉取并广播 `tasks-data-updated`） |
 
 **Jotai — UI 原子状态（`stores/uiAtoms.ts`）**，21 个 atom：
 - 编辑器类：`editorInstanceAtom`（TipTap 实例）、`editorFocusAtom`、`editorScrollPositionAtom`、`editorCursorPositionAtom`
@@ -85,7 +87,7 @@ main.tsx
 
 ### 2.3 组件层次（components/）
 
-按业务域组织 10 个目录：
+按业务域组织 13 个目录：
 
 | 目录 | 核心组件 | 职责 |
 |------|---------|------|
@@ -95,6 +97,9 @@ main.tsx
 | `ai/` | AiSidePanel, useAiChat, MessageBubble, panel/* | AI 对话面板、工具箱、请求详情 |
 | `agent/` | useAgent, AgentMemoryPanel, AgentMessageBubble | Agent Skill 交互、流式输出、记忆管理 |
 | `worldbuilding/` | WorldbuildingPanel, WorldCardEditor | 6 类世界观卡片管理 |
+| `diary/` | DiaryPanel, DiaryDialog, DiaryBookPage, DayTasksPanel | 首页右栏：按月日历 + 日记 + 当日任务（v1.5.0 任务卡驱动），「看日记」独立窗口 |
+| `vocabulary/` | VocabularyWindow, WordBookTab, ReviewTab, StatsTab | 英语字典·生词本独立窗口（v1.4.0） |
+| `taskCards/` | TaskCardsWindow, TaskCardView, AllTasksView, TodayView, SettingsDrawer 等 | 任务卡·项目管理独立窗口（v1.5.0） |
 | `settings/` | AiConfigSection, RagConfigSection, AppearanceSection 等 12 个 | 设置页分区 |
 | `app/` | AppInit, AppClosingOverlay, windowDetection | 应用初始化、关闭遮罩、窗口检测 |
 | `common/` | ContextMenu, DebugPanel, ToastContainer | 通用组件 |
@@ -122,6 +127,7 @@ main.tsx
 | `vocabApi` | vocab.rs | 生词本 CRUD + SM-2 复习 + 统计（v1.4.0） |
 | `dictApi` | vocab_dict.rs | 离线词典查询 / 导入 / AI 释义（v1.4.0） |
 | `ttsApi` | tts.rs | 豆包语音合成（v1.4.0） |
+| `taskCardApi` | project.rs / task.rs / tag.rs / task_meta.rs / subtask.rs / attachment.rs / activity.rs / template.rs / reminder.rs / migrate.rs | 任务卡全量命令（55 条，v1.5.0） |
 | `aiApi` | ai/ (chat/embedding/summarize/test) | 流式对话、RAG、Embedding（预留）、总结 |
 | `importExportApi` | io/ (export/import_txt/backup) | 格式导出、TXT 导入、加密备份 |
 | `imageApi` | image.rs | 图片压缩/裁剪 |
@@ -138,7 +144,8 @@ main.tsx
 - `PluginManager` 单例：register → enable（调用 init）→ executeCommand → disable（调用 destroy）→ unregister
 - 插件生命周期：`installed → active → disabled → error`
 - 运行时上下文 `PluginContext` 提供 `app`（书籍/章节获取、通知）、`editor`（选中文本、插入）、`storage`（独立 key-value 存储）
-- 内置引导 `plugins/bootstrap.ts`（v1.4.0）：首个 home-header 插件「英语字典·生词本」，窗口状态存放于 `dictionary/windowState.ts`
+- 内置引导 `plugins/bootstrap.ts`：home-header 插件「英语字典·生词本」（v1.4.0）与「任务卡·项目管理」（v1.5.0），窗口状态分别存放于 `dictionary/windowState.ts` 与 `taskCards/windowState.ts`
+- 任务卡插件为 multi-command 形态：4 个命令面板命令（打开 / 直达今日 / 直达全部，深链 `?taskswin=1&section=today|all`）+ home-header 入口角标（今日应办数）
 - 示例插件：字符统计（`plugins/examples/charCounter.ts`，不随内置引导启用）
 
 ---
@@ -158,15 +165,15 @@ db/         连接与 Schema —— r2d2 连接池、迁移、FTS5 触发器、�
 
 ### 3.2 启动流程（lib.rs）
 
-1. 注册 6 个 Tauri 插件：shell / dialog / fs / updater / deep-link / http
+1. 注册 7 个 Tauri 插件：shell / dialog / fs / updater / deep-link / http / notification（v1.5.0 起）
 2. **数据库初始化**：`app_data_dir/time_write.db` → `AppDb::new()`（建表 + 迁移 + 索引）
 3. **旧版 Agent 记忆库迁移**：检测旧 `agent_memory.db`（`<cwd>/data/` 与 `<app_data_dir>/`），存在则将存量记忆导入 `memories` 表（幂等，失败仅记日志）
 4. **窗口关闭拦截**：CloseRequested → prevent_close → emit `agent-status-changed {status:"closing"}` → 关调试窗口 → 真正关闭（AtomicBool 防死循环）
-5. 注册约 109 个 IPC 命令（books / volumes / chapters / snapshots / world_cards / diaries / schedules / vocab / vocab_dict / tts / ai / io / image / window / agent / system_check）
+5. 注册 169 个 IPC 命令（26 个命令模块：books / volumes / chapters / snapshots / world_cards / diaries / schedules / vocab / vocab_dict / tts / ai / io / image / window / agent / system_check + 任务卡 project/task/tag/task_meta/subtask/attachment/activity/template/reminder/migrate）
 
 ### 3.3 数据库设计（db/schema.rs + db/mod.rs）
 
-**11 张业务表 + 2 张 FTS5 虚拟表**（v1.1 起新增 `memories`；v1.3 新增 `diaries` / `schedules`；v1.4 新增 `vocab_words` / `vocab_reviews`）：
+**21 张业务表 + 2 张 FTS5 虚拟表**（v1.1 起新增 `memories`；v1.3 新增 `diaries` / `schedules`；v1.4 新增 `vocab_words` / `vocab_reviews`；v1.5 新增任务卡 10 张）：
 
 | 表 | 关键字段 | 说明 |
 |----|---------|------|
@@ -178,9 +185,17 @@ db/         连接与 Schema —— r2d2 连接池、迁移、FTS5 触发器、�
 | `embeddings` | source_type, source_id, embedding(BLOB), model | 向量索引，UNIQUE(source_type, source_id) |
 | `memories` | book_id, skill_type, memory_type, content, keywords, relevance_score | Agent 记忆（索引：book_skill / type） |
 | `diaries` | diary_date(UNIQUE), content_html, word_count, keywords(JSON 数组文本), created_at, updated_at | 日记（每天至多一篇） |
-| `schedules` | schedule_date, content, done(0/1), created_at, updated_at | 个人日程（某天多条） |
+| `schedules` | schedule_date, content, done(0/1), created_at, updated_at | 旧个人日程（某天多条；v1.5.0 起仅供迁移） |
 | `vocab_words` | word(唯一), phonetic, meanings JSON, example/example_zh, details_json（AI 精讲缓存）, SM-2 参数（ease_factor/repetitions/interval_days/queue/due_at）, status | 生词本（v1.4.0） |
 | `vocab_reviews` | word_id(FK), rating(0-3), interval_days, reviewed_at | 复习日志（v1.4.0） |
+| `projects` / `project_milestones` | name/color/icon/status/pinned；project_id(FK)/name/due_date | 任务项目 + 里程碑（v1.5.0） |
+| `tasks` | project_id(FK), title, description, status(todo/doing/done), priority, due_time, planned_today, completion_summary, deleted_at | 任务卡（v1.5.0） |
+| `tags` / `task_tags` | 标签元数据 + 任务-标签关联 | 任务标签（v1.5.0） |
+| `task_meta` | key(PRIMARY), value | 模块元数据 / 提醒偏好 / 铃铛已读（v1.5.0） |
+| `task_subtasks` | task_id(FK), title, done, sort_order | 子任务清单（v1.5.0） |
+| `attachments` | task_id(FK), file_name, file_type, local_path | 附件（v1.5.0） |
+| `task_activity_logs` | task_id/project_id, action, summary, created_at | 操作日志时间线（v1.5.0） |
+| `task_templates` | name, project_id, title, priority, due_offset_days, subtask_titles | 任务模板（v1.5.0） |
 | `chapters_fts` / `world_cards_fts` | FTS5 (unicode61) | 全文搜索，INSERT/UPDATE/DELETE 三触发器自动同步 |
 
 技术要点：
@@ -324,7 +339,7 @@ Agent 面板/AI 侧面板发送消息
 7. **双保险自动保存**：防抖 + 定时器组合，配合后端事务更新全书字数。
 8. **多层网络容错**：AI 对话重试白名单、SSE 断流保留已生成内容、双层超时（10 分钟全局 / 60s chunk）。
 9. **权限最小化**：capabilities/default.json 仅向窗口授予核心权限，CSP 严格限定 connect-src。
-10. **独立窗口系统**：通过 URL 参数路由到 5 种悬浮面板（always_on_top），Jotai 原子跨窗口同步开关状态。
+10. **独立窗口系统**：通过 URL 参数路由到 8 种独立窗口，Jotai 原子（核心窗口）与插件模块状态（英语字典 / 任务卡）跨窗口同步开关状态。
 
 ---
 
@@ -334,22 +349,22 @@ Agent 面板/AI 侧面板发送消息
 MirageInk/
 ├── src/                      # 🔵 前端（React 19 + TS 6）
 │   ├── pages/                #   LibraryPage / EditorPage / SettingsPage
-│   ├── components/           #   12 个业务域组件目录 + ErrorBoundary
-│   ├── stores/               #   Zustand 3 slices + Jotai 21 atoms + pluginStore
+│   ├── components/           #   13 个业务域组件目录 + ErrorBoundary
+│   ├── stores/               #   Zustand 3 slices + 独立 stores（plugin/vocab/tts/taskCards）+ Jotai 21 atoms
 │   ├── lib/                  #   tauri-bridge.ts（IPC 入口）/ utils / toast / image
 │   ├── hooks/                #   useAppVersion / useConsoleInterceptor / useResizeHandle / useThemeFontInit
-│   ├── plugins/              #   PluginManager 单例 + 6 扩展点 + 示例插件
+│   ├── plugins/              #   PluginManager 单例 + 7 扩展点 + 2 个内置插件（dictionary / taskCards）
 │   ├── router/               #   React Router v7（懒加载）
 │   ├── types/                #   全部领域类型 + DTO 对齐
 │   └── styles/               #   TailwindCSS 4 + HSL 主题变量（4 套主题）
 ├── src-tauri/                # 🟠 Rust 后端（Tauri v2）
 │   ├── src/
-│   │   ├── lib.rs            #   Builder / 插件 / 启动编排 / ~90 命令注册
-│   │   ├── commands/         #   book/volume/chapter/snapshot/world_card/diary/schedule/image/system_check + ai/io/window/agent
+│   │   ├── lib.rs            #   Builder / 插件 / 启动编排 / 169 命令注册
+│   │   ├── commands/         #   26 个模块：基础域 + ai/io/window/agent + 任务卡 10 文件
 │   │   │   └── agent/        #   engine / prompts / tools / memory / skills（Rust 原生 Agent）
-│   │   ├── service/          #   8 个业务服务（事务 + 审计）
-│   │   ├── repository/       #   8 个数据仓库（纯 SQL）
-│   │   ├── db/               #   r2d2 连接池 + Schema（memories / diaries / schedules）+ FTS5
+│   │   ├── service/          #   20 个业务服务（事务 + 审计，含 task/reminder/migrate 等）
+│   │   ├── repository/       #   17 个数据仓库（纯 SQL）
+│   │   ├── db/               #   r2d2 连接池 + Schema（21 业务表 + 2 FTS5）
 │   │   ├── error.rs          #   AppError 统一错误
 │   │   └── utils.rs          #   HTTP 客户端 / HTML 工具 / 校验
 │   ├── capabilities/         #   权限声明

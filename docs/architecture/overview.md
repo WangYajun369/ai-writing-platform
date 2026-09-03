@@ -1,6 +1,6 @@
 # 架构总览
 
-> **适用版本**：`1.4.0`　|　**最后核对**：2026-09-03
+> **适用版本**：`1.5.0`　|　**最后核对**：2026-09-03
 >
 > TimeWrite（MirageInk / 智写时光）运行时为**双进程模型**：WebView 前端 + Rust Core。
 > v1.1 起 Agent 已由 Python 外部子进程迁移为 **Rust 原生引擎**（见 [Agent 引擎架构](agent-architecture)），
@@ -19,15 +19,16 @@ TimeWrite 运行时包含 **2 个进程**。Rust 是**唯一的数据拥有者**
 │  │ pages/        components/       stores/                │  │
 │  │ 书库/编辑器/设置  业务域组件        Zustand + Jotai      │  │
 │  │        └──────────────┼──────────────┘                 │  │
-│  │        lib/tauri-bridge.ts（唯一 IPC 入口，10+ 个 API）  │  │
+│  │        lib/tauri-bridge.ts（唯一 IPC 入口，17 个 API）  │  │
 │  └───────────────────────┼───────────────────────────────┘  │
 └──────────────────────────┼──────────────────────────────────┘
                            │ Tauri IPC（invoke / event）
 ┌──────────────────────────┼──────────────────────────────────┐
 │  进程 2：Rust Core（Tauri v2）                                │
 │  ┌───────────────────────┴───────────────────────────────┐  │
-│  │ commands/    12 个模块（book/volume/chapter/snapshot/  │  │
-│  │              world_card/ai/agent/io/image/window/...） │  │
+│  │ commands/    26 个模块（book/volume/chapter/snapshot/  │  │
+│  │              world_card/ai/agent/io/image/window/      │  │
+│  │              project/task/tag/subtask/attachment/...） │  │
 │  │ service/     业务编排：事务边界 + SQL 审计日志           │  │
 │  │ repository/  数据访问：纯 SQL，无业务逻辑               │  │
 │  │ db/          r2d2 连接池 + SQLite WAL + FTS5           │  │
@@ -121,7 +122,7 @@ db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发�
 
 ## 数据库设计
 
-**11 张业务表 + 2 张 FTS5 虚拟表**
+**21 张业务表 + 2 张 FTS5 虚拟表**
 
 | 表 | 关键字段 | 说明 |
 |----|---------|------|
@@ -133,9 +134,18 @@ db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发�
 | `embeddings` | source_type, source_id, embedding (BLOB), model | 向量索引，`UNIQUE(source_type, source_id)` |
 | `memories` | book_id, skill_type, memory_type, content, keywords, relevance_score | Agent 记忆（v1.1 起并入主库） |
 | `diaries` | diary_date (UNIQUE), content_html, word_count, keywords, created_at, updated_at | 日记（每天至多一篇） |
-| `schedules` | schedule_date, content, done (0/1), created_at, updated_at | 个人日程（某天多条） |
+| `schedules` | schedule_date, content, done (0/1), created_at, updated_at | 旧个人日程（v1.5.0 起仅供数据迁移） |
 | `vocab_words` | word (UNIQUE), phonetic, meanings JSON, example / example_zh, details_json（AI 精讲缓存）, ease_factor / repetitions / interval_days / queue / due_at, status (learning/mastered/suspended) | 生词本 + SM-2 记忆参数（v1.4.0） |
 | `vocab_reviews` | word_id (FK), rating (0-3), interval_days, reviewed_at | 复习日志（v1.4.0） |
+| `projects` | name, color, icon, status(active/completed/archived), plan_start_date, plan_end_date, pinned, deleted_at | 任务项目（v1.5.0） |
+| `tasks` | project_id (FK), title, status(todo/doing/done), priority, due_time, planned_today, completion_summary, deleted_at | 任务卡（v1.5.0） |
+| `tags` / `task_tags` | 标签 + 任务标签关联 | 任务标签（v1.5.0） |
+| `task_meta` | key-value | 模块元数据 / 提醒偏好（v1.5.0） |
+| `task_subtasks` | task_id (FK), title, done | 子任务（v1.5.0） |
+| `attachments` | task_id (FK), file_name, file_type, local_path | 附件（v1.5.0） |
+| `task_activity_logs` | task_id / project_id, action, summary | 操作日志（v1.5.0） |
+| `task_templates` | name, project_id, title, priority, due_offset_days, subtask_titles | 任务模板（v1.5.0） |
+| `project_milestones` | project_id (FK), name, status, due_date | 项目里程碑（v1.5.0） |
 | `chapters_fts` | FTS5（unicode61） | 章节全文搜索，由 3 个触发器自动同步 |
 | `world_cards_fts` | FTS5（unicode61） | 世界观全文搜索，由 3 个触发器自动同步 |
 
@@ -151,7 +161,7 @@ db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发�
 
 ## IPC 模块映射
 
-前端 `tauri-bridge.ts` 暴露 16 个 API 对象，完整命令清单见 [IPC 命令速查](development/ipc-api)。
+前端 `tauri-bridge.ts` 暴露 17 个 API 对象，完整命令清单见 [IPC 命令速查](development/ipc-api)。
 
 | API 模块 | Rust 源文件 | 功能 |
 |---------|------------|------|
@@ -161,16 +171,17 @@ db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发�
 | `snapshotApi` | `commands/snapshot.rs` | 版本快照 |
 | `worldCardApi` | `commands/world_card.rs` | 世界观卡片 + FTS5 搜索 |
 | `diaryApi` | `commands/diary.rs` | 日记按月/全部摘要、全文读写与删除 |
-| `scheduleApi` | `commands/schedule.rs` | 个人日程按日/按月读写与删除 |
+| `scheduleApi` | `commands/schedule.rs` | 旧个人日程按日/按月读写（v1.5.0 起仅供迁移） |
 | `vocabApi` | `commands/vocab.rs` | 生词本 CRUD + SM-2 复习 + 统计（v1.4.0） |
 | `dictApi` | `commands/vocab_dict.rs` | 离线词典查询 / 导入 / AI 释义（v1.4.0） |
 | `ttsApi` | `commands/tts.rs` | 豆包语音合成（v1.4.0） |
 | `aiApi` | `commands/ai/` | 流式对话 + RAG + Embedding（预留）+ 总结 |
 | `importExportApi` | `commands/io/` | 导入导出 + 加密备份 |
 | `imageApi` | `commands/image.rs` | 图片压缩与裁剪 |
-| `windowApi` | `commands/window/manager.rs` | 独立窗口开关 |
+| `windowApi` | `commands/window/manager.rs` | 独立窗口开关（8 类窗口） |
 | `debugApi` | `commands/window/{debug,validate}.rs` | 调试控制台 + 数据库校验 |
 | `systemApi` | `commands/system_check.rs` | 运行环境自检 |
+| `taskCardApi` | `commands/{project,task,tag,task_meta,subtask,attachment,activity,template,reminder,migrate}.rs` | 任务卡·项目管理全量命令（v1.5.0） |
 | **Agent（组件直接 invoke）** | `commands/agent/skills.rs` | `execute_agent_skill` / `cancel_agent_skill` / 记忆 CRUD（4 个） |
 
 > v1.1 起原 `get_agent_status` / `start_agent` / `stop_agent`（启停外部 Python 进程）已移除。
@@ -187,6 +198,7 @@ db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发�
 | `tauri-plugin-shell` | Shell 命令执行 |
 | `tauri-plugin-updater` | 应用自动更新 |
 | `tauri-plugin-deep-link` | URL Scheme 唤起（`com.ukcoder.timewrite://`） |
+| `tauri-plugin-notification` | 系统通知（任务卡到期 / 逾期提醒，v1.5.0） |
 
 ---
 
@@ -214,17 +226,20 @@ CSS 类组合由两者叠加而成（`.eyecare-warm`、`.dark.eyecare-green` 等
 
 ## 独立窗口系统
 
-通过 URL 参数路由到 5 种悬浮面板（`always_on_top`），窗口开关状态由 Jotai atom 跨窗口共享：
+通过 URL 参数路由到 8 种独立窗口，窗口开关状态跨窗口共享：
 
-| 窗口 | URL 参数 | atom |
-|------|---------|------|
-| 世界观资料库 | `?worldwin=1` | `worldWindowOpenAtom` |
-| 版本历史 | `?historywin=1` | `historyWindowOpenAtom` |
-| 章节总结 | `?summarywin=1` | `summaryWindowOpenAtom` |
-| AI 工具箱 | `?aitoolboxwin=1` | `aiToolboxWindowOpenAtom` |
-| 调试控制台 | `?debugwin=1` | `debugWindowOpenAtom` |
+| 窗口 | URL 参数 | 开关状态 |
+|------|---------|---------|
+| 世界观资料库 | `?worldwin=1` | `worldWindowOpenAtom`（Jotai） |
+| 版本历史 | `?historywin=1` | `historyWindowOpenAtom`（Jotai） |
+| 章节总结 | `?summarywin=1` | `summaryWindowOpenAtom`（Jotai） |
+| AI 工具箱 | `?aitoolboxwin=1` | `aiToolboxWindowOpenAtom`（Jotai） |
+| 调试控制台 | `?debugwin=1` | `debugWindowOpenAtom`（Jotai） |
+| 英语字典·生词本 | `?vocabwin=1` | `plugins/dictionary/windowState.ts`（插件，v1.4.0） |
+| 任务卡·项目管理 | `?taskswin=1` | `plugins/taskCards/windowState.ts`（插件，v1.5.0） |
+| 看日记 | `?diarybookwin=1` | 由 `windowApi.openDiaryBookWindow()` 打开（v1.5.0） |
 
-`components/app/AppInit.tsx` 充当「窗口路由器」，根据 URL 参数决定渲染哪个面板。
+`components/app/AppInit.tsx` 充当「窗口路由器」，根据 URL 参数决定渲染哪个窗口页面；前 5 种开关在 `uiAtoms.ts`，插件窗口开关在各自插件 `windowState.ts`，跨窗口通过 Tauri 事件同步（如 `tasks-data-updated` / `tasks-window-closed`）。
 
 ---
 

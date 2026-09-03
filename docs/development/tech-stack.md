@@ -1,6 +1,6 @@
 # 技术栈
 
-> **适用版本**：`1.0.0`　|　**最后核对**：2026-08-31
+> **适用版本**：`1.5.0`　|　**最后核对**：2026-09-03
 
 ---
 
@@ -61,8 +61,9 @@
 | `react-markdown` + `remark-gfm` | AI 消息的 Markdown 渲染（含 GFM 表格/删除线） |
 | `react-diff-viewer-continued` | 版本快照 diff 对比 |
 | `@tanstack/react-virtual` | 虚拟化滚动（书库、大纲面板） |
-| `@dnd-kit/core` + `@dnd-kit/utilities` | 大纲拖拽排序 |
+| `@dnd-kit/core` + `@dnd-kit/utilities` | 大纲拖拽排序、任务卡看板拖拽（v1.5.0） |
 | `react-image-crop` | 图片裁剪对话框 |
+| `@tauri-apps/plugin-notification` | 系统通知（任务卡到期 / 逾期提醒，v1.5.0） |
 
 ### 工具函数
 
@@ -82,6 +83,7 @@
 | `tauri-plugin-shell` | Shell 命令执行 |
 | `tauri-plugin-updater` | 应用更新 |
 | `tauri-plugin-deep-link` | 深度链接（`com.ukcoder.timewrite://`） |
+| `tauri-plugin-notification` | 系统通知（任务卡提醒中心，v1.5.0） |
 
 ---
 

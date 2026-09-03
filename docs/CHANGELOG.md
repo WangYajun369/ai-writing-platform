@@ -1,5 +1,32 @@
 # 更新日志
 
+## v1.5.0 (2026-09-03)
+
+### 新增
+- **任务卡 · 项目管理模块**：书库首页右上角新增「任务卡」入口（home-header 插件扩展点，图标高亮 + 今日应办数角标），点击开/关 `TasksWindow` 独立窗口；支持从全局命令面板（Ctrl/⌘+Shift+P）打开窗口 / 直达今日 / 直达全部任务
+  - **项目（Project）**：以项目为单位管理任务，可设名称 / emoji 图标 / 颜色 / 描述 / 计划起止日期，支持置顶、完成、归档、软删除（回收站）；项目卡片实时统计（总数 / 待办 / 进行中 / 已完成 / 逾期）
+  - **项目详情看板/列表双视图**：三列（待办 / 进行中 / 完成）+ 跨列拖拽改状态（@dnd-kit）、同列手动排序；列表视图聚焦批量勾选；关键词 / 优先级 / 标签 / 截止（今天·本周·已逾期）筛选；逾期任务红色角标强调
+  - **任务（Task）**：标题 + 富文本描述（HTML）、优先级、计划开始 / 截止时间、计划今日、标签多选、子任务清单（勾选联动进度）、附件（本地文件，可打开）、个人备注（纯文本 / 富文本）、重复规则（每天 / 每周指定日 / 每月 / 每 N 间隔 + 结束日期，P2）、任务级提醒（截止前一天 / 当天 / 逾期 / 自定义时间）、完成总结（TipTap 富文本，可跳过，重新打开保留）
+  - **今日视图**：按「逾期（红）/ 进行中 / 今日截止 / 计划今日 / 今日已完成（折叠）」分区，顶部今日完成率进度条 + 快速添加；卡片可「顺延到明天」（保留原时刻）；「计划今日」跨自然日自动滚动清理（`task_roll_planned_today`）
+  - **全部任务视图**：全局搜索（标题 / 备注 / 描述 / 标签 / 项目名命中高亮）+ 状态 / 标签 / 优先级 / 截止范围筛选 + 多策略排序
+  - **标签管理**：新增 / 改名 / 换色 / 启停 / 删除（解除关联）；任务可多标签
+  - **任务模板**：预设标题 / 描述 / 优先级 / 备注 / 标签 / 子任务清单 / 截止日偏移，一键套用建任务（P2）
+  - **操作日志与周报**：任务 / 项目操作（创建 / 完成 / 重新打开 / 更新 / 删除 / 恢复 / 子任务 / 附件等）写入 `task_activity_logs`，任务详情内时间线展示（P2）；项目周报基于日志生成近 8 周「新增 / 完成」双柱图与动态
+  - **提醒中心**：系统通知（`tauri-plugin-notification`）+ 窗口内铃铛中心（未读角标、可直达任务）；提醒偏好可配截止前一天 / 当天 / 逾期每日 09:00 与每日待办提醒
+  - **日程迁移**：任务卡窗口「设置 → 日程迁移」把旧「个人日程」（`schedules` 表）一键迁移为项目「日程迁移」下的任务（幂等，`migrate_schedules` 命令）
+- **「看日记」独立窗口化**：由书库首页内的书页弹窗升级为 `DiaryBookPage` 独立窗口（diary-book），按月分章、左右对页翻书、顶栏年月直达，与主窗口并行使用不被遮挡
+- **第二个内置插件**：`plugins/bootstrap.ts` 新增注册「任务卡」插件（`plugins/taskCards/`），与「英语字典」并列，插件系统落地两个 home-header 入口
+
+### 优化
+- **日记面板数据源切换**：首页右侧由「日记 + 个人日程」改为「日记 + 当日任务」，日历状态点与当日任务列表改为任务卡数据驱动（逾期红 / 今日绿 / 未来蓝 / 已完成灰），跨窗口数据变更经 `tasks-data-updated` 事件实时同步
+- **ScheduleManager 退役**：旧「个人日程」UI（添加 / 勾选 / 双击编辑）移除，由任务卡的「当日任务」区替代（轻量勾选完成 + 跳转任务卡窗口做完整操作）
+
+### 工程
+- Rust：新增 `commands/{project,task,tag,task_meta,subtask,attachment,activity,template,reminder,migrate}.rs` 10 个命令文件共 55 条命令，`repository/` 与 `service/` 对应新增 8 / 11 个文件（含 `reminder_service.rs` 到期扫描与 `project_stats_service.rs` 周报统计）；`window/manager.rs` 新增任务卡窗口（open/close/is）与看日记窗口（open/close）5 条命令
+- IPC：总命令数 109 → **169**；`tauri-bridge` 新增 `taskCardApi`（共 17 个 API 对象）
+- 数据表：新增 `projects`、`tasks`、`tags`、`task_tags`、`task_meta`、`task_subtasks`、`attachments`、`task_activity_logs`、`task_templates`、`project_milestones` 10 张表（`schedules` 表保留用于历史数据迁移）
+- 前端：新增 `stores/taskCardsStore.ts`（Zustand，窗口内使用 + 变更广播）、`lib/taskCardsTime.ts` / `taskCardsMeta.ts` / `recurrence.ts` / `subtaskGuard.ts` 工具、`components/taskCards/` 19 个组件文件、`components/diary/DayTasksPanel.tsx`；`windowDetection.ts` 新增 `taskswin` / `diarybookwin` 路由
+
 ## v1.4.0 (2026-09-03)
 
 ### 新增

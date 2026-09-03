@@ -1,8 +1,8 @@
 # IPC 命令速查
 
-> **适用版本**：`1.4.0`　|　**最后核对**：2026-09-03
+> **适用版本**：`1.5.0`　|　**最后核对**：2026-09-03
 
-TimeWrite 共注册 **109 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用（Agent 命令为例外，见文末说明）。
+TimeWrite 共注册 **169 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用（Agent 命令为例外，见文末说明）。
 
 > **架构约定**：`tauri-bridge.ts` 是全项目**唯一**允许调用 `invoke` 的模块。禁止在其他文件中直接 import `@tauri-apps/api` 的 `invoke`。
 
@@ -25,10 +25,20 @@ TimeWrite 共注册 **109 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` �
 | [AI](#ai-commandsai) | 8 | `commands/ai/{test,embedding,chat,summarize}.rs` |
 | [导入导出](#导入导出-commandsio) | 5 | `commands/io/{export,import_txt,backup}.rs` |
 | [图片](#图片-image) | 2 | `commands/image.rs` |
-| [窗口](#窗口-commandswindow) | 17 | `commands/window/{manager,debug,validate}.rs` |
+| [窗口](#窗口-commandswindow) | 22 | `commands/window/{manager,debug,validate}.rs` |
 | [Agent](#agent-commandsagent) | 6 | `commands/agent/skills.rs` |
 | [系统](#系统检查-system_check) | 1 | `commands/system_check.rs` |
-| **合计** | **109** | — |
+| [任务项目](#任务项目-project) | 9 | `commands/project.rs` |
+| [任务卡](#任务卡-task) | 17 | `commands/task.rs` |
+| [标签](#标签-tag) | 4 | `commands/tag.rs` |
+| [任务元数据](#任务元数据-task_meta) | 4 | `commands/task_meta.rs` |
+| [子任务](#子任务-subtask) | 6 | `commands/subtask.rs` |
+| [附件](#附件-attachment) | 5 | `commands/attachment.rs` |
+| [操作日志](#操作日志-activity) | 3 | `commands/activity.rs` |
+| [任务模板](#任务模板-template) | 5 | `commands/template.rs` |
+| [提醒](#提醒-reminder) | 1 | `commands/reminder.rs` |
+| [日程迁移](#日程迁移-migrate) | 1 | `commands/migrate.rs` |
+| **合计** | **169** | — |
 
 ---
 
@@ -135,6 +145,133 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 | `save_schedule` | 新增或更新日程（含完成状态） |
 | `delete_schedule` | 删除日程 |
 
+> v1.5.0 起旧「个人日程」UI 已下线，命令仅服务历史数据迁移（`schedules` 表），不推荐前端直接调用。
+
+## 任务项目 `project`
+
+> v1.5.0 新增。任务卡模块的项目级命令，集中在 `service/project_service.rs` / `service/project_stats_service.rs`。
+
+| 命令 | 说明 |
+|------|------|
+| `project_list` | 列出项目（可按 status 过滤，含统计聚合：总数 / 待办 / 进行中 / 已完成 / 逾期） |
+| `project_get` | 单项目详情 |
+| `project_create` | 创建项目 |
+| `project_update` | 更新项目（含置顶 / 完成 / 归档状态流转） |
+| `project_delete` | 软删除项目（任务级联软删除） |
+| `project_restore` | 恢复已删除项目 |
+| `project_hard_delete` | 彻底删除项目（任务级联硬删除） |
+| `project_list_deleted` | 列出回收站项目 |
+| `project_clear_trash` | 清空项目回收站 |
+
+## 任务卡 `task`
+
+> v1.5.0 新增。看板 / 今日视图 / 全部任务 / 搜索筛选核心命令。
+
+| 命令 | 说明 |
+|------|------|
+| `task_create` | 创建任务（项目必填；标签 / 子任务可随创建一并提交） |
+| `task_update` | 更新任务字段（含计划今日、计划开始、截止、优先级、备注、重复、完成总结等） |
+| `task_get` | 单任务详情（含标签 / 子任务 / 附件） |
+| `task_list` | 项目内任务列表（状态分组 + 手动排序序） |
+| `task_list_all` | 全部任务（搜索关键词 / 状态 / 标签 / 优先级 / 截止范围筛选 + 排序） |
+| `task_set_status` | 改变状态（todo / doing / done；完成时写 completed_time 并记日志） |
+| `task_drag` | 看板拖拽：跨列改变状态或同列重排 |
+| `task_move_to_project` | 移动到其他项目 |
+| `task_copy` | 复制任务 |
+| `task_delete` | 软删除任务 |
+| `task_restore` | 恢复已删除任务 |
+| `task_hard_delete` | 彻底删除任务 |
+| `task_list_deleted` | 列出回收站任务 |
+| `task_clear_trash` | 清空任务回收站 |
+| `task_purge_expired_trash` | 清理过期回收站条目 |
+| `task_today_overview` | 今日视图概览（逾期 / 进行中 / 今日截止 / 计划今日 / 今日已完成，含完成率） |
+| `task_roll_planned_today` | 「计划今日」滚动清理（过期未完成自动顺延至今天） |
+
+## 标签 `tag`
+
+> v1.5.0 新增。任务标签全局管理。
+
+| 命令 | 说明 |
+|------|------|
+| `tag_list` | 列出全部标签 |
+| `tag_create` | 创建标签 |
+| `tag_update` | 更新标签（改名 / 换色 / 启停） |
+| `tag_delete` | 删除标签（自动解除任务关联） |
+
+## 任务元数据 `task_meta`
+
+> v1.5.0 新增。模块级 key-value 与提醒偏好。
+
+| 命令 | 说明 |
+|------|------|
+| `task_meta_get` | 读取任意 key |
+| `task_meta_set` | 写入任意 key |
+| `reminder_prefs_get` | 读取提醒偏好（JSON 字符串） |
+| `reminder_prefs_set` | 保存提醒偏好（JSON 整体覆盖） |
+
+## 子任务 `subtask`
+
+> v1.5.0 新增（P2）。子任务清单与父任务进度联动。
+
+| 命令 | 说明 |
+|------|------|
+| `subtask_list` | 列出任务下子任务 |
+| `subtask_create` | 新增子任务 |
+| `subtask_update` | 编辑子任务标题 |
+| `subtask_set_done` | 勾选完成 / 取消 |
+| `subtask_delete` | 删除子任务 |
+| `subtask_reorder` | 子任务排序 |
+
+## 附件 `attachment`
+
+> v1.5.0 新增（P2）。任务附件（本地文件实体）。
+
+| 命令 | 说明 |
+|------|------|
+| `attachment_list` | 列出任务附件 |
+| `attachment_pick_and_add` | 系统文件选择并添加附件（记录 file_name / type / size / local_path） |
+| `attachment_delete` | 删除附件（软删除标记） |
+| `attachment_open` | 打开附件文件（系统默认程序） |
+| `attachment_cleanup_orphans` | 清理孤立附件（文件与记录不一致时） |
+
+## 操作日志 `activity`
+
+> v1.5.0 新增（P2）。任务 / 项目操作时间线与周报。
+
+| 命令 | 说明 |
+|------|------|
+| `activity_list_task` | 某任务操作日志时间线（最新在前） |
+| `activity_list_project` | 某项目操作日志（项目动态） |
+| `project_weekly_stats` | 近 8 周「新增 / 完成」周报统计 |
+
+## 任务模板 `template`
+
+> v1.5.0 新增（P2）。任务模板预设与一键套用。
+
+| 命令 | 说明 |
+|------|------|
+| `template_list` | 列出模板 |
+| `template_create` | 创建模板 |
+| `template_update` | 更新模板 |
+| `template_delete` | 删除模板 |
+| `task_create_from_template` | 套用模板创建任务（含子任务清单 / 标签 / 截止偏移） |
+
+## 提醒 `reminder`
+
+> v1.5.0 新增（P2）。到期 / 逾期提醒（系统通知 + 铃铛中心）。
+
+| 命令 | 说明 |
+|------|------|
+| `reminder_check` | 立即检查并发送当前应提醒的到期 / 逾期任务通知 |
+
+## 日程迁移 `migrate`
+
+> v1.5.0 新增。把旧「个人日程」（`schedules` 表）迁移为任务卡项目「日程迁移」下的任务。
+
+| 命令 | 说明 |
+|------|------|
+| `migrate_schedules` | 一键迁移（幂等：已迁移数据保持最新，未删除源记录） |
+
 ## 生词本 `vocab`
 
 > v1.4.0 新增。业务集中在 `service/vocab_service.rs`；每次影响「今日待复习数」的写操作后向主窗口广播 `vocab-due-updated`（首页入口角标实时刷新）。
@@ -199,6 +336,8 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 | `agent-status-changed` | Rust → main | `{ status, message }`（关闭流程发出；`status=closing` 时前端显示退出遮罩） |
 | `vocab-due-updated` | Rust → 所有窗口 | `()` —— 影响「今日待复习数」的写操作后广播，首页入口角标实时刷新 |
 | `vocab-window-closed` | Rust → main | `()` —— 英语字典窗口被关闭 |
+| `tasks-data-updated` | 前端 → 各窗口 | `()` —— 任务卡数据变更后广播（窗口内 store 直接 emit），首页角标 / 日历状态点 / 日记当日任务实时刷新 |
+| `tasks-window-closed` | Rust → main | `()` —— 任务卡窗口被关闭 |
 
 ## 导入导出 `commands/io/`
 
@@ -226,6 +365,8 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 | `open_summary_window` / `close_summary_window` | `window/manager.rs` | 章节总结窗口 |
 | `open_ai_toolbox_window` / `close_ai_toolbox_window` | `window/manager.rs` | AI 工具箱窗口 |
 | `open_vocab_window` / `close_vocab_window` / `is_vocab_window_open` | `window/manager.rs` | 英语字典·生词本窗口（v1.4.0；关闭时广播 `vocab-window-closed`） |
+| `open_tasks_window` / `close_tasks_window` / `is_tasks_window_open` | `window/manager.rs` | 任务卡·项目管理窗口（v1.5.0；命令面板深链参数 `?taskswin=1&section=today|all`；关闭时广播 `tasks-window-closed`） |
+| `open_diary_book_window` / `close_diary_book_window` | `window/manager.rs` | 「看日记」独立窗口（v1.5.0；参数 `?diarybookwin=1`） |
 | `open_debug_window` / `close_debug_window` | `window/debug.rs` | 调试控制台窗口 |
 | `log_message` | `window/debug.rs` | 前端日志上报（写入 LOG_BUFFER + 广播） |
 | `get_debug_logs` | `window/debug.rs` | 获取历史日志（缓冲区上限 1000 条） |
@@ -256,7 +397,7 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 
 ## 前端桥接层 API 模块
 
-`src/lib/tauri-bridge.ts` 中对应的 16 个 API 对象：
+`src/lib/tauri-bridge.ts` 中对应的 17 个 API 对象：
 
 | API 对象 | 覆盖命令数 |
 |----------|:---:|
@@ -273,9 +414,10 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 | `aiApi` | 8 |
 | `importExportApi` | 5 |
 | `imageApi` | 2 |
-| `windowApi` | 11 |
+| `windowApi` | 16 |
 | `debugApi` | 6 |
 | `systemApi` | 1 |
+| `taskCardApi` | 55 |
 
 > **例外说明**：Agent 命令（`execute_agent_skill` / `cancel_agent_skill` / 记忆管理）**未封装进
 > `tauri-bridge.ts`**（无 `agentApi` 对象），由 `components/agent/useAgent.ts`、`AgentMemoryPanel.tsx`

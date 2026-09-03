@@ -1,6 +1,6 @@
 # 状态管理
 
-> **适用版本**：`1.4.0`　|　**最后核对**：2026-09-03
+> **适用版本**：`1.5.0`　|　**最后核对**：2026-09-03
 
 TimeWrite 采用**双层状态管理**架构：Zustand 承载业务数据，Jotai 承载 UI 瞬态。
 
@@ -21,6 +21,10 @@ TimeWrite 采用**双层状态管理**架构：Zustand 承载业务数据，Jota
 │  ┌──────────────────────────┐                        │
 │  │ vocabStore / ttsConfig   │  英语字典（v1.4.0）      │
 │  │ 生词数据 / 语音合成配置   │  独立 store，窗口内使用  │
+│  └──────────────────────────┘                        │
+│  ┌──────────────────────────┐                        │
+│  │ taskCardsStore           │  任务卡（v1.5.0）        │
+│  │ 项目/任务/标签/子任务     │  独立 store，窗口内使用  │
 │  └──────────────────────────┘                        │
 ├──────────────────────────────────────────────────────┤
 │                   Jotai（UI 层，21 个 atom）           │
@@ -51,6 +55,7 @@ TimeWrite 采用**双层状态管理**架构：Zustand 承载业务数据，Jota
 | `pluginStore` | `stores/pluginStore.ts` | 插件启用状态（独立 store） |
 | `vocabStore` | `stores/vocabStore.ts` | 英语生词数据：`words` / `due` / `stats` 三查询 + `refreshAll` 全量刷新（v1.4.0，独立 store） |
 | `ttsConfig` | `stores/ttsConfig.ts` | 豆包语音合成配置：API Key / 音色（localStorage 持久化，独立 store） |
+| `taskCardsStore` | `stores/taskCardsStore.ts` | 任务卡窗口数据：`projects` / `tags` / 任务 / 子任务 / 附件 / 模板 + 视图状态与操作（v1.5.0，独立 store，**不持久化**，数据真源在 SQLite，经 `taskCardApi` 拉取） |
 
 ### 主要状态字段
 
@@ -112,6 +117,8 @@ TimeWrite 采用**双层状态管理**架构：Zustand 承载业务数据，Jota
 | `debugWindowOpenAtom` | 调试控制台 |
 
 > 英语字典窗口开关**不在** Jotai 中 —— 作为插件状态存放于 `src/plugins/dictionary/windowState.ts`（模块级布尔 + 角标计数源），避免把插件状态耦合进主程序；主窗口入口与词典窗口通过 Tauri 事件（`vocab-due-updated` 等）双向同步。
+>
+> 任务卡（v1.5.0）同属插件窗口：开关状态在 `src/plugins/taskCards/windowState.ts`（模块级布尔 + 今日应办角标计数源），**业务数据不持久化**在窗口内 —— 数据一律经 `taskCardApi` 查询 SQLite，任何变更后由窗口内 store 向各窗口广播 `tasks-data-updated`，首页角标 / 日历状态点 / 日记当日任务随即刷新。
 
 ### 其他（8）
 
@@ -159,6 +166,8 @@ v1.1 起 Agent 为 Rust 原生引擎（内嵌主进程），**无启停流程**�
 | 编辑器状态（章节/滚动/光标） | `localStorage` | 按 `bookId` 保存，打开作品时恢复 |
 | Agent 记忆 | SQLite（`time_write.db` 的 `memories` 表） | Rust 引擎管理；旧独立库（`agent_memory.db`）启动时自动迁移 |
 | 英语生词 / 复习记录 | SQLite（`vocab_words` / `vocab_reviews` 表） | Rust 管理（SM-2 排程）；前端 `vocabStore` 仅为缓存 |
+| 任务卡 / 项目 / 标签 / 子任务 / 附件 | SQLite（`projects` / `tasks` / `tags` / `task_subtasks` / `attachments` 等 10 张表） | Rust 管理；前端 `taskCardsStore` **不持久化**，仅在任务卡窗口内存缓存 |
+| 任务卡提醒偏好 / 元数据 | SQLite（`task_meta` 表） | Rust 管理（key-value + 铃铛已读等） |
 | TTS 语音配置 | `localStorage` | `ttsConfig` store（豆包 API Key / 音色） |
 | UI 瞬态（Jotai） | 仅内存 | **不持久化** |
 

@@ -1,6 +1,6 @@
 # Agent 引擎架构（Rust 原生）
 
-> **适用版本**：`1.4.0`　|　**最后核对**：2026-09-03
+> **适用版本**：`1.5.0`　|　**最后核对**：2026-09-03
 >
 > Agent 自动化引擎已整体内嵌于 Rust（`src-tauri/src/commands/agent/`），**无外部进程、无需 Python 环境**。
 > 历史：v1.0 曾以 Python FastAPI + LangGraph 子进程实现（端口 9877），v1.1 迁移为 Rust 原生引擎，`agent/`、`src-tauri/src/python/` 已删除。

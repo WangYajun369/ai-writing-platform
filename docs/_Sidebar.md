@@ -2,7 +2,8 @@
 - 📖 用户指南
   - [快速开始](user-guide/quick-start)
   - [书库管理](user-guide/library-management)
-  - [日记与个人日程](user-guide/diary)
+  - [日记与任务](user-guide/diary)
+  - [任务卡 · 项目管理](user-guide/task-cards)
   - [英语字典·生词本](user-guide/vocabulary)
   - [章节编辑](user-guide/chapter-editing)
   - [专注模式](user-guide/focus-mode)

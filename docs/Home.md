@@ -2,7 +2,7 @@
 
 > 跨平台桌面端小说写作软件 —— Tauri v2 + React 19 + TipTap + Rust 原生 AI Agent
 
-> **适用版本**：`1.4.0`　|　**最后核对**：2026-09-03
+> **适用版本**：`1.5.0`　|　**最后核对**：2026-09-03
 
 欢迎来到 TimeWrite 的官方文档！TimeWrite 是一款面向网络小说作者和文学创作者的桌面写作工具，提供从书库管理、章节编辑到 AI 辅助创作的完整写作工作流。
 
@@ -16,6 +16,7 @@
 |------|------|
 | [📖 用户指南](user-guide/quick-start) | 快速上手、各项功能使用说明 |
 | [🤖 Agent 自动化](user-guide/agent-panel) | 4 大写作技能、记忆系统、模型路由 |
+| [✅ 任务卡·项目管理](user-guide/task-cards) | 三态看板、计划今日、标签/子任务/附件、日程迁移（v1.5.0 新增） |
 | [🔤 英语字典·生词本](user-guide/vocabulary) | 生词本 · SM-2 复习 · AI 释义 · 语音朗读（v1.4.0 新增） |
 | [✨ 功能特性](features/feature-list) | 完整功能清单与介绍 |
 | [🔧 开发文档](development/project-structure) | 项目结构、技术栈、状态管理、插件系统 |
@@ -59,7 +60,7 @@ WebView 前端  ──Tauri IPC──►  Rust Core（SQLite 独占 + 内置 Age
 |------|-----|
 | 应用名称 | TimeWrite（智写时光） |
 | 应用标识 | `com.ukcoder.timewrite` |
-| 当前版本 | 1.4.0 |
+| 当前版本 | 1.5.0 |
 | 许可证 | MIT |
 | 仓库地址 | [github.com/WangYajun369/ai-writing-platform](https://github.com/WangYajun369/ai-writing-platform) |
 
