@@ -1,8 +1,10 @@
 /**
- * AI 功能 Slice — AI 配置、对话记录、工具箱分类与连接状态
+ * aiStore — AI 领域独立 store（AI 配置/对话记录/工具箱分类/连接状态/应用版本）
+ *
+ * Phase 3 问题 3 收尾：由原 aiSlice 升级为真正独立的 Zustand store。
  */
-import type { AiConfig, AiMessage } from '../types'
-import type { AppSlice } from './appTypes'
+import { create } from 'zustand'
+import type { AiConfig, AiMessage, ConversationSummary, AiToolCategory } from '../types'
 import {
   loadAiConfig, saveAiConfig,
   loadAiToolCategories, saveAiToolCategories,
@@ -10,13 +12,47 @@ import {
   saveAiConversations,
 } from './appTypes'
 
-export const createAiSlice: AppSlice = (set, get) => {
+export interface AiState {
+  aiConnectionStatus: 'idle' | 'testing' | 'connected' | 'error'
+  aiConnectionDetail: string
+  aiConversations: Record<string, AiMessage[]>
+  aiSummaries: Record<string, ConversationSummary>
+  aiToolCategories: AiToolCategory[]
+  appVersion: string
+  aiConfig: AiConfig
+
+  setAiConfig: (config: Partial<AiConfig>) => void
+
+  // —— AI 对话管理 ——
+  addAiMessage: (bookId: string, message: AiMessage) => void
+  updateAiMessage: (bookId: string, messageId: string, patch: Partial<AiMessage>) => void
+  deleteAiMessage: (bookId: string, messageId: string) => void
+  setAiMessages: (bookId: string, messages: AiMessage[]) => void
+  clearAiConversation: (bookId: string) => void
+  persistAiConversation: (bookId: string) => void
+  setConversationSummary: (bookId: string, summary: ConversationSummary) => void
+  clearConversationSummary: (bookId: string) => void
+
+  // —— AI 工具箱分类管理 ——
+  setAiToolCategories: (categories: AiToolCategory[]) => void
+  addAiToolCategory: (category: AiToolCategory) => void
+  updateAiToolCategory: (categoryId: string, patch: Partial<AiToolCategory>) => void
+  deleteAiToolCategory: (categoryId: string) => void
+  addAiToolPrompt: (categoryId: string, prompt: AiToolCategory['tools'][number]) => void
+  updateAiToolPrompt: (categoryId: string, promptId: string, patch: Partial<AiToolCategory['tools'][number]>) => void
+  deleteAiToolPrompt: (categoryId: string, promptId: string) => void
+
+  setAiConnectionStatus: (status: AiState['aiConnectionStatus'], detail?: string) => void
+  setAppVersion: (appVersion: string) => void
+}
+
+export const useAiStore = create<AiState>()((set, get) => {
   const savedAiConfig = loadAiConfig()
   const savedAiConversations = aiConversationsStore.load()
   const savedAiSummaries = aiSummariesStore.load()
 
   return {
-    aiConnectionStatus: 'idle' as const,
+    aiConnectionStatus: 'idle',
     aiConnectionDetail: '',
     aiConversations: savedAiConversations,
     aiSummaries: savedAiSummaries,
@@ -200,4 +236,4 @@ export const createAiSlice: AppSlice = (set, get) => {
       set({ aiConnectionStatus, aiConnectionDetail }),
     setAppVersion: (appVersion) => set({ appVersion }),
   }
-}
+})

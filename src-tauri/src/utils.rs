@@ -2,9 +2,9 @@
 //!
 //! 提供跨命令模块共享的时间戳、HTML 剥离、HTTP 客户端工厂、字数聚合等工具函数。
 
-use std::sync::OnceLock;
-use chrono::{Local, Utc};
 use crate::error::AppError;
+use chrono::{Local, Utc};
+use std::sync::OnceLock;
 
 // ---- 时间戳 ----
 
@@ -34,9 +34,8 @@ static HTML_REGEX: OnceLock<regex_lite::Regex> = OnceLock::new();
 
 /// 简单 HTML 标签剥离（基于 regex_lite，正则已缓存）
 pub fn strip_html(html: &str) -> String {
-    let re = HTML_REGEX.get_or_init(|| {
-        regex_lite::Regex::new(r"<[^>]*>").expect("strip_html regex")
-    });
+    let re =
+        HTML_REGEX.get_or_init(|| regex_lite::Regex::new(r"<[^>]*>").expect("strip_html regex"));
     re.replace_all(html, "").to_string()
 }
 
@@ -76,17 +75,11 @@ fn detect_proxy() -> Option<reqwest::Proxy> {
             if !val.is_empty() {
                 match reqwest::Proxy::all(&val) {
                     Ok(proxy) => {
-                        crate::app_log!(
-                            "[reqwest] 自动检测到代理: {} (来自环境变量 {})",
-                            val, var
-                        );
+                        crate::app_log!("[reqwest] 自动检测到代理: {} (来自环境变量 {})", val, var);
                         return Some(proxy);
                     }
                     Err(e) => {
-                        crate::app_log_error!(
-                            "[reqwest] 环境变量 {} 的代理配置无效: {}",
-                            var, e
-                        );
+                        crate::app_log_error!("[reqwest] 环境变量 {} 的代理配置无效: {}", var, e);
                     }
                 }
             }
@@ -97,8 +90,8 @@ fn detect_proxy() -> Option<reqwest::Proxy> {
 
 /// 构建通用 HTTP 客户端基础配置
 fn http_client_builder() -> reqwest::ClientBuilder {
-    let mut builder = reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(15));
+    let mut builder =
+        reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(15));
     if let Some(proxy) = detect_proxy() {
         builder = builder.proxy(proxy);
     }

@@ -3,7 +3,7 @@
  */
 import { useState } from 'react'
 import { RefreshCwIcon } from 'lucide-react'
-import { useAppStore } from '@/stores/appStore'
+import { useAiStore } from '@/stores/aiStore'
 import { GITHUB_REPO } from './constants'
 
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'up-to-date' | 'error'
@@ -55,7 +55,7 @@ export function VersionSection() {
   const [updateMessage, setUpdateMessage] = useState('')
   const [releaseUrl, setReleaseUrl] = useState('')
 
-  const APP_VERSION = useAppStore((s) => s.appVersion)
+  const APP_VERSION = useAiStore((s) => s.appVersion)
 
   const handleCheckUpdate = async () => {
     setIsChecking(true)

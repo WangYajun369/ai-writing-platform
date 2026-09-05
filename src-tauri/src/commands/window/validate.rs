@@ -2,12 +2,12 @@
 //!
 //! 表结构完整性检查 + 数据完整性验证（PRAGMA integrity_check + 外键孤儿检测）。
 
-use tauri::{AppHandle, Emitter, Manager};
-use chrono::Local;
-use serde::Serialize;
 use super::LogEntry;
 use crate::db::schema::TABLE_SCHEMA;
 use crate::error::AppError;
+use chrono::Local;
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, Manager};
 
 /// 数据库校验结果 — 单条问题
 #[derive(Debug, Clone, Serialize)]
@@ -33,13 +33,18 @@ pub struct ValidationResult {
 #[tauri::command]
 pub async fn validate_database(app: AppHandle) -> Result<ValidationResult, AppError> {
     let db = app.state::<crate::db::AppDb>();
-    let conn = db.pool.get().map_err(|e| AppError::DbPool(format!("获取数据库连接失败: {}", e)))?;
+    let conn = db
+        .pool
+        .get()
+        .map_err(|e| AppError::DbPool(format!("获取数据库连接失败: {}", e)))?;
     let mut issues = Vec::new();
 
     // 1. 检查所有表是否存在
     let tables_sql =
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name";
-    let mut stmt = conn.prepare(tables_sql).map_err(|e| AppError::Business(format!("准备 SQL 失败: {}", e)))?;
+    let mut stmt = conn
+        .prepare(tables_sql)
+        .map_err(|e| AppError::Business(format!("准备 SQL 失败: {}", e)))?;
     let existing_tables: Vec<String> = stmt
         .query_map([], |row| row.get::<_, String>(0))
         .map_err(|e| AppError::Business(format!("查询表列表失败: {}", e)))?
@@ -75,7 +80,9 @@ pub async fn validate_database(app: AppHandle) -> Result<ValidationResult, AppEr
 
         // 2. 检查每张表的列是否齐全
         let cols_sql = &format!("PRAGMA table_info({})", table_name);
-        let mut col_stmt = conn.prepare(cols_sql).map_err(|e| AppError::Business(format!("准备 PRAGMA 失败: {}", e)))?;
+        let mut col_stmt = conn
+            .prepare(cols_sql)
+            .map_err(|e| AppError::Business(format!("准备 PRAGMA 失败: {}", e)))?;
         let existing_cols: Vec<String> = col_stmt
             .query_map([], |row| row.get::<_, String>(1))
             .map_err(|e| AppError::Business(format!("查询列信息失败: {}", e)))?
@@ -122,9 +129,7 @@ pub async fn validate_database(app: AppHandle) -> Result<ValidationResult, AppEr
     ];
 
     for (table, column, sql) in orphan_checks {
-        let count: i64 = conn
-            .query_row(sql, [], |row| row.get(0))
-            .unwrap_or(0);
+        let count: i64 = conn.query_row(sql, [], |row| row.get(0)).unwrap_or(0);
         if count > 0 {
             issues.push(ValidationIssue {
                 table: table.to_string(),

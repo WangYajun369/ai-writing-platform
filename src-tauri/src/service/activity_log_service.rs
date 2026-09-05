@@ -4,10 +4,10 @@
 //! 调用点遍布任务 / 子任务 / 附件 / 迁移等写操作，动作以 action 字符串分类，
 //! summary 为人类可读的中文描述，前端按 action 映射图标与颜色。
 
-use uuid::Uuid;
 use crate::db::AppDb;
 use crate::repository::activity_log_repo;
 use crate::utils::now;
+use uuid::Uuid;
 
 /// 尽力而为地记录一条任务动作（自动补齐 project_id 冗余字段）。
 /// 任何失败均被吞掉（记录日志本身不应阻断主流程）。

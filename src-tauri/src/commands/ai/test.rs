@@ -2,9 +2,9 @@
 //!
 //! 验证 API 端点的可达性和认证有效性。
 
+use super::ConnectionTestResult;
 use crate::error::AppError;
 use crate::utils::get_http_client;
-use super::ConnectionTestResult;
 
 /// 测试 AI 服务连接：GET /models，验证可达性和认证
 #[tauri::command]
@@ -22,10 +22,12 @@ pub async fn test_ai_connection(
         req = req.header("Authorization", format!("Bearer {}", key));
     }
 
-    let response = req
-        .send()
-        .await
-        .map_err(|e| AppError::Business(format!("无法连接到 AI 服务: {}\n请检查 API 地址和网络连接", e)))?;
+    let response = req.send().await.map_err(|e| {
+        AppError::Business(format!(
+            "无法连接到 AI 服务: {}\n请检查 API 地址和网络连接",
+            e
+        ))
+    })?;
 
     let status = response.status();
 

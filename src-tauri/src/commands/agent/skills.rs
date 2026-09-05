@@ -143,10 +143,7 @@ pub fn update_agent_memory(
 
 /// 删除一条记忆
 #[tauri::command]
-pub fn delete_agent_memory(
-    db: State<'_, AppDb>,
-    memory_id: i64,
-) -> Result<(), AppError> {
+pub fn delete_agent_memory(db: State<'_, AppDb>, memory_id: i64) -> Result<(), AppError> {
     let conn = db.pool.get().map_err(|e| AppError::DbPool(e.to_string()))?;
     memory::delete_memory(&conn, memory_id)
 }

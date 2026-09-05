@@ -25,6 +25,7 @@ import TableHeader from '@tiptap/extension-table-header'
 import TableCell from '@tiptap/extension-table-cell'
 import CharacterCount from '@tiptap/extension-character-count'
 import { useAtom } from 'jotai'
+import { useShortcut } from '@/hooks/useShortcut'
 import {
   editorFocusAtom,
   editorInstanceAtom,
@@ -35,7 +36,9 @@ import {
   editorScrollPositionAtom,
   editorCursorPositionAtom,
 } from '@/stores/uiAtoms.ts'
-import { useAppStore,  useCurrentChapter, getEditorState } from '@/stores/appStore.ts'
+import { useCurrentChapter, getEditorState } from '@/stores/appStore'
+import { useBooksStore } from '@/stores/booksStore'
+import { usePreferencesStore } from '@/stores/preferencesStore'
 import { chapterApi } from '@/lib/tauri-bridge.ts'
 import { countWordsFromHtml, calcBookWordCount } from '@/lib/utils.ts'
 import { toast } from '@/lib/toast.ts'
@@ -43,6 +46,49 @@ import { isEditorUsable } from '@/lib/editor-guard.ts'
 
 const AUTOSAVE_DEBOUNCE_MS = 300
 const AUTOSAVE_INTERVAL_MS = 3 * 60 * 1000 // 3 分钟
+
+// ─── 会话级草稿保护（离线/崩溃恢复） ───
+// 每次击键同步写入 sessionStorage；内容成功入库后清除。
+// 会话内章节内容未落库即发生崩溃/误关/切章时，回到该章可恢复。
+const DRAFT_KEY_PREFIX = 'mi_draft:'
+
+interface SessionDraft {
+  html: string
+  savedAt: number
+}
+
+const draftKeyFor = (bookId: string, chapterId: string) =>
+  `${DRAFT_KEY_PREFIX}${bookId}:${chapterId}`
+
+function readDraft(bookId: string, chapterId: string): SessionDraft | null {
+  try {
+    const raw = sessionStorage.getItem(draftKeyFor(bookId, chapterId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as SessionDraft
+    return typeof parsed.html === 'string' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function writeDraft(bookId: string, chapterId: string, html: string) {
+  try {
+    sessionStorage.setItem(
+      draftKeyFor(bookId, chapterId),
+      JSON.stringify({ html, savedAt: Date.now() } satisfies SessionDraft),
+    )
+  } catch {
+    // sessionStorage 不可用时静默降级（不影响正常编辑）
+  }
+}
+
+function clearDraft(bookId: string, chapterId: string) {
+  try {
+    sessionStorage.removeItem(draftKeyFor(bookId, chapterId))
+  } catch {
+    // 忽略清除失败
+  }
+}
 
 const EDITOR_WIDTH_CLASS: Record<string, string> = {
   mobile: 'max-w-md',
@@ -52,7 +98,8 @@ const EDITOR_WIDTH_CLASS: Record<string, string> = {
 
 export default function RichTextEditor() {
   const currentChapter = useCurrentChapter()
-  const { updateChapter, updateBook, chapters, editorWidth, saveCurrentEditorState } = useAppStore()
+  const { updateChapter, updateBook, chapters } = useBooksStore()
+  const { editorWidth, saveCurrentEditorState } = usePreferencesStore()
   const [, setEditorFocus] = useAtom(editorFocusAtom)
   const [, setEditorInstance] = useAtom(editorInstanceAtom)
   const [, setIsSaving] = useAtom(isSavingAtom)
@@ -95,6 +142,8 @@ export default function RichTextEditor() {
         updateBook(chapter.bookId, { wordCount: result.bookWordCount })
         setWordCount({ chapter: frontendCount, total: result.bookWordCount })
         setLastSaved(new Date())
+        // 已成功入库：清除会话草稿，避免下次加载误恢复
+        clearDraft(chapter.bookId, chapter.id)
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         console.error('[自动保存] 保存失败', msg)
@@ -108,6 +157,9 @@ export default function RichTextEditor() {
 
   // 防抖保存（使用 ref 存 timer，切换章节时清除旧 timer 防止泄漏）
   const debouncedSave = useCallback((html: string) => {
+    // 击键即写会话草稿（崩溃/误关兜底，不依赖防抖定时器是否触发）
+    const chapter = currentChapterRef.current
+    if (chapter) writeDraft(chapter.bookId, chapter.id, html)
     clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(() => saveContent(html), AUTOSAVE_DEBOUNCE_MS)
   }, [saveContent])
@@ -177,10 +229,18 @@ export default function RichTextEditor() {
         if (!cancelled && isEditorUsable(editor)) {
           const current = editor.getHTML()
           const incoming = html || '<p></p>'
-          if (current !== incoming) {
-            editor.commands.setContent(incoming, { emitUpdate: false })
+          // 会话草稿恢复：该章存在未成功入库的草稿且与库中内容不同 → 优先草稿并提示
+          let finalHtml = incoming
+          const draft = readDraft(currentChapter.bookId, currentChapter.id)
+          if (draft && draft.html !== incoming) {
+            finalHtml = draft.html
+            clearDraft(currentChapter.bookId, currentChapter.id)
+            toast.info('已恢复未保存的编辑草稿')
           }
-          const chapterCount = countWordsFromHtml(incoming)
+          if (current !== finalHtml) {
+            editor.commands.setContent(finalHtml, { emitUpdate: false })
+          }
+          const chapterCount = countWordsFromHtml(finalHtml)
           const totalCount = calcBookWordCount(chaptersRef.current, currentChapter.id, chapterCount)
           setWordCount({ chapter: chapterCount, total: totalCount })
           // 恢复上次编辑位置
@@ -309,22 +369,20 @@ export default function RichTextEditor() {
     positionRestoredRef.current = false
   }, [currentChapter?.id])
 
-  // Ctrl+S / Cmd+S 手动保存快捷键
-  useEffect(() => {
-    if (!isEditorUsable(editor)) return
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault()
-        // 快捷键触发时编辑器可能已被销毁（StrictMode）
-        if (!isEditorUsable(editor)) return
-        const html = editor.getHTML()
-        console.log('[手动保存] Ctrl+S 触发')
-        saveContent(html)
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [editor, saveContent])
+  // Ctrl+S / Cmd+S 手动保存（集中式快捷键系统：mod+s）
+  const editorUsable = isEditorUsable(editor)
+  useShortcut(
+    'mod+s',
+    (e) => {
+      // 快捷键触发时编辑器可能已被销毁（StrictMode）
+      if (!isEditorUsable(editor)) return
+      e.preventDefault()
+      const html = editor.getHTML()
+      console.log('[手动保存] mod+S 触发')
+      saveContent(html)
+    },
+    { enabled: editorUsable, preventDefault: false },
+  )
 
   // 章节标题编辑
   const [titleValue, setTitleValue] = useState(currentChapter?.title ?? '')

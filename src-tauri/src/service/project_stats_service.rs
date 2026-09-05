@@ -4,13 +4,13 @@
 //! 项目的「新增任务」与「完成任务」数量，供项目周报可视化。动作日志在
 //! 发生时冗余记录了当时所属项目，跨项目迁移不影响统计口径。
 
-use chrono::{Datelike, Duration, Local};
-use tauri::AppHandle;
+use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::ProjectWeeklyStat;
-use crate::commands::window::emit_sql_log;
 use crate::repository::{activity_log_repo, project_repo};
+use chrono::{Datelike, Duration, Local};
+use tauri::AppHandle;
 
 /// 查询某项目最近 N 周（含本周）的新增/完成统计，按周开始日期升序返回
 pub fn project_weekly_stats(
@@ -29,7 +29,14 @@ pub fn project_weekly_stats(
     let offset = today.weekday().num_days_from_monday();
     let this_monday = today - Duration::days(offset as i64);
 
-    emit_sql_log(app, "SELECT", "task_activity_logs", &format!("weekly project_id={project_id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "SELECT",
+        "task_activity_logs",
+        &format!("weekly project_id={project_id}"),
+        file!(),
+        line!(),
+    );
     let mut stats = Vec::with_capacity(weeks as usize);
     for w in (0..weeks).rev() {
         let start = this_monday - Duration::days((w * 7) as i64);

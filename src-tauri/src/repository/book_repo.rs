@@ -2,9 +2,9 @@
 //!
 //! 提供 books 表的所有 CRUD SQL 操作，以及 row → Book 解析函数。
 
-use rusqlite::{Connection, params, Result};
 use crate::models::Book;
 use crate::repository::embedding_repo;
+use rusqlite::{params, Connection, Result};
 
 /// 完整的 SELECT 列名
 pub const BOOK_SELECT: &str = "id,title,author,description,cover_image,word_count,daily_target,today_count,db_path,tags,created_at,updated_at,deleted_at,outline";
@@ -35,9 +35,9 @@ pub fn parse_book(row: &rusqlite::Row) -> Result<Book> {
 
 /// 列出所有未删除的书籍，按 updated_at 降序
 pub fn list_all(conn: &Connection) -> Result<Vec<Book>> {
-    let mut stmt = conn.prepare(
-        &format!("SELECT {BOOK_SELECT} FROM books WHERE deleted_at IS NULL ORDER BY updated_at DESC")
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {BOOK_SELECT} FROM books WHERE deleted_at IS NULL ORDER BY updated_at DESC"
+    ))?;
     let books = stmt.query_map([], |row| parse_book(row))?;
     books.collect()
 }
@@ -53,9 +53,9 @@ pub fn find_by_id(conn: &Connection, id: &str) -> Result<Book> {
 
 /// 列出回收站中已删除的书籍
 pub fn list_deleted(conn: &Connection) -> Result<Vec<Book>> {
-    let mut stmt = conn.prepare(
-        &format!("SELECT {BOOK_SELECT} FROM books WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC")
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {BOOK_SELECT} FROM books WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC"
+    ))?;
     let books = stmt.query_map([], |row| parse_book(row))?;
     books.collect()
 }
@@ -192,9 +192,7 @@ pub fn recalc_word_count(conn: &Connection, book_id: &str, ts: &str) -> Result<(
 
 /// 列出所有书籍（含已删除），用于备份导出
 pub fn list_all_include_deleted(conn: &Connection) -> Result<Vec<Book>> {
-    let mut stmt = conn.prepare(
-        &format!("SELECT {BOOK_SELECT} FROM books")
-    )?;
+    let mut stmt = conn.prepare(&format!("SELECT {BOOK_SELECT} FROM books"))?;
     let books = stmt.query_map([], |row| parse_book(row))?;
     books.collect()
 }

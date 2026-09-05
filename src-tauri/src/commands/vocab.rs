@@ -3,12 +3,12 @@
 //! 覆盖生词 CRUD、SM-2 复习提交、到期队列与统计。
 //! 业务逻辑集中在 `service::vocab_service`。
 
-use serde::Deserialize;
-use tauri::{AppHandle, State};
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::{VocabKnowledge, VocabMeaning, VocabStats, VocabWord};
 use crate::service::vocab_service;
+use serde::Deserialize;
+use tauri::{AppHandle, State};
 
 /// 收录生词参数
 #[derive(Debug, Deserialize)]

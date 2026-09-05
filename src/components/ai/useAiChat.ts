@@ -1,19 +1,26 @@
 /**
- * AI 对话相关的自定义 hooks
+ * useAiChat — AI 对话编排 hook
  *
- * 现已接入 Agent 引擎（Rust 原生）：通过 invoke('execute_agent_skill') 调用，
- * 由引擎内部管理 Prompt 构建、上下文检索（工具调用）与流式输出。
- * 流式响应通过 Tauri 事件 `agent-stream-chunk` 接收。
+ * 已拆分为 4 个职责单一的 hook（问题 6）：
+ * - useAiChatMessages           消息仓储（读改写/持久化）
+ * - useConversationSummarizer   滑动窗口历史摘要
+ * - useAgentChatStream          Agent 流式传输桥接（监听/缓冲/合并刷新）
+ * - useAiChat（本文件）         主编排：前置校验 → 组合上述能力 → invoke Agent 引擎
+ *
+ * 纯工具导出（getFriendlyAiError / QUICK_HINTS / PROVIDER_LABELS /
+ * stripHtmlToText）保留在此处，供 AiSidePanel / AiToolboxPanel / QuickHints 引用。
  */
-import { useState, useRef, useCallback, useEffect } from 'react'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { useCallback, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { useAppStore, useCurrentChapter, useCurrentAiMessages } from '@/stores/appStore'
-import { aiApi, bookApi, chapterApi, type UsageInfo } from '@/lib/tauri-bridge'
-import type { ChatMessage } from '@/lib/tauri-bridge'
+import { useCurrentChapter, useCurrentAiMessages } from '@/stores/appStore'
+import { useAiStore } from '@/stores/aiStore'
+import { bookApi, chapterApi } from '@/lib/tauri-bridge'
 import { getChatApiKey } from '@/types'
-import type { AiMessage, AiConfig, ConversationSummary, Chapter } from '@/types'
+import type { AiMessage, AiConfig, Chapter } from '@/types'
 import type { SkillType } from '@/components/agent/types'
+import { useAiChatMessages } from './hooks/useAiChatMessages'
+import { useConversationSummarizer } from './hooks/useConversationSummarizer'
+import { useAgentChatStream } from './hooks/useAgentChatStream'
 
 /** 将 AI 异常信息转换为用户友好的提示 */
 export function getFriendlyAiError(rawError: string): string {
@@ -90,331 +97,188 @@ export function useAiChat(options: UseAiChatOptions): UseAiChatReturn {
   const { bookId, aiConfig, skill: currentSkill = 'writing' } = options
   const messages = useCurrentAiMessages()
   const currentChapter = useCurrentChapter()
-  const { aiSummaries, addAiMessage, updateAiMessage, deleteAiMessage, clearAiConversation, persistAiConversation, setConversationSummary } = useAppStore()
+
+  // ── 组合职责 hook（方法均为稳定引用，可安全进入依赖数组） ──
+  const {
+    addPair,
+    updateAssistant,
+    updateAssistantUsage,
+    patchMessage,
+    deleteMessage,
+    clearConversation,
+    persist,
+  } = useAiChatMessages(bookId)
+  const { summarizeIfNeeded, currentSummary } = useConversationSummarizer(
+    bookId,
+    aiConfig,
+  )
+  const { startStream, stopStream } = useAgentChatStream()
 
   const [streaming, setStreaming] = useState(false)
-
-  const unlistenRef = useRef<UnlistenFn | null>(null)
+  // 本次会话内是否已收到 SSE error 事件（避免 invoke 抛错时重复提示）
   const streamErrorRef = useRef(false)
-  const summarizingRef = useRef(false) // 防止并发总结
 
-  // 流式数据缓冲：避免逐 token 更新 Zustand 导致高频重渲染
-  const streamBufferRef = useRef<{ content: string; thinking: string; phase?: string; usage: UsageInfo | null }>({
-    content: '', thinking: '', phase: undefined, usage: null,
-  })
-  const streamRafRef = useRef<number | null>(null)
-  const currentAssistantIdRef = useRef<string>('')
-
-  // 清理事件监听和流式缓冲
-  useEffect(() => {
-    return () => {
-      if (unlistenRef.current) {
-        unlistenRef.current()
-        unlistenRef.current = null
-      }
-      if (streamRafRef.current) {
-        cancelAnimationFrame(streamRafRef.current)
-        streamRafRef.current = null
-      }
-    }
-  }, [])
-
-  // 窗口大小：每轮 = user + assistant，至少保留 1 轮
-  const windowSize = Math.max(1, aiConfig.chat.contextWindowSize ?? 10)
-  const currentSummary = bookId ? aiSummaries[bookId] : undefined
-
-  /** 将超出窗口的历史消息压缩为摘要（后台执行，不阻塞当前请求） */
-  const summarizeOverflowMessages = useCallback(async (allMsgs: AiMessage[]) => {
-    if (!bookId || summarizingRef.current) return
-    const validMsgs = allMsgs.filter((m) => m.role === 'user' || m.role === 'assistant')
-    const totalTurns = Math.floor(validMsgs.length / 2)
-    // 未超出窗口，无需总结
-    if (totalTurns <= windowSize) return
-
-    const keepCount = windowSize * 2
-    const overflowMsgs = validMsgs.slice(0, validMsgs.length - keepCount)
-
-    // 摘要已覆盖到最新溢出消息，无需重复总结
-    if (currentSummary && overflowMsgs.length > 0) {
-      const lastOverflowId = overflowMsgs[overflowMsgs.length - 1].id
-      if (currentSummary.coveredUpToId === lastOverflowId && currentSummary.summary) return
-    }
-    if (overflowMsgs.length === 0) return
-
-    const chatApiKey = getChatApiKey(aiConfig.chat)
-    if (!chatApiKey) return
-
-    summarizingRef.current = true
-    try {
-      const chatMsgs: ChatMessage[] = overflowMsgs
-        .filter((m) => m.content.trim())
-        .map((m) => ({ role: m.role, content: m.content }))
-      if (chatMsgs.length === 0) return
-
-      const previousSummary = currentSummary?.summary || undefined
-
-      const result = await aiApi.summarizeConversation({
-        endpoint: aiConfig.chat.endpoint,
-        model: aiConfig.chat.model,
-        apiKey: chatApiKey,
-        temperature: 0.3,
-        maxTokens: 1000,
-        messages: chatMsgs,
-        previousSummary,
-        thinkingEnabled: false,
-      })
-
-      const lastOverflowId = overflowMsgs[overflowMsgs.length - 1].id
-      const summary: ConversationSummary = {
-        summary: result.summary,
-        coveredUpToId: lastOverflowId,
-        summaryChars: result.summaryChars,
-        updatedAt: new Date().toISOString(),
-      }
-      setConversationSummary(bookId, summary)
-    } catch (err) {
-      console.error('对话历史总结失败:', err)
-    } finally {
-      summarizingRef.current = false
-    }
-  }, [bookId, aiConfig, windowSize, currentSummary, setConversationSummary])
-
-  // 更新助手消息
-  const updateAssistant = useCallback((assistantId: string, content: string, thinking?: string, phase?: string) => {
-    if (!bookId) return
-    // retrying 阶段：不覆盖已有内容，仅更新阶段和 loading 状态
-    if (phase === 'retrying') {
-      updateAiMessage(bookId, assistantId, {
-        phase: 'retrying',
-        loading: true,
-      })
-      return
-    }
-    updateAiMessage(bookId, assistantId, {
-      content,
-      thinking: thinking ?? undefined,
-      phase: (phase ?? undefined) as AiMessage['phase'],
-      loading: phase === 'thinking' || (!content && !thinking),
-    })
-  }, [bookId, updateAiMessage])
-
-  // 更新助手用量
-  const updateAssistantUsage = useCallback((assistantId: string, usage: UsageInfo) => {
-    if (!bookId) return
-    updateAiMessage(bookId, assistantId, { usage })
-  }, [bookId, updateAiMessage])
-
-  // 清空对话
+  // 清空对话（带确认）
   const handleClear = useCallback(() => {
     if (messages.length > 0 && bookId && confirm('清空当前作品的对话记录？')) {
-      clearAiConversation(bookId)
+      clearConversation()
     }
-  }, [messages, bookId, clearAiConversation])
+  }, [messages, bookId, clearConversation])
 
   // 删除消息
-  const handleDeleteMessage = useCallback((messageId: string) => {
-    if (!bookId) return
-    deleteAiMessage(bookId, messageId)
-  }, [bookId, deleteAiMessage])
+  const handleDeleteMessage = useCallback(
+    (messageId: string) => {
+      deleteMessage(messageId)
+    },
+    [deleteMessage],
+  )
 
   // 发送消息
-  const handleSend = useCallback(async (input: string) => {
-    if (!input.trim() || streaming || !bookId) return
+  const handleSend = useCallback(
+    async (input: string) => {
+      if (!input.trim() || streaming || !bookId) return
 
-    const chatApiKey = getChatApiKey(aiConfig.chat)
-    if (!chatApiKey) {
-      alert('请先在设置中配置 API Key')
-      return
-    }
-
-    const userMsg: AiMessage = { id: Date.now().toString(), role: 'user', content: input.trim(), thinking: '', phase: 'done' }
-    const assistantId = (Date.now() + 1).toString()
-    const assistantMsg: AiMessage = { id: assistantId, role: 'assistant', content: '', thinking: '', phase: 'thinking', loading: true, isSummarizing: false }
-
-    addAiMessage(bookId, userMsg)
-    addAiMessage(bookId, assistantMsg)
-    setStreaming(true)
-
-    /** 前置校验不通过时：提示并标记消息为大纲缺失类型 */
-    const stopWithOutlineHint = async (hint: string) => {
-      updateAssistant(assistantId, hint, undefined, 'done')
-      updateAiMessage(bookId, assistantId, { action: 'open-world-outline' })
-      setStreaming(false)
-      persistAiConversation(bookId)
-    }
-    try {
-      // ==================== 阶段 0：前置校验 ====================
-
-      // 0.1 检查作品大纲是否存在
-      const book = await bookApi.getById(bookId).catch(() => null)
-      if (!book?.outline?.trim()) {
-        await stopWithOutlineHint('⚠️ 尚未填写**作品大纲**。\n\n已自动打开「世界观资料库 → 大纲」窗口，请在此为当前作品补充大纲，让 AI 更好地理解你的创作方向。')
+      const chatApiKey = getChatApiKey(aiConfig.chat)
+      if (!chatApiKey) {
+        alert('请先在设置中配置 API Key')
         return
       }
 
-      // 0.2 检查当前章节大纲是否存在（从 DB 实时读取，避免 Zustand store 数据滞后）
-      if (currentChapter) {
-        const freshChapters = await chapterApi.listByBook(bookId).catch(() => [] as Chapter[])
-        const freshChapter = freshChapters.find((c: Chapter) => c.id === currentChapter.id)
-        if (!freshChapter?.outline?.trim()) {
-          await stopWithOutlineHint(`⚠️ 当前章节「${currentChapter.title}」尚未填写**章节大纲**。\n\n请打开「世界观资料库 → 大纲」，在窗口中为对应章节补充大纲后重试。`)
-          return
-        }
-      }
+      const userMsg: AiMessage = { id: Date.now().toString(), role: 'user', content: input.trim(), thinking: '', phase: 'done' }
+      const assistantId = (Date.now() + 1).toString()
+      const assistantMsg: AiMessage = { id: assistantId, role: 'assistant', content: '', thinking: '', phase: 'thinking', loading: true, isSummarizing: false }
 
-      // ==================== 阶段 1：注册 Agent 流式监听 ====================
-
-      // 清理上一次监听
-      if (unlistenRef.current) {
-        unlistenRef.current()
-        unlistenRef.current = null
-      }
-      if (streamRafRef.current) {
-        cancelAnimationFrame(streamRafRef.current)
-        streamRafRef.current = null
-      }
+      addPair(userMsg, assistantMsg)
+      setStreaming(true)
       streamErrorRef.current = false
-      currentAssistantIdRef.current = assistantId
-      // 生成请求 ID，用于过滤属于自己的 SSE 事件
-      const requestId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 
-      /** 将缓冲区的流式数据刷新到 Zustand */
-      const flushStreamBuffer = () => {
-        const buffered = streamBufferRef.current
-        const aid = currentAssistantIdRef.current
-        if (!aid) return
-        updateAssistant(aid, buffered.content, buffered.thinking, buffered.phase)
-        if (buffered.usage) updateAssistantUsage(aid, buffered.usage)
+      /** 前置校验不通过时：提示并标记消息为大纲缺失类型 */
+      const stopWithOutlineHint = async (hint: string) => {
+        updateAssistant(assistantId, hint, undefined, 'done')
+        patchMessage(assistantId, { action: 'open-world-outline' })
+        setStreaming(false)
+        persist()
       }
+      try {
+        // ==================== 阶段 0：前置校验 ====================
 
-      // 监听 Agent 流式事件
-      unlistenRef.current = await listen<{ event: string; data: string; requestId: string }>('agent-stream-chunk', (event) => {
-        const { event: eventType, data, requestId: eventRequestId } = event.payload
-
-        // 过滤不属于当前请求的事件
-        if (eventRequestId && eventRequestId !== requestId) return
-
-        if (eventType === 'error') {
-          if (streamRafRef.current) {
-            cancelAnimationFrame(streamRafRef.current)
-            streamRafRef.current = null
-          }
-          streamErrorRef.current = true
-          const friendly = getFriendlyAiError(data)
-          updateAssistant(assistantId, `⚠️ ${friendly}\n\n> 错误详情：${data}`, undefined, 'done')
-          setStreaming(false)
-          persistAiConversation(bookId)
+        // 0.1 检查作品大纲是否存在
+        const book = await bookApi.getById(bookId).catch(() => null)
+        if (!book?.outline?.trim()) {
+          await stopWithOutlineHint('⚠️ 尚未填写**作品大纲**。\n\n已自动打开「世界观资料库 → 大纲」窗口，请在此为当前作品补充大纲，让 AI 更好地理解你的创作方向。')
           return
         }
 
-        if (eventType === 'chunk') {
-          // 累积内容
-          streamBufferRef.current = {
-            ...streamBufferRef.current,
-            content: streamBufferRef.current.content + data,
-            phase: 'answering',
-          }
-          if (streamRafRef.current === null) {
-            streamRafRef.current = requestAnimationFrame(() => {
-              flushStreamBuffer()
-              streamRafRef.current = null
-            })
+        // 0.2 检查当前章节大纲是否存在（从 DB 实时读取，避免 Zustand store 数据滞后）
+        if (currentChapter) {
+          const freshChapters = await chapterApi.listByBook(bookId).catch(() => [] as Chapter[])
+          const freshChapter = freshChapters.find((c: Chapter) => c.id === currentChapter.id)
+          if (!freshChapter?.outline?.trim()) {
+            await stopWithOutlineHint(`⚠️ 当前章节「${currentChapter.title}」尚未填写**章节大纲**。\n\n请打开「世界观资料库 → 大纲」，在窗口中为对应章节补充大纲后重试。`)
+            return
           }
         }
 
-        if (eventType === 'done') {
-          if (streamRafRef.current) {
-            cancelAnimationFrame(streamRafRef.current)
-            streamRafRef.current = null
-          }
-          flushStreamBuffer()
-          setStreaming(false)
-          persistAiConversation(bookId)
-          // 后台触发对话历史总结
-          const allMsgs = useAppStore.getState().aiConversations[bookId] ?? []
-          void summarizeOverflowMessages(allMsgs)
+        // ==================== 阶段 1：注册 Agent 流式监听 ====================
+
+        const requestId = await startStream({
+          onFlush: (payload) => {
+            updateAssistant(assistantId, payload.content, payload.thinking, payload.phase)
+            if (payload.usage) updateAssistantUsage(assistantId, payload.usage)
+          },
+          onError: (raw) => {
+            streamErrorRef.current = true
+            const friendly = getFriendlyAiError(raw)
+            updateAssistant(assistantId, `⚠️ ${friendly}\n\n> 错误详情：${raw}`, undefined, 'done')
+            setStreaming(false)
+            persist()
+          },
+          onDone: () => {
+            setStreaming(false)
+            persist()
+            // 后台触发对话历史总结
+            const allMsgs = useAiStore.getState().aiConversations[bookId] ?? []
+            void summarizeIfNeeded(allMsgs)
+          },
+          onCancelled: () => {
+            setStreaming(false)
+            persist()
+          },
+        })
+
+        // ==================== 阶段 2：调用 Agent Skill ====================
+
+        // 构建对话历史（最近 20 条非 loading 消息）
+        const validMsgs = messages.filter((m) => !m.loading && (m.role === 'user' || m.role === 'assistant'))
+        const recentMsgs = validMsgs.slice(-20)
+        const history = recentMsgs.map((m) => ({ role: m.role, content: m.content }))
+
+        // 存储请求载荷
+        patchMessage(assistantId, {
+          requestPayload: {
+            provider: 'agent',
+            model: aiConfig.chat.model,
+            temperature: aiConfig.chat.temperature,
+            maxTokens: aiConfig.chat.maxTokens,
+            thinkingEnabled: aiConfig.chat.thinkingEnabled,
+            messages: [
+              { role: 'system', content: `Skill: ${currentSkill}, Book: ${bookId}` },
+              ...history.map((h) => ({ role: h.role, content: h.content })),
+              { role: 'user', content: input.trim() },
+            ],
+            ragContext: undefined,
+            chapterSummary: undefined,
+          },
+        })
+
+        await invoke<string>('execute_agent_skill', {
+          skill: currentSkill,
+          bookId,
+          message: input.trim(),
+          conversationHistory: history.length > 0 ? history : null,
+          aiConfig: {
+            provider: aiConfig.chat.provider,
+            endpoint: aiConfig.chat.endpoint,
+            model: aiConfig.chat.model,
+            apiKey: chatApiKey,
+            temperature: aiConfig.chat.temperature,
+            maxTokens: aiConfig.chat.maxTokens,
+            thinkingEnabled: aiConfig.chat.thinkingEnabled,
+          },
+          requestId,
+          conversationSummary: currentSummary?.summary ?? null,
+        })
+      } catch (err) {
+        // 如果 SSE error 事件已经处理过，避免重复更新
+        if (!streamErrorRef.current) {
+          const rawErr = String(err)
+          const friendly = getFriendlyAiError(rawErr)
+          updateAssistant(assistantId, `⚠️ ${friendly}\n\n> 错误详情：${rawErr}`, undefined, 'done')
+          persist()
         }
-
-        if (eventType === 'cancelled') {
-          if (streamRafRef.current) {
-            cancelAnimationFrame(streamRafRef.current)
-            streamRafRef.current = null
-          }
-          flushStreamBuffer()
-          setStreaming(false)
-          persistAiConversation(bookId)
-        }
-      })
-
-      // ==================== 阶段 2：调用 Agent Skill ====================
-
-      // 构建对话历史
-      const validMsgs = messages.filter((m) => !m.loading && (m.role === 'user' || m.role === 'assistant'))
-      const recentMsgs = validMsgs.slice(-20) // 最近 20 条
-      const history = recentMsgs.map((m) => ({ role: m.role, content: m.content }))
-
-      // 使用当前选中的技能类型
-      const skill: SkillType = currentSkill
-
-      // 存储请求载荷
-      updateAiMessage(bookId, assistantId, {
-        requestPayload: {
-          provider: 'agent',
-          model: aiConfig.chat.model,
-          temperature: aiConfig.chat.temperature,
-          maxTokens: aiConfig.chat.maxTokens,
-          thinkingEnabled: aiConfig.chat.thinkingEnabled,
-          messages: [
-            { role: 'system', content: `Skill: ${skill}, Book: ${bookId}` },
-            ...history.map((h) => ({ role: h.role, content: h.content })),
-            { role: 'user', content: input.trim() },
-          ],
-          ragContext: undefined,
-          chapterSummary: undefined,
-        },
-      })
-
-      await invoke<string>('execute_agent_skill', {
-        skill,
-        bookId,
-        message: input.trim(),
-        conversationHistory: history.length > 0 ? history : null,
-        aiConfig: {
-          provider: aiConfig.chat.provider,
-          endpoint: aiConfig.chat.endpoint,
-          model: aiConfig.chat.model,
-          apiKey: chatApiKey,
-          temperature: aiConfig.chat.temperature,
-          maxTokens: aiConfig.chat.maxTokens,
-          thinkingEnabled: aiConfig.chat.thinkingEnabled,
-        },
-        requestId,
-        conversationSummary: currentSummary?.summary ?? null,
-      })
-    } catch (err) {
-      // 如果 SSE error 事件已经处理过，避免重复更新
-      if (!streamErrorRef.current) {
-        const rawErr = String(err)
-        const friendly = getFriendlyAiError(rawErr)
-        updateAssistant(assistantId, `⚠️ ${friendly}\n\n> 错误详情：${rawErr}`, undefined, 'done')
-        if (bookId) persistAiConversation(bookId)
+      } finally {
+        setStreaming(false)
+        stopStream()
       }
-    } finally {
-      setStreaming(false)
-      if (streamRafRef.current) {
-        cancelAnimationFrame(streamRafRef.current)
-        streamRafRef.current = null
-      }
-      if (unlistenRef.current) {
-        unlistenRef.current()
-        unlistenRef.current = null
-      }
-    }
-  }, [
-    streaming, bookId, aiConfig, currentChapter, addAiMessage, updateAiMessage, 
-    persistAiConversation, updateAssistant, updateAssistantUsage,
-    summarizeOverflowMessages, messages
-  ])
+    },
+    [
+      streaming,
+      bookId,
+      aiConfig,
+      currentChapter,
+      currentSkill,
+      currentSummary,
+      messages,
+      addPair,
+      updateAssistant,
+      updateAssistantUsage,
+      patchMessage,
+      persist,
+      startStream,
+      stopStream,
+      summarizeIfNeeded,
+    ],
+  )
 
   return {
     streaming,

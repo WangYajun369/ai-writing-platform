@@ -2,12 +2,12 @@
 //!
 //! 通用 get/set + 提醒偏好（JSON 透传存储）。
 
-use tauri::AppHandle;
+use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
-use crate::commands::window::emit_sql_log;
 use crate::repository::task_meta_repo;
 use crate::utils::now;
+use tauri::AppHandle;
 
 /// 提醒偏好存储 key（值为 JSON 字符串，内容由前端定义）
 pub const KEY_REMINDER_PREFS: &str = "taskcard:reminder_prefs";
@@ -22,7 +22,14 @@ pub fn get_meta(_app: &AppHandle, db: &AppDb, key: &str) -> Result<Option<String
 pub fn set_meta(app: &AppHandle, db: &AppDb, key: &str, value: &str) -> Result<(), AppError> {
     let ts = now();
     let conn = db.pool.get()?;
-    emit_sql_log(app, "UPSERT", "task_meta", &format!("key={key}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "UPSERT",
+        "task_meta",
+        &format!("key={key}"),
+        file!(),
+        line!(),
+    );
     task_meta_repo::set(&conn, key, value, &ts)?;
     Ok(())
 }
@@ -37,7 +44,14 @@ pub fn get_reminder_prefs(_app: &AppHandle, db: &AppDb) -> Result<Option<String>
 pub fn set_reminder_prefs(app: &AppHandle, db: &AppDb, json: &str) -> Result<(), AppError> {
     let ts = now();
     let conn = db.pool.get()?;
-    emit_sql_log(app, "UPSERT", "task_meta", "key=taskcard:reminder_prefs", file!(), line!());
+    emit_sql_log(
+        app,
+        "UPSERT",
+        "task_meta",
+        "key=taskcard:reminder_prefs",
+        file!(),
+        line!(),
+    );
     task_meta_repo::set(&conn, KEY_REMINDER_PREFS, json, &ts)?;
     Ok(())
 }

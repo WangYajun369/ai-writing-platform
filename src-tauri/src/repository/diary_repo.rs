@@ -3,8 +3,8 @@
 //! 提供 diaries 表的 CRUD SQL 操作。每篇日记以 `diary_date`（YYYY-MM-DD）
 //! 为业务主键，同一天只会存在一篇日记。
 
-use rusqlite::{params, Connection, OptionalExtension, Result};
 use crate::models::{Diary, DiaryMeta};
+use rusqlite::{params, Connection, OptionalExtension, Result};
 
 /// 解析数据库中的 keywords JSON 字符串为 Vec<String>
 fn parse_keywords(raw: String) -> Vec<String> {
@@ -12,11 +12,7 @@ fn parse_keywords(raw: String) -> Vec<String> {
 }
 
 /// 列出日期区间 [start, end) 内的所有日记摘要，按日期升序
-pub fn list_in_range(
-    conn: &Connection,
-    start: &str,
-    end: &str,
-) -> Result<Vec<DiaryMeta>> {
+pub fn list_in_range(conn: &Connection, start: &str, end: &str) -> Result<Vec<DiaryMeta>> {
     let mut stmt = conn.prepare(
         "SELECT id, diary_date, word_count, keywords, created_at, updated_at \
          FROM diaries WHERE diary_date >= ?1 AND diary_date < ?2 ORDER BY diary_date ASC",

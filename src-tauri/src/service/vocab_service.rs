@@ -8,15 +8,15 @@
 //! 每次影响"今日待复习数"的写操作都会向主窗口广播 `vocab-due-updated`，
 //! 驱动首页头部徽标实时刷新。
 
-use chrono::{Duration, Local, NaiveDate};
-use tauri::{AppHandle, Emitter};
-use uuid::Uuid;
+use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::{StatsDay, VocabKnowledge, VocabMeaning, VocabStats, VocabWord};
-use crate::commands::window::emit_sql_log;
-use crate::utils::{now, validate_len};
 use crate::repository::vocab_repo;
+use crate::utils::{now, validate_len};
+use chrono::{Duration, Local, NaiveDate};
+use tauri::{AppHandle, Emitter};
+use uuid::Uuid;
 
 /// 生词长度上限
 const MAX_WORD_LEN: usize = 100;
@@ -171,15 +171,38 @@ pub fn add_word(
 
     // 已存在：更新释义/音标/例句（不重置复习进度）
     if let Some(existing) = vocab_repo::find_by_word(&conn, &word)? {
-        emit_sql_log(app, "UPDATE", "vocab_words", &format!("word={word}（已存在，更新释义）"), file!(), line!());
-        vocab_repo::update_content_fields(&conn, &existing.id, phonetic, &meanings_json, example, example_zh, &ai_details, &ts)?;
+        emit_sql_log(
+            app,
+            "UPDATE",
+            "vocab_words",
+            &format!("word={word}（已存在，更新释义）"),
+            file!(),
+            line!(),
+        );
+        vocab_repo::update_content_fields(
+            &conn,
+            &existing.id,
+            phonetic,
+            &meanings_json,
+            example,
+            example_zh,
+            &ai_details,
+            &ts,
+        )?;
         emit_due_updated(app);
         return vocab_repo::find_by_id(&conn, &existing.id)?
             .ok_or_else(|| AppError::Business("更新后回读失败".to_string()));
     }
 
     let id = Uuid::new_v4().to_string();
-    emit_sql_log(app, "INSERT", "vocab_words", &format!("word={word}, source={source}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "INSERT",
+        "vocab_words",
+        &format!("word={word}, source={source}"),
+        file!(),
+        line!(),
+    );
     // 新词次日安排首次复习（艾宾浩斯记忆点起点）
     let today = today_str();
     let first_review = date_plus_days(&today, 1).unwrap_or_else(|| today.clone());
@@ -224,21 +247,49 @@ pub fn update_word(
     if vocab_repo::find_by_id(&conn, id)?.is_none() {
         return Err(AppError::NotFound(format!("生词不存在: {id}")));
     }
-    emit_sql_log(app, "UPDATE", "vocab_words", &format!("id={id} 释义编辑"), file!(), line!());
-    vocab_repo::update_content_fields(&conn, id, phonetic, &meanings_json, example, example_zh, &ai_details, &ts)?;
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "vocab_words",
+        &format!("id={id} 释义编辑"),
+        file!(),
+        line!(),
+    );
+    vocab_repo::update_content_fields(
+        &conn,
+        id,
+        phonetic,
+        &meanings_json,
+        example,
+        example_zh,
+        &ai_details,
+        &ts,
+    )?;
     vocab_repo::find_by_id(&conn, id)?
         .ok_or_else(|| AppError::Business("更新后回读失败".to_string()))
 }
 
 /// 切换状态（learning / mastered / suspended）
-pub fn set_status(app: &AppHandle, db: &AppDb, id: &str, status: &str) -> Result<VocabWord, AppError> {
+pub fn set_status(
+    app: &AppHandle,
+    db: &AppDb,
+    id: &str,
+    status: &str,
+) -> Result<VocabWord, AppError> {
     validate_status(status)?;
     let ts = now();
     let conn = db.pool.get()?;
     if vocab_repo::find_by_id(&conn, id)?.is_none() {
         return Err(AppError::NotFound(format!("生词不存在: {id}")));
     }
-    emit_sql_log(app, "UPDATE", "vocab_words", &format!("id={id} → status={status}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "vocab_words",
+        &format!("id={id} → status={status}"),
+        file!(),
+        line!(),
+    );
     vocab_repo::set_status(&conn, id, status, &ts)?;
     emit_due_updated(app);
     vocab_repo::find_by_id(&conn, id)?
@@ -251,7 +302,14 @@ pub fn delete_word(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError
     if vocab_repo::find_by_id(&conn, id)?.is_none() {
         return Err(AppError::NotFound(format!("生词不存在: {id}")));
     }
-    emit_sql_log(app, "DELETE", "vocab_words", &format!("id={id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "DELETE",
+        "vocab_words",
+        &format!("id={id}"),
+        file!(),
+        line!(),
+    );
     vocab_repo::delete_word(&conn, id)?;
     emit_due_updated(app);
     Ok(())
@@ -271,7 +329,14 @@ pub fn list_words(
             validate_status(st)?;
         }
     }
-    emit_sql_log(app, "SELECT", "vocab_words", &format!("status={status:?}, query={query:?}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "SELECT",
+        "vocab_words",
+        &format!("status={status:?}, query={query:?}"),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     Ok(vocab_repo::list_words(&conn, status, query)?)
 }
@@ -279,7 +344,14 @@ pub fn list_words(
 /// 今日到期队列（含逾期未复习）
 pub fn list_due(app: &AppHandle, db: &AppDb) -> Result<Vec<VocabWord>, AppError> {
     let today = today_str();
-    emit_sql_log(app, "SELECT", "vocab_words", &format!("due <= {today}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "SELECT",
+        "vocab_words",
+        &format!("due <= {today}"),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     Ok(vocab_repo::list_due(&conn, &today)?)
 }
@@ -310,7 +382,9 @@ pub fn submit_review(
     rating: i64,
 ) -> Result<VocabWord, AppError> {
     if !(0..=3).contains(&rating) {
-        return Err(AppError::Validation(format!("不合法的复习评分: {rating}（应为 0-3）")));
+        return Err(AppError::Validation(format!(
+            "不合法的复习评分: {rating}（应为 0-3）"
+        )));
     }
 
     let mut conn = db.pool.get()?;
@@ -326,11 +400,20 @@ pub fn submit_review(
 
     let today = today_str();
     let quality = rating_to_quality(rating);
-    let sm = sm2_apply(word.repetition, word.interval_days, word.ease_factor, quality, &today);
+    let sm = sm2_apply(
+        word.repetition,
+        word.interval_days,
+        word.ease_factor,
+        quality,
+        &today,
+    );
     let correct = quality >= 3;
 
     // 自动判定已掌握：连续答对足够多次且复习间隔足够长
-    let status = if correct && sm.repetition >= MASTER_REPETITION && sm.interval_days >= MASTER_INTERVAL_DAYS {
+    let status = if correct
+        && sm.repetition >= MASTER_REPETITION
+        && sm.interval_days >= MASTER_INTERVAL_DAYS
+    {
         "mastered"
     } else {
         "learning"
@@ -388,12 +471,21 @@ pub fn get_stats(app: &AppHandle, db: &AppDb) -> Result<VocabStats, AppError> {
     let month_ago = date_plus_days(&today, -29).unwrap_or_else(|| today.clone());
 
     let conn = db.pool.get()?;
-    emit_sql_log(app, "SELECT", "vocab_words", "stats: 汇总计数", file!(), line!());
+    emit_sql_log(
+        app,
+        "SELECT",
+        "vocab_words",
+        "stats: 汇总计数",
+        file!(),
+        line!(),
+    );
 
     let mut review_history: Vec<StatsDay> = vocab_repo::review_history(&conn, &month_ago)?;
     // 补全无记录日期为 0，保证前端可直接画连续 30 天曲线
-    let mut expected = NaiveDate::parse_from_str(&month_ago, "%Y-%m-%d").unwrap_or_else(|_| Local::now().date_naive() - Duration::days(29));
-    let end = NaiveDate::parse_from_str(&today, "%Y-%m-%d").unwrap_or_else(|_| Local::now().date_naive());
+    let mut expected = NaiveDate::parse_from_str(&month_ago, "%Y-%m-%d")
+        .unwrap_or_else(|_| Local::now().date_naive() - Duration::days(29));
+    let end =
+        NaiveDate::parse_from_str(&today, "%Y-%m-%d").unwrap_or_else(|_| Local::now().date_naive());
     let map: std::collections::HashMap<String, i64> = review_history
         .drain(..)
         .map(|d| (d.date, d.count))
@@ -401,7 +493,10 @@ pub fn get_stats(app: &AppHandle, db: &AppDb) -> Result<VocabStats, AppError> {
     let mut filled: Vec<StatsDay> = Vec::new();
     while expected <= end {
         let key = expected.format("%Y-%m-%d").to_string();
-        filled.push(StatsDay { date: key.clone(), count: *map.get(&key).unwrap_or(&0) });
+        filled.push(StatsDay {
+            date: key.clone(),
+            count: *map.get(&key).unwrap_or(&0),
+        });
         expected += Duration::days(1);
     }
     review_history = filled;

@@ -17,15 +17,15 @@
 //! - 字数相关操作在**同一事务**内执行（保存 → 更新聚合 → 回读），失败自动回滚，不会残留半成品状态
 //! - 硬删除使用事务保证数据一致性（获取关联信息 → 删除 → 重算 → 提交）
 
-use tauri::AppHandle;
-use uuid::Uuid;
+use crate::commands::chapter::{ChapterSummaryInfo, RestoreChapterResult, SaveChapterResult};
+use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::Chapter;
-use crate::commands::window::emit_sql_log;
-use crate::commands::chapter::{SaveChapterResult, RestoreChapterResult, ChapterSummaryInfo};
-use crate::utils::{now, validate_len, MAX_TITLE_LEN, MAX_CHAPTER_CONTENT_LEN};
-use crate::repository::{chapter_repo, book_repo, volume_repo};
+use crate::repository::{book_repo, chapter_repo, volume_repo};
+use crate::utils::{now, validate_len, MAX_CHAPTER_CONTENT_LEN, MAX_TITLE_LEN};
+use tauri::AppHandle;
+use uuid::Uuid;
 
 // ============================================================================
 // 查询操作
@@ -41,7 +41,14 @@ use crate::repository::{chapter_repo, book_repo, volume_repo};
 /// # Returns
 /// 按 `sort_order` 排序的章节列表，已逻辑删除的章节不包含在内
 pub fn list_chapters(app: &AppHandle, db: &AppDb, book_id: &str) -> Result<Vec<Chapter>, AppError> {
-    emit_sql_log(app, "SELECT", "chapters", &format!("book_id={book_id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "SELECT",
+        "chapters",
+        &format!("book_id={book_id}"),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     Ok(chapter_repo::list_by_book(&conn, book_id)?)
 }
@@ -55,8 +62,19 @@ pub fn list_chapters(app: &AppHandle, db: &AppDb, book_id: &str) -> Result<Vec<C
 ///
 /// # Returns
 /// 章节的 `content_html` 字段值，若内容为空则返回空字符串
-pub fn get_chapter_content(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Result<String, AppError> {
-    emit_sql_log(app, "SELECT", "chapters", &format!("id={chapter_id}, content_html"), file!(), line!());
+pub fn get_chapter_content(
+    app: &AppHandle,
+    db: &AppDb,
+    chapter_id: &str,
+) -> Result<String, AppError> {
+    emit_sql_log(
+        app,
+        "SELECT",
+        "chapters",
+        &format!("id={chapter_id}, content_html"),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     Ok(chapter_repo::find_content(&conn, chapter_id)?)
 }
@@ -91,7 +109,14 @@ pub fn create_chapter(
 
     let id = Uuid::new_v4().to_string();
     let ts = now();
-    emit_sql_log(app, "INSERT", "chapters", &format!("id={id}, title={title}, book_id={book_id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "INSERT",
+        "chapters",
+        &format!("id={id}, title={title}, book_id={book_id}"),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     chapter_repo::insert(&conn, &id, book_id, volume_id, title, sort_order, &ts)?;
 
@@ -145,12 +170,26 @@ pub fn save_chapter(
     validate_len("章节内容", content_html, MAX_CHAPTER_CONTENT_LEN)?;
 
     // 三步操作放入同一事务：保存失败时字数聚合不会残留半成品状态
-    emit_sql_log(app, "BEGIN", "transaction", "save_chapter", file!(), line!());
+    emit_sql_log(
+        app,
+        "BEGIN",
+        "transaction",
+        "save_chapter",
+        file!(),
+        line!(),
+    );
     let mut conn = db.pool.get()?;
     let tx = conn.transaction()?;
 
     // Step 1: 保存内容到 chapters 表（写入 content_html 和 word_count，触发 FTS5 同步）
-    emit_sql_log(app, "UPDATE", "chapters", &format!("id={chapter_id}, save content_html, wc={word_count}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "chapters",
+        &format!("id={chapter_id}, save content_html, wc={word_count}"),
+        file!(),
+        line!(),
+    );
     chapter_repo::save_content(&tx, chapter_id, content_html, word_count, &ts)
         .map_err(|e| AppError::Business(format!("保存内容失败 [step1-save_content]: {}", e)))?;
 
@@ -162,10 +201,21 @@ pub fn save_chapter(
     let book_wc = book_repo::word_count_by_chapter(&tx, chapter_id)
         .map_err(|e| AppError::Business(format!("保存失败 [step3-read_book_wc]: {}", e)))?;
 
-    emit_sql_log(app, "COMMIT", "transaction", "save_chapter committed", file!(), line!());
-    tx.commit().map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
+    emit_sql_log(
+        app,
+        "COMMIT",
+        "transaction",
+        "save_chapter committed",
+        file!(),
+        line!(),
+    );
+    tx.commit()
+        .map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
 
-    Ok(SaveChapterResult { word_count, book_word_count: book_wc })
+    Ok(SaveChapterResult {
+        word_count,
+        book_word_count: book_wc,
+    })
 }
 
 // ============================================================================
@@ -179,10 +229,27 @@ pub fn save_chapter(
 /// * `db` - 数据库连接池
 /// * `chapter_id` - 章节 ID
 /// * `status` - 新状态值（如 `"draft"`、`"completed"` 等）
-pub fn update_chapter_status(app: &AppHandle, db: &AppDb, chapter_id: &str, status: &str) -> Result<(), AppError> {
-    emit_sql_log(app, "UPDATE", "chapters", &format!("id={chapter_id}, status={status}"), file!(), line!());
+pub fn update_chapter_status(
+    app: &AppHandle,
+    db: &AppDb,
+    chapter_id: &str,
+    status: &str,
+) -> Result<(), AppError> {
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "chapters",
+        &format!("id={chapter_id}, status={status}"),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
-    Ok(chapter_repo::update_status(&conn, chapter_id, status, &now())?)
+    Ok(chapter_repo::update_status(
+        &conn,
+        chapter_id,
+        status,
+        &now(),
+    )?)
 }
 
 /// 重命名章节标题
@@ -192,8 +259,20 @@ pub fn update_chapter_status(app: &AppHandle, db: &AppDb, chapter_id: &str, stat
 /// * `db` - 数据库连接池
 /// * `chapter_id` - 章节 ID
 /// * `title` - 新标题
-pub fn rename_chapter(app: &AppHandle, db: &AppDb, chapter_id: &str, title: &str) -> Result<(), AppError> {
-    emit_sql_log(app, "UPDATE", "chapters", &format!("id={chapter_id}, rename to {title}"), file!(), line!());
+pub fn rename_chapter(
+    app: &AppHandle,
+    db: &AppDb,
+    chapter_id: &str,
+    title: &str,
+) -> Result<(), AppError> {
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "chapters",
+        &format!("id={chapter_id}, rename to {title}"),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     Ok(chapter_repo::rename(&conn, chapter_id, title, &now())?)
 }
@@ -208,8 +287,19 @@ pub fn rename_chapter(app: &AppHandle, db: &AppDb, chapter_id: &str, title: &str
 /// * `app` - Tauri 应用句柄
 /// * `db` - 数据库连接池
 /// * `book_id` - 所属书籍 ID
-pub fn list_deleted_chapters(app: &AppHandle, db: &AppDb, book_id: &str) -> Result<Vec<Chapter>, AppError> {
-    emit_sql_log(app, "SELECT", "chapters", &format!("book_id={book_id}, deleted"), file!(), line!());
+pub fn list_deleted_chapters(
+    app: &AppHandle,
+    db: &AppDb,
+    book_id: &str,
+) -> Result<Vec<Chapter>, AppError> {
+    emit_sql_log(
+        app,
+        "SELECT",
+        "chapters",
+        &format!("book_id={book_id}, deleted"),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     Ok(chapter_repo::list_deleted_by_book(&conn, book_id)?)
 }
@@ -224,20 +314,42 @@ pub fn delete_chapter(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Result<i
     let ts = now();
 
     // 软删除标记与书籍字数扣除放入同一事务，避免删除成功但字数未扣的中间态
-    emit_sql_log(app, "BEGIN", "transaction", "delete_chapter", file!(), line!());
+    emit_sql_log(
+        app,
+        "BEGIN",
+        "transaction",
+        "delete_chapter",
+        file!(),
+        line!(),
+    );
     let mut conn = db.pool.get()?;
     let tx = conn.transaction()?;
 
     // 标记章节为已删除（设置 deleted_at 时间戳）
-    emit_sql_log(app, "UPDATE", "chapters", &format!("id={chapter_id}, soft delete"), file!(), line!());
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "chapters",
+        &format!("id={chapter_id}, soft delete"),
+        file!(),
+        line!(),
+    );
     chapter_repo::soft_delete(&tx, chapter_id, &ts)?;
 
     // 软删除后需将章节字数从书籍总字数中扣除
     book_repo::update_word_count_by_chapter(&tx, chapter_id, &ts)?;
     let book_wc = book_repo::word_count_by_chapter(&tx, chapter_id)?;
 
-    emit_sql_log(app, "COMMIT", "transaction", "delete_chapter committed", file!(), line!());
-    tx.commit().map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
+    emit_sql_log(
+        app,
+        "COMMIT",
+        "transaction",
+        "delete_chapter committed",
+        file!(),
+        line!(),
+    );
+    tx.commit()
+        .map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
     Ok(book_wc)
 }
 
@@ -251,21 +363,46 @@ pub fn delete_chapter(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Result<i
 ///
 /// # Returns
 /// `RestoreChapterResult`，包含恢复后所在卷 ID 和更新后的全书字数
-pub fn restore_chapter(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Result<RestoreChapterResult, AppError> {
+pub fn restore_chapter(
+    app: &AppHandle,
+    db: &AppDb,
+    chapter_id: &str,
+) -> Result<RestoreChapterResult, AppError> {
     let ts = now();
 
     // 恢复标记与书籍字数重算放入同一事务，避免恢复成功但字数未计回的中间态
-    emit_sql_log(app, "BEGIN", "transaction", "restore_chapter", file!(), line!());
+    emit_sql_log(
+        app,
+        "BEGIN",
+        "transaction",
+        "restore_chapter",
+        file!(),
+        line!(),
+    );
     let mut conn = db.pool.get()?;
     let tx = conn.transaction()?;
 
     // 查询章节当前关联的卷 ID（即使已软删除仍保留此字段）
-    emit_sql_log(app, "SELECT", "chapters", &format!("id={chapter_id}, check volume_id"), file!(), line!());
+    emit_sql_log(
+        app,
+        "SELECT",
+        "chapters",
+        &format!("id={chapter_id}, check volume_id"),
+        file!(),
+        line!(),
+    );
     let current_vid = chapter_repo::find_volume_id(&tx, chapter_id)?;
 
     // 确认原卷是否仍处于活跃状态（未被删除）
     let effective_volume_id = if let Some(ref vid) = current_vid {
-        emit_sql_log(app, "SELECT", "volumes", &format!("id={vid}, check exists"), file!(), line!());
+        emit_sql_log(
+            app,
+            "SELECT",
+            "volumes",
+            &format!("id={vid}, check exists"),
+            file!(),
+            line!(),
+        );
         if volume_repo::exists_active(&tx, vid)? {
             Some(vid.clone()) // 原卷存在，恢复到原卷
         } else {
@@ -276,17 +413,35 @@ pub fn restore_chapter(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Result<
     };
 
     // 清除 deleted_at 并将章节恢复到有效卷
-    emit_sql_log(app, "UPDATE", "chapters", &format!("id={chapter_id}, restore"), file!(), line!());
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "chapters",
+        &format!("id={chapter_id}, restore"),
+        file!(),
+        line!(),
+    );
     chapter_repo::restore(&tx, chapter_id, &effective_volume_id, &ts)?;
 
     // 将恢复的章节字数重新计入书籍聚合
     book_repo::update_word_count_by_chapter(&tx, chapter_id, &ts)?;
     let book_wc = book_repo::word_count_by_chapter(&tx, chapter_id)?;
 
-    emit_sql_log(app, "COMMIT", "transaction", "restore_chapter committed", file!(), line!());
-    tx.commit().map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
+    emit_sql_log(
+        app,
+        "COMMIT",
+        "transaction",
+        "restore_chapter committed",
+        file!(),
+        line!(),
+    );
+    tx.commit()
+        .map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
 
-    Ok(RestoreChapterResult { volume_id: effective_volume_id, book_word_count: book_wc })
+    Ok(RestoreChapterResult {
+        volume_id: effective_volume_id,
+        book_word_count: book_wc,
+    })
 }
 
 /// 硬删除章节：从数据库中彻底移除章节记录
@@ -309,12 +464,26 @@ pub fn hard_delete_chapter(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Res
     let mut conn = db.pool.get()?;
     let ts = now();
 
-    emit_sql_log(app, "BEGIN", "transaction", "hard_delete_chapter", file!(), line!());
+    emit_sql_log(
+        app,
+        "BEGIN",
+        "transaction",
+        "hard_delete_chapter",
+        file!(),
+        line!(),
+    );
     let tx = conn.transaction()?;
 
     // 事务内先获取 book_id，避免硬删除后无法回溯关联书籍
     // 若章节已被级联删除或不存在，视为已完成，直接返回 0
-    emit_sql_log(app, "SELECT", "chapters", &format!("id={chapter_id}, get book_id"), file!(), line!());
+    emit_sql_log(
+        app,
+        "SELECT",
+        "chapters",
+        &format!("id={chapter_id}, get book_id"),
+        file!(),
+        line!(),
+    );
     let book_id: String = match tx.query_row(
         "SELECT book_id FROM chapters WHERE id=?1",
         rusqlite::params![chapter_id],
@@ -322,26 +491,56 @@ pub fn hard_delete_chapter(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Res
     ) {
         Ok(id) => id,
         Err(rusqlite::Error::QueryReturnedNoRows) => {
-            emit_sql_log(app, "COMMIT", "transaction", "hard_delete_chapter skipped (chapter not found)", file!(), line!());
-            tx.commit().map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
+            emit_sql_log(
+                app,
+                "COMMIT",
+                "transaction",
+                "hard_delete_chapter skipped (chapter not found)",
+                file!(),
+                line!(),
+            );
+            tx.commit()
+                .map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
             return Ok(0);
         }
         Err(e) => return Err(e.into()),
     };
 
     // DELETE 触发 chapters_fts_ad 触发器 → 使用 DELETE 直接清理 FTS5 索引
-    emit_sql_log(app, "DELETE", "chapters", &format!("id={chapter_id}, hard delete"), file!(), line!());
+    emit_sql_log(
+        app,
+        "DELETE",
+        "chapters",
+        &format!("id={chapter_id}, hard delete"),
+        file!(),
+        line!(),
+    );
     chapter_repo::hard_delete(&tx, chapter_id)?;
 
     // 硬删除后书籍字数不再包含此章节，需完全重算
-    emit_sql_log(app, "UPDATE", "books", &format!("recalc word_count for book_id={book_id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "books",
+        &format!("recalc word_count for book_id={book_id}"),
+        file!(),
+        line!(),
+    );
     book_repo::recalc_word_count(&tx, &book_id, &ts)?;
 
     // 使用 book_id 查询（章节已不存在，无法通过 chapter_id 反查）
     let book_wc = book_repo::word_count_by_book(&tx, &book_id)?;
 
-    emit_sql_log(app, "COMMIT", "transaction", "hard_delete_chapter committed", file!(), line!());
-    tx.commit().map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
+    emit_sql_log(
+        app,
+        "COMMIT",
+        "transaction",
+        "hard_delete_chapter committed",
+        file!(),
+        line!(),
+    );
+    tx.commit()
+        .map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
     Ok(book_wc)
 }
 
@@ -358,8 +557,19 @@ pub fn hard_delete_chapter(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Res
 /// * `app` - Tauri 应用句柄
 /// * `db` - 数据库连接池
 /// * `chapter_ids` - 按目标顺序排列的章节 ID 列表
-pub fn reorder_chapters(app: &AppHandle, db: &AppDb, chapter_ids: &[String]) -> Result<(), AppError> {
-    emit_sql_log(app, "UPDATE", "chapters", &format!("reorder {} chapters", chapter_ids.len()), file!(), line!());
+pub fn reorder_chapters(
+    app: &AppHandle,
+    db: &AppDb,
+    chapter_ids: &[String],
+) -> Result<(), AppError> {
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "chapters",
+        &format!("reorder {} chapters", chapter_ids.len()),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     Ok(chapter_repo::reorder(&conn, chapter_ids)?)
 }
@@ -384,13 +594,28 @@ pub fn move_chapter_to_volume(
     let ts = now();
 
     // 查询目标卷/根目录下当前最大排序值（排除自身）
-    emit_sql_log(app, "SELECT", "chapters", "MAX(sort_order)", file!(), line!());
+    emit_sql_log(
+        app,
+        "SELECT",
+        "chapters",
+        "MAX(sort_order)",
+        file!(),
+        line!(),
+    );
     let max_order = chapter_repo::max_sort_in_volume(&conn, volume_id, chapter_id)?;
     let new_sort = max_order + 1; // 追加到末尾
 
-    emit_sql_log(app, "UPDATE", "chapters",
-        &format!("id={chapter_id}, move to volume_id={volume_id:?}, sort={new_sort}"), file!(), line!());
-    Ok(chapter_repo::move_to_volume(&conn, chapter_id, volume_id, new_sort, &ts)?)
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "chapters",
+        &format!("id={chapter_id}, move to volume_id={volume_id:?}, sort={new_sort}"),
+        file!(),
+        line!(),
+    );
+    Ok(chapter_repo::move_to_volume(
+        &conn, chapter_id, volume_id, new_sort, &ts,
+    )?)
 }
 
 // ============================================================================
@@ -406,9 +631,21 @@ pub fn move_chapter_to_volume(
 /// * `db` - 数据库连接池
 /// * `chapter_id` - 章节 ID
 /// * `summary` - 总结文本
-pub fn save_chapter_summary(app: &AppHandle, db: &AppDb, chapter_id: &str, summary: &str) -> Result<(), AppError> {
+pub fn save_chapter_summary(
+    app: &AppHandle,
+    db: &AppDb,
+    chapter_id: &str,
+    summary: &str,
+) -> Result<(), AppError> {
     let ts = now();
-    emit_sql_log(app, "UPDATE", "chapters", &format!("id={chapter_id}, save summary ({} chars)", summary.len()), file!(), line!());
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "chapters",
+        &format!("id={chapter_id}, save summary ({} chars)", summary.len()),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     Ok(chapter_repo::save_summary(&conn, chapter_id, summary, &ts)?)
 }
@@ -416,8 +653,19 @@ pub fn save_chapter_summary(app: &AppHandle, db: &AppDb, chapter_id: &str, summa
 /// 清除章节的 AI 总结
 ///
 /// 将 `summary` 和 `summary_at` 字段置空。
-pub fn clear_chapter_summary(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Result<(), AppError> {
-    emit_sql_log(app, "UPDATE", "chapters", &format!("id={chapter_id}, clear summary"), file!(), line!());
+pub fn clear_chapter_summary(
+    app: &AppHandle,
+    db: &AppDb,
+    chapter_id: &str,
+) -> Result<(), AppError> {
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "chapters",
+        &format!("id={chapter_id}, clear summary"),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     Ok(chapter_repo::clear_summary(&conn, chapter_id)?)
 }
@@ -426,11 +674,25 @@ pub fn clear_chapter_summary(app: &AppHandle, db: &AppDb, chapter_id: &str) -> R
 ///
 /// # Returns
 /// `ChapterSummaryInfo`，包含 `summary`（总结文本）和 `summary_at`（总结时间）
-pub fn get_chapter_summary(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Result<ChapterSummaryInfo, AppError> {
-    emit_sql_log(app, "SELECT", "chapters", &format!("id={chapter_id}, summary"), file!(), line!());
+pub fn get_chapter_summary(
+    app: &AppHandle,
+    db: &AppDb,
+    chapter_id: &str,
+) -> Result<ChapterSummaryInfo, AppError> {
+    emit_sql_log(
+        app,
+        "SELECT",
+        "chapters",
+        &format!("id={chapter_id}, summary"),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     let (summary, summary_at) = chapter_repo::find_summary_info(&conn, chapter_id)?;
-    Ok(ChapterSummaryInfo { summary, summary_at })
+    Ok(ChapterSummaryInfo {
+        summary,
+        summary_at,
+    })
 }
 
 // ============================================================================
@@ -446,9 +708,21 @@ pub fn get_chapter_summary(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Res
 /// * `db` - 数据库连接池
 /// * `chapter_id` - 章节 ID
 /// * `outline` - 大纲文本
-pub fn save_chapter_outline(app: &AppHandle, db: &AppDb, chapter_id: &str, outline: &str) -> Result<(), AppError> {
+pub fn save_chapter_outline(
+    app: &AppHandle,
+    db: &AppDb,
+    chapter_id: &str,
+    outline: &str,
+) -> Result<(), AppError> {
     let ts = now();
-    emit_sql_log(app, "UPDATE", "chapters", &format!("id={chapter_id}, save outline ({} chars)", outline.len()), file!(), line!());
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "chapters",
+        &format!("id={chapter_id}, save outline ({} chars)", outline.len()),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     Ok(chapter_repo::save_outline(&conn, chapter_id, outline, &ts)?)
 }

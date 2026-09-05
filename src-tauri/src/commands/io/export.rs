@@ -2,13 +2,13 @@
 //!
 //! 将书籍所有章节以指定格式导出为单一文件。
 
-use tauri::{AppHandle, State};
-use std::fmt::Write as FmtWrite;
+use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
-use crate::commands::window::emit_sql_log;
-use crate::utils::strip_html;
 use crate::repository::{book_repo, chapter_repo};
+use crate::utils::strip_html;
+use std::fmt::Write as FmtWrite;
+use tauri::{AppHandle, State};
 
 /// 导出书籍（TXT / MD / HTML）
 #[tauri::command]
@@ -22,16 +22,22 @@ pub async fn export_book(
     let conn = db.pool.get()?;
 
     emit_sql_log(
-        &app, "SELECT", "books",
+        &app,
+        "SELECT",
+        "books",
         &format!("id={}, export info", book_id),
-        file!(), line!(),
+        file!(),
+        line!(),
     );
     let (title, author) = book_repo::find_title_author(&conn, &book_id)?;
 
     emit_sql_log(
-        &app, "SELECT", "chapters",
+        &app,
+        "SELECT",
+        "chapters",
         &format!("book_id={}, export chapters", book_id),
-        file!(), line!(),
+        file!(),
+        line!(),
     );
     let chapters = chapter_repo::list_titles_and_content(&conn, &book_id)?;
 

@@ -3,11 +3,11 @@
 //! 附件文件实体统一在应用数据目录；「选择并添加」使用系统文件对话框（async 命令
 //! 避免主线程阻塞）。业务逻辑集中在 `service::attachment_service`。
 
-use tauri::{AppHandle, State};
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::Attachment;
 use crate::service::attachment_service;
+use tauri::{AppHandle, State};
 
 /// 列出某任务的附件
 #[tauri::command]
@@ -44,9 +44,6 @@ pub fn attachment_delete(app: AppHandle, state: State<AppDb>, id: String) -> Res
 
 /// 孤儿附件文件清理（回收站每日自动清理调用；手动触发亦可）
 #[tauri::command]
-pub fn attachment_cleanup_orphans(
-    app: AppHandle,
-    state: State<AppDb>,
-) -> Result<usize, AppError> {
+pub fn attachment_cleanup_orphans(app: AppHandle, state: State<AppDb>) -> Result<usize, AppError> {
     attachment_service::cleanup_orphan_files(&app, &state)
 }

@@ -16,7 +16,9 @@
  *  - constants      → 状态配置 / getAgentQuickActions
  */
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { useAppStore, useCurrentAiMessages, useCurrentBook } from '@/stores/appStore'
+import { useCurrentAiMessages, useCurrentBook } from '@/stores/appStore'
+import { useAiStore } from '@/stores/aiStore'
+import { useBooksStore } from '@/stores/booksStore'
 import type { ChatRequestPayload } from '@/types'
 import { getChatApiKey } from '@/types'
 import { aiApi } from '@/lib/tauri-bridge'
@@ -45,7 +47,8 @@ export default function AiSidePanel() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRafRef = useRef<number | null>(null)
 
-  const { aiConfig, currentBookId } = useAppStore()
+  const aiConfig = useAiStore((s) => s.aiConfig)
+  const currentBookId = useBooksStore((s) => s.currentBookId)
   const book = useCurrentBook()
   const {
     streaming,

@@ -19,7 +19,7 @@ import {
   PencilIcon,
   XIcon,
 } from 'lucide-react'
-import { useAppStore } from '@/stores/appStore'
+import { useAiStore } from '@/stores/aiStore'
 import type { AiToolPrompt } from '@/types'
 
 /** 内置可选分类颜色方案 */
@@ -179,7 +179,7 @@ export function AiToolboxSection() {
     addAiToolPrompt,
     updateAiToolPrompt,
     deleteAiToolPrompt,
-  } = useAppStore()
+  } = useAiStore()
 
   // 展开的分类 ID 集合
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())

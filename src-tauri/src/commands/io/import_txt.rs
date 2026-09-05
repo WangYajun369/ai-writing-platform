@@ -2,14 +2,14 @@
 //!
 //! 通过正则自动分章将纯文本文件导入为章节。
 
+use crate::commands::window::emit_sql_log;
+use crate::db::AppDb;
+use crate::error::AppError;
+use crate::repository::{book_repo, chapter_repo};
+use crate::utils::now;
 use std::sync::OnceLock;
 use tauri::{AppHandle, State};
 use uuid::Uuid;
-use crate::db::AppDb;
-use crate::error::AppError;
-use crate::commands::window::emit_sql_log;
-use crate::utils::now;
-use crate::repository::{chapter_repo, book_repo};
 
 /// 缓存章节检测正则，避免每次导入时重复编译
 static CHAPTER_REGEX: OnceLock<regex_lite::Regex> = OnceLock::new();
@@ -31,8 +31,8 @@ pub async fn import_txt(
     book_id: String,
     file_path: String,
 ) -> Result<serde_json::Value, AppError> {
-    let content =
-        std::fs::read_to_string(&file_path).map_err(|e| AppError::Business(format!("读取文件失败：{}", e)))?;
+    let content = std::fs::read_to_string(&file_path)
+        .map_err(|e| AppError::Business(format!("读取文件失败：{}", e)))?;
 
     let chapter_re = get_chapter_regex();
 
@@ -62,9 +62,15 @@ pub async fn import_txt(
     let conn = db.pool.get()?;
 
     emit_sql_log(
-        &app, "INSERT", "chapters",
-        &format!("import_txt, {} chapters for book_id={}", created_count, book_id),
-        file!(), line!(),
+        &app,
+        "INSERT",
+        "chapters",
+        &format!(
+            "import_txt, {} chapters for book_id={}",
+            created_count, book_id
+        ),
+        file!(),
+        line!(),
     );
     for (i, (title, body)) in chapters.iter().enumerate() {
         let id = Uuid::new_v4().to_string();
@@ -75,9 +81,12 @@ pub async fn import_txt(
     }
 
     emit_sql_log(
-        &app, "UPDATE", "books",
+        &app,
+        "UPDATE",
+        "books",
         &format!("recalc word_count for book_id={}", book_id),
-        file!(), line!(),
+        file!(),
+        line!(),
     );
     book_repo::recalc_word_count(&conn, &book_id, &now())?;
 

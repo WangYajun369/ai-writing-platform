@@ -110,6 +110,8 @@ export interface MemoryInfo {
   relevance_score: number
   created_at: string
   updated_at: string
+  /** 最近一次被检索命中并注入的时间（可为空：从未命中） */
+  last_hit_at?: string | null
 }
 
 /** 记忆列表响应 */

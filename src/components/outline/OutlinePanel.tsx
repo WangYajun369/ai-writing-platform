@@ -8,7 +8,7 @@
  * - 章节行内重命名与状态标签显示
  * - 拖拽排序（@dnd-kit）：卷在卷之间排序，章节在同级分组内排序
  */
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react'
 import {
   PlusIcon,
   FolderIcon,
@@ -29,7 +29,7 @@ import type {
   DragMoveEvent,
   CollisionDetection,
 } from '@dnd-kit/core'
-import { useAppStore } from '@/stores/appStore'
+import { useBooksStore } from '@/stores/booksStore'
 import { chapterApi, volumeApi } from '@/lib/tauri-bridge'
 import type { Chapter } from '@/types'
 
@@ -59,7 +59,7 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
     reorderVolumes,
     reorderChapters,
     moveChapterToVolume,
-  } = useAppStore()
+  } = useBooksStore()
 
   const [collapsedVolumes, setCollapsedVolumes] = useState<Set<string>>(new Set())
   const [inputDialog, setInputDialog] = useState<InputDialogState>({
@@ -421,22 +421,25 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
     setConfirmDialog((prev) => ({ ...prev, open: false }))
   }, [])
 
-  function handleAddChapter(volumeId?: string) {
-    openInputDialog('新章节标题', '', async (title) => {
-      try {
-        const chapter = await chapterApi.create({
-          bookId,
-          volumeId,
-          title,
-          sortOrder: chapters.length,
-        })
-        addChapter(chapter)
-        setCurrentChapterId(chapter.id)
-      } catch (err) {
-        console.error('新建章节失败', err)
-      }
-    })
-  }
+  const handleAddChapter = useCallback(
+    (volumeId?: string) => {
+      openInputDialog('新章节标题', '', async (title) => {
+        try {
+          const chapter = await chapterApi.create({
+            bookId,
+            volumeId,
+            title,
+            sortOrder: chapters.length,
+          })
+          addChapter(chapter)
+          setCurrentChapterId(chapter.id)
+        } catch (err) {
+          console.error('新建章节失败', err)
+        }
+      })
+    },
+    [bookId, chapters, addChapter, setCurrentChapterId, openInputDialog],
+  )
 
   function handleAddVolume() {
     openInputDialog('新卷标题', '', async (title) => {
@@ -449,26 +452,36 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
     })
   }
 
-  function handleDeleteChapter(chapterId: string, chapterTitle: string) {
-    setConfirmDialog({
-      open: true,
-      title: '删除章节',
-      message: `确定要删除章节「${chapterTitle}」吗？删除后将移入回收站，可在回收站中恢复。`,
-      onConfirm: async () => {
-        try {
-          const result = await chapterApi.delete(chapterId)
-          updateChapter(chapterId, { deletedAt: new Date().toISOString() })
-          updateBook(bookId, { wordCount: result.bookWordCount })
-          if (currentChapterId === chapterId) {
-            setCurrentChapterId(null)
+  const handleDeleteChapter = useCallback(
+    (chapterId: string, chapterTitle: string) => {
+      setConfirmDialog({
+        open: true,
+        title: '删除章节',
+        message: `确定要删除章节「${chapterTitle}」吗？删除后将移入回收站，可在回收站中恢复。`,
+        onConfirm: async () => {
+          try {
+            const result = await chapterApi.delete(chapterId)
+            updateChapter(chapterId, { deletedAt: new Date().toISOString() })
+            updateBook(bookId, { wordCount: result.bookWordCount })
+            if (currentChapterId === chapterId) {
+              setCurrentChapterId(null)
+            }
+          } catch (err) {
+            console.error('删除章节失败', err)
           }
-        } catch (err) {
-          console.error('删除章节失败', err)
-        }
-        closeConfirmDialog()
-      },
-    })
-  }
+          closeConfirmDialog()
+        },
+      })
+    },
+    [
+      bookId,
+      updateBook,
+      updateChapter,
+      currentChapterId,
+      setCurrentChapterId,
+      closeConfirmDialog,
+    ],
+  )
 
   async function handleRestoreChapter(chapterId: string) {
     try {
@@ -561,41 +574,44 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
     })
   }
 
-  function handleDeleteVolume(volumeId: string, volumeTitle: string) {
-    const volumeChapters = chapters.filter(
-      (c) => c.volumeId === volumeId && !c.deletedAt,
-    )
-    if (volumeChapters.length > 0) {
+  const handleDeleteVolume = useCallback(
+    (volumeId: string, volumeTitle: string) => {
+      const volumeChapters = chapters.filter(
+        (c) => c.volumeId === volumeId && !c.deletedAt,
+      )
+      if (volumeChapters.length > 0) {
+        setConfirmDialog({
+          open: true,
+          title: '无法删除',
+          message: `卷「${volumeTitle}」下还有 ${volumeChapters.length} 个章节，请先将卷内章节全部删除后再删除卷。`,
+          danger: false,
+          confirmLabel: '知道了',
+          onConfirm: closeConfirmDialog,
+        })
+        return
+      }
+
       setConfirmDialog({
         open: true,
-        title: '无法删除',
-        message: `卷「${volumeTitle}」下还有 ${volumeChapters.length} 个章节，请先将卷内章节全部删除后再删除卷。`,
-        danger: false,
-        confirmLabel: '知道了',
-        onConfirm: closeConfirmDialog,
+        title: '删除卷',
+        message: `确定要删除卷「${volumeTitle}」吗？删除后将移入回收站，可在回收站中恢复。`,
+        onConfirm: async () => {
+          try {
+            await volumeApi.delete(volumeId)
+            setVolumes(volumes.map((v) =>
+              v.id === volumeId
+                ? { ...v, deletedAt: new Date().toISOString() }
+                : v,
+            ))
+          } catch (err) {
+            console.error('删除卷失败', err)
+          }
+          closeConfirmDialog()
+        },
       })
-      return
-    }
-
-    setConfirmDialog({
-      open: true,
-      title: '删除卷',
-      message: `确定要删除卷「${volumeTitle}」吗？删除后将移入回收站，可在回收站中恢复。`,
-      onConfirm: async () => {
-        try {
-          await volumeApi.delete(volumeId)
-          setVolumes(volumes.map((v) =>
-            v.id === volumeId
-              ? { ...v, deletedAt: new Date().toISOString() }
-              : v,
-          ))
-        } catch (err) {
-          console.error('删除卷失败', err)
-        }
-        closeConfirmDialog()
-      },
-    })
-  }
+    },
+    [chapters, volumes, setVolumes, closeConfirmDialog],
+  )
 
   async function handleRestoreVolume(volumeId: string) {
     try {
@@ -625,14 +641,77 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
     })
   }
 
-  function toggleVolume(id: string) {
+  const handleToggleVolume = useCallback((id: string) => {
     setCollapsedVolumes((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
       return next
     })
-  }
+  }, [])
+
+  /** 重命名卷（稳定引用，供 memo 行组件复用） */
+  const handleRenameVolume = useCallback(
+    async (volumeId: string, newTitle: string) => {
+      await volumeApi.update(volumeId, newTitle)
+      setVolumes(
+        volumes.map((v) =>
+          v.id === volumeId ? { ...v, title: newTitle } : v,
+        ),
+      )
+    },
+    [volumes, setVolumes],
+  )
+
+  /** 重命名章节（稳定引用，供 memo 行组件复用） */
+  const handleRenameChapter = useCallback(
+    async (chapterId: string, title: string) => {
+      await chapterApi.rename(chapterId, title)
+      updateChapter(chapterId, { title })
+    },
+    [updateChapter],
+  )
+
+  /** 切换章节状态（稳定引用，供 memo 行组件复用） */
+  const handleStatusChange = useCallback(
+    async (chapterId: string, status: Chapter['status']) => {
+      await chapterApi.updateStatus(chapterId, status)
+      updateChapter(chapterId, { status })
+    },
+    [updateChapter],
+  )
+
+  /** 选中章节（稳定引用，供 memo 行组件复用） */
+  const handleSelectChapter = useCallback(
+    (chapterId: string) => {
+      setCurrentChapterId(chapterId)
+    },
+    [setCurrentChapterId],
+  )
+
+  /** 行处理器合集：引用全部稳定，行组件 memo 才可真正跳过无关渲染 */
+  const rowHandlers = useMemo(
+    () => ({
+      onToggleVolume: handleToggleVolume,
+      onAddChapter: handleAddChapter,
+      onRenameVolume: handleRenameVolume,
+      onDeleteVolume: handleDeleteVolume,
+      onSelectChapter: handleSelectChapter,
+      onRenameChapter: handleRenameChapter,
+      onDeleteChapter: handleDeleteChapter,
+      onStatusChange: handleStatusChange,
+    }),
+    [
+      handleToggleVolume,
+      handleAddChapter,
+      handleRenameVolume,
+      handleDeleteVolume,
+      handleSelectChapter,
+      handleRenameChapter,
+      handleDeleteChapter,
+      handleStatusChange,
+    ],
+  )
 
   return (
     <DndContext
@@ -714,13 +793,6 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
                 const item = flatItems[vItem.index]
                 if (!item) return null
 
-                const showBefore =
-                  dropIndicator?.id === dndId(item) &&
-                  dropIndicator.position === 'before'
-                const showAfter =
-                  dropIndicator?.id === dndId(item) &&
-                  dropIndicator.position === 'after'
-
                 return (
                   <div
                     key={dndId(item)}
@@ -735,73 +807,15 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
                       transition: 'transform 0.2s ease',
                     }}
                   >
-                    {item.type === 'volume' && (
-                      <DraggableVolume
-                        item={item}
-                        isOver={overId === dndId(item)}
-                        isChapterOver={
-                          overId === dndId(item) &&
-                          activeItem?.type === 'chapter'
-                        }
-                        showDropBefore={showBefore}
-                        showDropAfter={showAfter}
-                        onToggle={() => toggleVolume(item.volume.id)}
-                        onAddChapter={() =>
-                          handleAddChapter(item.volume.id)
-                        }
-                        onDelete={() =>
-                          handleDeleteVolume(
-                            item.volume.id,
-                            item.volume.title,
-                          )
-                        }
-                        onRename={async (newTitle) => {
-                          await volumeApi.update(item.volume.id, newTitle)
-                          setVolumes(volumes.map((v) =>
-                            v.id === item.volume.id ? { ...v, title: newTitle } : v,
-                          ))
-                        }}
-                      />
-                    )}
-
-                    {item.type === 'chapter' && (
-                      <DraggableChapter
-                        item={item}
-                        isActive={item.chapter.id === currentChapterId}
-                        isOver={overId === dndId(item)}
-                        isCrossGroupOver={
-                          overId === dndId(item) &&
-                          activeItem?.type === 'chapter' &&
-                          chapterGroup(activeItem.chapter) !==
-                            chapterGroup(item.chapter)
-                        }
-                        showDropBefore={showBefore}
-                        showDropAfter={showAfter}
-                        onSelect={() =>
-                          setCurrentChapterId(item.chapter.id)
-                        }
-                        onRename={async (title) => {
-                          await chapterApi.rename(
-                            item.chapter.id,
-                            title,
-                          )
-                          updateChapter(item.chapter.id, { title })
-                        }}
-                        onDelete={() =>
-                          handleDeleteChapter(
-                            item.chapter.id,
-                            item.chapter.title,
-                          )
-                        }
-                        onStatusChange={async (newStatus) => {
-                          await chapterApi.updateStatus(
-                            item.chapter.id,
-                            newStatus,
-                          )
-                          updateChapter(item.chapter.id, { status: newStatus })
-                        }}
-                      />
-                    )}
+                    <OutlineListRow
+                      item={item}
+                      overId={overId}
+                      activeItem={activeItem}
+                      currentChapterId={currentChapterId}
+                      dropId={dropIndicator?.id ?? null}
+                      dropPosition={dropIndicator?.position ?? null}
+                      handlers={rowHandlers}
+                    />
                   </div>
                 )
               })}
@@ -840,3 +854,90 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
     </DndContext>
   )
 }
+
+// ─── memo 行组件 ───
+
+interface OutlineRowHandlers {
+  onToggleVolume: (volumeId: string) => void
+  onAddChapter: (volumeId?: string) => void
+  onRenameVolume: (volumeId: string, newTitle: string) => Promise<void>
+  onDeleteVolume: (volumeId: string, volumeTitle: string) => void
+  onSelectChapter: (chapterId: string) => void
+  onRenameChapter: (chapterId: string, title: string) => Promise<void>
+  onDeleteChapter: (chapterId: string, chapterTitle: string) => void
+  onStatusChange: (chapterId: string, status: Chapter['status']) => Promise<void>
+}
+
+interface OutlineListRowProps {
+  item: FlatItem
+  overId: string | null
+  activeItem: FlatItem | null
+  currentChapterId: string | null
+  /** drop 目标 id（拆开传递，避免每次渲染产生新对象引用破坏 memo） */
+  dropId: string | null
+  dropPosition: 'before' | 'after' | null
+  handlers: OutlineRowHandlers
+}
+
+/**
+ * 虚拟列表行：memo 边界。父级目录数据未变化（仅拖拽悬停等局部状态变化）时，
+ * 未受影响的行直接跳过渲染，配合 DraggableVolume/DraggableChapter 的 memo 生效。
+ */
+const OutlineListRow = memo(function OutlineListRow({
+  item,
+  overId,
+  activeItem,
+  currentChapterId,
+  dropId,
+  dropPosition,
+  handlers,
+}: OutlineListRowProps) {
+  const id = dndId(item)
+  const showBefore = dropId === id && dropPosition === 'before'
+  const showAfter = dropId === id && dropPosition === 'after'
+
+  if (item.type === 'volume') {
+    return (
+      <DraggableVolume
+        item={item}
+        isOver={overId === id}
+        isChapterOver={
+          overId === id && activeItem?.type === 'chapter'
+        }
+        showDropBefore={showBefore}
+        showDropAfter={showAfter}
+        onToggle={() => handlers.onToggleVolume(item.volume.id)}
+        onAddChapter={() => handlers.onAddChapter(item.volume.id)}
+        onDelete={() =>
+          handlers.onDeleteVolume(item.volume.id, item.volume.title)
+        }
+        onRename={(newTitle) =>
+          handlers.onRenameVolume(item.volume.id, newTitle)
+        }
+      />
+    )
+  }
+
+  return (
+    <DraggableChapter
+      item={item}
+      isActive={item.chapter.id === currentChapterId}
+      isOver={overId === id}
+      isCrossGroupOver={
+        overId === id &&
+        activeItem?.type === 'chapter' &&
+        chapterGroup(activeItem.chapter) !== chapterGroup(item.chapter)
+      }
+      showDropBefore={showBefore}
+      showDropAfter={showAfter}
+      onSelect={() => handlers.onSelectChapter(item.chapter.id)}
+      onRename={(title) => handlers.onRenameChapter(item.chapter.id, title)}
+      onDelete={() =>
+        handlers.onDeleteChapter(item.chapter.id, item.chapter.title)
+      }
+      onStatusChange={(status) =>
+        handlers.onStatusChange(item.chapter.id, status)
+      }
+    />
+  )
+})

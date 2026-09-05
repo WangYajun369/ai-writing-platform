@@ -3,8 +3,8 @@
 //! 提供 projects 表的 CRUD SQL 与 row → Project 解析。
 //! 项目软删除时连带其下任务一并软删（由 service 在同一事务内调用）。
 
-use rusqlite::{Connection, params, Result};
 use crate::models::Project;
+use rusqlite::{params, Connection, Result};
 
 /// 完整 SELECT 列名
 pub const PROJECT_SELECT: &str = "id,name,description,color,icon,status,plan_start_date,plan_end_date,pinned,sort_order,deleted_at,created_at,updated_at";

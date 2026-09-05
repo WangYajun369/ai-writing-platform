@@ -11,10 +11,12 @@ import { useAtom } from 'jotai'
 import { XIcon, AlertTriangleIcon, RefreshCwIcon } from 'lucide-react'
 import { listen } from '@tauri-apps/api/event'
 import { sidebarOpenAtom, zenModeAtom, aiPanelOpenAtom, contentRefreshAtom } from '@/stores/uiAtoms'
-import { useAppStore, getEditorState } from '@/stores/appStore'
+import { useBooksStore } from '@/stores/booksStore'
+import { getEditorState } from '@/stores/appStore'
 import { chapterApi, volumeApi, windowApi } from '@/lib/tauri-bridge'
 import { cn, createStorage } from '@/lib/utils'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
+import { useShortcut } from '@/hooks/useShortcut'
 import EditorLayout from '@/components/layout/EditorLayout'
 import OutlinePanel from '@/components/outline/OutlinePanel'
 import RichTextEditor from '@/components/editor/RichTextEditor'
@@ -79,7 +81,7 @@ export default function EditorPage() {
     currentChapterId,
     setCurrentChapterId,
     addChapter,
-  } = useAppStore()
+  } = useBooksStore()
   const loadedBookIdRef = useRef<string | null>(null)
   /** 主编辑区容器 ref，用于比例模式计算 */
   const editorAreaRef = useRef<HTMLDivElement>(null)
@@ -193,15 +195,8 @@ export default function EditorPage() {
 
   const exitZenMode = useCallback(() => setZenMode(false), [setZenMode])
 
-  // Esc 键退出专注模式
-  useEffect(() => {
-    if (!zenMode) return
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') exitZenMode()
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [zenMode, exitZenMode])
+  // Esc 键退出专注模式（集中式快捷键系统：Escape，仅专注模式下生效）
+  useShortcut('Escape', exitZenMode, { enabled: zenMode })
 
   return (
     <div className={cn('h-screen flex flex-col overflow-hidden editor-font', zenMode && 'zen-mode')}>

@@ -2,11 +2,11 @@
 //!
 //! 业务逻辑集中在 `service::task_service`。
 
-use tauri::{AppHandle, State};
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::{TaskCard, TodayOverview};
 use crate::service::task_service;
+use tauri::{AppHandle, State};
 
 /// 列出某项目全部任务（含标签）
 #[tauri::command]
@@ -61,13 +61,7 @@ pub fn task_set_status(
     status: String,
     completion_summary: Option<String>,
 ) -> Result<TaskCard, AppError> {
-    task_service::set_task_status(
-        &app,
-        &state,
-        &id,
-        &status,
-        completion_summary.as_deref(),
-    )
+    task_service::set_task_status(&app, &state, &id, &status, completion_summary.as_deref())
 }
 
 /// 看板拖拽：跨列改状态 + 按目标列顺序重排
@@ -146,9 +140,6 @@ pub fn task_roll_planned_today(app: AppHandle, state: State<AppDb>) -> Result<u3
 
 /// 今日任务概览（角标/顶部统计）
 #[tauri::command]
-pub fn task_today_overview(
-    app: AppHandle,
-    state: State<AppDb>,
-) -> Result<TodayOverview, AppError> {
+pub fn task_today_overview(app: AppHandle, state: State<AppDb>) -> Result<TodayOverview, AppError> {
     task_service::get_today_overview(&app, &state)
 }

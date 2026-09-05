@@ -14,7 +14,9 @@ import { useAtom } from 'jotai'
 import { PlusIcon, SearchIcon, SettingsIcon, BookOpenIcon, Trash2Icon, WrenchIcon, UploadIcon, DownloadIcon, BugIcon } from 'lucide-react'
 import { listen } from '@tauri-apps/api/event'
 import { save, open } from '@tauri-apps/plugin-dialog'
-import { useAppStore } from '@/stores/appStore'
+import { useBooksStore } from '@/stores/booksStore'
+import { useAiStore } from '@/stores/aiStore'
+import { usePreferencesStore } from '@/stores/preferencesStore'
 import { aiToolboxWindowOpenAtom, debugWindowOpenAtom } from '@/stores/uiAtoms'
 import { bookApi, importExportApi, windowApi, debugApi } from '@/lib/tauri-bridge'
 import { cn, formatWordCount } from '@/lib/utils'
@@ -52,10 +54,10 @@ export default function LibraryPage() {
   const navigate = useNavigate()
   const {
     books, setBooks, setCurrentBookId, currentBookId, isLoadingBooks, setLoadingBooks,
-    gridSize, appVersion,
-    librarySortBy, setLibrarySortBy,
     trashCount, setTrashCount,
-  } = useAppStore()
+  } = useBooksStore()
+  const { appVersion } = useAiStore()
+  const { gridSize, librarySortBy, setLibrarySortBy } = usePreferencesStore()
   const sortBy = librarySortBy
   const [searchQuery, setSearchQuery] = useState('')
   const [showNewBookDialog, setShowNewBookDialog] = useState(false)

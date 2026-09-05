@@ -13,7 +13,7 @@
 //! 语义检索不再全量加载向量到内存，而是交给 sqlite-vec 在 SQLite 内完成
 //! KNN 扫描，内存占用 O(k)（k 为候选数），解决大书库向量内存爆炸问题。
 
-use rusqlite::{Connection, OptionalExtension, params, Result};
+use rusqlite::{params, Connection, OptionalExtension, Result};
 
 /// vec0 镜像表名（KNN 语义检索）
 pub const VEC_TABLE: &str = "chunks_vec";

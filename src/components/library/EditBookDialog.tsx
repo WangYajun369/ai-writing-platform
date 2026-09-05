@@ -8,7 +8,7 @@ import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { XIcon } from 'lucide-react'
 import { bookApi } from '@/lib/tauri-bridge'
-import { useAppStore } from '@/stores/appStore'
+import { useBooksStore } from '@/stores/booksStore'
 import CoverPicker from './CoverPicker'
 import { isRenderableSrc } from '@/lib/image-utils.ts'
 import type { Book } from '@/types'
@@ -28,7 +28,7 @@ export default function EditBookDialog({ book, onClose, onSaved }: EditBookDialo
   const [coverRemoved, setCoverRemoved] = useState(false) // 是否明确移除了封面
   const [currentCoverPreview, setCurrentCoverPreview] = useState<string | undefined>(undefined)
   const [submitting, setSubmitting] = useState(false)
-  const { updateBook } = useAppStore()
+  const { updateBook } = useBooksStore()
 
   // 加载当前封面预览（book.coverImage 已是 data URL）
   useEffect(() => {

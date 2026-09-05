@@ -1,9 +1,49 @@
 /**
- * 书库管理 Slice — 书籍/卷/章节的 CRUD 与排序
+ * booksStore — 书库领域独立 store（书籍/卷/章节/回收站计数/DB 状态）
+ *
+ * Phase 3 问题 3 收尾：由原 booksSlice 升级为真正独立的 Zustand store，
+ * 不再与 ai/preferences 共享一个 store 实例，领域间订阅互不干扰。
  */
-import type { AppSlice } from './appTypes'
+import { create } from 'zustand'
+import type { Book, Chapter, Volume } from '../types'
 
-export const createBooksSlice: AppSlice = (set) => ({
+export interface BooksState {
+  books: Book[]
+  currentBookId: string | null
+  isLoadingBooks: boolean
+  volumes: Volume[]
+  chapters: Chapter[]
+  currentChapterId: string | null
+  isLoadingChapters: boolean
+  dbStatus: 'idle' | 'connected' | 'error'
+  trashCount: number
+
+  setBooks: (books: Book[]) => void
+  setCurrentBookId: (id: string | null) => void
+  setVolumes: (volumes: Volume[]) => void
+  setChapters: (chapters: Chapter[]) => void
+  setCurrentChapterId: (id: string | null) => void
+  setTrashCount: (count: number) => void
+  setDbStatus: (status: BooksState['dbStatus']) => void
+  setLoadingBooks: (v: boolean) => void
+  setLoadingChapters: (v: boolean) => void
+
+  updateChapter: (id: string, patch: Partial<Chapter>) => void
+  addChapter: (chapter: Chapter) => void
+  removeChapter: (id: string) => void
+  reorderVolumes: (orderedIds: string[]) => void
+  reorderChapters: (orderedIds: string[]) => void
+  moveChapterToVolume: (
+    chapterId: string,
+    volumeId: string | null,
+    sortOrder?: number,
+  ) => void
+  updateBook: (id: string, patch: Partial<Book>) => void
+  addBook: (book: Book) => void
+  removeBook: (id: string) => void
+}
+
+export const useBooksStore = create<BooksState>()((set) => ({
   books: [],
   currentBookId: null,
   isLoadingBooks: false,
@@ -11,7 +51,7 @@ export const createBooksSlice: AppSlice = (set) => ({
   chapters: [],
   currentChapterId: null,
   isLoadingChapters: false,
-  dbStatus: 'idle' as const,
+  dbStatus: 'idle',
   trashCount: 0,
 
   setBooks: (books) => set({ books }),
@@ -55,7 +95,11 @@ export const createBooksSlice: AppSlice = (set) => ({
     set((s) => ({
       chapters: s.chapters.map((c) =>
         c.id === chapterId
-          ? { ...c, volumeId: volumeId ?? undefined, sortOrder: sortOrder ?? c.sortOrder }
+          ? {
+              ...c,
+              volumeId: volumeId ?? undefined,
+              sortOrder: sortOrder ?? c.sortOrder,
+            }
           : c,
       ),
     })),
@@ -67,4 +111,4 @@ export const createBooksSlice: AppSlice = (set) => ({
 
   addBook: (book) => set((s) => ({ books: [...s.books, book] })),
   removeBook: (id) => set((s) => ({ books: s.books.filter((b) => b.id !== id) })),
-})
+}))

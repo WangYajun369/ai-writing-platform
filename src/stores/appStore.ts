@@ -1,59 +1,44 @@
 /**
- * AppStore — 全局业务状态（Zustand）
+ * 领域 store 出口 + 跨域便捷选择器
  *
- * 使用 slice 模式将不同领域的状态与操作分离到独立文件，
- * 对外暴露统一的 useAppStore hook，保持向后兼容。
+ * Phase 3 问题 3 收尾：原「单一 store + slice」架构已拆为三个真正独立的领域 store：
+ * - useBooksStore（书库）       见 @/stores/booksStore
+ * - useAiStore（AI 能力）       见 @/stores/aiStore
+ * - usePreferencesStore（偏好） 见 @/stores/preferencesStore
+ *
+ * 本文件保留：
+ * 1. 三个独立 store 的再导出（组件可直接 import 各自领域 store，订阅互不干扰）；
+ * 2. 跨域便捷选择器（useCurrentBook / useCurrentChapter / useCurrentAiMessages）
+ *    与 getEditorState 等工具再导出，保持旧 import 路径向后兼容。
  */
-import { create } from 'zustand'
-import type { AppState } from './appTypes'
-import { createBooksSlice } from './booksSlice'
-import { createAiSlice } from './aiSlice'
-import { createPreferencesSlice, prefsDefaults } from './preferencesSlice'
-import { preferencesStore } from './appTypes'
+import { useBooksStore } from './booksStore'
+import { useAiStore } from './aiStore'
+import { usePreferencesStore } from './preferencesStore'
+import type { AiMessage } from '../types'
 
-// Re-export 类型与工具函数，保持原有导入路径不变
-export type { UserPreferences, EditorState } from './appTypes'
+export { useBooksStore, useAiStore, usePreferencesStore }
 export { getEditorState } from './appTypes'
+export type { AppState, AppSlice, EditorState, UserPreferences } from './appTypes'
 
-// 启动时从 localStorage 恢复偏好默认值
-const savedPrefs = preferencesStore.load()
+// ==================== 跨域便捷选择器 ====================
 
-export const useAppStore = create<AppState>()((...a) => {
-  const books = createBooksSlice(...a)
-  const ai = createAiSlice(...a)
-  const prefs = createPreferencesSlice(...a)
-  return {
-    ...books,
-    ...ai,
-    ...prefs,
-    // 用 localStorage 值覆盖偏好默认值
-    theme: savedPrefs.theme ?? prefsDefaults.theme,
-    eyeCareMode: savedPrefs.eyeCareMode ?? prefsDefaults.eyeCareMode,
-    fontFamily: savedPrefs.fontFamily ?? prefsDefaults.fontFamily,
-    fontSize: savedPrefs.fontSize ?? prefsDefaults.fontSize,
-    gridSize: savedPrefs.gridSize ?? prefsDefaults.gridSize,
-    editorWidth: savedPrefs.editorWidth ?? prefsDefaults.editorWidth,
-    libraryViewMode: savedPrefs.libraryViewMode ?? prefsDefaults.libraryViewMode,
-    librarySortBy: savedPrefs.librarySortBy ?? prefsDefaults.librarySortBy,
-  } as AppState
-})
-
-// ==================== 便捷选择器 ====================
-
+/** 当前选中的书籍 */
 export const useCurrentBook = () => {
-  const { books, currentBookId } = useAppStore()
+  const books = useBooksStore((s) => s.books)
+  const currentBookId = useBooksStore((s) => s.currentBookId)
   return books.find((b) => b.id === currentBookId) ?? null
 }
 
+/** 当前选中的章节 */
 export const useCurrentChapter = () => {
-  const { chapters, currentChapterId } = useAppStore()
+  const chapters = useBooksStore((s) => s.chapters)
+  const currentChapterId = useBooksStore((s) => s.currentChapterId)
   return chapters.find((c) => c.id === currentChapterId) ?? null
 }
 
-/** 获取当前作品的 AI 对话记录（细粒度订阅） */
-export const useCurrentAiMessages = () => {
-  const currentBookId = useAppStore((s) => s.currentBookId)
-  const aiConversations = useAppStore((s) => s.aiConversations)
-  if (!currentBookId) return []
-  return aiConversations[currentBookId] ?? []
+/** 当前作品（书）的 AI 对话消息 */
+export const useCurrentAiMessages = (): AiMessage[] => {
+  const aiConversations = useAiStore((s) => s.aiConversations)
+  const currentBookId = useBooksStore((s) => s.currentBookId)
+  return currentBookId ? (aiConversations[currentBookId] ?? []) : []
 }

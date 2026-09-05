@@ -7,14 +7,14 @@
 //! - 同一日期下可存在多条日程
 //! - 日期格式在前端统一生成，后端做轻量格式校验
 
-use tauri::AppHandle;
-use uuid::Uuid;
+use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::Schedule;
-use crate::commands::window::emit_sql_log;
 use crate::repository::schedule_repo;
 use crate::utils::now;
+use tauri::AppHandle;
+use uuid::Uuid;
 
 /// 单条日程内容长度上限
 const MAX_SCHEDULE_CONTENT_LEN: usize = 500;
@@ -25,7 +25,8 @@ fn is_valid_date(date: &str) -> bool {
     if bytes.len() != 10 {
         return false;
     }
-    bytes[4] == b'-' && bytes[7] == b'-'
+    bytes[4] == b'-'
+        && bytes[7] == b'-'
         && (0..10).all(|i| i == 4 || i == 7 || bytes[i].is_ascii_digit())
 }
 
@@ -45,17 +46,20 @@ fn validate_content(content: &str) -> Result<(), AppError> {
 }
 
 /// 列出某日期下的全部日程，按创建时间升序
-pub fn list_by_date(
-    app: &AppHandle,
-    db: &AppDb,
-    date: &str,
-) -> Result<Vec<Schedule>, AppError> {
+pub fn list_by_date(app: &AppHandle, db: &AppDb, date: &str) -> Result<Vec<Schedule>, AppError> {
     if !is_valid_date(date) {
         return Err(AppError::Validation(format!(
             "日期格式不合法: {date}（应为 YYYY-MM-DD）"
         )));
     }
-    emit_sql_log(app, "SELECT", "schedules", &format!("schedule_date={date}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "SELECT",
+        "schedules",
+        &format!("schedule_date={date}"),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     Ok(schedule_repo::list_by_date(&conn, date)?)
 }
@@ -73,7 +77,14 @@ pub fn list_by_month(
         )));
     }
     let prefix = format!("{year:04}-{month:02}");
-    emit_sql_log(app, "SELECT", "schedules", &format!("schedule_date LIKE {prefix}-%"), file!(), line!());
+    emit_sql_log(
+        app,
+        "SELECT",
+        "schedules",
+        &format!("schedule_date LIKE {prefix}-%"),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     Ok(schedule_repo::list_by_month(&conn, &prefix)?)
 }
@@ -108,12 +119,26 @@ pub fn save_schedule(
     );
 
     let conn = db.pool.get()?;
-    Ok(schedule_repo::save(&conn, &id, date, content.trim(), done_i64, &ts)?)
+    Ok(schedule_repo::save(
+        &conn,
+        &id,
+        date,
+        content.trim(),
+        done_i64,
+        &ts,
+    )?)
 }
 
 /// 按 id 删除日程（不存在时静默成功）
 pub fn delete_schedule(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
-    emit_sql_log(app, "DELETE", "schedules", &format!("id={id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "DELETE",
+        "schedules",
+        &format!("id={id}"),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     Ok(schedule_repo::delete_by_id(&conn, id)?)
 }

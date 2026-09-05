@@ -2,8 +2,8 @@
 //!
 //! 提供 volumes 表的 CRUD SQL 操作。
 
-use rusqlite::{Connection, params, Result};
 use crate::models::Volume;
+use rusqlite::{params, Connection, Result};
 
 /// 列出指定书籍的所有未删除卷，按 sort_order 升序
 pub fn list_by_book(conn: &Connection, book_id: &str) -> Result<Vec<Volume>> {
@@ -68,7 +68,10 @@ pub fn insert(
 
 /// 更新卷标题
 pub fn update_title(conn: &Connection, id: &str, title: &str) -> Result<usize> {
-    conn.execute("UPDATE volumes SET title=?1 WHERE id=?2", params![title, id])
+    conn.execute(
+        "UPDATE volumes SET title=?1 WHERE id=?2",
+        params![title, id],
+    )
 }
 
 /// 软删除卷（事务包装）：标记卷为已删除 + 解除所有下属章节的卷关联。
@@ -104,7 +107,10 @@ pub fn soft_delete(conn: &Connection, id: &str, ts: &str) -> Result<()> {
 
 /// 恢复已软删除的卷
 pub fn restore(conn: &Connection, id: &str) -> Result<usize> {
-    conn.execute("UPDATE volumes SET deleted_at=NULL WHERE id=?1", params![id])
+    conn.execute(
+        "UPDATE volumes SET deleted_at=NULL WHERE id=?1",
+        params![id],
+    )
 }
 
 /// 硬删除卷
@@ -114,9 +120,8 @@ pub fn hard_delete(conn: &Connection, id: &str) -> Result<usize> {
 
 /// 列出所有卷（含已删除），用于备份导出
 pub fn list_all_include_deleted(conn: &Connection) -> Result<Vec<Volume>> {
-    let mut stmt = conn.prepare(
-        "SELECT id,book_id,title,sort_order,created_at,deleted_at FROM volumes"
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT id,book_id,title,sort_order,created_at,deleted_at FROM volumes")?;
     let items = stmt.query_map([], |row| {
         Ok(Volume {
             id: row.get(0)?,

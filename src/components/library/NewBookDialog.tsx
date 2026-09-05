@@ -8,7 +8,7 @@ import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { XIcon } from 'lucide-react'
 import { bookApi } from '@/lib/tauri-bridge'
-import { useAppStore } from '@/stores/appStore'
+import { useBooksStore } from '@/stores/booksStore'
 import CoverPicker from './CoverPicker'
 import { isRenderableSrc } from '@/lib/image-utils.ts'
 import type { Book } from '@/types'
@@ -26,7 +26,7 @@ export default function NewBookDialog({ onClose, onCreated }: NewBookDialogProps
   const [coverDataUrl, setCoverDataUrl] = useState('') // 裁剪后的 Base64 data URL
   const [coverPreview, setCoverPreview] = useState<string | undefined>(undefined)
   const [submitting, setSubmitting] = useState(false)
-  const { addBook } = useAppStore()
+  const { addBook } = useBooksStore()
 
   // 同步预览：data URL 可直接渲染
   useEffect(() => {

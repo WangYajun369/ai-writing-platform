@@ -3,12 +3,11 @@
 //! 提供 task_subtasks 表的 CRUD SQL 与 row → TaskSubtask 解析。
 //! 子任务随任务级联删除（ON DELETE CASCADE），不做软删除/回收站。
 
-use rusqlite::{Connection, params, Result};
 use crate::models::TaskSubtask;
+use rusqlite::{params, Connection, Result};
 
 /// 完整 SELECT 列名
-pub const SUBTASK_SELECT: &str =
-    "id,task_id,title,done,sort_order,created_at,updated_at";
+pub const SUBTASK_SELECT: &str = "id,task_id,title,done,sort_order,created_at,updated_at";
 
 /// 从 rusqlite Row 解析 TaskSubtask（按列名取值）
 pub fn parse_subtask(row: &rusqlite::Row) -> Result<TaskSubtask> {

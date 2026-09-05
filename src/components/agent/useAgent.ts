@@ -11,7 +11,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { useAppStore } from '@/stores/appStore'
+import { useAiStore } from '@/stores/aiStore'
 import { getChatApiKey } from '@/types'
 import type {
   SkillType,
@@ -217,7 +217,7 @@ export function useAgent() {
         await startListening()
 
         // 获取 AI 配置
-        const aiConfig = useAppStore.getState().aiConfig
+        const aiConfig = useAiStore.getState().aiConfig
         const chatApiKey = getChatApiKey(aiConfig.chat)
 
         await invoke<string>('execute_agent_skill', {

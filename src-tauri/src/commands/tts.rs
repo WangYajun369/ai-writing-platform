@@ -103,9 +103,8 @@ pub async fn tts_speak(app: AppHandle, args: TtsSpeakArgs) -> Result<TtsSpeakRes
     let audio = synthesize(&api_key, &speaker, &text).await?;
 
     // 3. 落盘缓存
-    std::fs::write(&file, &audio).map_err(|e| {
-        AppError::Business(format!("写入音频缓存失败: {e}"))
-    })?;
+    std::fs::write(&file, &audio)
+        .map_err(|e| AppError::Business(format!("写入音频缓存失败: {e}")))?;
     crate::app_log!(
         "[TTS] 合成成功 text={:?} speaker={} bytes={}",
         text,
@@ -174,7 +173,10 @@ async fn synthesize(api_key: &str, speaker: &str, text: &str) -> Result<Vec<u8>,
         if !item.is_object() {
             continue;
         }
-        let code = item.get("code").and_then(serde_json::Value::as_i64).unwrap_or(-1);
+        let code = item
+            .get("code")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(-1);
         if code == FINISH_CODE {
             break; // 全部推送完毕
         }

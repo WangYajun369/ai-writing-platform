@@ -3,18 +3,18 @@
 //! 任务三态（todo / doing / done）流转、完成/重开时间记录、看板拖拽重排、
 //! 标签聚合、今日概览与「计划今日」滚动清理。
 
+use crate::commands::window::emit_sql_log;
+use crate::db::AppDb;
+use crate::error::AppError;
+use crate::models::{Tag, TaskCard, TodayOverview};
+use crate::repository::{project_repo, subtask_repo, task_meta_repo, task_repo};
+use crate::service::activity_log_service;
+use crate::utils::{local_now, local_today, now, validate_len};
+use chrono::Datelike;
+use serde::Serialize;
 use std::collections::HashMap;
 use tauri::AppHandle;
 use uuid::Uuid;
-use serde::Serialize;
-use crate::db::AppDb;
-use crate::error::AppError;
-use chrono::Datelike;
-use crate::models::{Tag, TaskCard, TodayOverview};
-use crate::service::activity_log_service;
-use crate::commands::window::emit_sql_log;
-use crate::utils::{now, local_now, local_today, validate_len};
-use crate::repository::{project_repo, subtask_repo, task_meta_repo, task_repo};
 
 /// 任务标题长度上限（PRD 9.5.2）
 pub const MAX_TASK_TITLE: usize = 100;
@@ -78,7 +78,9 @@ fn resolve_parent_id(
             return Err(AppError::Validation("任务不能作为自己的父任务".into()));
         }
         if task_repo::chain_hits_self(conn, &pid, sid)? {
-            return Err(AppError::Validation("不能选择任务的子任务作为父任务（会形成循环）".into()));
+            return Err(AppError::Validation(
+                "不能选择任务的子任务作为父任务（会形成循环）".into(),
+            ));
         }
     }
     let parent = task_repo::find_active(conn, &pid)
@@ -188,7 +190,14 @@ pub fn list_tasks(
     db: &AppDb,
     project_id: &str,
 ) -> Result<Vec<TaskCard>, AppError> {
-    emit_sql_log(app, "SELECT", "tasks", &format!("project_id={project_id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "SELECT",
+        "tasks",
+        &format!("project_id={project_id}"),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     let mut tasks = task_repo::list_by_project(&conn, project_id)?;
     fill_tags(&conn, &mut tasks)?;
@@ -206,7 +215,14 @@ pub fn list_all_tasks(app: &AppHandle, db: &AppDb) -> Result<Vec<TaskCard>, AppE
 
 /// 获取单个任务（含标签）
 pub fn get_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<TaskCard, AppError> {
-    emit_sql_log(app, "SELECT", "tasks", &format!("id={id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "SELECT",
+        "tasks",
+        &format!("id={id}"),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     let mut task = task_repo::find_active(&conn, id)
         .map_err(|_| AppError::NotFound("未找到该任务或任务已删除".into()))?;
@@ -231,10 +247,16 @@ pub fn create_task(
     }
     validate_len("任务标题", title, MAX_TASK_TITLE)?;
     if !valid_status(&params.status) {
-        return Err(AppError::Validation(format!("无效的任务状态: {}", params.status)));
+        return Err(AppError::Validation(format!(
+            "无效的任务状态: {}",
+            params.status
+        )));
     }
     if !valid_priority(&params.priority) {
-        return Err(AppError::Validation(format!("无效的优先级: {}", params.priority)));
+        return Err(AppError::Validation(format!(
+            "无效的优先级: {}",
+            params.priority
+        )));
     }
     let start = norm_opt(params.plan_start_time)?;
     let due = norm_opt(params.due_time)?;
@@ -257,9 +279,20 @@ pub fn create_task(
         line!(),
     );
     task_repo::insert(
-        &tx, &id, &params.project_id, parent_id.as_deref(), title, &params.description, &params.status,
-        &params.priority, start.as_deref(), due.as_deref(),
-        params.planned_today as i64, &params.note, sort_order, &ts,
+        &tx,
+        &id,
+        &params.project_id,
+        parent_id.as_deref(),
+        title,
+        &params.description,
+        &params.status,
+        &params.priority,
+        start.as_deref(),
+        due.as_deref(),
+        params.planned_today as i64,
+        &params.note,
+        sort_order,
+        &ts,
     )?;
     replace_tags(&tx, &id, &params.tag_ids, &ts)?;
     let rec = params.recurrence.trim();
@@ -327,7 +360,8 @@ pub fn update_task(
     let ts = now();
     let now_local = local_now();
     let new_status = params.status.clone();
-    let status_changed = new_status.is_some() && new_status.as_deref() != Some(current.status.as_str());
+    let status_changed =
+        new_status.is_some() && new_status.as_deref() != Some(current.status.as_str());
     // 完成前置校验（P2）：由非 done 进入 done 前必须先完成全部子任务
     if status_changed && new_status.as_deref() == Some("done") {
         ensure_all_subtasks_done(&tx, id, "done")?;
@@ -406,7 +440,14 @@ pub fn update_task(
             set_clauses.len() + 1
         );
         param_values.push(Box::new(id.to_string()));
-        emit_sql_log(app, "UPDATE", "tasks", &format!("id={id}"), file!(), line!());
+        emit_sql_log(
+            app,
+            "UPDATE",
+            "tasks",
+            &format!("id={id}"),
+            file!(),
+            line!(),
+        );
         let params_refs: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
         tx.execute(&sql, params_refs.as_slice())?;
@@ -435,10 +476,20 @@ pub fn update_task(
                 activity_log_service::try_task_log(db, id, "task.completed", &summary);
             }
             Some(_) if was_done => {
-                activity_log_service::try_task_log(db, id, "task.reopened", &format!("重新打开任务「{title}」"));
+                activity_log_service::try_task_log(
+                    db,
+                    id,
+                    "task.reopened",
+                    &format!("重新打开任务「{title}」"),
+                );
             }
             _ => {
-                activity_log_service::try_task_log(db, id, "task.updated", &format!("更新任务「{title}」"));
+                activity_log_service::try_task_log(
+                    db,
+                    id,
+                    "task.updated",
+                    &format!("更新任务「{title}」"),
+                );
             }
         }
     } else {
@@ -543,7 +594,12 @@ pub fn set_task_status(
         };
         activity_log_service::try_task_log(db, id, "task.completed", &summary);
     } else {
-        activity_log_service::try_task_log(db, id, "task.reopened", &format!("重新打开任务「{title}」"));
+        activity_log_service::try_task_log(
+            db,
+            id,
+            "task.reopened",
+            &format!("重新打开任务「{title}」"),
+        );
     }
     get_task(app, db, id)
 }
@@ -671,12 +727,29 @@ fn roll_recurrence(
         line!(),
     );
     task_repo::insert(
-        tx, &new_id, &current.project_id, current.parent_id.as_deref(), &current.title, &current.description,
-        "todo", &current.priority, current.plan_start_time.as_deref(),
-        new_due.as_deref(), 0, &current.note, sort_order, ts,
+        tx,
+        &new_id,
+        &current.project_id,
+        current.parent_id.as_deref(),
+        &current.title,
+        &current.description,
+        "todo",
+        &current.priority,
+        current.plan_start_time.as_deref(),
+        new_due.as_deref(),
+        0,
+        &current.note,
+        sort_order,
+        ts,
     )?;
     task_repo::update_ext(
-        tx, &new_id, Some(rule), Some(current.note_html.as_str()), None, None, ts,
+        tx,
+        &new_id,
+        Some(rule),
+        Some(current.note_html.as_str()),
+        None,
+        None,
+        ts,
     )?;
     let ids = vec![current.id.clone()];
     if let Ok(pairs) = task_repo::tags_of_tasks(tx, &ids) {
@@ -756,26 +829,33 @@ fn next_recur_date(rule: &str, anchor: &str) -> Option<chrono::NaiveDate> {
             month_days.sort_unstable();
             // 候选月 = 锚点当月起按 interval 递增（先试当月剩余命中日，否则下一周期）；
             // 取组日内第一个晚于锚点的日期（日号超出当月自动取月末）
-            (0..=1)
-                .find_map(|k| {
-                    let mo = k * interval;
-                    month_days
-                        .iter()
-                        .filter_map(|&d| advance_month(base, d, mo))
-                        .find(|&d| d > base)
-                })
+            (0..=1).find_map(|k| {
+                let mo = k * interval;
+                month_days
+                    .iter()
+                    .filter_map(|&d| advance_month(base, d, mo))
+                    .find(|&d| d > base)
+            })
         }
         _ => None,
     }
 }
 
 /// 从锚点推进 months 个月，目标日号为 target_day（超出当月天数取月末）
-fn advance_month(anchor: chrono::NaiveDate, target_day: u32, months: i64) -> Option<chrono::NaiveDate> {
+fn advance_month(
+    anchor: chrono::NaiveDate,
+    target_day: u32,
+    months: i64,
+) -> Option<chrono::NaiveDate> {
     let total = anchor.year() as i64 * 12 + (anchor.month() as i64 - 1) + months;
     let year = (total.div_euclid(12)) as i32;
     let month = (total.rem_euclid(12)) as u32 + 1;
     let max_day = {
-        let (ny, nm) = if month == 12 { (year + 1, 1u32) } else { (year, month + 1) };
+        let (ny, nm) = if month == 12 {
+            (year + 1, 1u32)
+        } else {
+            (year, month + 1)
+        };
         chrono::NaiveDate::from_ymd_opt(ny, nm, 1)
             .and_then(|d| d.pred_opt())
             .map(|d| d.day())
@@ -793,11 +873,29 @@ pub fn copy_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<TaskCard, AppE
     let new_id = Uuid::new_v4().to_string();
     let ts = now();
     let sort_order = task_repo::next_sort_order(&tx, &src.project_id, "todo")?;
-    emit_sql_log(app, "INSERT", "tasks", &format!("id={new_id}, copy from {id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "INSERT",
+        "tasks",
+        &format!("id={new_id}, copy from {id}"),
+        file!(),
+        line!(),
+    );
     task_repo::insert(
-        &tx, &new_id, &src.project_id, src.parent_id.as_deref(), &src.title, &src.description, "todo",
-        &src.priority, src.plan_start_time.as_deref(), src.due_time.as_deref(),
-        0, "", sort_order, &ts,
+        &tx,
+        &new_id,
+        &src.project_id,
+        src.parent_id.as_deref(),
+        &src.title,
+        &src.description,
+        "todo",
+        &src.priority,
+        src.plan_start_time.as_deref(),
+        src.due_time.as_deref(),
+        0,
+        "",
+        sort_order,
+        &ts,
     )?;
     // 复制标签
     let ids = vec![src.id.clone()];
@@ -807,7 +905,12 @@ pub fn copy_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<TaskCard, AppE
         }
     }
     tx.commit()?;
-    activity_log_service::try_task_log(db, &new_id, "task.created", &format!("从「{}」复制创建", src.title));
+    activity_log_service::try_task_log(
+        db,
+        &new_id,
+        "task.created",
+        &format!("从「{}」复制创建", src.title),
+    );
     get_task(app, db, &new_id)
 }
 
@@ -834,15 +937,12 @@ pub fn move_task_to_project(
         "UPDATE tasks SET project_id=?1, updated_at=?2 WHERE id IN ({})",
         placeholders.join(",")
     );
-    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
-        Box::new(to_project_id.to_string()),
-        Box::new(ts.clone()),
-    ];
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> =
+        vec![Box::new(to_project_id.to_string()), Box::new(ts.clone())];
     for tid in &subtree {
         params.push(Box::new(tid.clone()));
     }
-    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
-        params.iter().map(|p| p.as_ref()).collect();
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
     tx.execute(&sql, params_refs.as_slice())?;
     // 根任务移到目标状态列尾
     tx.execute(
@@ -855,12 +955,20 @@ pub fn move_task_to_project(
         app,
         "UPDATE",
         "tasks",
-        &format!("id={task_id} (subtree {}) -> project {to_project_id}", subtree.len()),
+        &format!(
+            "id={task_id} (subtree {}) -> project {to_project_id}",
+            subtree.len()
+        ),
         file!(),
         line!(),
     );
     tx.commit()?;
-    activity_log_service::try_task_log(db, task_id, "task.moved", &format!("移动任务「{}」到其他项目", current.title));
+    activity_log_service::try_task_log(
+        db,
+        task_id,
+        "task.moved",
+        &format!("移动任务「{}」到其他项目", current.title),
+    );
     get_task(app, db, task_id)
 }
 
@@ -873,7 +981,14 @@ pub fn delete_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError
         .map_err(|_| AppError::NotFound("未找到该任务".into()))?
         .title;
     let ts = now();
-    emit_sql_log(app, "UPDATE", "tasks", &format!("id={id}, soft delete"), file!(), line!());
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "tasks",
+        &format!("id={id}, soft delete"),
+        file!(),
+        line!(),
+    );
     task_repo::soft_delete(&conn, id, &ts)?;
     task_repo::clean_orphan_parents(&conn, &ts)?;
     activity_log_service::try_task_log(db, id, "task.deleted", &format!("删除任务「{title}」"));
@@ -883,29 +998,48 @@ pub fn delete_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError
 /// 恢复任务（所属项目必须未删除，否则引导先恢复项目）
 pub fn restore_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
     let conn = db.pool.get()?;
-    let deleted = task_repo::find_by_id(&conn, id)
-        .map_err(|_| AppError::NotFound("未找到该任务".into()))?;
+    let deleted =
+        task_repo::find_by_id(&conn, id).map_err(|_| AppError::NotFound("未找到该任务".into()))?;
     if deleted.deleted_at.is_none() {
         return Err(AppError::Business("该任务不在回收站中".into()));
     }
     project_repo::find_active(&conn, &deleted.project_id)
         .map_err(|_| AppError::Business("所属项目已删除，请先在回收站恢复项目".into()))?;
     let ts = now();
-    emit_sql_log(app, "UPDATE", "tasks", &format!("id={id}, restore"), file!(), line!());
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "tasks",
+        &format!("id={id}, restore"),
+        file!(),
+        line!(),
+    );
     let affected = task_repo::restore(&conn, id, &ts)?;
     if affected == 0 {
         return Err(AppError::NotFound("未找到该任务或任务不在回收站".into()));
     }
     // 恢复任务的父引用可能已悬空（父被删/被迁移），执行孤儿清理保持层级有效
     task_repo::clean_orphan_parents(&conn, &ts)?;
-    activity_log_service::try_task_log(db, id, "task.restored", &format!("从回收站恢复任务「{}」", deleted.title));
+    activity_log_service::try_task_log(
+        db,
+        id,
+        "task.restored",
+        &format!("从回收站恢复任务「{}」", deleted.title),
+    );
     Ok(())
 }
 
 /// 彻底删除任务（完成后清理因删除产生的孤儿父引用）
 pub fn hard_delete_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
     let conn = db.pool.get()?;
-    emit_sql_log(app, "DELETE", "tasks", &format!("id={id}, hard delete"), file!(), line!());
+    emit_sql_log(
+        app,
+        "DELETE",
+        "tasks",
+        &format!("id={id}, hard delete"),
+        file!(),
+        line!(),
+    );
     task_repo::hard_delete(&conn, id)?;
     let ts = now();
     task_repo::clean_orphan_parents(&conn, &ts)?;
@@ -914,7 +1048,14 @@ pub fn hard_delete_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), App
 
 /// 列出回收站中的任务（含所属项目名）
 pub fn list_deleted_tasks(app: &AppHandle, db: &AppDb) -> Result<Vec<DeletedTaskItem>, AppError> {
-    emit_sql_log(app, "SELECT", "tasks", "deleted_at IS NOT NULL", file!(), line!());
+    emit_sql_log(
+        app,
+        "SELECT",
+        "tasks",
+        "deleted_at IS NOT NULL",
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     let rows = task_repo::list_deleted(&conn)?;
     Ok(rows
@@ -954,7 +1095,14 @@ pub fn purge_expired_trash(app: &AppHandle, db: &AppDb) -> Result<u32, AppError>
     // 截止线 = 当前 UTC 时间 - 保留期（deleted_at 为 UTC RFC3339，字典序可比较）
     let cutoff = (chrono::Utc::now() - chrono::Duration::days(TRASH_RETENTION_DAYS)).to_rfc3339();
     let ts = now();
-    emit_sql_log(app, "DELETE", "tasks+projects", &format!("auto purge < {cutoff}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "DELETE",
+        "tasks+projects",
+        &format!("auto purge < {cutoff}"),
+        file!(),
+        line!(),
+    );
     let task_n = task_repo::purge_expired(&conn, &cutoff)?;
     let project_n = project_repo::purge_expired(&conn, &cutoff)?;
     task_meta_repo::set(&conn, KEY_TRASH_PURGE_DATE, &today, &ts)?;
@@ -984,7 +1132,14 @@ pub fn roll_planned_today(app: &AppHandle, db: &AppDb) -> Result<u32, AppError> 
         return Ok(0);
     }
     let ts = now();
-    emit_sql_log(app, "UPDATE", "tasks", "roll planned_today", file!(), line!());
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "tasks",
+        "roll planned_today",
+        file!(),
+        line!(),
+    );
     let n = task_repo::roll_planned_today(&conn, &ts)?;
     task_meta_repo::set(&conn, KEY_ROLL_PLANNED_DATE, &today, &ts)?;
     Ok(n as u32)

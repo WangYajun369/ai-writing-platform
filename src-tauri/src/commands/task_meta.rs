@@ -1,9 +1,9 @@
 //! 任务卡模块 key-value / 提醒偏好 IPC 命令
 
-use tauri::{AppHandle, State};
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::service::task_meta_service;
+use tauri::{AppHandle, State};
 
 /// 读取任意 key
 #[tauri::command]
@@ -28,10 +28,7 @@ pub fn task_meta_set(
 
 /// 读取提醒偏好（JSON 字符串）
 #[tauri::command]
-pub fn reminder_prefs_get(
-    app: AppHandle,
-    state: State<AppDb>,
-) -> Result<Option<String>, AppError> {
+pub fn reminder_prefs_get(app: AppHandle, state: State<AppDb>) -> Result<Option<String>, AppError> {
     task_meta_service::get_reminder_prefs(&app, &state)
 }
 

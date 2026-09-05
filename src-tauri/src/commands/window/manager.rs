@@ -3,9 +3,9 @@
 //! 世界观资料库、版本历史、章节总结、AI 工具箱独立窗口管理。
 //! 独立窗口始终置顶于编辑页面之上。
 
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use super::urlencoding;
 use crate::error::AppError;
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// 窗口配置参数
 #[derive(Clone, Copy)]
@@ -61,7 +61,8 @@ fn create_sub_window(
 /// 关闭子窗口并通知主窗口
 fn close_sub_window(app: &AppHandle, label: &str, close_event: &str) -> Result<(), AppError> {
     if let Some(w) = app.get_webview_window(label) {
-        w.close().map_err(|e| AppError::Business(format!("关闭窗口失败: {}", e)))?;
+        w.close()
+            .map_err(|e| AppError::Business(format!("关闭窗口失败: {}", e)))?;
     }
     if let Some(main) = app.get_webview_window("main") {
         let _ = main.emit(close_event, ());
@@ -83,9 +84,14 @@ const WORLD_CONFIG: WindowConfig = WindowConfig {
 };
 
 #[tauri::command]
-pub async fn open_world_window(app: AppHandle, book_id: String, tab: Option<String>) -> Result<(), AppError> {
+pub async fn open_world_window(
+    app: AppHandle,
+    book_id: String,
+    tab: Option<String>,
+) -> Result<(), AppError> {
     if let Some(w) = app.get_webview_window(WORLD_CONFIG.label) {
-        w.close().map_err(|e| AppError::Business(format!("关闭旧窗口失败: {}", e)))?;
+        w.close()
+            .map_err(|e| AppError::Business(format!("关闭旧窗口失败: {}", e)))?;
     }
     let tab_param = tab.map(|t| format!("&tab={}", t)).unwrap_or_default();
     let extra = format!("&bookId={}{}", book_id, tab_param);
@@ -118,11 +124,14 @@ pub async fn open_history_window(
     chapter_title: String,
 ) -> Result<(), AppError> {
     if let Some(w) = app.get_webview_window(HISTORY_CONFIG.label) {
-        w.close().map_err(|e| AppError::Business(format!("关闭旧窗口失败: {}", e)))?;
+        w.close()
+            .map_err(|e| AppError::Business(format!("关闭旧窗口失败: {}", e)))?;
     }
     let extra = format!(
         "&chapterId={}&bookId={}&chapterTitle={}",
-        chapter_id, book_id, urlencoding(&chapter_title)
+        chapter_id,
+        book_id,
+        urlencoding(&chapter_title)
     );
     create_sub_window(&app, &HISTORY_CONFIG, &extra)
 }
@@ -153,11 +162,14 @@ pub async fn open_summary_window(
     chapter_title: String,
 ) -> Result<(), AppError> {
     if let Some(w) = app.get_webview_window(SUMMARY_CONFIG.label) {
-        w.close().map_err(|e| AppError::Business(format!("关闭旧窗口失败: {}", e)))?;
+        w.close()
+            .map_err(|e| AppError::Business(format!("关闭旧窗口失败: {}", e)))?;
     }
     let extra = format!(
         "&chapterId={}&bookId={}&chapterTitle={}",
-        chapter_id, book_id, urlencoding(&chapter_title)
+        chapter_id,
+        book_id,
+        urlencoding(&chapter_title)
     );
     create_sub_window(&app, &SUMMARY_CONFIG, &extra)
 }
@@ -183,7 +195,8 @@ const AI_TOOLBOX_CONFIG: WindowConfig = WindowConfig {
 #[tauri::command]
 pub async fn open_ai_toolbox_window(app: AppHandle) -> Result<(), AppError> {
     if let Some(w) = app.get_webview_window(AI_TOOLBOX_CONFIG.label) {
-        w.close().map_err(|e| AppError::Business(format!("关闭旧窗口失败: {}", e)))?;
+        w.close()
+            .map_err(|e| AppError::Business(format!("关闭旧窗口失败: {}", e)))?;
     }
     create_sub_window(&app, &AI_TOOLBOX_CONFIG, "")
 }
@@ -209,7 +222,8 @@ const VOCAB_CONFIG: WindowConfig = WindowConfig {
 #[tauri::command]
 pub async fn open_vocab_window(app: AppHandle) -> Result<(), AppError> {
     if let Some(w) = app.get_webview_window(VOCAB_CONFIG.label) {
-        w.close().map_err(|e| AppError::Business(format!("关闭旧窗口失败: {}", e)))?;
+        w.close()
+            .map_err(|e| AppError::Business(format!("关闭旧窗口失败: {}", e)))?;
     }
     create_sub_window(&app, &VOCAB_CONFIG, "")
 }
@@ -260,7 +274,8 @@ pub async fn open_tasks_window(app: AppHandle, section: Option<String>) -> Resul
             return Ok(());
         }
         // 无区段：维持原 toggle 语义（点击首页入口开→再点关）
-        w.close().map_err(|e| AppError::Business(format!("关闭旧窗口失败: {}", e)))?;
+        w.close()
+            .map_err(|e| AppError::Business(format!("关闭旧窗口失败: {}", e)))?;
         return Ok(());
     }
     let extra = section
@@ -297,7 +312,8 @@ const DIARY_BOOK_CONFIG: WindowConfig = WindowConfig {
 #[tauri::command]
 pub async fn open_diary_book_window(app: AppHandle) -> Result<(), AppError> {
     if let Some(w) = app.get_webview_window(DIARY_BOOK_CONFIG.label) {
-        w.close().map_err(|e| AppError::Business(format!("关闭旧窗口失败: {}", e)))?;
+        w.close()
+            .map_err(|e| AppError::Business(format!("关闭旧窗口失败: {}", e)))?;
         return Ok(());
     }
     create_sub_window(&app, &DIARY_BOOK_CONFIG, "")

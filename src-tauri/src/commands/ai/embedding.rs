@@ -3,12 +3,12 @@
 //! 对外暴露 Tauri 命令，内部委托给 Service 层处理。
 //! 保留 `call_embedding_api` 公开函数供外部调用。
 
-use tauri::{AppHandle, State};
+use crate::commands::ai::{ConnectionTestResult, EmbeddingProgress, EmbeddingStatus, RagResult};
 use crate::db::AppDb;
 use crate::error::AppError;
-use crate::commands::ai::{RagResult, EmbeddingStatus, EmbeddingProgress, ConnectionTestResult};
 use crate::service::search_service;
 use crate::utils::get_http_client;
+use tauri::{AppHandle, State};
 
 /// 调用 SSE 兼容的 Embedding API（智谱等）
 pub async fn call_embedding_api(
@@ -41,7 +41,10 @@ pub async fn call_embedding_api(
 
     if !resp.status().is_success() {
         let status = resp.status();
-        let err_text = resp.text().await.unwrap_or_else(|e| format!("(无法读取错误响应体: {e})"));
+        let err_text = resp
+            .text()
+            .await
+            .unwrap_or_else(|e| format!("(无法读取错误响应体: {e})"));
 
         let hint = if let Ok(err_json) = serde_json::from_str::<serde_json::Value>(&err_text) {
             if let Some(code) = err_json["error"]["code"].as_str() {
@@ -51,15 +54,22 @@ pub async fn call_embedding_api(
                     "1213" => "（缺少必填参数，可能是请求体格式异常）",
                     _ => "",
                 }
-            } else { "" }
-        } else { "" };
+            } else {
+                ""
+            }
+        } else {
+            ""
+        };
         return Err(AppError::Business(format!(
             "Embedding API 返回错误 ({}): {} {}",
             status, err_text, hint
         )));
     }
 
-    let data: serde_json::Value = resp.json().await.map_err(|e| AppError::Business(format!("解析响应 JSON 失败: {}", e)))?;
+    let data: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| AppError::Business(format!("解析响应 JSON 失败: {}", e)))?;
 
     let items = data["data"]
         .as_array()
@@ -88,7 +98,14 @@ pub async fn test_rag_connection(
     api_key: String,
     embedding_model: String,
 ) -> Result<ConnectionTestResult, AppError> {
-    match call_embedding_api(&endpoint, &api_key, &embedding_model, &["测试连通性".into()]).await {
+    match call_embedding_api(
+        &endpoint,
+        &api_key,
+        &embedding_model,
+        &["测试连通性".into()],
+    )
+    .await
+    {
         Ok(results) => {
             let dim = results.first().map(|v| v.len()).unwrap_or(0);
             Ok(ConnectionTestResult {
@@ -119,9 +136,16 @@ pub async fn rag_search(
     embedding_model: Option<String>,
 ) -> Result<Vec<RagResult>, AppError> {
     search_service::rag_search(
-        &app, &db, &book_id, &query, top_n,
-        endpoint.as_deref(), api_key.as_deref(), embedding_model.as_deref(),
-    ).await
+        &app,
+        &db,
+        &book_id,
+        &query,
+        top_n,
+        endpoint.as_deref(),
+        api_key.as_deref(),
+        embedding_model.as_deref(),
+    )
+    .await
 }
 
 /// 检查 Embedding 索引状态

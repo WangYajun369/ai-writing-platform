@@ -2,10 +2,10 @@
 //!
 //! 包含：对话上下文总结（滑动窗口管理）、章节内容总结。
 
-use tauri::{AppHandle, Emitter};
+use super::{ChapterSummary, ConversationSummary, SummarizeArgs, SummarizeConversationArgs};
 use crate::error::AppError;
 use crate::utils::get_sse_client;
-use super::{SummarizeConversationArgs, ConversationSummary, SummarizeArgs, ChapterSummary};
+use tauri::{AppHandle, Emitter};
 
 /// 总结历史对话内容（用于滑动窗口 context 管理）
 #[tauri::command]
@@ -44,14 +44,9 @@ pub async fn summarize_conversation(
 
     let client = get_sse_client().clone();
 
-    let url = format!(
-        "{}/chat/completions",
-        args.endpoint.trim_end_matches('/')
-    );
+    let url = format!("{}/chat/completions", args.endpoint.trim_end_matches('/'));
 
-    let mut req = client
-        .post(&url)
-        .header("Content-Type", "application/json");
+    let mut req = client.post(&url).header("Content-Type", "application/json");
 
     if let Some(ref key) = args.api_key {
         req = req.header("Authorization", format!("Bearer {}", key));
@@ -85,11 +80,19 @@ pub async fn summarize_conversation(
 
     if !response.status().is_success() {
         let status = response.status();
-        let text = response.text().await.unwrap_or_else(|e| format!("(无法读取错误响应体: {e})"));
-        return Err(AppError::Business(format!("AI 服务返回错误 ({}): {}", status, text)));
+        let text = response
+            .text()
+            .await
+            .unwrap_or_else(|e| format!("(无法读取错误响应体: {e})"));
+        return Err(AppError::Business(format!(
+            "AI 服务返回错误 ({}): {}",
+            status, text
+        )));
     }
 
-    let data: serde_json::Value = response.json().await
+    let data: serde_json::Value = response
+        .json()
+        .await
         .map_err(|e| AppError::Business(format!("解析 AI 响应失败: {}", e)))?;
 
     let content = data["choices"][0]["message"]["content"]
@@ -136,14 +139,9 @@ pub async fn summarize_chapter(
 
     let client = get_sse_client().clone();
 
-    let url = format!(
-        "{}/chat/completions",
-        args.endpoint.trim_end_matches('/')
-    );
+    let url = format!("{}/chat/completions", args.endpoint.trim_end_matches('/'));
 
-    let mut req = client
-        .post(&url)
-        .header("Content-Type", "application/json");
+    let mut req = client.post(&url).header("Content-Type", "application/json");
 
     if let Some(ref key) = args.api_key {
         req = req.header("Authorization", format!("Bearer {}", key));
@@ -177,11 +175,19 @@ pub async fn summarize_chapter(
 
     if !response.status().is_success() {
         let status = response.status();
-        let text = response.text().await.unwrap_or_else(|e| format!("(无法读取错误响应体: {e})"));
-        return Err(AppError::Business(format!("AI 服务返回错误 ({}): {}", status, text)));
+        let text = response
+            .text()
+            .await
+            .unwrap_or_else(|e| format!("(无法读取错误响应体: {e})"));
+        return Err(AppError::Business(format!(
+            "AI 服务返回错误 ({}): {}",
+            status, text
+        )));
     }
 
-    let data: serde_json::Value = response.json().await
+    let data: serde_json::Value = response
+        .json()
+        .await
         .map_err(|e| AppError::Business(format!("解析 AI 响应失败: {}", e)))?;
 
     let content = data["choices"][0]["message"]["content"]

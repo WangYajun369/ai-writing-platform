@@ -5,11 +5,11 @@
 
 pub mod schema;
 
-use r2d2::{Pool, ManageConnection};
-use rusqlite::{Connection, Result};
-use anyhow::Context as _;
-use std::sync::atomic::{AtomicBool, Ordering};
 use crate::repository::embedding_repo;
+use anyhow::Context as _;
+use r2d2::{ManageConnection, Pool};
+use rusqlite::{Connection, Result};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// sqlite-vec 扩展全局注册（进程内仅一次）。
 ///
@@ -75,7 +75,12 @@ impl ManageConnection for SqliteConnectionManager {
 ///
 /// 注意：这里刻意不打印日志，交由调用方汇总输出。
 /// 因为绝大多数启动都会命中"列已存在"分支，逐条打印会产生固定噪音。
-fn safe_add_column(conn: &Connection, table: &str, column: &str, column_def: &str) -> anyhow::Result<bool> {
+fn safe_add_column(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    column_def: &str,
+) -> anyhow::Result<bool> {
     let sql = format!("ALTER TABLE {} ADD COLUMN {} {}", table, column, column_def);
     match conn.execute(&sql, []) {
         Ok(_) => Ok(true),
@@ -116,7 +121,8 @@ impl AppDb {
 
     /// 执行数据库自动迁移：启用 WAL + 外键 + 创建 6 张表 + 索引
     fn migrate(&self) -> anyhow::Result<()> {
-        let conn = self.pool
+        let conn = self
+            .pool
             .get()
             .map_err(|e| anyhow::anyhow!("获取数据库连接失败: {}", e))?;
 
@@ -128,7 +134,9 @@ impl AppDb {
             .context("启用外键约束失败")?;
 
         // 创建表
-        crate::app_log!("[SQL] CREATE TABLE → books, volumes, chapters, snapshots, world_cards, embeddings");
+        crate::app_log!(
+            "[SQL] CREATE TABLE → books, volumes, chapters, snapshots, world_cards, embeddings"
+        );
         conn.execute_batch(r#"
             CREATE TABLE IF NOT EXISTS books (
                 id          TEXT PRIMARY KEY,
@@ -216,7 +224,8 @@ impl AppDb {
                 keywords        TEXT NOT NULL DEFAULT '',
                 relevance_score REAL NOT NULL DEFAULT 1.0,
                 created_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
-                updated_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+                updated_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+                last_hit_at     TEXT
             );
 
             -- 日记（每天最多一篇，diary_date 唯一）
@@ -415,7 +424,8 @@ impl AppDb {
 
         // FTS5 全文搜索虚拟表（章节 + 世界观卡片）
         crate::app_log!("[SQL] CREATE VIRTUAL TABLE → chapters_fts, world_cards_fts");
-        conn.execute_batch(r#"
+        conn.execute_batch(
+            r#"
             CREATE VIRTUAL TABLE IF NOT EXISTS chapters_fts USING fts5(
                 title, content, tokenize='unicode61'
             );
@@ -465,7 +475,9 @@ impl AppDb {
                 SELECT rowid, title, content_html FROM chapters WHERE deleted_at IS NULL;
             INSERT OR REPLACE INTO world_cards_fts(rowid, title, content)
                 SELECT rowid, title, content || ' ' || content_html FROM world_cards;
-        "#).context("创建 FTS5 全文搜索表失败")?;
+        "#,
+        )
+        .context("创建 FTS5 全文搜索表失败")?;
 
         // 迁移现有数据库：为旧表添加字段（列已存在时跳过，其他错误则报错）
         // 注意：必须在索引创建之前执行，否则旧库会因列不存在而创建索引失败
@@ -489,6 +501,8 @@ impl AppDb {
             ("tasks", "parent_id", "TEXT"),
             // 任务完成总结（富文本 HTML；勾选完成时填写）
             ("tasks", "completion_summary", "TEXT NOT NULL DEFAULT ''"),
+            // 记忆库命中时间（过期清理依据；旧库 ALTER 补列，默认 NULL 表示从未命中）
+            ("memories", "last_hit_at", "TEXT"),
         ] {
             if safe_add_column(&conn, table, column, column_def)? {
                 added_columns.push(format!("{}.{}", table, column));
@@ -539,7 +553,10 @@ impl AppDb {
 
         // sqlite-vec KNN 镜像表：已有向量数据时建表并回填（幂等）；
         // 维度变化（更换 embedding 模型）时自动重建。
-        crate::app_log!("[SQL] sqlite-vec → ensure {} 镜像表", embedding_repo::VEC_TABLE);
+        crate::app_log!(
+            "[SQL] sqlite-vec → ensure {} 镜像表",
+            embedding_repo::VEC_TABLE
+        );
         embedding_repo::ensure_chunks_vec(&conn)
             .map_err(|e| anyhow::anyhow!("初始化 sqlite-vec 镜像表失败: {}", e))?;
 
@@ -612,7 +629,8 @@ mod tests {
         );
 
         // rowid 删除能力（镜像清理路径依赖）
-        conn.execute("DELETE FROM chunks_vec WHERE rowid = 2", []).unwrap();
+        conn.execute("DELETE FROM chunks_vec WHERE rowid = 2", [])
+            .unwrap();
         let cnt: i64 = conn
             .query_row("SELECT COUNT(*) FROM chunks_vec", [], |r| r.get(0))
             .unwrap();

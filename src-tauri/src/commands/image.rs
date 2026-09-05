@@ -4,11 +4,11 @@
 //! 图片以压缩后的 Base64 data URL 形式内嵌在 HTML 中，
 //! 确保导出/导入完全自包含，无需外部文件依赖。
 
-use image::GenericImageView;
-use image::codecs::jpeg::JpegEncoder;
+use crate::error::AppError;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use crate::error::AppError;
+use image::codecs::jpeg::JpegEncoder;
+use image::GenericImageView;
 
 const ALLOWED_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp"];
 const MAX_SOURCE_SIZE: u64 = 20 * 1024 * 1024; // 20 MB
@@ -27,7 +27,10 @@ fn validate_source(src: &std::path::Path) -> Result<(), AppError> {
         std::fs::metadata(src).map_err(|e| AppError::Business(format!("无法读取图片文件: {e}")))?;
     if metadata.len() > MAX_SOURCE_SIZE {
         let size_mb = metadata.len() as f64 / (1024.0 * 1024.0);
-        return Err(AppError::Business(format!("图片文件过大（{:.1} MB），最大 20 MB", size_mb)));
+        return Err(AppError::Business(format!(
+            "图片文件过大（{:.1} MB），最大 20 MB",
+            size_mb
+        )));
     }
     Ok(())
 }
@@ -119,7 +122,11 @@ pub async fn process_image(
     max_width: Option<u32>,
     quality: Option<u8>,
 ) -> Result<String, AppError> {
-    process_image_data(&source_path, max_width.unwrap_or(1200), quality.unwrap_or(80))
+    process_image_data(
+        &source_path,
+        max_width.unwrap_or(1200),
+        quality.unwrap_or(80),
+    )
 }
 
 /// Tauri 命令：裁剪图片并返回 Base64 data URL

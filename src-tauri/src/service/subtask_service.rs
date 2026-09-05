@@ -3,15 +3,15 @@
 //! 子任务/任务清单：属于某任务卡，随任务级联删除（无独立回收站）。
 //! 提供列表 / 创建 / 重命名 / 勾选 / 重排 / 删除；父任务状态不受子任务影响。
 
-use tauri::AppHandle;
-use uuid::Uuid;
+use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::TaskSubtask;
-use crate::commands::window::emit_sql_log;
-use crate::utils::{now, validate_len};
 use crate::repository::{subtask_repo, task_repo};
 use crate::service::activity_log_service;
+use crate::utils::{now, validate_len};
+use tauri::AppHandle;
+use uuid::Uuid;
 
 /// 子任务标题长度上限
 pub const MAX_SUBTASK_TITLE: usize = 200;
@@ -24,8 +24,19 @@ fn ensure_task_active(conn: &rusqlite::Connection, task_id: &str) -> Result<(), 
 }
 
 /// 列出某任务全部子任务
-pub fn list_subtasks(app: &AppHandle, db: &AppDb, task_id: &str) -> Result<Vec<TaskSubtask>, AppError> {
-    emit_sql_log(app, "SELECT", "task_subtasks", &format!("task_id={task_id}"), file!(), line!());
+pub fn list_subtasks(
+    app: &AppHandle,
+    db: &AppDb,
+    task_id: &str,
+) -> Result<Vec<TaskSubtask>, AppError> {
+    emit_sql_log(
+        app,
+        "SELECT",
+        "task_subtasks",
+        &format!("task_id={task_id}"),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     Ok(subtask_repo::list_by_task(&conn, task_id)?)
 }
@@ -47,10 +58,22 @@ pub fn create_subtask(
     let id = Uuid::new_v4().to_string();
     let ts = now();
     let sort_order = subtask_repo::next_sort_order(&conn, task_id)?;
-    emit_sql_log(app, "INSERT", "task_subtasks", &format!("id={id}, task_id={task_id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "INSERT",
+        "task_subtasks",
+        &format!("id={id}, task_id={task_id}"),
+        file!(),
+        line!(),
+    );
     subtask_repo::insert(&conn, &id, task_id, title, sort_order, &ts)?;
     let item = subtask_repo::find_by_id(&conn, &id).map_err(AppError::from)?;
-    activity_log_service::try_task_log(db, task_id, "subtask.added", &format!("添加清单项「{title}」"));
+    activity_log_service::try_task_log(
+        db,
+        task_id,
+        "subtask.added",
+        &format!("添加清单项「{title}」"),
+    );
     Ok(item)
 }
 
@@ -68,7 +91,14 @@ pub fn update_subtask(
     validate_len("子任务内容", title, MAX_SUBTASK_TITLE)?;
     let conn = db.pool.get()?;
     let ts = now();
-    emit_sql_log(app, "UPDATE", "task_subtasks", &format!("id={id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "task_subtasks",
+        &format!("id={id}"),
+        file!(),
+        line!(),
+    );
     if subtask_repo::rename(&conn, id, title, &ts)? == 0 {
         return Err(AppError::NotFound("未找到该子任务".into()));
     }
@@ -96,13 +126,33 @@ pub fn set_subtask_done(
         return Ok(current);
     }
     let ts = now();
-    emit_sql_log(app, "UPDATE", "task_subtasks", &format!("id={id}, done={done}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "task_subtasks",
+        &format!("id={id}, done={done}"),
+        file!(),
+        line!(),
+    );
     if subtask_repo::set_done(&conn, id, done, &ts)? == 0 {
         return Err(AppError::NotFound("未找到该子任务".into()));
     }
     let item = subtask_repo::find_by_id(&conn, id).map_err(AppError::from)?;
-    let summary = format!("{}清单项「{}」", if done { "完成" } else { "重新打开" }, item.title);
-    activity_log_service::try_task_log(db, &item.task_id, if done { "subtask.done" } else { "subtask.redone" }, &summary);
+    let summary = format!(
+        "{}清单项「{}」",
+        if done { "完成" } else { "重新打开" },
+        item.title
+    );
+    activity_log_service::try_task_log(
+        db,
+        &item.task_id,
+        if done {
+            "subtask.done"
+        } else {
+            "subtask.redone"
+        },
+        &summary,
+    );
     Ok(item)
 }
 
@@ -119,7 +169,14 @@ pub fn reorder_subtasks(
     for (i, sid) in ordered_ids.iter().enumerate() {
         subtask_repo::set_sort_order(&tx, sid, i as i64, &ts)?;
     }
-    emit_sql_log(app, "UPDATE", "task_subtasks", &format!("reorder task_id={task_id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "task_subtasks",
+        &format!("reorder task_id={task_id}"),
+        file!(),
+        line!(),
+    );
     tx.commit()?;
     Ok(())
 }
@@ -129,10 +186,22 @@ pub fn delete_subtask(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppEr
     let conn = db.pool.get()?;
     let current = subtask_repo::find_by_id(&conn, id)
         .map_err(|_| AppError::NotFound("未找到该子任务".into()))?;
-    emit_sql_log(app, "DELETE", "task_subtasks", &format!("id={id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "DELETE",
+        "task_subtasks",
+        &format!("id={id}"),
+        file!(),
+        line!(),
+    );
     if subtask_repo::delete(&conn, id)? == 0 {
         return Err(AppError::NotFound("未找到该子任务".into()));
     }
-    activity_log_service::try_task_log(db, &current.task_id, "subtask.removed", &format!("删除清单项「{}」", current.title));
+    activity_log_service::try_task_log(
+        db,
+        &current.task_id,
+        "subtask.removed",
+        &format!("删除清单项「{}」", current.title),
+    );
     Ok(())
 }

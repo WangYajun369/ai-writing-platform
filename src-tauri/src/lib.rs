@@ -14,14 +14,14 @@
 //! ```
 
 // ─── 模块声明 ───
-mod commands;   // Tauri IPC 命令集合
-mod db;         // 数据库连接与初始化
-mod error;      // 统一错误类型
-mod logging;    // 全局日志宏（app_log! / app_log_error!，双写控制台与调试窗口）
-mod models;     // 数据模型
+mod commands; // Tauri IPC 命令集合
+mod db; // 数据库连接与初始化
+mod error; // 统一错误类型
+mod logging; // 全局日志宏（app_log! / app_log_error!，双写控制台与调试窗口）
+mod models; // 数据模型
 mod repository; // 数据访问层（DAO）
-mod service;    // 业务逻辑层
-mod utils;      // 工具函数
+mod service; // 业务逻辑层
+mod utils; // 工具函数
 
 // ─── 标准库 ───
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -46,12 +46,12 @@ use db::AppDb;
 pub fn run() {
     tauri::Builder::default()
         // ────────── 插件注册 ──────────
-        .plugin(tauri_plugin_shell::init())       // shell 命令调用
-        .plugin(tauri_plugin_dialog::init())       // 文件选择对话框
-        .plugin(tauri_plugin_fs::init())           // 文件系统访问
-        .plugin(tauri_plugin_updater::Builder::new().build())  // 应用自动更新
-        .plugin(tauri_plugin_deep_link::init())    // 深度链接
-        .plugin(tauri_plugin_http::init())         // HTTP 请求
+        .plugin(tauri_plugin_shell::init()) // shell 命令调用
+        .plugin(tauri_plugin_dialog::init()) // 文件选择对话框
+        .plugin(tauri_plugin_fs::init()) // 文件系统访问
+        .plugin(tauri_plugin_updater::Builder::new().build()) // 应用自动更新
+        .plugin(tauri_plugin_deep_link::init()) // 深度链接
+        .plugin(tauri_plugin_http::init()) // HTTP 请求
         .plugin(tauri_plugin_notification::init()) // 系统通知（任务卡到期提醒）
         // ────────── 应用启动配置 ──────────
         .setup(|app| {
@@ -61,15 +61,13 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .map_err(|e| format!("无法获取 AppData 目录: {e}"))?;
-            std::fs::create_dir_all(&app_dir)
-                .map_err(|e| format!("创建数据目录失败: {e}"))?;
+            std::fs::create_dir_all(&app_dir).map_err(|e| format!("创建数据目录失败: {e}"))?;
             let db_path = app_dir.join("time_write.db");
             let db_path_str = db_path
                 .to_str()
                 .ok_or("数据库路径包含非 UTF-8 字符，无法启动")?;
             // 打开 SQLite 数据库连接，交由 Tauri 状态管理（全局访问）
-            let db = AppDb::new(db_path_str)
-                .map_err(|e| format!("数据库初始化失败: {e}"))?;
+            let db = AppDb::new(db_path_str).map_err(|e| format!("数据库初始化失败: {e}"))?;
             // 附件存储初始化：附件目录与 db 同数据根（attachments/），
             // 并自动迁移旧版 task-attachments 目录、清洗历史绝对路径为相对路径
             crate::service::attachment_service::ensure_store(app.handle(), &db)
@@ -111,6 +109,10 @@ pub fn run() {
                             break;
                         }
                     }
+                    // 启动兜底：清理存量超限/过期记忆（幂等，无则零开销）
+                    if let Err(e) = commands::agent::memory::prune_all_memories(&conn) {
+                        crate::app_log_error!("[Agent] 记忆库存量清理失败（跳过）: {}", e);
+                    }
                 }
             }
 
@@ -142,10 +144,13 @@ pub fn run() {
                         }
 
                         // 通知前端：正在关闭
-                        let _ = handle.emit("agent-status-changed", serde_json::json!({
-                            "status": "closing",
-                            "message": "正在关闭服务..."
-                        }));
+                        let _ = handle.emit(
+                            "agent-status-changed",
+                            serde_json::json!({
+                                "status": "closing",
+                                "message": "正在关闭服务..."
+                            }),
+                        );
 
                         // 无外部 Agent 进程需要清理，直接关闭
                         crate::app_log!("[Agent] 主窗口关闭请求，直接关闭窗口");
@@ -179,7 +184,9 @@ pub fn run() {
                         // 回收站 30 天自动清理（内部按自然日守卫，每天实际执行一次）
                         {
                             let db = app.state::<crate::db::AppDb>();
-                            if let Err(e) = crate::service::task_service::purge_expired_trash(&app, &db) {
+                            if let Err(e) =
+                                crate::service::task_service::purge_expired_trash(&app, &db)
+                            {
                                 crate::app_log!("[回收站] 自动清理失败（自动忽略）: {e}");
                             }
                         }

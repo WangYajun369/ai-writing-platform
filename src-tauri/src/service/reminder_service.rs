@@ -148,7 +148,7 @@ pub fn run_once(app: &AppHandle) -> Result<usize, AppError> {
                         .iter()
                         .filter(|t| {
                             t.status != "done"
-                                &&                                 (t.planned_today
+                                && (t.planned_today
                                     || t.due_time.as_deref().map_or(false, |d| {
                                         d.len() >= 10 && &d[..10] <= today.as_str()
                                     }))
@@ -207,7 +207,14 @@ pub fn run_once(app: &AppHandle) -> Result<usize, AppError> {
                 task_meta_repo::set(&conn, &key, "1", &now_str)?;
                 // 单次提醒触发后清除任务级字段（PRD 12.2）
                 task_repo::update_remind(&conn, &task.id, None, "", &now_str)?;
-                append_log(&conn, "custom", &task.title, Some(&task.id), Some(&task.project_id), &now_str)?;
+                append_log(
+                    &conn,
+                    "custom",
+                    &task.title,
+                    Some(&task.id),
+                    Some(&task.project_id),
+                    &now_str,
+                )?;
                 sent += 1;
             }
             continue;
@@ -279,7 +286,10 @@ pub fn run_once(app: &AppHandle) -> Result<usize, AppError> {
                 } else {
                     "今天截止".to_string()
                 };
-                ("任务今日截止", format!("「{}」{when}，记得完成", task.title))
+                (
+                    "任务今日截止",
+                    format!("「{}」{when}，记得完成", task.title),
+                )
             }
             _ => (
                 "任务已逾期",
@@ -289,7 +299,14 @@ pub fn run_once(app: &AppHandle) -> Result<usize, AppError> {
 
         if send_notification(app, &title, &body) {
             task_meta_repo::set(&conn, &key, "1", &now_str)?;
-            append_log(&conn, kind, &task.title, Some(&task.id), Some(&task.project_id), &now_str)?;
+            append_log(
+                &conn,
+                kind,
+                &task.title,
+                Some(&task.id),
+                Some(&task.project_id),
+                &now_str,
+            )?;
             sent += 1;
         }
     }
@@ -305,12 +322,7 @@ fn send_notification(app: &AppHandle, title: &str, body: &str) -> bool {
             return false;
         }
     }
-    let result = app
-        .notification()
-        .builder()
-        .title(title)
-        .body(body)
-        .show();
+    let result = app.notification().builder().title(title).body(body).show();
     match result {
         Ok(_) => true,
         Err(e) => {

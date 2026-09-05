@@ -63,7 +63,7 @@ Agent 引擎与主进程**同进程运行**：Skill Prompt 组装 → 云端模�
 | `engine.rs` | **引擎核心**：`run_skill()` SSE 流式 ReAct 循环（工具调用 + 文本增量）、`CancelToken` 即时任务取消（`cancel_current_task()`） |
 | `prompts.rs` | 4 个技能 System Prompt（`skill_base_prompt`）、动态场景提示（`get_dynamic_prompt`）、Token 估算 |
 | `tools.rs` | 6 个数据库工具：按技能返回工具集（`tools_for_skill`）、构建 function-calling schema、`execute_tool` 分发执行 |
-| `memory.rs` | `memories` 表 CRUD、规则式记忆提取（`extract_and_save`）、关键词检索（`retrieve_memories`）、旧库迁移（`migrate_legacy_db`） |
+| `memory.rs` | `memories` 表 CRUD、规则式记忆提取（`extract_and_save`）、关键词检索（`retrieve_memories`，命中打点 `last_hit_at`）、容量/过期清理（`prune_memories` / `prune_all_memories`）、旧库迁移（`migrate_legacy_db`） |
 
 ### IPC 命令清单（skills.rs）
 
@@ -142,7 +142,8 @@ CREATE TABLE memories (
     keywords         TEXT NOT NULL DEFAULT '',
     relevance_score  REAL NOT NULL DEFAULT 1.0,
     created_at       TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    updated_at       TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    updated_at       TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    last_hit_at      TEXT                -- 最近一次检索命中注入时间（NULL = 从未命中）
 );
 -- 索引：idx_memories_book_skill (book_id, skill_type) / idx_memories_type (memory_type)
 ```
@@ -180,6 +181,21 @@ CREATE TABLE memories (
 
 - **幂等**：目标 `memories` 表已有数据则跳过；旧库无 memories 表也跳过
 - 迁移失败仅记日志，**不阻断应用启动**
+
+### 4.5 容量上限与过期清理（2026-09-05，问题 29）
+
+长期使用会积累大量低分/过期记忆拖慢检索，采用「容量上限 + 过期未命中」双清理策略（`prune_memories`）：
+
+| 规则 | 阈值 | 淘汰依据 |
+|------|------|----------|
+| 分组上限 | 60 条 / `(book_id, skill_type)` | 相关度低 → 久未命中 → 后插入 优先淘汰 |
+| 全书上限 | 240 条 / book | 组清理后仍超限的兜底（同上排序） |
+| 过期未命中 | 180 天 | `last_hit_at`（无则 `updated_at`）早于阈值直接删除 |
+
+- **命中打点**：`retrieve_memories` 选中注入的记忆即时更新 `last_hit_at`，作为过期判定依据
+- **触发时机**：`extract_and_save` 每次沉淀新记忆后随路清理本组；`lib.rs` 启动时
+  `prune_all_memories` 兜底清理存量（幂等，空库零开销）
+- 清理失败仅记日志，不阻断记忆写入主流程
 
 ---
 

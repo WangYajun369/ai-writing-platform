@@ -20,7 +20,7 @@ import {
 import { dictApi, vocabApi } from '@/lib/tauri-bridge'
 import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
-import { useAppStore } from '@/stores/appStore'
+import { useAiStore } from '@/stores/aiStore'
 import { getChatApiKey } from '@/types'
 import type { VocabKnowledge, VocabMeaning, VocabWord, WordCheckKind } from '@/types'
 import { parseDictTranslation, normalizeAiMeaning } from '../vocab-utils'
@@ -42,7 +42,7 @@ interface Props {
 }
 
 export default function AddWordDialog({ open, editing, onClose }: Props) {
-  const aiConfig = useAppStore((s) => s.aiConfig)
+  const aiConfig = useAiStore((s) => s.aiConfig)
   const refreshAll = useVocabStore((s) => s.refreshAll)
 
   const [word, setWord] = useState('')

@@ -7,7 +7,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { SparklesIcon } from 'lucide-react'
-import { useAppStore } from '@/stores/appStore'
+import { useAiStore } from '@/stores/aiStore'
 import { aiApi, type StreamEvent, type UsageInfo } from '@/lib/tauri-bridge'
 import { getChatApiKey } from '@/types'
 import type { AiToolPrompt } from '@/types'
@@ -19,7 +19,7 @@ import { ToolboxOutputPanel } from './panel/ToolboxOutputPanel'
 import type { RequestDetail } from './panel/ToolboxOutputPanel'
 
 export default function AiToolboxPanel({ initialToolId }: { initialToolId?: string }) {
-  const { aiToolCategories, aiConfig } = useAppStore()
+  const { aiToolCategories, aiConfig } = useAiStore()
   const [selectedTool, setSelectedTool] = useState<AiToolPrompt | null>(null)
   const initialized = useRef(false)
 

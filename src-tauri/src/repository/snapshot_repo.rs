@@ -2,8 +2,8 @@
 //!
 //! 提供 snapshots 表的 CRUD SQL 操作。
 
-use rusqlite::{Connection, params, Result};
 use crate::models::Snapshot;
+use rusqlite::{params, Connection, Result};
 
 /// 列出指定章节的所有快照（不含 content_html），按创建时间降序
 pub fn list_by_chapter(conn: &Connection, chapter_id: &str) -> Result<Vec<Snapshot>> {
@@ -63,7 +63,7 @@ pub fn insert(
 /// 列出所有快照，用于备份导出
 pub fn list_all(conn: &Connection) -> Result<Vec<Snapshot>> {
     let mut stmt = conn.prepare(
-        "SELECT id,chapter_id,content_html,word_count,type,label,created_at FROM snapshots"
+        "SELECT id,chapter_id,content_html,word_count,type,label,created_at FROM snapshots",
     )?;
     let items = stmt.query_map([], |row| {
         Ok(Snapshot {

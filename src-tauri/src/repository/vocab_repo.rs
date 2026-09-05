@@ -3,8 +3,8 @@
 //! 提供 vocab_words / vocab_reviews 两表的 SQL 操作。
 //! 复习状态的推进（SM-2 计算）在 service 层完成，本层只负责读写。
 
-use rusqlite::{params, Connection, OptionalExtension, Result};
 use crate::models::{StatsDay, VocabKnowledge, VocabMeaning, VocabWord};
+use rusqlite::{params, Connection, OptionalExtension, Result};
 
 /// SELECT 常用列（顺序固定，row_to_word 依赖此顺序）
 const WORD_COLS: &str = "id, word, phonetic, meanings, example, example_zh, repetition, \
@@ -98,9 +98,7 @@ pub fn find_by_word(conn: &Connection, word: &str) -> Result<Option<VocabWord>> 
 /// 按 id 查找
 pub fn find_by_id(conn: &Connection, id: &str) -> Result<Option<VocabWord>> {
     let sql = format!("SELECT {} FROM vocab_words WHERE id = ?1", WORD_COLS);
-    let result = conn
-        .query_row(&sql, params![id], row_to_word)
-        .optional()?;
+    let result = conn.query_row(&sql, params![id], row_to_word).optional()?;
     Ok(result)
 }
 
@@ -187,10 +185,7 @@ pub fn list_words(
     if let Some(q) = query {
         let q = q.trim();
         if !q.is_empty() {
-            conditions.push(format!(
-                "word LIKE ?{} COLLATE NOCASE",
-                args.len() + 1
-            ));
+            conditions.push(format!("word LIKE ?{} COLLATE NOCASE", args.len() + 1));
             args.push(Box::new(format!("%{}%", q)));
         }
     }
@@ -202,8 +197,7 @@ pub fn list_words(
     sql.push_str(" ORDER BY created_at DESC");
 
     let mut stmt = conn.prepare(&sql)?;
-    let arg_refs: Vec<&dyn rusqlite::types::ToSql> =
-        args.iter().map(|b| b.as_ref()).collect();
+    let arg_refs: Vec<&dyn rusqlite::types::ToSql> = args.iter().map(|b| b.as_ref()).collect();
     let items = stmt.query_map(arg_refs.as_slice(), row_to_word)?;
     items.collect()
 }

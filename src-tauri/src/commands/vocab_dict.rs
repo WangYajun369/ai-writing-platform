@@ -5,17 +5,17 @@
 //! - **AI 兜底释义**：离线词库未命中或释义不理想时，调用 DeepSeek / OpenAI 兼容
 //!   接口生成音标 + 词性释义 + 例句（JSON 结构化输出）
 
-use std::fs;
-use std::path::PathBuf;
-use std::sync::OnceLock;
-use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
 use crate::error::AppError;
 use crate::models::{
     AiWordExplain, DictHit, DictStatus, VocabKnowledge, VocabMeaning, VocabMorphItem, VocabPhrase,
     VocabSentence,
 };
 use crate::utils::get_http_client;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
+use std::sync::OnceLock;
+use tauri::{AppHandle, Manager};
 
 // ───────────────────────── 词典文件 ─────────────────────────
 
@@ -102,7 +102,9 @@ pub fn dict_status(app: AppHandle) -> DictStatus {
 pub fn dict_import(app: AppHandle, source_path: String) -> Result<DictStatus, AppError> {
     let src = PathBuf::from(&source_path);
     if !src.exists() {
-        return Err(AppError::Validation(format!("词典文件不存在: {source_path}")));
+        return Err(AppError::Validation(format!(
+            "词典文件不存在: {source_path}"
+        )));
     }
     // 预校验：目标文件是含 stardict 表的 SQLite
     {
@@ -142,7 +144,10 @@ pub struct DictLookupResult {
 #[tauri::command]
 pub fn dict_lookup(app: AppHandle, word: String) -> Result<DictLookupResult, AppError> {
     let word = word.trim().to_lowercase();
-    let mut result = DictLookupResult { hit: None, suggestions: Vec::new() };
+    let mut result = DictLookupResult {
+        hit: None,
+        suggestions: Vec::new(),
+    };
     let Some(conn) = open_dict_db(&app)? else {
         return Ok(result);
     };
@@ -164,7 +169,9 @@ pub fn dict_lookup(app: AppHandle, word: String) -> Result<DictLookupResult, App
     )?;
     let pattern = format!(
         "{}%",
-        word.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+        word.replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_")
     );
     let items = stmt
         .query_map(rusqlite::params![pattern, word], row_to_hit)?
@@ -282,14 +289,11 @@ pub async fn check_word_ai(args: ExplainWordArgs) -> Result<WordCheckResult, App
             "未配置 AI 服务（端点/模型为空），请先在设置中完成 AI 配置".to_string(),
         ));
     }
-    let api_key = args
-        .api_key
-        .clone()
-        .unwrap_or_default()
-        .trim()
-        .to_string();
+    let api_key = args.api_key.clone().unwrap_or_default().trim().to_string();
     if api_key.is_empty() {
-        return Err(AppError::Business("未配置 API Key，无法调用 AI 检查单词".to_string()));
+        return Err(AppError::Business(
+            "未配置 API Key，无法调用 AI 检查单词".to_string(),
+        ));
     }
 
     let endpoint = args.endpoint.trim_end_matches('/');
@@ -361,7 +365,11 @@ fn parse_word_check(word: &str, raw: &str) -> Result<WordCheckResult, AppError> 
             WordCheckKind::NotAWord => "not_a_word",
         }
     );
-    Ok(WordCheckResult { kind, canonical, note })
+    Ok(WordCheckResult {
+        kind,
+        canonical,
+        note,
+    })
 }
 
 /// 一次聊天补全返回的最终回答
@@ -382,16 +390,15 @@ pub async fn dict_explain_ai(args: ExplainWordArgs) -> Result<AiWordExplain, App
         return Err(AppError::Validation("单词不能为空".to_string()));
     }
     if args.endpoint.trim().is_empty() || args.model.trim().is_empty() {
-        return Err(AppError::Business("未配置 AI 服务（端点/模型为空），请先在设置中完成 AI 配置".to_string()));
+        return Err(AppError::Business(
+            "未配置 AI 服务（端点/模型为空），请先在设置中完成 AI 配置".to_string(),
+        ));
     }
-    let api_key = args
-        .api_key
-        .clone()
-        .unwrap_or_default()
-        .trim()
-        .to_string();
+    let api_key = args.api_key.clone().unwrap_or_default().trim().to_string();
     if api_key.is_empty() {
-        return Err(AppError::Business("未配置 API Key，无法调用 AI 生成释义".to_string()));
+        return Err(AppError::Business(
+            "未配置 API Key，无法调用 AI 生成释义".to_string(),
+        ));
     }
 
     let endpoint = args.endpoint.trim_end_matches('/');
@@ -402,8 +409,12 @@ pub async fn dict_explain_ai(args: ExplainWordArgs) -> Result<AiWordExplain, App
     );
 
     let is_zh = args.lang.as_deref().unwrap_or("zh") == "zh";
-    let system = if is_zh { EXPLAIN_SYSTEM_PROMPT_ZH } else { EXPLAIN_SYSTEM_PROMPT_EN }
-        .replace("{{WORD}}", word);
+    let system = if is_zh {
+        EXPLAIN_SYSTEM_PROMPT_ZH
+    } else {
+        EXPLAIN_SYSTEM_PROMPT_EN
+    }
+    .replace("{{WORD}}", word);
     let temperature = args.temperature.unwrap_or(0.3);
 
     // 两次尝试：① 常规请求（输出上限 4096）；② 失败后强制 json_object + 上限 8192
@@ -412,8 +423,14 @@ pub async fn dict_explain_ai(args: ExplainWordArgs) -> Result<AiWordExplain, App
     let mut last_raw = String::new();
     for attempt in 0..2usize {
         let max_tokens = if attempt == 0 { 4096 } else { 8192 };
-        let body =
-            explain_request_body(&args.model, &system, word, temperature, max_tokens, attempt == 1);
+        let body = explain_request_body(
+            &args.model,
+            &system,
+            word,
+            temperature,
+            max_tokens,
+            attempt == 1,
+        );
         let chat = request_chat_content("释义", &endpoint, &api_key, word, &body).await?;
         match parse_explain(word, &chat.text) {
             Ok(v) => return Ok(v),
@@ -433,7 +450,9 @@ pub async fn dict_explain_ai(args: ExplainWordArgs) -> Result<AiWordExplain, App
                     last_tail
                 );
                 if attempt == 0 {
-                    crate::app_log!("[vocab] AI 释义自动重试（强制 JSON + 扩大输出上限）word={word}");
+                    crate::app_log!(
+                        "[vocab] AI 释义自动重试（强制 JSON + 扩大输出上限）word={word}"
+                    );
                     continue;
                 }
             }
@@ -551,7 +570,10 @@ async fn request_chat_content(
         snippet_err(&content),
         snippet_err_tail(&content)
     );
-    Ok(ChatContent { text: content, finish_reason })
+    Ok(ChatContent {
+        text: content,
+        finish_reason,
+    })
 }
 
 /// 提取错误响应摘要（截断避免日志过长）
@@ -570,7 +592,10 @@ fn snippet_err_tail(text: &str) -> String {
     if cleaned.chars().count() <= 160 {
         cleaned
     } else {
-        cleaned.chars().skip(cleaned.chars().count() - 160).collect::<String>()
+        cleaned
+            .chars()
+            .skip(cleaned.chars().count() - 160)
+            .collect::<String>()
     }
 }
 
@@ -614,8 +639,12 @@ fn extract_json_payload(raw: &str) -> Result<&str, AppError> {
         }
     }
     // 定位第一个 { 到最后一个 }
-    let open = text.find('{').ok_or_else(|| AppError::Business("AI 返回内容不包含 JSON".to_string()))?;
-    let close = text.rfind('}').ok_or_else(|| AppError::Business("AI 返回内容不包含完整 JSON".to_string()))?;
+    let open = text
+        .find('{')
+        .ok_or_else(|| AppError::Business("AI 返回内容不包含 JSON".to_string()))?;
+    let close = text
+        .rfind('}')
+        .ok_or_else(|| AppError::Business("AI 返回内容不包含完整 JSON".to_string()))?;
     Ok(&text[open..=close])
 }
 
@@ -690,7 +719,9 @@ fn parse_explain(word: &str, raw: &str) -> Result<AiWordExplain, AppError> {
         meanings.len()
     );
     if meanings.is_empty() {
-        return Err(AppError::Business("AI 未返回有效释义，请重试或手动填写".to_string()));
+        return Err(AppError::Business(
+            "AI 未返回有效释义，请重试或手动填写".to_string(),
+        ));
     }
 
     let clean = |s: String| s.trim().to_string();
@@ -707,15 +738,33 @@ fn parse_explain(word: &str, raw: &str) -> Result<AiWordExplain, AppError> {
                     meaning: clean(m.meaning),
                 })
                 .collect(),
-            synonyms: k.synonyms.into_iter().map(clean).filter(|s| !s.is_empty()).collect(),
-            antonyms: k.antonyms.into_iter().map(clean).filter(|s| !s.is_empty()).collect(),
+            synonyms: k
+                .synonyms
+                .into_iter()
+                .map(clean)
+                .filter(|s| !s.is_empty())
+                .collect(),
+            antonyms: k
+                .antonyms
+                .into_iter()
+                .map(clean)
+                .filter(|s| !s.is_empty())
+                .collect(),
             phrases: k
                 .phrases
                 .into_iter()
                 .filter(|p| !p.phrase.trim().is_empty())
-                .map(|p| VocabPhrase { phrase: clean(p.phrase), meaning: clean(p.meaning) })
+                .map(|p| VocabPhrase {
+                    phrase: clean(p.phrase),
+                    meaning: clean(p.meaning),
+                })
                 .collect(),
-            verb_forms: k.verb_forms.into_iter().map(clean).filter(|s| !s.is_empty()).collect(),
+            verb_forms: k
+                .verb_forms
+                .into_iter()
+                .map(clean)
+                .filter(|s| !s.is_empty())
+                .collect(),
             examples: k
                 .examples
                 .into_iter()

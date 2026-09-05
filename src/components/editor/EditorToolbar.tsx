@@ -53,7 +53,9 @@ import {
   summaryWindowOpenAtom,
   aiToolboxWindowOpenAtom,
 } from '@/stores/uiAtoms.ts'
-import { useCurrentBook, useCurrentChapter, useAppStore } from '@/stores/appStore.ts'
+import { useCurrentBook, useCurrentChapter } from '@/stores/appStore'
+import { useBooksStore } from '@/stores/booksStore'
+import { usePreferencesStore } from '@/stores/preferencesStore'
 import { cn } from '@/lib/utils.ts'
 import { processEditorImage, processCroppedEditorImage } from '@/lib/image-utils.ts'
 import { windowApi } from '@/lib/tauri-bridge'
@@ -138,9 +140,9 @@ export default function EditorToolbar() {
   const [summaryWindowOpen, setSummaryWindowOpen] = useAtom(summaryWindowOpenAtom)
   const [aiToolboxWindowOpen, setAiToolboxWindowOpen] = useAtom(aiToolboxWindowOpenAtom)
   const currentBook = useCurrentBook()
-  const currentBookId = useAppStore((s) => s.currentBookId)
+  const currentBookId = useBooksStore((s) => s.currentBookId)
   const currentChapter = useCurrentChapter()
-  const { fontSize, setFontSize } = useAppStore()
+  const { fontSize, setFontSize } = usePreferencesStore()
   const editor = useAtomValue(editorInstanceAtom)
   // StrictMode 下编辑器可能已被销毁（commandManager 为 null），
   // 渲染期所有 editor 调用统一走安全引用，避免调用已销毁实例崩溃

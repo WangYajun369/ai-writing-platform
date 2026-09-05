@@ -2,15 +2,15 @@
 //!
 //! 封装 RAG 语义检索和 FTS5 全文搜索的业务逻辑。
 
-use tauri::AppHandle;
+use crate::commands::ai::embedding::call_embedding_api;
+use crate::commands::ai::{truncate_for_embedding, EmbeddingProgress, EmbeddingStatus, RagResult};
+use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
-use crate::commands::ai::{RagResult, EmbeddingStatus, EmbeddingProgress, truncate_for_embedding};
-use crate::commands::ai::embedding::call_embedding_api;
-use crate::commands::window::emit_sql_log;
-use crate::utils::{strip_html, snippet, escape_fts5_query, like_pattern};
-use crate::repository::{embedding_repo, chapter_repo, world_card_repo};
+use crate::repository::{chapter_repo, embedding_repo, world_card_repo};
+use crate::utils::{escape_fts5_query, like_pattern, snippet, strip_html};
 use std::collections::HashMap;
+use tauri::AppHandle;
 
 /// RAG 语义搜索（向量 + 关键词降级）
 pub async fn rag_search(
@@ -27,8 +27,14 @@ pub async fn rag_search(
 
     // 尝试向量搜索
     if let (Some(ep), Some(key), Some(model)) = (endpoint, api_key, embedding_model) {
-        emit_sql_log(app, "SELECT", "embeddings",
-            &format!("COUNT for book_id={book_id}"), file!(), line!());
+        emit_sql_log(
+            app,
+            "SELECT",
+            "embeddings",
+            &format!("COUNT for book_id={book_id}"),
+            file!(),
+            line!(),
+        );
         let emb_count = embedding_repo::count_indexed_for_book(&conn, book_id).unwrap_or(0);
 
         if emb_count > 0 {
@@ -81,8 +87,14 @@ fn vector_search(
     let k = top_n.saturating_mul(50).clamp(200, 2000) as i64;
     let query_blob = crate::commands::ai::floats_to_bytes(query_vec);
 
-    emit_sql_log(app, "SELECT", embedding_repo::VEC_TABLE,
-        &format!("book_id={book_id}, KNN top-{k}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "SELECT",
+        embedding_repo::VEC_TABLE,
+        &format!("book_id={book_id}, KNN top-{k}"),
+        file!(),
+        line!(),
+    );
     let hits = embedding_repo::knn_search(conn, &query_blob, k)?;
     if hits.is_empty() {
         return Ok(vec![]);
@@ -95,20 +107,38 @@ fn vector_search(
         sim_by_id.insert(*id, (1.0 - dist).clamp(0.0, 1.0));
     }
 
-    emit_sql_log(app, "SELECT", "embeddings+chapters+world_cards",
-        &format!("book_id={book_id}, resolve {} KNN candidates", ids.len()), file!(), line!());
+    emit_sql_log(
+        app,
+        "SELECT",
+        "embeddings+chapters+world_cards",
+        &format!("book_id={book_id}, resolve {} KNN candidates", ids.len()),
+        file!(),
+        line!(),
+    );
     let chapter_rows = embedding_repo::find_chapter_meta_by_ids(conn, &ids, book_id)?;
     let card_rows = embedding_repo::find_world_card_meta_by_ids(conn, &ids, book_id)?;
 
     let mut scored: Vec<(f64, String, String, String, String)> = Vec::new();
     for (eid, sid, title, html) in chapter_rows {
         if let Some(&sim) = sim_by_id.get(&eid) {
-            scored.push((sim, snippet(&strip_html(&html), 200), sid, title, "chapter".into()));
+            scored.push((
+                sim,
+                snippet(&strip_html(&html), 200),
+                sid,
+                title,
+                "chapter".into(),
+            ));
         }
     }
     for (eid, sid, title, html) in card_rows {
         if let Some(&sim) = sim_by_id.get(&eid) {
-            scored.push((sim, snippet(&strip_html(&html), 200), sid, title, "world_card".into()));
+            scored.push((
+                sim,
+                snippet(&strip_html(&html), 200),
+                sid,
+                title,
+                "world_card".into(),
+            ));
         }
     }
 
@@ -144,8 +174,14 @@ fn fts5_search(
 
     // FTS5 章节搜索
     {
-        emit_sql_log(app, "SELECT", "chapters_fts",
-            &format!("book_id={book_id}, FTS5 MATCH"), file!(), line!());
+        emit_sql_log(
+            app,
+            "SELECT",
+            "chapters_fts",
+            &format!("book_id={book_id}, FTS5 MATCH"),
+            file!(),
+            line!(),
+        );
         let rows = chapter_repo::search_fts5_plain(conn, book_id, &fts_query, top_n as i64)?;
         for (id, title, html) in rows {
             let snip = snippet(&strip_html(&html), 200);
@@ -162,8 +198,14 @@ fn fts5_search(
     // FTS5 世界观卡片搜索
     if results.len() < top_n {
         let remaining = (top_n - results.len()) as i64;
-        emit_sql_log(app, "SELECT", "world_cards_fts",
-            &format!("book_id={book_id}, FTS5 MATCH"), file!(), line!());
+        emit_sql_log(
+            app,
+            "SELECT",
+            "world_cards_fts",
+            &format!("book_id={book_id}, FTS5 MATCH"),
+            file!(),
+            line!(),
+        );
         let rows = world_card_repo::search_fts5_plain(conn, book_id, &fts_query, remaining)?;
         for (id, title, html) in rows {
             let snip = snippet(&strip_html(&html), 200);
@@ -193,8 +235,14 @@ fn like_search(
 
     // 章节 LIKE
     {
-        emit_sql_log(app, "SELECT", "chapters",
-            &format!("book_id={book_id}, LIKE fallback"), file!(), line!());
+        emit_sql_log(
+            app,
+            "SELECT",
+            "chapters",
+            &format!("book_id={book_id}, LIKE fallback"),
+            file!(),
+            line!(),
+        );
         let rows = chapter_repo::search_like_plain(conn, book_id, &pattern, top_n as i64)?;
         for (id, title, html) in rows {
             let snip = snippet(&strip_html(&html), 200);
@@ -211,8 +259,14 @@ fn like_search(
     // 世界观卡片 LIKE
     if results.len() < top_n {
         let remaining = (top_n - results.len()) as i64;
-        emit_sql_log(app, "SELECT", "world_cards",
-            &format!("book_id={book_id}, LIKE fallback"), file!(), line!());
+        emit_sql_log(
+            app,
+            "SELECT",
+            "world_cards",
+            &format!("book_id={book_id}, LIKE fallback"),
+            file!(),
+            line!(),
+        );
         let rows = world_card_repo::search_like_plain(conn, book_id, &pattern, remaining)?;
         for (id, title, html) in rows {
             let snip = snippet(&strip_html(&html), 200);
@@ -237,18 +291,44 @@ pub fn check_embedding_status(
 ) -> Result<EmbeddingStatus, AppError> {
     let conn = db.pool.get()?;
 
-    emit_sql_log(app, "SELECT", "chapters", &format!("COUNT for book_id={book_id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "SELECT",
+        "chapters",
+        &format!("COUNT for book_id={book_id}"),
+        file!(),
+        line!(),
+    );
     let total_chapters = chapter_repo::count_active_with_content(&conn, book_id)?;
 
-    emit_sql_log(app, "SELECT", "world_cards", &format!("COUNT for book_id={book_id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "SELECT",
+        "world_cards",
+        &format!("COUNT for book_id={book_id}"),
+        file!(),
+        line!(),
+    );
     let total_world_cards = world_card_repo::count_with_content(&conn, book_id)?;
 
-    emit_sql_log(app, "SELECT", "embeddings+chapters",
-        &format!("indexed COUNT for book_id={book_id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "SELECT",
+        "embeddings+chapters",
+        &format!("indexed COUNT for book_id={book_id}"),
+        file!(),
+        line!(),
+    );
     let indexed_chapters = embedding_repo::count_indexed_chapters(&conn, book_id)?;
 
-    emit_sql_log(app, "SELECT", "embeddings+world_cards",
-        &format!("indexed COUNT for book_id={book_id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "SELECT",
+        "embeddings+world_cards",
+        &format!("indexed COUNT for book_id={book_id}"),
+        file!(),
+        line!(),
+    );
     let indexed_world_cards = embedding_repo::count_indexed_world_cards(&conn, book_id)?;
 
     let stale = total_chapters + total_world_cards > 0
@@ -281,8 +361,14 @@ pub async fn trigger_embedding(
     let (items, total_chapters, total_world_cards) = {
         let conn = db.pool.get()?;
 
-        emit_sql_log(app, "SELECT", "chapters",
-            &format!("book_id={book_id}, collect for embedding"), file!(), line!());
+        emit_sql_log(
+            app,
+            "SELECT",
+            "chapters",
+            &format!("book_id={book_id}, collect for embedding"),
+            file!(),
+            line!(),
+        );
         let chapters: Vec<SourceItem> = chapter_repo::list_ids_and_content_plain(&conn, book_id)?
             .into_iter()
             .map(|(id, html)| SourceItem {
@@ -293,8 +379,14 @@ pub async fn trigger_embedding(
             .collect();
         let tc = chapters.len();
 
-        emit_sql_log(app, "SELECT", "world_cards",
-            &format!("book_id={book_id}, collect for embedding"), file!(), line!());
+        emit_sql_log(
+            app,
+            "SELECT",
+            "world_cards",
+            &format!("book_id={book_id}, collect for embedding"),
+            file!(),
+            line!(),
+        );
         let cards: Vec<SourceItem> = world_card_repo::list_ids_and_content_plain(&conn, book_id)?
             .into_iter()
             .map(|(id, html)| SourceItem {
@@ -329,8 +421,7 @@ pub async fn trigger_embedding(
 
     for batch in items.chunks(BATCH_SIZE) {
         let texts: Vec<String> = batch.iter().map(|item| item.plain_text.clone()).collect();
-        let embeddings = call_embedding_api(endpoint, api_key, embedding_model, &texts)
-            .await?;
+        let embeddings = call_embedding_api(endpoint, api_key, embedding_model, &texts).await?;
 
         if embeddings.len() != batch.len() {
             return Err(AppError::Business(format!(
@@ -353,8 +444,14 @@ pub async fn trigger_embedding(
 
     {
         let conn = db.pool.get()?;
-        emit_sql_log(app, "INSERT/UPDATE", "embeddings",
-            &format!("batch write {} entries", results.len()), file!(), line!());
+        emit_sql_log(
+            app,
+            "INSERT/UPDATE",
+            "embeddings",
+            &format!("batch write {} entries", results.len()),
+            file!(),
+            line!(),
+        );
         for (stype, sid, blob) in &results {
             embedding_repo::upsert(&conn, stype, sid, blob, embedding_model)?;
 
@@ -365,8 +462,14 @@ pub async fn trigger_embedding(
 
         // 重建 vec0 KNN 镜像：embeddings upsert 可能变更 rowid（INSERT OR REPLACE），
         // 且模型维度可能变化，全量重建保证镜像与事实源一致。
-        emit_sql_log(app, "REBUILD", embedding_repo::VEC_TABLE,
-            &format!("rebuild after embedding trigger, {} entries", results.len()), file!(), line!());
+        emit_sql_log(
+            app,
+            "REBUILD",
+            embedding_repo::VEC_TABLE,
+            &format!("rebuild after embedding trigger, {} entries", results.len()),
+            file!(),
+            line!(),
+        );
         embedding_repo::rebuild_chunks_vec(&conn)?;
     }
 

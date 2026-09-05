@@ -2,13 +2,13 @@
 //!
 //! 只读查询：任务动态时间线 / 项目动态。写入由各业务服务的埋点完成。
 
-use tauri::{AppHandle, State};
+use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::{ActivityLog, ProjectWeeklyStat};
-use crate::service::project_stats_service;
-use crate::commands::window::emit_sql_log;
 use crate::repository::activity_log_repo;
+use crate::service::project_stats_service;
+use tauri::{AppHandle, State};
 
 /// 某任务的动态时间线（最新在前；limit 默认 30，最大 200）
 #[tauri::command]
@@ -19,7 +19,14 @@ pub fn activity_list_task(
     limit: Option<u32>,
 ) -> Result<Vec<ActivityLog>, AppError> {
     let limit = limit.unwrap_or(30).clamp(1, 200) as i64;
-    emit_sql_log(&app, "SELECT", "task_activity_logs", &format!("task_id={task_id}"), file!(), line!());
+    emit_sql_log(
+        &app,
+        "SELECT",
+        "task_activity_logs",
+        &format!("task_id={task_id}"),
+        file!(),
+        line!(),
+    );
     let conn = state.pool.get()?;
     Ok(activity_log_repo::list_by_task(&conn, &task_id, limit)?)
 }
@@ -33,9 +40,20 @@ pub fn activity_list_project(
     limit: Option<u32>,
 ) -> Result<Vec<ActivityLog>, AppError> {
     let limit = limit.unwrap_or(30).clamp(1, 200) as i64;
-    emit_sql_log(&app, "SELECT", "task_activity_logs", &format!("project_id={project_id}"), file!(), line!());
+    emit_sql_log(
+        &app,
+        "SELECT",
+        "task_activity_logs",
+        &format!("project_id={project_id}"),
+        file!(),
+        line!(),
+    );
     let conn = state.pool.get()?;
-    Ok(activity_log_repo::list_by_project(&conn, &project_id, limit)?)
+    Ok(activity_log_repo::list_by_project(
+        &conn,
+        &project_id,
+        limit,
+    )?)
 }
 
 /// 项目近 N 周新增 / 完成统计（周报用；默认 8 周，最大 26）

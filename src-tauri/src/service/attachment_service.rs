@@ -8,19 +8,19 @@
 //! 提供：系统对话框选文件并复制入库、列表 / 系统默认应用打开 / 删除（同时清理文件）/
 //! 孤儿文件每日清理。
 
+use crate::commands::window::emit_sql_log;
+use crate::db::AppDb;
+use crate::error::AppError;
+use crate::models::Attachment;
+use crate::repository::attachment_repo;
+use crate::service::activity_log_service;
+use crate::utils::now;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_shell::ShellExt;
 use uuid::Uuid;
-use crate::db::AppDb;
-use crate::error::AppError;
-use crate::models::Attachment;
-use crate::commands::window::emit_sql_log;
-use crate::utils::now;
-use crate::repository::attachment_repo;
-use crate::service::activity_log_service;
 
 /// 附件大小上限（30MB）
 pub const MAX_ATTACHMENT_SIZE: u64 = 30 * 1024 * 1024;
@@ -93,7 +93,14 @@ pub fn ensure_store(app: &AppHandle, db: &AppDb) -> Result<(), AppError> {
     if changed > 0 {
         tx.commit()
             .map_err(|e| AppError::Business(format!("附件路径清洗提交失败: {e}")))?;
-        emit_sql_log(app, "UPDATE", "attachments", &format!("规范化 {changed} 条路径为相对数据根"), file!(), line!());
+        emit_sql_log(
+            app,
+            "UPDATE",
+            "attachments",
+            &format!("规范化 {changed} 条路径为相对数据根"),
+            file!(),
+            line!(),
+        );
     }
     Ok(())
 }
@@ -130,14 +137,26 @@ fn resolve_local(app: &AppHandle, stored: &str) -> Result<PathBuf, AppError> {
     if let Some(name) = p.file_name() {
         cands.push(root.join(ATTACHMENT_DIR).join(name)); // 文件名兜底（整体搬移后）
     }
-    cands.into_iter().find(|c| c.is_file()).ok_or_else(|| {
-        AppError::NotFound("附件文件不存在（可能已被移动或删除）".into())
-    })
+    cands
+        .into_iter()
+        .find(|c| c.is_file())
+        .ok_or_else(|| AppError::NotFound("附件文件不存在（可能已被移动或删除）".into()))
 }
 
 /// 列出某任务的附件
-pub fn list_attachments(app: &AppHandle, db: &AppDb, task_id: &str) -> Result<Vec<Attachment>, AppError> {
-    emit_sql_log(app, "SELECT", "attachments", &format!("task_id={task_id}"), file!(), line!());
+pub fn list_attachments(
+    app: &AppHandle,
+    db: &AppDb,
+    task_id: &str,
+) -> Result<Vec<Attachment>, AppError> {
+    emit_sql_log(
+        app,
+        "SELECT",
+        "attachments",
+        &format!("task_id={task_id}"),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     Ok(attachment_repo::list_by_task(&conn, task_id)?)
 }
@@ -161,10 +180,7 @@ pub fn pick_and_add(
     // 注意：不要在 macOS 上使用 `add_filter(name, &["*"])` 全类型过滤器——
     // 通配符会被映射成无效 UTType，导致面板内所有文件灰置不可选。
     // 不加过滤器即默认所有文件可选（大小/类型限制由服务端校验）。
-    let picked = app
-        .dialog()
-        .file()
-        .blocking_pick_file();
+    let picked = app.dialog().file().blocking_pick_file();
     let Some(fp) = picked else {
         return Ok(None);
     };
@@ -220,12 +236,25 @@ pub fn add_file(
     let ts_att = ts.clone();
     let result = (|| -> Result<Attachment, AppError> {
         let task_id = task_active_or_err(&conn, task_id)?.0;
-        emit_sql_log(app, "INSERT", "attachments", &format!("id={id}"), file!(), line!());
+        emit_sql_log(
+            app,
+            "INSERT",
+            "attachments",
+            &format!("id={id}"),
+            file!(),
+            line!(),
+        );
         // local_path 记录相对数据根的路径（attachments/<磁盘名>），随 db 一起搬迁仍可用
         let rel = format!("{ATTACHMENT_DIR}/{stored}");
         attachment_repo::insert(
-            &conn, &id, &task_id, &file_name, &ext, meta.len() as i64,
-            &rel, &ts,
+            &conn,
+            &id,
+            &task_id,
+            &file_name,
+            &ext,
+            meta.len() as i64,
+            &rel,
+            &ts,
         )?;
         let mut list = attachment_repo::list_by_task(&conn, &task_id)?;
         list.retain(|a| a.id == id);
@@ -243,7 +272,12 @@ pub fn add_file(
         let _ = std::fs::remove_file(&dest);
         return Err(e);
     }
-    activity_log_service::try_task_log(db, task_id, "attachment.added", &format!("添加附件 {file_name}"));
+    activity_log_service::try_task_log(
+        db,
+        task_id,
+        "attachment.added",
+        &format!("添加附件 {file_name}"),
+    );
     result
 }
 
@@ -266,12 +300,24 @@ pub fn delete_attachment(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), Ap
     let (att, stored) = attachment_repo::find_active(&conn, id)
         .map_err(|_| AppError::NotFound("附件不存在或已删除".into()))?;
     let task_id = att.task_id.clone();
-    emit_sql_log(app, "DELETE", "attachments", &format!("id={id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "DELETE",
+        "attachments",
+        &format!("id={id}"),
+        file!(),
+        line!(),
+    );
     attachment_repo::soft_delete(&conn, id, &now())?;
     if let Ok(p) = resolve_local(app, &stored) {
         let _ = std::fs::remove_file(&p); // 记录已删，文件尽力清理
     }
-    activity_log_service::try_task_log(db, &task_id, "attachment.removed", &format!("删除附件 {}", att.file_name));
+    activity_log_service::try_task_log(
+        db,
+        &task_id,
+        "attachment.removed",
+        &format!("删除附件 {}", att.file_name),
+    );
     Ok(())
 }
 
@@ -284,7 +330,12 @@ pub fn cleanup_orphan_files(app: &AppHandle, db: &AppDb) -> Result<usize, AppErr
     // 故只按文件名对照（不依赖 local_path 的绝对/相对形态，目录搬迁后同样正确）
     let referenced: HashSet<String> = attachment_repo::all_paths(&conn)?
         .into_iter()
-        .filter_map(|s| Path::new(&s).file_name().and_then(|n| n.to_str()).map(|n| n.to_string()))
+        .filter_map(|s| {
+            Path::new(&s)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.to_string())
+        })
         .collect();
     let mut removed = 0usize;
     let entries = match std::fs::read_dir(&dir) {

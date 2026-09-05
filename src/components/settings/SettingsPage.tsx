@@ -11,7 +11,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeftIcon, BotIcon, PaletteIcon, DatabaseIcon, ArrowUpCircleIcon, PenLineIcon, WrenchIcon, MonitorCheckIcon } from 'lucide-react'
-import { useAppStore } from '@/stores/appStore'
+import { useAiStore } from '@/stores/aiStore'
+import { usePreferencesStore } from '@/stores/preferencesStore'
 import { AiConfigSection } from './AiConfigSection'
 import { AiToolboxSection } from './AiToolboxSection'
 import { AppearanceSection } from './AppearanceSection'
@@ -34,7 +35,8 @@ const TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }> }[]
 
 export default function SettingsPage() {
   const navigate = useNavigate()
-  const { aiConfig, setAiConfig, aiConnectionStatus, aiConnectionDetail, setAiConnectionStatus, theme, setTheme, eyeCareMode, setEyeCareMode, fontFamily, setFontFamily, fontSize, setFontSize, gridSize, setGridSize, editorWidth, setEditorWidth } = useAppStore()
+  const { aiConfig, setAiConfig, aiConnectionStatus, aiConnectionDetail, setAiConnectionStatus } = useAiStore()
+  const { theme, setTheme, eyeCareMode, setEyeCareMode, fontFamily, setFontFamily, fontSize, setFontSize, gridSize, setGridSize, editorWidth, setEditorWidth } = usePreferencesStore()
   const [activeTab, setActiveTab] = useState<Tab>('ai')
 
   return (

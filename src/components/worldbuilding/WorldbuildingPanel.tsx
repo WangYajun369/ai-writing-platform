@@ -12,7 +12,7 @@ import { worldCardApi, chapterApi, volumeApi, bookApi, aiApi } from '@/lib/tauri
 import type { SummarizeArgs } from '@/lib/tauri-bridge'
 import type { WorldCard, WorldCardType, Chapter, Volume } from '@/types'
 import { WORLD_CARD_TYPE_CONFIG, cn } from '@/lib/utils'
-import { useAppStore } from '@/stores/appStore'
+import { useAiStore } from '@/stores/aiStore'
 import { getChatApiKey } from '@/types'
 import WorldCardEditor from './WorldCardEditor'
 
@@ -85,7 +85,7 @@ export default function WorldbuildingPanel({ bookId, initialTab }: Worldbuilding
   const dragStartYRef = useRef(0)
   const dragStartHeightRef = useRef(0)
 
-  const { aiConfig, aiToolCategories } = useAppStore()
+  const { aiConfig, aiToolCategories } = useAiStore()
 
   const [volumes, setVolumes] = useState<Volume[]>([])
   const [chapters, setChapters] = useState<Chapter[]>([])

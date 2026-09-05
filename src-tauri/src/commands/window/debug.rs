@@ -3,15 +3,17 @@
 //! 接收前端日志、提供历史日志查询和清理。
 //! 打开调试窗口时启用 SQL 日志广播，关闭时禁用，避免高频 IPC 开销。
 
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
-use chrono::Local;
-use super::{LogEntry, LogEntryInput, log_buffer, enable_sql_log, disable_sql_log};
+use super::{disable_sql_log, enable_sql_log, log_buffer, LogEntry, LogEntryInput};
 use crate::error::AppError;
+use chrono::Local;
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// 接收前端批量日志并广播到调试窗口
 #[tauri::command]
 pub async fn log_message(app: AppHandle, entries: Vec<LogEntryInput>) -> Result<(), AppError> {
-    let mut buffer = log_buffer().lock().map_err(|e| AppError::Business(format!("获取日志缓冲锁失败: {}", e)))?;
+    let mut buffer = log_buffer()
+        .lock()
+        .map_err(|e| AppError::Business(format!("获取日志缓冲锁失败: {}", e)))?;
 
     for input in entries {
         let entry = LogEntry {
@@ -38,7 +40,8 @@ pub async fn log_message(app: AppHandle, entries: Vec<LogEntryInput>) -> Result<
 #[tauri::command]
 pub async fn open_debug_window(app: AppHandle) -> Result<(), AppError> {
     if let Some(w) = app.get_webview_window("debug") {
-        w.close().map_err(|e| AppError::Business(format!("关闭旧调试窗口失败: {}", e)))?;
+        w.close()
+            .map_err(|e| AppError::Business(format!("关闭旧调试窗口失败: {}", e)))?;
     }
 
     #[cfg(debug_assertions)]
@@ -46,7 +49,8 @@ pub async fn open_debug_window(app: AppHandle) -> Result<(), AppError> {
     #[cfg(not(debug_assertions))]
     let url_str = "tauri://localhost?debugwin=1".to_string();
 
-    let url = tauri::Url::parse(&url_str).map_err(|e| AppError::Business(format!("URL 解析失败: {}", e)))?;
+    let url = tauri::Url::parse(&url_str)
+        .map_err(|e| AppError::Business(format!("URL 解析失败: {}", e)))?;
 
     let w = WebviewWindowBuilder::new(&app, "debug", WebviewUrl::External(url))
         .title("调试控制台")
@@ -76,7 +80,8 @@ pub async fn open_debug_window(app: AppHandle) -> Result<(), AppError> {
 pub async fn close_debug_window(app: AppHandle) -> Result<(), AppError> {
     disable_sql_log();
     if let Some(w) = app.get_webview_window("debug") {
-        w.close().map_err(|e| AppError::Business(format!("关闭调试窗口失败: {}", e)))?;
+        w.close()
+            .map_err(|e| AppError::Business(format!("关闭调试窗口失败: {}", e)))?;
     }
     if let Some(main) = app.get_webview_window("main") {
         let _ = main.emit("debug-window-closed", ());
@@ -88,7 +93,9 @@ pub async fn close_debug_window(app: AppHandle) -> Result<(), AppError> {
 #[tauri::command]
 pub async fn get_debug_logs() -> Result<Vec<LogEntry>, AppError> {
     let buffer = log_buffer();
-    let logs = buffer.lock().map_err(|e| AppError::Business(format!("获取日志缓冲锁失败: {}", e)))?;
+    let logs = buffer
+        .lock()
+        .map_err(|e| AppError::Business(format!("获取日志缓冲锁失败: {}", e)))?;
     Ok(logs.clone())
 }
 
@@ -96,7 +103,9 @@ pub async fn get_debug_logs() -> Result<Vec<LogEntry>, AppError> {
 #[tauri::command]
 pub async fn clear_debug_logs() -> Result<(), AppError> {
     let buffer = log_buffer();
-    let mut logs = buffer.lock().map_err(|e| AppError::Business(format!("获取日志缓冲锁失败: {}", e)))?;
+    let mut logs = buffer
+        .lock()
+        .map_err(|e| AppError::Business(format!("获取日志缓冲锁失败: {}", e)))?;
     logs.clear();
     Ok(())
 }

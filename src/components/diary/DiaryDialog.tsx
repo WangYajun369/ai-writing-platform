@@ -51,7 +51,7 @@ import { countWordsFromHtml } from '@/lib/utils'
 import { isEditorUsable } from '@/lib/editor-guard'
 import { processEditorImage, processCroppedEditorImage } from '@/lib/image-utils'
 import { extractKeywords, formatDiaryTime, formatFullDateLabel, toDateKey } from '@/lib/diary-utils'
-import { useAppStore } from '@/stores/appStore'
+import { usePreferencesStore } from '@/stores/preferencesStore'
 import { ToolbarBtn, TooltipWrap } from '@/components/editor/toolbar/ToolbarBtn'
 import { HeadingSelect } from '@/components/editor/toolbar/HeadingSelect'
 import { CodeLanguageSelect } from '@/components/editor/toolbar/CodeLanguageSelect'
@@ -93,7 +93,7 @@ async function pickImage(): Promise<string | null> {
 }
 
 export default function DiaryDialog({ diaryDate, onClose, onChanged }: DiaryDialogProps) {
-  const { fontSize, setFontSize } = useAppStore()
+  const { fontSize, setFontSize } = usePreferencesStore()
 
   // ── 保存相关状态 ──
   const [saving, setSaving] = useState(false)

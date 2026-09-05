@@ -3,8 +3,8 @@
 //! task_activity_logs 表：任务与项目级动作时间线。task_id / project_id
 //! 至少一个非空；project_id 冗余冗余便于项目动态与周报统计。
 
-use rusqlite::{Connection, params, Result};
 use crate::models::ActivityLog;
+use rusqlite::{params, Connection, Result};
 
 /// 完整 SELECT 列名
 pub const ACTIVITY_SELECT: &str = "id,task_id,project_id,action,summary,created_at";
@@ -50,7 +50,11 @@ pub fn list_by_task(conn: &Connection, task_id: &str, limit: i64) -> Result<Vec<
 }
 
 /// 某项目的动态时间线（时间倒序）
-pub fn list_by_project(conn: &Connection, project_id: &str, limit: i64) -> Result<Vec<ActivityLog>> {
+pub fn list_by_project(
+    conn: &Connection,
+    project_id: &str,
+    limit: i64,
+) -> Result<Vec<ActivityLog>> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {ACTIVITY_SELECT} FROM task_activity_logs \
          WHERE project_id=?1 ORDER BY created_at DESC, id DESC LIMIT ?2"

@@ -3,14 +3,14 @@
 //! 封装项目的 CRUD / 软删回收 / 实时统计，事务性联动任务（删除项目连带
 //! 软删任务；恢复时一并恢复）。
 
-use tauri::AppHandle;
-use uuid::Uuid;
+use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::{Project, ProjectStats, ProjectView};
-use crate::commands::window::emit_sql_log;
-use crate::utils::{now, local_now, validate_len};
 use crate::repository::{project_repo, task_repo};
+use crate::utils::{local_now, now, validate_len};
+use tauri::AppHandle;
+use uuid::Uuid;
 
 /// 项目名称长度上限（PRD 9.2.1）
 pub const MAX_PROJECT_NAME: usize = 50;
@@ -18,8 +18,7 @@ pub const MAX_PROJECT_NAME: usize = 50;
 const VALID_STATUS: [&str; 3] = ["active", "completed", "archived"];
 /// 未指定颜色时的系统分配色板（PRD 9.2.1「默认系统分配」）
 const DEFAULT_COLORS: [&str; 8] = [
-    "#6366f1", "#10b981", "#f59e0b", "#ef4444",
-    "#8b5cf6", "#06b6d4", "#ec4899", "#84cc16",
+    "#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#84cc16",
 ];
 
 fn valid_status(s: &str) -> bool {
@@ -32,7 +31,11 @@ fn normalize_opt(v: Option<String>) -> Option<String> {
         None => None,
         Some(s) => {
             let t = s.trim();
-            if t.is_empty() { None } else { Some(t.to_string()) }
+            if t.is_empty() {
+                None
+            } else {
+                Some(t.to_string())
+            }
         }
     }
 }
@@ -101,7 +104,14 @@ pub fn list_projects(
 /// 根据 ID 获取单个项目（含统计）
 pub fn get_project(app: &AppHandle, db: &AppDb, id: &str) -> Result<ProjectView, AppError> {
     let now_local = local_now();
-    emit_sql_log(app, "SELECT", "projects", &format!("id={id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "SELECT",
+        "projects",
+        &format!("id={id}"),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     let project = project_repo::find_active(&conn, id)
         .map_err(|_| AppError::NotFound("未找到该项目或项目已删除".into()))?;
@@ -117,7 +127,13 @@ fn fetch_stats(
 ) -> Result<ProjectStats, AppError> {
     let (total, todo, doing, done, overdue) =
         task_repo::project_counts(conn, project_id, now_local)?;
-    Ok(ProjectStats { total, todo, doing, done, overdue })
+    Ok(ProjectStats {
+        total,
+        todo,
+        doing,
+        done,
+        overdue,
+    })
 }
 
 // ── 写入 ──
@@ -165,10 +181,26 @@ pub fn create_project(
         color.trim().to_string()
     };
 
-    emit_sql_log(app, "INSERT", "projects", &format!("id={id}, name={name}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "INSERT",
+        "projects",
+        &format!("id={id}, name={name}"),
+        file!(),
+        line!(),
+    );
     project_repo::insert(
-        &conn, &id, name, description, &color, icon, status,
-        start.as_deref(), end.as_deref(), pinned as i64, &ts,
+        &conn,
+        &id,
+        name,
+        description,
+        &color,
+        icon,
+        status,
+        start.as_deref(),
+        end.as_deref(),
+        pinned as i64,
+        &ts,
     )?;
     Ok(project_repo::find_by_id(&conn, &id)?)
 }
@@ -245,7 +277,14 @@ pub fn update_project(
     );
     param_values.push(Box::new(id.to_string()));
 
-    emit_sql_log(app, "UPDATE", "projects", &format!("id={id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "projects",
+        &format!("id={id}"),
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     let params_refs: Vec<&dyn rusqlite::types::ToSql> =
         param_values.iter().map(|p| p.as_ref()).collect();
@@ -261,7 +300,14 @@ pub fn delete_project(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppEr
     let mut conn = db.pool.get()?;
     let tx = conn.transaction()?;
     let ts = now();
-    emit_sql_log(app, "UPDATE", "projects", &format!("id={id}, soft delete (+tasks)"), file!(), line!());
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "projects",
+        &format!("id={id}, soft delete (+tasks)"),
+        file!(),
+        line!(),
+    );
     let affected = project_repo::soft_delete(&tx, id, &ts)?;
     if affected == 0 {
         return Err(AppError::NotFound("未找到该项目或项目已删除".into()));
@@ -277,7 +323,14 @@ pub fn restore_project(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppE
     let mut conn = db.pool.get()?;
     let tx = conn.transaction()?;
     let ts = now();
-    emit_sql_log(app, "UPDATE", "projects", &format!("id={id}, restore (+tasks)"), file!(), line!());
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "projects",
+        &format!("id={id}, restore (+tasks)"),
+        file!(),
+        line!(),
+    );
     let affected = project_repo::restore(&tx, id, &ts)?;
     if affected == 0 {
         return Err(AppError::NotFound("未找到该项目或该项目不在回收站".into()));
@@ -290,14 +343,28 @@ pub fn restore_project(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppE
 /// 彻底删除项目（CASCADE 删除其下任务与任务-标签关联）
 pub fn hard_delete_project(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
     let conn = db.pool.get()?;
-    emit_sql_log(app, "DELETE", "projects", &format!("id={id}, hard delete"), file!(), line!());
+    emit_sql_log(
+        app,
+        "DELETE",
+        "projects",
+        &format!("id={id}, hard delete"),
+        file!(),
+        line!(),
+    );
     project_repo::hard_delete(&conn, id)?;
     Ok(())
 }
 
 /// 列出回收站中的项目
 pub fn list_deleted_projects(app: &AppHandle, db: &AppDb) -> Result<Vec<Project>, AppError> {
-    emit_sql_log(app, "SELECT", "projects", "deleted_at IS NOT NULL", file!(), line!());
+    emit_sql_log(
+        app,
+        "SELECT",
+        "projects",
+        "deleted_at IS NOT NULL",
+        file!(),
+        line!(),
+    );
     let conn = db.pool.get()?;
     Ok(project_repo::list_deleted(&conn)?)
 }

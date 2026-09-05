@@ -3,15 +3,15 @@
 //! 幂等迁移：读取全部未删除日程，写入默认项目「个人事务」下；
 //! 完成标记在 task_meta 中，重复执行直接返回 already=true。
 
-use tauri::AppHandle;
-use uuid::Uuid;
-use rusqlite::OptionalExtension;
+use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::MigrateResult;
-use crate::commands::window::emit_sql_log;
-use crate::utils::{now, local_now, local_today};
-use crate::repository::{project_repo, task_repo, schedule_repo, task_meta_repo};
+use crate::repository::{project_repo, schedule_repo, task_meta_repo, task_repo};
+use crate::utils::{local_now, local_today, now};
+use rusqlite::OptionalExtension;
+use tauri::AppHandle;
+use uuid::Uuid;
 
 /// 迁移幂等标记 key
 pub const MIGRATION_META_KEY: &str = "taskcard:migrate_schedules";
@@ -95,8 +95,20 @@ pub fn migrate_schedules(app: &AppHandle, db: &AppDb) -> Result<MigrateResult, A
         let planned = if s.schedule_date == today { 1 } else { 0 };
         let sort_order = task_repo::next_sort_order(&tx, &pid, status)?;
         task_repo::insert(
-            &tx, &id, &pid, None, &truncate_title(&s.content), "", status, "medium",
-            None, Some(&due), planned, "", sort_order, &ts,
+            &tx,
+            &id,
+            &pid,
+            None,
+            &truncate_title(&s.content),
+            "",
+            status,
+            "medium",
+            None,
+            Some(&due),
+            planned,
+            "",
+            sort_order,
+            &ts,
         )?;
         if s.done {
             task_repo::update_status(&tx, &id, "done", Some(now_local.as_str()), &ts)?;

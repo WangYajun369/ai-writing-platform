@@ -2,7 +2,7 @@
 //!
 //! 用于模块级持久化：日程迁移幂等标记、提醒偏好、提醒触发去重等。
 
-use rusqlite::{Connection, params, Result};
+use rusqlite::{params, Connection, Result};
 
 /// 读取指定 key 的值，不存在返回 None
 pub fn get(conn: &Connection, key: &str) -> Result<Option<String>> {

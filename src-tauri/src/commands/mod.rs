@@ -2,30 +2,30 @@
 //!
 //! 将各子模块的 Tauri 命令统一导出，供 lib.rs 注册。
 
+pub mod agent;
+pub mod ai;
 pub mod book;
-pub mod volume;
 pub mod chapter;
-pub mod snapshot;
-pub mod world_card;
 pub mod diary;
+pub mod image;
+pub mod io;
 pub mod schedule;
+pub mod snapshot;
+pub mod system_check;
+pub mod tts;
 pub mod vocab;
 pub mod vocab_dict;
-pub mod tts;
-pub mod ai;
-pub mod io;
-pub mod image;
+pub mod volume;
 pub mod window;
-pub mod agent;
-pub mod system_check;
+pub mod world_card;
 // ── 任务卡模块 ──
-pub mod project;
-pub mod task;
-pub mod tag;
-pub mod task_meta;
+pub mod activity;
+pub mod attachment;
 pub mod migrate;
+pub mod project;
 pub mod reminder;
 pub mod subtask;
+pub mod tag;
+pub mod task;
+pub mod task_meta;
 pub mod template;
-pub mod attachment;
-pub mod activity;

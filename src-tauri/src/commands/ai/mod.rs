@@ -2,8 +2,8 @@
 //!
 //! 包含：AI 连接测试、RAG 语义检索、Embedding 生成、流式对话、内容总结。
 
-pub mod embedding;
 pub mod chat;
+pub mod embedding;
 pub mod summarize;
 pub mod test;
 

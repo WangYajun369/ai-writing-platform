@@ -4,8 +4,8 @@
 //! 事务性批量写（拖拽重排、标签整体替换等）在 service 层以 `conn.transaction()`
 //! 包裹，repo 仅提供聚焦的单条 SQL 操作。
 
-use rusqlite::{Connection, params, Result};
 use crate::models::TaskCard;
+use rusqlite::{params, Connection, Result};
 
 /// 完整 SELECT 列名（不含 tags；tags 由 service 聚合）。用于无 JOIN 的单表查询。
 pub const TASK_SELECT: &str = "id,project_id,parent_id,title,description,status,priority,plan_start_time,due_time,planned_today,completed_time,note,completion_summary,remind_at,remind_type,recurrence,note_html,started_at,work_seconds,sort_order,deleted_at,created_at,updated_at";

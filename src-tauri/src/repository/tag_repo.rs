@@ -3,8 +3,8 @@
 //! 提供 tags 表的 CRUD SQL 与 row → Tag 解析。
 //! 标签无软删除：删除即物理删除，task_tags 由外键级联清理。
 
-use rusqlite::{Connection, params, Result};
 use crate::models::Tag;
+use rusqlite::{params, Connection, Result};
 
 /// 完整 SELECT 列名
 pub const TAG_SELECT: &str = "id,name,color,status,created_at,updated_at";
@@ -32,9 +32,7 @@ pub fn list_all(conn: &Connection) -> Result<Vec<Tag>> {
 
 /// 按名称精确查询（标签名唯一），不存在返回 None
 pub fn find_by_name(conn: &Connection, name: &str) -> Result<Option<Tag>> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {TAG_SELECT} FROM tags WHERE name=?1"
-    ))?;
+    let mut stmt = conn.prepare(&format!("SELECT {TAG_SELECT} FROM tags WHERE name=?1"))?;
     let mut rows = stmt.query_map(params![name], |row| parse_tag(row))?;
     match rows.next() {
         Some(r) => r.map(Some),
@@ -44,9 +42,7 @@ pub fn find_by_name(conn: &Connection, name: &str) -> Result<Option<Tag>> {
 
 /// 按 id 查询标签
 pub fn find_by_id(conn: &Connection, id: &str) -> Result<Option<Tag>> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {TAG_SELECT} FROM tags WHERE id=?1"
-    ))?;
+    let mut stmt = conn.prepare(&format!("SELECT {TAG_SELECT} FROM tags WHERE id=?1"))?;
     let mut rows = stmt.query_map(params![id], |row| parse_tag(row))?;
     match rows.next() {
         Some(r) => r.map(Some),

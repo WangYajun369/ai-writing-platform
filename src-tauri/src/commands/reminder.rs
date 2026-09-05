@@ -1,9 +1,9 @@
 //! 任务卡提醒 IPC 命令
 
-use tauri::{AppHandle, State};
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::service::reminder_service;
+use tauri::{AppHandle, State};
 
 /// 手动触发一次到期/逾期提醒扫描（调试 & 设置页「立即检查」）
 #[tauri::command]

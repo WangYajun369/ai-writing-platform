@@ -2,14 +2,14 @@
 //!
 //! 提供世界观资料库、版本历史、章节总结、AI 工具箱、调试控制台独立窗口的打开与关闭功能。
 
-pub mod manager;
 pub mod debug;
+pub mod manager;
 pub mod validate;
 
-use std::sync::{Mutex, OnceLock};
-use std::sync::atomic::{AtomicBool, Ordering};
 use chrono::Local;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
 use tauri::Emitter;
 
 /// 日志条目

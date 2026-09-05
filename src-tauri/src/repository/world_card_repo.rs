@@ -2,8 +2,8 @@
 //!
 //! 提供 world_cards 表的 CRUD SQL 操作及 FTS5 全文搜索。
 
-use rusqlite::{Connection, params, Result};
 use crate::models::WorldCard;
+use rusqlite::{params, Connection, Result};
 
 /// 从 row 解析 WorldCard（列顺序固定）
 pub fn parse_world_card(row: &rusqlite::Row) -> Result<WorldCard> {
@@ -87,7 +87,10 @@ pub fn delete(conn: &Connection, id: &str) -> Result<usize> {
 
 /// 标记卡片为已向量化
 pub fn mark_vectorized(conn: &Connection, id: &str) -> Result<()> {
-    conn.execute("UPDATE world_cards SET vectorized = 1 WHERE id = ?1", params![id])?;
+    conn.execute(
+        "UPDATE world_cards SET vectorized = 1 WHERE id = ?1",
+        params![id],
+    )?;
     Ok(())
 }
 
@@ -102,7 +105,9 @@ pub fn search_fts5(
                FROM world_cards w INNER JOIN world_cards_fts fts ON w.rowid = fts.rowid \
                WHERE w.book_id=?1 AND world_cards_fts MATCH ?2 ORDER BY rank LIMIT ?3";
     let mut stmt = conn.prepare(sql)?;
-    let items = stmt.query_map(params![book_id, fts_query, limit as i64], |row| parse_world_card(row))?;
+    let items = stmt.query_map(params![book_id, fts_query, limit as i64], |row| {
+        parse_world_card(row)
+    })?;
     items.collect()
 }
 
@@ -116,7 +121,9 @@ pub fn search_like(
     let mut stmt = conn.prepare(
         "SELECT id,book_id,type,title,content,content_html,tags,vectorized,created_at,updated_at FROM world_cards WHERE book_id=?1 AND (title LIKE ?2 OR content LIKE ?2) ORDER BY updated_at DESC LIMIT ?3"
     )?;
-    let items = stmt.query_map(params![book_id, pattern, limit as i64], |row| parse_world_card(row))?;
+    let items = stmt.query_map(params![book_id, pattern, limit as i64], |row| {
+        parse_world_card(row)
+    })?;
     items.collect()
 }
 
@@ -130,9 +137,12 @@ pub fn count_with_content(conn: &Connection, book_id: &str) -> Result<usize> {
 }
 
 /// 列出卡片 ID + content_html（用于 embedding 生成）
-pub fn list_ids_and_content_plain(conn: &Connection, book_id: &str) -> Result<Vec<(String, String)>> {
+pub fn list_ids_and_content_plain(
+    conn: &Connection,
+    book_id: &str,
+) -> Result<Vec<(String, String)>> {
     let mut stmt = conn.prepare(
-        "SELECT id, content_html FROM world_cards WHERE book_id = ?1 AND content_html != ''"
+        "SELECT id, content_html FROM world_cards WHERE book_id = ?1 AND content_html != ''",
     )?;
     let items = stmt.query_map(params![book_id], |row| {
         let id: String = row.get(0)?;
@@ -155,15 +165,12 @@ pub fn search_fts5_plain(
                INNER JOIN world_cards_fts fts ON w.rowid = fts.rowid \
                WHERE w.book_id=?1 AND world_cards_fts MATCH ?2 LIMIT ?3";
     let mut stmt = conn.prepare(sql)?;
-    let results = stmt.query_map(
-        params![book_id, fts_query, limit],
-        |row| {
-            let id: String = row.get(0)?;
-            let title: String = row.get(1)?;
-            let html: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
-            Ok((id, title, html))
-        },
-    )?;
+    let results = stmt.query_map(params![book_id, fts_query, limit], |row| {
+        let id: String = row.get(0)?;
+        let title: String = row.get(1)?;
+        let html: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+        Ok((id, title, html))
+    })?;
     results.collect::<Result<Vec<_>, _>>()
 }
 
@@ -176,16 +183,13 @@ pub fn search_like_plain(
 ) -> Result<Vec<(String, String, String)>> {
     let mut stmt = conn.prepare(
         "SELECT id, title, content_html FROM world_cards
-         WHERE book_id=?1 AND content_html LIKE ?2 LIMIT ?3"
+         WHERE book_id=?1 AND content_html LIKE ?2 LIMIT ?3",
     )?;
-    let results = stmt.query_map(
-        params![book_id, pattern, limit],
-        |row| {
-            let id: String = row.get(0)?;
-            let title: String = row.get(1)?;
-            let html: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
-            Ok((id, title, html))
-        },
-    )?;
+    let results = stmt.query_map(params![book_id, pattern, limit], |row| {
+        let id: String = row.get(0)?;
+        let title: String = row.get(1)?;
+        let html: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+        Ok((id, title, html))
+    })?;
     results.collect::<Result<Vec<_>, _>>()
 }

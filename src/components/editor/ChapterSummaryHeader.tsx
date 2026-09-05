@@ -9,7 +9,8 @@ import { RefreshCwIcon, Loader2Icon, CheckCircleIcon, AlertCircleIcon, InfoIcon,
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { cn } from '@/lib/utils'
-import { useAppStore, useCurrentChapter } from '@/stores/appStore'
+import { useCurrentChapter } from '@/stores/appStore'
+import { useAiStore } from '@/stores/aiStore'
 import { chapterApi, aiApi, windowApi } from '@/lib/tauri-bridge'
 import { getChatApiKey } from '@/types'
 import type { SummarizeArgs } from '@/lib/tauri-bridge'
@@ -43,7 +44,7 @@ interface ChapterSummaryPanelProps {
 
 /** 独立窗口模式：章节 AI 总结面板 */
 export function ChapterSummaryPanel({ chapterId, chapterTitle }: ChapterSummaryPanelProps) {
-  const { aiConfig, aiToolCategories } = useAppStore()
+  const { aiConfig, aiToolCategories } = useAiStore()
   const [summaryData, setSummaryData] = useState<ChapterSummaryData>({ summary: null, summaryAt: null })
   const [isGenerating, setIsGenerating] = useState(false)
   const [lastRequest, setLastRequest] = useState<SummarizeArgs | null>(null)

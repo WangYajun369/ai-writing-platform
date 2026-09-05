@@ -33,6 +33,20 @@
 > **问题 28**（skills/cancel 占位）已实现 `CancelToken` 即时中断（AtomicBool + tokio::Notify +
 > tokio::select!，SSE 读取与 HTTP 发送均可即时打断，取消不再补发 done）。**Phase 2 全部关闭**，
 > 正文与矩阵状态已同步。
+>
+> **2026-09-05 复核更新（Phase 3 收口）**：Phase 3 六项全部落地，路线图关闭：
+> - **问题 3**：Zustand slice 升级为三个真正独立的领域 store —— `booksStore` / `aiStore` /
+>   `preferencesStore`，`appStore.ts` 降为出口 + 跨域便捷选择器（`useCurrentBook` 等路径不变）；
+> - **问题 6**：`useAiChat` 拆为 4 个职责单一 hook（消息仓储 / 滑动窗口摘要 / Agent 流式传输桥接 / 主编排）；
+> - **问题 23**：新增 `useShortcut` 集中式快捷键系统（`src/hooks/useShortcut.ts`），统一解析
+>   `mod`/`ctrl`/`alt`/`shift` 与平台差异，注册表 `SHORTCUT_DEFS` 集中维护，原 Ctrl+S / Esc 专注 /
+>   ⌘⇧P 命令面板已迁移；
+> - **问题 22**：编辑器会话草稿保护（每次击键写 `sessionStorage`，入库成功清除，加载时自动恢复并提示）；
+> - **问题 15**：`DraggableVolume` / `DraggableChapter` 加 `React.memo`，`OutlinePanel` 行渲染抽为
+>   `OutlineListRow` memo 边界并稳定回调引用（`MessageBubble` / `MessageList` 此前已 memo）；
+> - **问题 29**：记忆库容量上限与过期清理（`memory.rs` 新增 `prune_memories` / `prune_all_memories`，
+>   `last_hit_at` 命中打点 + 迁移列，分组上限 60 / 全书 240 / 180 天未命中过期）。
+> 正文问题条目、优先级矩阵与 Phase 3 路线图已同步更新。
 
 ---
 
@@ -118,7 +132,7 @@ updateChapter(chapterId, { deletedAt: new Date().toISOString() })
 
 ### B. 状态管理 — 🟡 中优先级
 
-#### 问题 3：Zustand store 职责过重
+#### 问题 3：Zustand store 职责过重 ✅
 
 `AppState` 接口包含 172 行类型定义，涵盖 6 个完全不相关的领域（书籍、AI、偏好、插件、编辑器状态、AI 工具分类）。单一 store 导致：
 
@@ -139,6 +153,16 @@ export const usePreferencesStore = create<PreferencesSlice>(...)
 ```
 
 当前 Slice 模式只是代码组织层面的拆分，未真正实现状态隔离。
+
+> **状态**：✅ 已修复（2026-09-05，Phase 3 收口）。已升级为三个真正独立的领域 store：
+> - `src/stores/booksStore.ts`（`useBooksStore`）— 书籍/卷/章节/回收站/DB 状态
+> - `src/stores/aiStore.ts`（`useAiStore`）— AI 配置/对话/摘要/工具箱分类/版本
+> - `src/stores/preferencesStore.ts`（`usePreferencesStore`）— 主题/字体/网格/编辑器宽度/视图
+>
+> 原 `appStore.ts` 降级为「三个 store 的再导出 + 跨域便捷选择器」（`useCurrentBook` /
+> `useCurrentChapter` / `useCurrentAiMessages` / `getEditorState`），旧 import 路径全部兼容；
+> 全部消费点已迁移到对应领域 store，单 store 订阅扩散问题消除（一个领域状态变化不再触发
+> 其它领域组件重渲染）。
 
 #### 问题 4：AI 对话持久化写放大严重
 
@@ -194,7 +218,15 @@ if (!streaming) {
 - `useStreamChat` — 流式对话 + RAF 缓冲
 - `useConversationCompression` — 滑动窗口 + 摘要
 
-> **状态**：❌ 未修复。文件由 589 行降至 **483 行**，但仍为单一 hook，未按上述方案拆分。
+> **状态**：✅ 已修复（2026-09-05，Phase 3 收口）。`useAiChat` 已按职责拆为 **4 个 hook**：
+> - `useAiChatMessages`（`components/ai/hooks/useAiChatMessages.ts`）— 消息仓储（增删改/持久化）
+> - `useConversationSummarizer`（`components/ai/hooks/useConversationSummarizer.ts`）— 滑动窗口历史摘要
+> - `useAgentChatStream`（`components/ai/hooks/useAgentChatStream.ts`）— Agent 流式传输桥接
+>   （`agent-stream-chunk` 监听生命周期 + RAF 合并刷新）
+> - `useAiChat`（`components/ai/useAiChat.ts`）— 主编排（前置校验 → 组合 → invoke）
+>
+> 主文件由 483 行降至约 **220 行**，各子 hook 职责单一；对外导出（`getFriendlyAiError` /
+> `QUICK_HINTS` / `PROVIDER_LABELS` / `stripHtmlToText`）原路径保持兼容。
 
 ---
 
@@ -318,7 +350,7 @@ all_rows.extend(embedding_repo::list_world_card_embeddings(conn, book_id)?);
 
 **建议**：使用 `@dnd-kit` 的 `rectIntersection` 碰撞检测算法，保持 `overscan: 20`，避免全量渲染。
 
-#### 问题 15：React 缺少 Memoization
+#### 问题 15：React 缺少 Memoization ✅
 
 以下组件未使用 `React.memo`，每次父组件更新都重渲染：
 
@@ -326,6 +358,11 @@ all_rows.extend(embedding_repo::list_world_card_embeddings(conn, book_id)?);
 - `RichTextEditor` 直接使用 `useCurrentChapter()` 返回新引用
 
 **建议：** 对 `DraggableVolume`、`DraggableChapter`、`MessageBubble` 等列表项使用 `React.memo`。
+
+> **状态**：✅ 已修复（2026-09-05，Phase 3 收口）。`DraggableVolume` / `DraggableChapter` 已加
+> `React.memo`；`OutlinePanel` 虚拟列表行渲染抽为 `OutlineListRow` memo 边界组件，目录增删/重排
+> 相关处理器全部 `useCallback` 稳定化（`rowHandlers` 合集），拖拽悬停等局部状态变化时未受影响行
+> 直接跳过渲染。`MessageBubble` / `MessageList` / `AgentMessageList` 复核确认此前已 memo。
 
 #### 问题 16：Vite 未拆 `react`/`react-dom` chunk
 
@@ -401,19 +438,32 @@ let title: String = row.get("title")?;
 
 ### D. 缺失功能 — 🟡 中优先级
 
-#### 问题 22：缺少离线/草稿保护机制
+#### 问题 22：缺少离线/草稿保护机制 ✅
 
 如果应用崩溃，未保存的内容丢失。
 
 **建议**：利用 TipTap 的 `content` + `sessionStorage` 在每次编辑时备份草稿。
 
-#### 问题 23：缺少快捷键系统
+> **状态**：✅ 已修复（2026-09-05，Phase 3 收口）。`RichTextEditor` 新增会话级草稿保护：
+> - 每次击键（防抖前）同步写入 `sessionStorage`（key `mi_draft:{bookId}:{chapterId}`）；
+> - 内容成功入库（`saveContent`）后自动清除草稿，避免误恢复；
+> - 章节加载时若存在「与库中内容不同的草稿」则优先恢复并 toast 提示「已恢复未保存的编辑草稿」。
+>
+> 覆盖崩溃/误关/切章前未落库等场景（`sessionStorage` 生命周期 = 当前标签页会话）。
+
+#### 问题 23：缺少快捷键系统 ✅
 
 仅实现了 `Ctrl+S` 保存。写作软件应有丰富的快捷键（加粗/倾斜/标题/撤销等）。
 
 **建议**：使用 `useEffect` 监听全局 keydown，或使用 TipTap 内置快捷键。
 
-> **状态**：❌ 未修复。仍仅有 `Ctrl/Cmd + S` 保存与 `Esc` 退出专注模式，格式快捷键由 TipTap 内置提供，无全局自定义快捷键系统。
+> **状态**：✅ 已修复（2026-09-05，Phase 3 收口）。新增集中式全局快捷键系统
+> `src/hooks/useShortcut.ts`：
+> - `useShortcut(combo, handler, opts?)` hook：统一解析组合键语法（`mod` / `ctrl` / `alt` /
+>   `shift`，`mod` = ⌘(macOS)/Ctrl(其余)），支持 `enabled` / `preventDefault` / `keydown|keyup`；
+> - `SHORTCUT_DEFS` 注册表集中维护全部快捷键定义（便于文档化/设置页展示）；
+> - 已迁移：编辑器 `mod+s` 保存、`Escape` 退出专注模式（EditorPage，仅专注模式生效）、
+>   `mod+shift+p` 命令面板唤起。格式快捷键（B/I/H1-3 等）由 TipTap 编辑器内置提供不变。
 
 #### 问题 24：缺少写作统计面板
 
@@ -464,13 +514,19 @@ let title: String = row.get("title")?;
 > 的流读取随即 drop、连接关闭，服务端停止生成；取消路径不再补发 `done` 事件（`engine.rs`
 > 可验证）。
 
-#### 问题 29：记忆库无容量上限与过期清理 ❌ 🟢 P2
+#### 问题 29：记忆库无容量上限与过期清理 ✅ 🟢 P2
 
 `memory/store.py` 的 `memories` 表无行数上限，`relevance_score` 随时间衰减但从不删除。长期使用会产生大量低分记忆，拖慢检索（每次取 50 条候选全量打分）。
 
 **建议**：定期清理 `relevance_score` 低于阈值且超过 N 天未命中的记忆；或按 (book_id, skill_type) 限制上限。
 
-> **状态**：❌ 未修复。
+> **状态**：✅ 已修复（2026-09-05，Phase 3 收口）。`commands/agent/memory.rs` 新增：
+> - `last_hit_at` 列（`db/mod.rs` 迁移 + `schema.rs` 校验），检索命中时打点记录最近注入时间；
+> - `prune_memories(conn, book_id, skill_type)`：分组上限 **60** 条/`(book_id, skill_type)`（超出按
+>   相关度低 → 久未命中 → 后插入淘汰）、全书上限 **240** 条（组清理后兜底）、超过 **180 天**
+>   未命中的记忆过期删除；
+> - 每次自动保存新记忆后随路清理（`extract_and_save`），应用启动时 `prune_all_memories`
+>   兜底清理存量（`lib.rs` setup，幂等）。
 
 #### 问题 30：Agent 端口硬编码 🟢 P3
 
@@ -502,23 +558,23 @@ let title: String = row.get("title")?;
 | 🟡 P1 | `withGlobalTauri: true`（问题 10） | 安全 | XSS 攻击面增大 | ✅ |
 | 🟡 P1 | Bridge Server 无鉴权（问题 27） | 安全 | 本地数据泄露 | ✅ 已消除 |
 | 🟡 P1 | `/skills/cancel` 占位实现（问题 28） | 功能缺陷 | 无法中断，浪费 Token | ✅ |
-| 🟡 P1 | Zustand 单 store 过重（问题 3） | 架构 | 性能/可维护性 | 🟡 |
+| 🟡 P1 | Zustand 单 store 过重（问题 3） | 架构 | 性能/可维护性 | ✅ |
 | 🟡 P1 | AI 对话写放大（问题 4） | 性能 | localStorage 频繁序列化 | 🟡 |
 | 🟡 P1 | 前端乐观更新无验证（问题 2） | 数据一致性 | 状态可能不同步 | ⚪ |
 | 🟡 P1 | 向量搜索全量加载（问题 13） | 性能 | 大库内存爆炸 | ✅ |
-| 🟡 P1 | 缺少快捷键系统（问题 23） | 功能缺失 | 用户体验 | ❌ |
+| 🟡 P1 | 缺少快捷键系统（问题 23） | 功能缺失 | 用户体验 | ✅ |
 | 🟡 P1 | 缺少写作统计面板（问题 24） | 功能缺失 | 用户激励 | 🟡 |
 | 🟢 P2 | 动态 SQL 重复（问题 17） | 代码质量 | 可维护性 | ⚪ |
-| 🟢 P2 | `useAiChat` 过大（问题 6） | 代码质量 | 可读性 | ❌ |
-| 🟢 P2 | React.memo 缺失（问题 15） | 性能 | 渲染效率 | ⚪ |
+| 🟢 P2 | `useAiChat` 过大（问题 6） | 代码质量 | 可读性 | ✅ |
+| 🟢 P2 | React.memo 缺失（问题 15） | 性能 | 渲染效率 | ✅ |
 | 🟢 P2 | FTS5 搜索不一致（问题 18） | 代码质量 | 可维护性 | ⚪ |
 | 🟢 P2 | 列索引访问（问题 19） | 代码质量 | Schema 变更风险 | ⚪ |
 | 🟢 P2 | 缺少 Linux 构建（问题 26） | 部署 | 用户覆盖面 | ❌ |
-| 🟢 P2 | 记忆库无清理机制（问题 29） | 性能 | 检索退化 | ❌ |
+| 🟢 P2 | 记忆库无清理机制（问题 29） | 性能 | 检索退化 | ✅ |
 | 🟢 P3 | `OutlinePanel` 过大（问题 5） | 代码质量 | 可读性 | 🟡 |
 | 🟢 P3 | `check-versions.ts`（问题 20） | 代码质量 | 工具链 | ⚪ |
 | 🟢 P3 | `beforeDevCommand`（问题 21） | 构建 | 一致性 | ❌ |
-| 🟢 P3 | 缺少离线草稿（问题 22） | 功能缺失 | 数据安全 | ❌ |
+| 🟢 P3 | 缺少离线草稿（问题 22） | 功能缺失 | 数据安全 | ✅ |
 | 🟢 P3 | AI 对话导出（问题 25） | 功能缺失 | 数据迁移 | ❌ |
 | 🟢 P3 | Agent 端口硬编码（问题 30） | 可维护性 | 配置分散 | ✅ 已消除 |
 | — | FTS5 每次启动重建（问题 12） | 性能 | 大库启动慢 | ✅ 已修复 |
@@ -550,14 +606,21 @@ let title: String = row.get("title")?;
 4. ~~`beforeDevCommand` / `beforeBuildCommand` 改为 `pnpm run …`（问题 21）~~ ✅ **已完成**（2026-09-05，v1.5.0）
 5. ~~向量搜索加 `LIMIT` 分页加载（问题 13 缓解）~~ ✅ 已由 sqlite-vec KNN 方案（O(k)）取代（2026-09-05）
 
-### Phase 3（中期 — 2-4 周）
+### Phase 3（✅ 已于 2026-09-05 关闭）：体验与架构打磨
 
-1. 拆分 `useAiChat`（483 行）为 4 个职责单一的 hook（问题 6）
-2. 将 Zustand 的 slice 模式升级为真正独立的 store（问题 3 收尾）
-3. 全局快捷键系统（问题 23）
-4. 离线草稿保护：TipTap content → sessionStorage（问题 22）
-5. `DraggableVolume` / `DraggableChapter` / `MessageBubble` 加 `React.memo`（问题 15）
-6. 记忆库容量上限与过期清理（问题 29）
+1. ~~拆分 `useAiChat` 为 4 个职责单一的 hook（问题 6）~~ ✅ **已完成**（2026-09-05）：
+   `useAiChatMessages` / `useConversationSummarizer` / `useAgentChatStream` + 主编排，主文件 483 → ~220 行
+2. ~~Zustand slice 升级为真正独立的 store（问题 3 收尾）~~ ✅ **已完成**（2026-09-05）：
+   `booksStore` / `aiStore` / `preferencesStore` 三个独立实例，`appStore.ts` 保留为出口 + 跨域选择器（import 路径兼容）
+3. ~~全局快捷键系统（问题 23）~~ ✅ **已完成**（2026-09-05）：`useShortcut` + `SHORTCUT_DEFS`
+   注册表；`mod+s` 保存 / `Escape` 专注 / `mod+shift+p` 命令面板已迁移
+4. ~~离线草稿保护（问题 22）~~ ✅ **已完成**（2026-09-05）：`RichTextEditor` 击键即写
+   `sessionStorage`（`mi_draft:` 前缀），入库清除，加载自动恢复并提示
+5. ~~`DraggableVolume` / `DraggableChapter` / `MessageBubble` 加 `React.memo`（问题 15）~~ ✅
+   **已完成**（2026-09-05）：两个 Draggable 已 memo；`OutlinePanel` 行渲染抽 `OutlineListRow`
+   memo 边界 + 处理器 `useCallback` 稳定化
+6. ~~记忆库容量上限与过期清理（问题 29）~~ ✅ **已完成**（2026-09-05）：分组 60 / 全书 240 /
+   180 天未命中过期 + `last_hit_at` 命中打点，随保存与启动自动清理
 
 ### Phase 4（长期）
 

@@ -2,12 +2,12 @@
 //!
 //! 对外暴露 Tauri 命令，内部委托给 Service 层处理业务逻辑。
 
-use tauri::{AppHandle, State};
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::Book;
 use crate::service::book_service;
 use crate::service::book_service::UpdateBookParams;
+use tauri::{AppHandle, State};
 
 /// 列出所有未删除的书籍，按 updated_at 降序排列
 #[tauri::command]
@@ -23,7 +23,10 @@ pub async fn get_book(app: AppHandle, db: State<'_, AppDb>, id: String) -> Resul
 
 /// 列出回收站中已删除的书籍
 #[tauri::command]
-pub async fn list_deleted_books(app: AppHandle, db: State<'_, AppDb>) -> Result<Vec<Book>, AppError> {
+pub async fn list_deleted_books(
+    app: AppHandle,
+    db: State<'_, AppDb>,
+) -> Result<Vec<Book>, AppError> {
     book_service::list_deleted_books(&app, &db)
 }
 
@@ -40,13 +43,30 @@ pub struct CreateBookParams {
 
 /// 创建新书，生成 UUID，返回完整 Book 结构
 #[tauri::command]
-pub async fn create_book(app: AppHandle, db: State<'_, AppDb>, params: CreateBookParams) -> Result<Book, AppError> {
-    book_service::create_book(&app, &db, &params.title, &params.author, &params.description, params.daily_target, &params.tags)
+pub async fn create_book(
+    app: AppHandle,
+    db: State<'_, AppDb>,
+    params: CreateBookParams,
+) -> Result<Book, AppError> {
+    book_service::create_book(
+        &app,
+        &db,
+        &params.title,
+        &params.author,
+        &params.description,
+        params.daily_target,
+        &params.tags,
+    )
 }
 
 /// 更新书籍字段（部分更新，使用强类型 UpdateBookParams）
 #[tauri::command]
-pub async fn update_book(app: AppHandle, db: State<'_, AppDb>, id: String, params: UpdateBookParams) -> Result<Book, AppError> {
+pub async fn update_book(
+    app: AppHandle,
+    db: State<'_, AppDb>,
+    id: String,
+    params: UpdateBookParams,
+) -> Result<Book, AppError> {
     book_service::update_book(&app, &db, &id, params)
 }
 
@@ -82,13 +102,21 @@ pub async fn delete_book(app: AppHandle, db: State<'_, AppDb>, id: String) -> Re
 
 /// 恢复已删除的书籍（清除 deleted_at）
 #[tauri::command]
-pub async fn restore_book(app: AppHandle, db: State<'_, AppDb>, id: String) -> Result<(), AppError> {
+pub async fn restore_book(
+    app: AppHandle,
+    db: State<'_, AppDb>,
+    id: String,
+) -> Result<(), AppError> {
     book_service::restore_book(&app, &db, &id)
 }
 
 /// 彻底删除书籍及其全部关联数据
 #[tauri::command]
-pub async fn hard_delete_book(app: AppHandle, db: State<'_, AppDb>, id: String) -> Result<(), AppError> {
+pub async fn hard_delete_book(
+    app: AppHandle,
+    db: State<'_, AppDb>,
+    id: String,
+) -> Result<(), AppError> {
     book_service::hard_delete_book(&app, &db, &id)
 }
 

@@ -2,7 +2,7 @@
  * DraggableVolume — 可拖拽的卷条目组件
  * 支持折叠/展开、行内重命名、新建章节、删除操作
  */
-import { useState, useCallback } from 'react'
+import { useState, useCallback, memo } from 'react'
 import {
   PlusIcon,
   FolderIcon,
@@ -29,7 +29,7 @@ interface DraggableVolumeProps {
   onRename: (newTitle: string) => Promise<void>
 }
 
-export default function DraggableVolume({
+export const DraggableVolume = memo(function DraggableVolume({
   item,
   isOver,
   isChapterOver,
@@ -133,4 +133,6 @@ export default function DraggableVolume({
       <DropIndicator position="after" active={showDropAfter} />
     </div>
   )
-}
+})
+
+export default DraggableVolume

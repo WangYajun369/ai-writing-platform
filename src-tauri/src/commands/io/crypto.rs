@@ -51,10 +51,7 @@ fn resolve_backup_key(app: &tauri::AppHandle) -> Result<[u8; 32], String> {
     if let Ok(env_key) = std::env::var(BACKUP_KEY_ENV) {
         let trimmed = env_key.trim();
         if !trimmed.is_empty() {
-            crate::app_log_console!(
-                "[Crypto] 使用环境变量 {} 作为备份密钥",
-                BACKUP_KEY_ENV
-            );
+            crate::app_log_console!("[Crypto] 使用环境变量 {} 作为备份密钥", BACKUP_KEY_ENV);
             return Ok(derive_key(trimmed.as_bytes()));
         }
     }
@@ -168,9 +165,7 @@ pub fn build_encrypted_file(json_payload: &[u8]) -> Result<Vec<u8>, String> {
 /// 解析加密文件并校验引导标识，校验通过后返回解密的 JSON 载荷
 pub fn parse_encrypted_file(file_bytes: &[u8]) -> Result<String, String> {
     if file_bytes.len() < 4 {
-        return Err(
-            "文件格式错误：文件内容太短，可能不是有效的 TimeWrite 备份文件。".to_string(),
-        );
+        return Err("文件格式错误：文件内容太短，可能不是有效的 TimeWrite 备份文件。".to_string());
     }
 
     let prefix_len = u16::from_be_bytes([file_bytes[0], file_bytes[1]]) as usize;
@@ -192,8 +187,7 @@ pub fn parse_encrypted_file(file_bytes: &[u8]) -> Result<String, String> {
     }
 
     let data_block = &file_bytes[2 + prefix_len..];
-    let data_plain =
-        decrypt_bytes(data_block).map_err(|e| format!("数据解密失败：{}", e))?;
+    let data_plain = decrypt_bytes(data_block).map_err(|e| format!("数据解密失败：{}", e))?;
 
     let json_str = String::from_utf8(data_plain)
         .map_err(|e| format!("解密后的数据不是有效的 UTF-8 文本: {}", e))?;
@@ -212,10 +206,7 @@ pub fn validate_payload_structure(json_str: &str) -> Result<(), String> {
 
     for field in &["version", "exportedAt", "backupType", "database", "cache"] {
         if !obj.contains_key(*field) {
-            return Err(format!(
-                "JSON 结构校验失败：缺少必需字段 \"{}\"",
-                field
-            ));
+            return Err(format!("JSON 结构校验失败：缺少必需字段 \"{}\"", field));
         }
     }
 
@@ -245,16 +236,10 @@ pub fn validate_payload_structure(json_str: &str) -> Result<(), String> {
         "embeddings",
     ] {
         if !db.contains_key(*table) {
-            return Err(format!(
-                "JSON 结构校验失败：database 缺少表 \"{}\"",
-                table
-            ));
+            return Err(format!("JSON 结构校验失败：database 缺少表 \"{}\"", table));
         }
         if !db[*table].is_array() {
-            return Err(format!(
-                "JSON 结构校验失败：database.{} 必须是数组",
-                table
-            ));
+            return Err(format!("JSON 结构校验失败：database.{} 必须是数组", table));
         }
     }
 

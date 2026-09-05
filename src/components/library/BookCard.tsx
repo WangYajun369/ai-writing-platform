@@ -11,7 +11,7 @@ import { stat } from '@tauri-apps/plugin-fs'
 import type { Book } from '@/types'
 import { bookApi, importExportApi } from '@/lib/tauri-bridge.ts'
 import { formatWordCount, formatRelativeTime } from '@/lib/utils'
-import { useAppStore } from '@/stores/appStore'
+import { useBooksStore } from '@/stores/booksStore'
 import { resolveCoverSrc, processCroppedCoverImage, COVER_ASPECT } from '@/lib/image-utils.ts'
 import type { CropArea } from '@/lib/image-utils'
 import ImageCropperDialog from '@/components/editor/ImageCropperDialog'
@@ -35,7 +35,7 @@ export default function BookCard({ book, onOpen, onRefresh }: BookCardProps) {
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [isExportingBook, setIsExportingBook] = useState(false)
   const [cropperFile, setCropperFile] = useState<string | null>(null)
-  const { updateBook } = useAppStore()
+  const { updateBook } = useBooksStore()
 
   // 异步加载封面为 data URL
   useEffect(() => {

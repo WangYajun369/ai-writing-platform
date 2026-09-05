@@ -2,11 +2,11 @@
 //!
 //! 业务逻辑集中在 `service::tag_service`。
 
-use tauri::{AppHandle, State};
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::Tag;
 use crate::service::tag_service;
+use tauri::{AppHandle, State};
 
 /// 列出全部标签
 #[tauri::command]

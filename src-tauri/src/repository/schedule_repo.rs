@@ -3,8 +3,8 @@
 //! 提供 schedules 表的 CRUD。每条日程归属某一天（schedule_date），
 //! 同一日期下可有多条日程，按创建时间升序排列。
 
-use rusqlite::{params, Connection, Result};
 use crate::models::Schedule;
+use rusqlite::{params, Connection, Result};
 
 /// 列出某日期下的全部日程，按创建时间升序
 pub fn list_by_date(conn: &Connection, date: &str) -> Result<Vec<Schedule>> {

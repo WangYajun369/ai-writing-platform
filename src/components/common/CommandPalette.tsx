@@ -14,6 +14,7 @@ import { COMMAND_ICON_MAP, FALLBACK_COMMAND_ICON } from '@/plugins/commandIcons'
 import type { PluginCommand } from '@/plugins/types'
 import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
+import { useShortcut } from '@/hooks/useShortcut'
 
 export default function CommandPalette() {
   const [open, setOpen] = useState(false)
@@ -32,17 +33,8 @@ export default function CommandPalette() {
     return PluginManager.subscribe(refresh)
   }, [])
 
-  // 唤起快捷键：Ctrl/⌘ + Shift + P
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'p') {
-        e.preventDefault()
-        setOpen((o) => !o)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  // 唤起快捷键：mod + Shift + P（集中式快捷键系统）
+  useShortcut('mod+shift+p', () => setOpen((o) => !o))
 
   // 打开时重置并聚焦输入
   useEffect(() => {

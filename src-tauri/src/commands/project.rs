@@ -2,12 +2,12 @@
 //!
 //! 业务逻辑集中在 `service::project_service`。
 
-use serde::Deserialize;
-use tauri::{AppHandle, State};
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::{Project, ProjectView};
 use crate::service::project_service;
+use serde::Deserialize;
+use tauri::{AppHandle, State};
 
 fn default_status() -> String {
     "active".into()
@@ -108,18 +108,12 @@ pub fn project_hard_delete(
 
 /// 列出回收站中的项目
 #[tauri::command]
-pub fn project_list_deleted(
-    app: AppHandle,
-    state: State<AppDb>,
-) -> Result<Vec<Project>, AppError> {
+pub fn project_list_deleted(app: AppHandle, state: State<AppDb>) -> Result<Vec<Project>, AppError> {
     project_service::list_deleted_projects(&app, &state)
 }
 
 /// 清空项目回收站，返回清理数量
 #[tauri::command]
-pub fn project_clear_trash(
-    app: AppHandle,
-    state: State<AppDb>,
-) -> Result<u32, AppError> {
+pub fn project_clear_trash(app: AppHandle, state: State<AppDb>) -> Result<u32, AppError> {
     project_service::clear_project_trash(&app, &state)
 }

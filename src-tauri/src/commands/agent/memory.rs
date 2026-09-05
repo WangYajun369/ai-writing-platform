@@ -28,6 +28,8 @@ pub struct MemoryInfo {
     pub relevance_score: f64,
     pub created_at: String,
     pub updated_at: String,
+    /// 最近一次被检索命中并注入对话的时间（NULL 表示从未命中）
+    pub last_hit_at: Option<String>,
 }
 
 /// 记忆列表响应
@@ -71,7 +73,7 @@ pub fn get_memories(
     memory_type: Option<&str>,
     limit: u32,
 ) -> Result<Vec<MemoryInfo>, AppError> {
-    let mut sql = String::from("SELECT id, book_id, skill_type, memory_type, content, keywords, relevance_score, created_at, updated_at FROM memories WHERE book_id = ?1");
+    let mut sql = String::from("SELECT id, book_id, skill_type, memory_type, content, keywords, relevance_score, created_at, updated_at, last_hit_at FROM memories WHERE book_id = ?1");
     let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(book_id.to_string())];
     let mut idx = 2usize;
     if let Some(st) = skill_type {
@@ -108,6 +110,7 @@ fn row_to_memory(row: &rusqlite::Row) -> rusqlite::Result<MemoryInfo> {
         relevance_score: row.get(6)?,
         created_at: row.get(7)?,
         updated_at: row.get(8)?,
+        last_hit_at: row.get(9)?,
     })
 }
 
@@ -139,13 +142,23 @@ pub fn update_memory(
     fields.push("updated_at = datetime('now', 'localtime')".to_string());
     params.push(Box::new(memory_id));
     let sql = format!("UPDATE memories SET {} WHERE id = ?", fields.join(", "));
-    conn.execute(&sql, params.iter().map(|b| b.as_ref()).collect::<Vec<_>>().as_slice())?;
+    conn.execute(
+        &sql,
+        params
+            .iter()
+            .map(|b| b.as_ref())
+            .collect::<Vec<_>>()
+            .as_slice(),
+    )?;
     Ok(())
 }
 
 /// 删除一条记忆
 pub fn delete_memory(conn: &Connection, memory_id: i64) -> Result<(), AppError> {
-    conn.execute("DELETE FROM memories WHERE id = ?1", rusqlite::params![memory_id])?;
+    conn.execute(
+        "DELETE FROM memories WHERE id = ?1",
+        rusqlite::params![memory_id],
+    )?;
     Ok(())
 }
 
@@ -170,6 +183,107 @@ pub fn count_memories(conn: &Connection, book_id: Option<&str>) -> Result<i64, A
         None => conn.query_row("SELECT COUNT(*) FROM memories", [], |r| r.get(0))?,
     };
     Ok(n)
+}
+
+// ─── 容量上限与过期清理（问题 29） ───
+
+/// 每个 (book_id, skill_type) 分组的记忆条数上限
+const MAX_MEMORIES_PER_GROUP: i64 = 60;
+/// 单本书的记忆总条数上限（组上限之上的全局保护）
+const MAX_MEMORIES_PER_BOOK: i64 = 240;
+/// 从未命中或超过该天数未命中的记忆视为过期，允许清理
+const EXPIRED_UNUSED_DAYS: i64 = 180;
+/// 单次清理最多删除的条数（防极端库一次删太多，分批收敛）
+const PRUNE_BATCH_LIMIT: i64 = 200;
+
+/// 命中排序辅助 SQL：未记录命中时间的按 updated_at 兜底
+const HIT_COL_SQL: &str = "COALESCE(NULLIF(last_hit_at, ''), updated_at)";
+
+/// 清理单一 (book_id, skill_type) 分组的超限与过期记忆，返回删除条数。
+///
+/// 规则（报告问题 29）：
+/// 1. 分组上限：超过 `MAX_MEMORIES_PER_GROUP` 时，按「相关度低 → 久未命中 → 后插入」优先淘汰；
+/// 2. 全书上限：组清理后若全书仍超 `MAX_MEMORIES_PER_BOOK`，继续淘汰全书低相关/久未命中的条目；
+/// 3. 过期清理：`last_hit_at`（无则 `updated_at`）早于 `EXPIRED_UNUSED_DAYS` 天的记忆直接删除。
+pub fn prune_memories(
+    conn: &Connection,
+    book_id: &str,
+    skill_type: &str,
+) -> Result<usize, AppError> {
+    let mut removed = 0usize;
+
+    // 1) 分组容量上限
+    let group_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM memories WHERE book_id = ?1 AND skill_type = ?2",
+        rusqlite::params![book_id, skill_type],
+        |r| r.get(0),
+    )?;
+    if group_count > MAX_MEMORIES_PER_GROUP {
+        let excess = (group_count - MAX_MEMORIES_PER_GROUP).min(PRUNE_BATCH_LIMIT);
+        let sql = format!(
+            "DELETE FROM memories WHERE id IN (
+                SELECT id FROM memories
+                WHERE book_id = ?1 AND skill_type = ?2
+                ORDER BY relevance_score ASC, {hit} ASC, id DESC
+                LIMIT ?3
+            )",
+            hit = HIT_COL_SQL
+        );
+        let n = conn.execute(&sql, rusqlite::params![book_id, skill_type, excess])?;
+        removed += n as usize;
+    }
+
+    // 2) 全书容量上限（组清理后仍超限时）
+    let book_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM memories WHERE book_id = ?1",
+        rusqlite::params![book_id],
+        |r| r.get(0),
+    )?;
+    if book_count > MAX_MEMORIES_PER_BOOK {
+        let excess = (book_count - MAX_MEMORIES_PER_BOOK).min(PRUNE_BATCH_LIMIT);
+        let sql = format!(
+            "DELETE FROM memories WHERE id IN (
+                SELECT id FROM memories
+                WHERE book_id = ?1
+                ORDER BY relevance_score ASC, {hit} ASC, id DESC
+                LIMIT ?2
+            )",
+            hit = HIT_COL_SQL
+        );
+        let n = conn.execute(&sql, rusqlite::params![book_id, excess])?;
+        removed += n as usize;
+    }
+
+    // 3) 过期未命中清理
+    let sql = format!(
+        "DELETE FROM memories
+         WHERE book_id = ?1
+           AND datetime({hit}) < datetime('now', 'localtime', ?2)",
+        hit = HIT_COL_SQL
+    );
+    let n = conn.execute(
+        &sql,
+        rusqlite::params![book_id, format!("-{EXPIRED_UNUSED_DAYS} days")],
+    )?;
+    removed += n as usize;
+
+    Ok(removed)
+}
+
+/// 清理全部 (book_id, skill_type) 分组的存量记忆（应用启动时兜底），返回删除条数
+pub fn prune_all_memories(conn: &Connection) -> Result<usize, AppError> {
+    let mut total = 0usize;
+    let mut stmt = conn.prepare("SELECT DISTINCT book_id, skill_type FROM memories")?;
+    let groups: Vec<(String, String)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    for (book_id, skill_type) in groups {
+        total += prune_memories(conn, &book_id, &skill_type)?;
+    }
+    if total > 0 {
+        crate::app_log!("[Agent] 记忆库清理完成：共删除 {total} 条超限/过期记忆");
+    }
+    Ok(total)
 }
 
 // ─── 关键词提取与规则式记忆提取（自 Python 迁移） ───
@@ -199,9 +313,9 @@ pub fn extract_keywords(text: &str, max_words: usize) -> Vec<String> {
     }
 
     let stop_words = [
-        "这个", "那个", "什么", "怎么", "可以", "是否", "需要", "已经", "还是", "但是",
-        "然后", "一个", "一下", "一些", "不过", "只是", "因为", "所以", "如果", "虽然",
-        "the", "is", "a", "an",
+        "这个", "那个", "什么", "怎么", "可以", "是否", "需要", "已经", "还是", "但是", "然后",
+        "一个", "一下", "一些", "不过", "只是", "因为", "所以", "如果", "虽然", "the", "is", "a",
+        "an",
     ];
     let filtered: Vec<String> = words
         .into_iter()
@@ -261,7 +375,10 @@ pub fn extract_and_save(
 
     // 提取经验（助手侧）
     let lesson_keywords = ["建议", "注意", "教训", "避免", "推荐", "最好"];
-    if lesson_keywords.iter().any(|k| assistant_response.contains(k)) {
+    if lesson_keywords
+        .iter()
+        .any(|k| assistant_response.contains(k))
+    {
         let flat = assistant_response.replace('\n', " ");
         let sentences: Vec<&str> = flat.split('。').collect();
         let mut relevant: Vec<String> = sentences
@@ -286,6 +403,13 @@ pub fn extract_and_save(
             )?;
             saved += 1;
             relevant.clear();
+        }
+    }
+
+    // 本组有新记忆入库：顺势收敛容量与过期条目（失败不阻断主流程）
+    if saved > 0 {
+        if let Err(e) = prune_memories(conn, book_id, skill_type) {
+            crate::app_log_error!("[Agent] 记忆库清理失败（不阻断）: {}", e);
         }
     }
 
@@ -317,7 +441,8 @@ pub fn retrieve_memories(
     top_k: usize,
 ) -> Vec<MemoryInfo> {
     // 候选：先按 book+skill 精确匹配，无结果则回退到整本书
-    let mut candidates = get_memories(conn, book_id, Some(skill_type), None, 50).unwrap_or_default();
+    let mut candidates =
+        get_memories(conn, book_id, Some(skill_type), None, 50).unwrap_or_default();
     if candidates.is_empty() {
         candidates = get_memories(conn, book_id, None, None, 30).unwrap_or_default();
     }
@@ -344,6 +469,11 @@ pub fn retrieve_memories(
         if estimated_tokens + mem_tokens > max_tokens {
             continue;
         }
+        // 命中打点：记录最近一次注入时间，供过期清理判断（失败静默，不影响检索）
+        let _ = conn.execute(
+            "UPDATE memories SET last_hit_at = datetime('now', 'localtime') WHERE id = ?1",
+            rusqlite::params![mem.id],
+        );
         result.push(mem);
         estimated_tokens += mem_tokens;
     }
@@ -376,7 +506,14 @@ pub fn memory_prompt(
     skill_type: &str,
     user_message: &str,
 ) -> String {
-    let memories = retrieve_memories(conn, book_id, skill_type, user_message, DEFAULT_MAX_TOKENS, 10);
+    let memories = retrieve_memories(
+        conn,
+        book_id,
+        skill_type,
+        user_message,
+        DEFAULT_MAX_TOKENS,
+        10,
+    );
     if memories.is_empty() {
         return String::new();
     }
@@ -398,12 +535,14 @@ pub fn memory_prompt(
 
 /// 将旧版 Python 库（data/agent_memory.db）的记忆导入 time_write.db。
 /// 幂等：目标表已有数据则跳过；旧库不存在则跳过。
-pub fn migrate_legacy_db(conn: &Connection, legacy_path: &std::path::Path) -> Result<usize, AppError> {
+pub fn migrate_legacy_db(
+    conn: &Connection,
+    legacy_path: &std::path::Path,
+) -> Result<usize, AppError> {
     if !legacy_path.exists() {
         return Ok(0);
     }
-    let existing: i64 =
-        conn.query_row("SELECT COUNT(*) FROM memories", [], |r| r.get(0))?;
+    let existing: i64 = conn.query_row("SELECT COUNT(*) FROM memories", [], |r| r.get(0))?;
     if existing > 0 {
         return Ok(0);
     }
@@ -441,7 +580,16 @@ pub fn migrate_legacy_db(conn: &Connection, legacy_path: &std::path::Path) -> Re
 
     let mut imported = 0usize;
     for row in rows {
-        let (book_id, skill_type, memory_type, content, keywords, relevance, created_at, updated_at) = row?;
+        let (
+            book_id,
+            skill_type,
+            memory_type,
+            content,
+            keywords,
+            relevance,
+            created_at,
+            updated_at,
+        ) = row?;
         conn.execute(
             "INSERT INTO memories (book_id, skill_type, memory_type, content, keywords, relevance_score, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",

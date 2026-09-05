@@ -3,14 +3,14 @@
 //! 模板 = 「一键套用创建相似任务」：预设标题 / 描述 / 优先级 / 备注 / 标签 /
 //! 截止偏移天数 / 子任务标题清单。套用时可临时指定所属项目与截止时间。
 
-use tauri::AppHandle;
-use uuid::Uuid;
+use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::{TaskCard, TaskTemplate};
-use crate::commands::window::emit_sql_log;
-use crate::utils::{now, local_today, validate_len};
 use crate::repository::{project_repo, subtask_repo, task_repo, template_repo};
+use crate::utils::{local_today, now, validate_len};
+use tauri::AppHandle;
+use uuid::Uuid;
 
 /// 模板名长度上限
 pub const MAX_TEMPLATE_NAME: usize = 40;
@@ -92,11 +92,27 @@ pub fn create_template(
     let id = Uuid::new_v4().to_string();
     let ts = now();
     let conn = db.pool.get()?;
-    emit_sql_log(app, "INSERT", "task_templates", &format!("id={id}, name={name}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "INSERT",
+        "task_templates",
+        &format!("id={id}, name={name}"),
+        file!(),
+        line!(),
+    );
     template_repo::insert(
-        &conn, &id, name, params.project_id.as_deref(), title, &params.description,
-        &params.priority, &params.note, params.due_offset_days.max(0),
-        &params.tag_ids, &params.subtask_titles, &ts,
+        &conn,
+        &id,
+        name,
+        params.project_id.as_deref(),
+        title,
+        &params.description,
+        &params.priority,
+        &params.note,
+        params.due_offset_days.max(0),
+        &params.tag_ids,
+        &params.subtask_titles,
+        &ts,
     )?;
     template_repo::find_by_id(&conn, &id).map_err(AppError::from)
 }
@@ -120,9 +136,17 @@ pub fn update_template(
     }
     let conn = db.pool.get()?;
     let ts = now();
-    emit_sql_log(app, "UPDATE", "task_templates", &format!("id={id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "UPDATE",
+        "task_templates",
+        &format!("id={id}"),
+        file!(),
+        line!(),
+    );
     let n = template_repo::update(
-        &conn, id,
+        &conn,
+        id,
         params.name.as_deref().map(str::trim),
         params.project_id.as_ref().map(|o| o.as_deref()),
         params.title.as_deref().map(str::trim),
@@ -143,7 +167,14 @@ pub fn update_template(
 /// 删除模板
 pub fn delete_template(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
     let conn = db.pool.get()?;
-    emit_sql_log(app, "DELETE", "task_templates", &format!("id={id}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "DELETE",
+        "task_templates",
+        &format!("id={id}"),
+        file!(),
+        line!(),
+    );
     if template_repo::delete(&conn, id)? == 0 {
         return Err(AppError::NotFound("未找到该模板".into()));
     }
@@ -197,8 +228,20 @@ pub fn create_task_from_template(
         line!(),
     );
     task_repo::insert(
-        &tx, &id, project_id, None, title, &tmpl.description, "todo", &tmpl.priority,
-        None, due.as_deref(), 0, &tmpl.note, sort_order, &ts,
+        &tx,
+        &id,
+        project_id,
+        None,
+        title,
+        &tmpl.description,
+        "todo",
+        &tmpl.priority,
+        None,
+        due.as_deref(),
+        0,
+        &tmpl.note,
+        sort_order,
+        &ts,
     )?;
     // 标签（只关联仍存在的标签）
     template_repo::attach_existing_tags(&tx, &id, &tmpl.tag_ids, &ts)?;

@@ -2,8 +2,8 @@
 //!
 //! 提供 chapters 表的所有 CRUD SQL 操作。
 
-use rusqlite::{Connection, params, Result};
 use crate::models::Chapter;
+use rusqlite::{params, Connection, Result};
 
 /// 列出指定书籍的所有未删除章节（不含 content_html），按 sort_order 升序
 pub fn list_by_book(conn: &Connection, book_id: &str) -> Result<Vec<Chapter>> {
@@ -88,7 +88,10 @@ pub fn find_volume_id(conn: &Connection, chapter_id: &str) -> Result<Option<Stri
 }
 
 /// 获取章节的摘要信息
-pub fn find_summary_info(conn: &Connection, chapter_id: &str) -> Result<(Option<String>, Option<String>)> {
+pub fn find_summary_info(
+    conn: &Connection,
+    chapter_id: &str,
+) -> Result<(Option<String>, Option<String>)> {
     conn.query_row(
         "SELECT summary, summary_at FROM chapters WHERE id=?1",
         params![chapter_id],
@@ -215,7 +218,11 @@ pub fn move_to_volume(
 }
 
 /// 获取卷内最大 sort_order（用于移动到卷末尾）
-pub fn max_sort_in_volume(conn: &Connection, volume_id: &Option<String>, chapter_id: &str) -> Result<i64> {
+pub fn max_sort_in_volume(
+    conn: &Connection,
+    volume_id: &Option<String>,
+    chapter_id: &str,
+) -> Result<i64> {
     if let Some(ref vid) = volume_id {
         conn.query_row(
             "SELECT COALESCE(MAX(sort_order), -1) FROM chapters WHERE volume_id=?1 AND deleted_at IS NULL",
@@ -279,7 +286,26 @@ pub fn count_active_with_content(conn: &Connection, book_id: &str) -> Result<usi
 }
 
 /// 列出所有章节（含已删除和 HTML 内容），用于备份导出
-pub fn list_all_include_deleted_with_content(conn: &Connection) -> Result<Vec<(String, String, Option<String>, String, String, i64, String, i64, String, String, Option<String>, Option<String>, Option<String>, String)>> {
+pub fn list_all_include_deleted_with_content(
+    conn: &Connection,
+) -> Result<
+    Vec<(
+        String,
+        String,
+        Option<String>,
+        String,
+        String,
+        i64,
+        String,
+        i64,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        String,
+    )>,
+> {
     let mut stmt = conn.prepare(
         "SELECT id,book_id,volume_id,title,content_html,word_count,status,sort_order,created_at,updated_at,deleted_at,summary,summary_at,outline FROM chapters"
     )?;
@@ -305,7 +331,10 @@ pub fn list_all_include_deleted_with_content(conn: &Connection) -> Result<Vec<(S
 }
 
 /// 列出书籍章节的 ID 和 content_html（用于 embedding 生成）
-pub fn list_ids_and_content_plain(conn: &Connection, book_id: &str) -> Result<Vec<(String, String)>> {
+pub fn list_ids_and_content_plain(
+    conn: &Connection,
+    book_id: &str,
+) -> Result<Vec<(String, String)>> {
     let mut stmt = conn.prepare(
         "SELECT id, content_html FROM chapters WHERE book_id = ?1 AND deleted_at IS NULL AND content_html != ''"
     )?;
@@ -331,15 +360,12 @@ pub fn search_fts5_plain(
                WHERE c.book_id=?1 AND chapters_fts MATCH ?2 AND c.deleted_at IS NULL \
                ORDER BY rank LIMIT ?3";
     let mut stmt = conn.prepare(sql)?;
-    let results = stmt.query_map(
-        params![book_id, fts_query, limit],
-        |row| {
-            let id: String = row.get(0)?;
-            let title: String = row.get(1)?;
-            let html: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
-            Ok((id, title, html))
-        },
-    )?;
+    let results = stmt.query_map(params![book_id, fts_query, limit], |row| {
+        let id: String = row.get(0)?;
+        let title: String = row.get(1)?;
+        let html: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+        Ok((id, title, html))
+    })?;
     results.collect::<Result<Vec<_>, _>>()
 }
 
@@ -352,16 +378,13 @@ pub fn search_like_plain(
 ) -> Result<Vec<(String, String, String)>> {
     let mut stmt = conn.prepare(
         "SELECT id, title, content_html FROM chapters
-         WHERE book_id=?1 AND content_html LIKE ?2 AND deleted_at IS NULL LIMIT ?3"
+         WHERE book_id=?1 AND content_html LIKE ?2 AND deleted_at IS NULL LIMIT ?3",
     )?;
-    let results = stmt.query_map(
-        params![book_id, pattern, limit],
-        |row| {
-            let id: String = row.get(0)?;
-            let title: String = row.get(1)?;
-            let html: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
-            Ok((id, title, html))
-        },
-    )?;
+    let results = stmt.query_map(params![book_id, pattern, limit], |row| {
+        let id: String = row.get(0)?;
+        let title: String = row.get(1)?;
+        let html: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+        Ok((id, title, html))
+    })?;
     results.collect::<Result<Vec<_>, _>>()
 }

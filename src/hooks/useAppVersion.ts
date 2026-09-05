@@ -1,11 +1,11 @@
 import { useEffect } from 'react'
-import { useAppStore } from '@/stores/appStore'
+import { useAiStore } from '@/stores/aiStore'
 
 /**
  * 启动时从 Tauri 获取应用版本号
  */
 export function useAppVersion() {
-  const setAppVersion = useAppStore((s) => s.setAppVersion)
+  const setAppVersion = useAiStore((s) => s.setAppVersion)
 
   useEffect(() => {
     let cancelled = false

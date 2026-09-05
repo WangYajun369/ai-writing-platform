@@ -2,16 +2,20 @@
 //!
 //! 对外暴露 Tauri 命令，内部委托给 Service 层处理。
 
-use tauri::{AppHandle, State};
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::WorldCard;
 use crate::service::world_card_service;
 use crate::service::world_card_service::UpdateWorldCardParams;
+use tauri::{AppHandle, State};
 
 /// 列出指定书籍的所有世界观卡片，按 updated_at 降序
 #[tauri::command]
-pub async fn list_world_cards(app: AppHandle, db: State<'_, AppDb>, book_id: String) -> Result<Vec<WorldCard>, AppError> {
+pub async fn list_world_cards(
+    app: AppHandle,
+    db: State<'_, AppDb>,
+    book_id: String,
+) -> Result<Vec<WorldCard>, AppError> {
     world_card_service::list_world_cards(&app, &db, &book_id)
 }
 
@@ -31,10 +35,20 @@ pub struct CreateWorldCardParams {
 
 /// 创建世界观卡片，初始未向量化
 #[tauri::command]
-pub async fn create_world_card(app: AppHandle, db: State<'_, AppDb>, params: CreateWorldCardParams) -> Result<WorldCard, AppError> {
+pub async fn create_world_card(
+    app: AppHandle,
+    db: State<'_, AppDb>,
+    params: CreateWorldCardParams,
+) -> Result<WorldCard, AppError> {
     world_card_service::create_world_card(
-        &app, &db, &params.book_id, &params.card_type,
-        &params.title, &params.content, &params.content_html, &params.tags,
+        &app,
+        &db,
+        &params.book_id,
+        &params.card_type,
+        &params.title,
+        &params.content,
+        &params.content_html,
+        &params.tags,
     )
 }
 
@@ -51,7 +65,11 @@ pub async fn update_world_card(
 
 /// 删除世界观卡片
 #[tauri::command]
-pub async fn delete_world_card(app: AppHandle, db: State<'_, AppDb>, id: String) -> Result<(), AppError> {
+pub async fn delete_world_card(
+    app: AppHandle,
+    db: State<'_, AppDb>,
+    id: String,
+) -> Result<(), AppError> {
     world_card_service::delete_world_card(&app, &db, &id)
 }
 

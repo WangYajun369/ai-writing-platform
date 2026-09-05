@@ -269,9 +269,10 @@ fn tool_search_world_cards(conn: &Connection, args: &Value) -> Result<String, Ap
     let book_id = args["book_id"].as_str().unwrap_or("");
     let query = args["query"].as_str().unwrap_or("");
 
-    let cards = repository::world_card_repo::search_fts5(conn, book_id, query, 20).or_else(|_| {
-        repository::world_card_repo::search_like(conn, book_id, &format!("%{query}%"), 20)
-    })?;
+    let cards =
+        repository::world_card_repo::search_fts5(conn, book_id, query, 20).or_else(|_| {
+            repository::world_card_repo::search_like(conn, book_id, &format!("%{query}%"), 20)
+        })?;
 
     const MAX_RESULTS: usize = 5;
     const CONTENT_TRUNCATE: usize = 300;

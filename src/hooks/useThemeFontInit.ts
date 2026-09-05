@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useAppStore } from '@/stores/appStore'
+import { usePreferencesStore } from '@/stores/preferencesStore'
 
 const STORAGE_KEY_THEME = 'timewrite-theme'
 const STORAGE_KEY_EYECARE = 'timewrite-eyecare'
@@ -20,7 +20,7 @@ export function useThemeFontInit() {
   const {
     theme, eyeCareMode, fontFamily, fontSize,
     setTheme, setEyeCareMode, setFontFamily, setFontSize,
-  } = useAppStore()
+  } = usePreferencesStore()
 
   // 启动时从 localStorage 恢复
   useEffect(() => {

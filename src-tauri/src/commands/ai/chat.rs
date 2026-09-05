@@ -3,13 +3,13 @@
 //! 通过 reqwest 发起流式 HTTP 请求，将增量文本通过 Tauri 事件 `ai-stream-chunk`
 //! 实时推送到前端。支持自动重试和网络中断部分内容保留。
 
-use tauri::{AppHandle, Emitter};
-use futures_util::StreamExt;
-use tokio::time::timeout;
-use serde::{Deserialize, Serialize};
+use super::{ChatMessage, StreamEvent, UsageInfo};
 use crate::error::AppError;
 use crate::utils::get_sse_client;
-use super::{ChatMessage, UsageInfo, StreamEvent};
+use futures_util::StreamExt;
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter};
+use tokio::time::timeout;
 
 /// 提取错误的原始消息，避免 AppError Display 格式带来的前缀重复
 fn get_error_message(e: &AppError) -> String {
@@ -41,10 +41,7 @@ pub struct StreamChatArgs {
 
 /// AI 流式对话命令（SSE 流式协议，兼容智谱等 API）
 #[tauri::command]
-pub async fn stream_ai_chat(
-    app: AppHandle,
-    args: StreamChatArgs,
-) -> Result<String, AppError> {
+pub async fn stream_ai_chat(app: AppHandle, args: StreamChatArgs) -> Result<String, AppError> {
     let client = get_sse_client().clone();
 
     const MAX_RETRIES: u32 = 2;
@@ -138,10 +135,7 @@ fn flush_sse_buffer(
     }
     if let Ok(data) = serde_json::from_str::<serde_json::Value>(json_str) {
         if let Some(u) = data["usage"].as_object() {
-            let prompt_tokens = u
-                .get("prompt_tokens")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0) as u32;
+            let prompt_tokens = u.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
             let completion_tokens = u
                 .get("completion_tokens")
                 .and_then(|v| v.as_u64())
@@ -197,10 +191,7 @@ async fn sse_loop_inner(
     client: reqwest::Client,
     args: StreamChatArgs,
 ) -> Result<String, AppError> {
-    let url = format!(
-        "{}/chat/completions",
-        args.endpoint.trim_end_matches('/')
-    );
+    let url = format!("{}/chat/completions", args.endpoint.trim_end_matches('/'));
 
     let mut req = client
         .post(&url)
@@ -255,8 +246,14 @@ async fn sse_loop_inner(
 
     if !response.status().is_success() {
         let status = response.status();
-        let text = response.text().await.unwrap_or_else(|e| format!("(无法读取错误响应体: {e})"));
-        return Err(AppError::Business(format!("AI 服务返回错误 ({}): {}", status, text)));
+        let text = response
+            .text()
+            .await
+            .unwrap_or_else(|e| format!("(无法读取错误响应体: {e})"));
+        return Err(AppError::Business(format!(
+            "AI 服务返回错误 ({}): {}",
+            status, text
+        )));
     }
 
     let mut stream = response.bytes_stream();
@@ -391,10 +388,8 @@ async fn sse_loop_inner(
             match serde_json::from_str::<serde_json::Value>(json_str) {
                 Ok(data) => {
                     if let Some(u) = data["usage"].as_object() {
-                        let prompt_tokens = u
-                            .get("prompt_tokens")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0) as u32;
+                        let prompt_tokens =
+                            u.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
                         let completion_tokens = u
                             .get("completion_tokens")
                             .and_then(|v| v.as_u64())

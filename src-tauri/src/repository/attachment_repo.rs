@@ -3,11 +3,12 @@
 //! attachments 表存元数据与 local_path；文件实体放应用数据目录。
 //! 软删除（deleted=1）保留文件路径，供回收站还原与孤儿清理判断。
 
-use rusqlite::{Connection, params, Result};
 use crate::models::Attachment;
+use rusqlite::{params, Connection, Result};
 
 /// 完整 SELECT 列名
-pub const ATTACHMENT_SELECT: &str = "id,task_id,file_name,file_type,file_size,local_path,deleted,deleted_at,created_at";
+pub const ATTACHMENT_SELECT: &str =
+    "id,task_id,file_name,file_type,file_size,local_path,deleted,deleted_at,created_at";
 
 /// 从 rusqlite Row 解析 Attachment（不出网字段直接丢弃）
 pub fn parse_attachment(row: &rusqlite::Row) -> Result<Attachment> {

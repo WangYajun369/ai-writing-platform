@@ -2,7 +2,7 @@
  * DraggableChapter — 可拖拽的章节条目组件
  * 支持选中高亮、行内重命名、状态切换、删除操作
  */
-import { useState, useCallback } from 'react'
+import { useState, useCallback, memo } from 'react'
 import {
   FileTextIcon,
   GripVerticalIcon,
@@ -29,7 +29,7 @@ interface DraggableChapterProps {
   onStatusChange: (newStatus: Chapter['status']) => Promise<void>
 }
 
-export default function DraggableChapter({
+export const DraggableChapter = memo(function DraggableChapter({
   item,
   isActive,
   isOver,
@@ -143,4 +143,6 @@ export default function DraggableChapter({
       <DropIndicator position="after" active={showDropAfter} />
     </div>
   )
-}
+})
+
+export default DraggableChapter

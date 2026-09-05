@@ -1,13 +1,13 @@
 //! 标签业务服务（任务卡模块）
 
-use tauri::AppHandle;
-use uuid::Uuid;
+use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::Tag;
-use crate::commands::window::emit_sql_log;
-use crate::utils::{now, validate_len};
 use crate::repository::tag_repo;
+use crate::utils::{now, validate_len};
+use tauri::AppHandle;
+use uuid::Uuid;
 
 /// 标签名长度上限
 pub const MAX_TAG_NAME: usize = 50;
@@ -55,7 +55,14 @@ pub fn create_tag(app: &AppHandle, db: &AppDb, name: &str, color: &str) -> Resul
     let name = validate_name(&conn, name, None)?;
     let color = color.trim().to_string();
     let id = Uuid::new_v4().to_string();
-    emit_sql_log(app, "INSERT", "tags", &format!("id={id}, name={name}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "INSERT",
+        "tags",
+        &format!("id={id}, name={name}"),
+        file!(),
+        line!(),
+    );
     tag_repo::insert(&conn, &id, &name, &color, &ts)?;
     Ok(tag_repo::find_by_id(&conn, &id)?
         .ok_or_else(|| AppError::General("创建标签后读取失败".into()))?)
@@ -100,7 +107,14 @@ pub fn update_tag(
 pub fn delete_tag(app: &AppHandle, db: &AppDb, id: &str) -> Result<i64, AppError> {
     let conn = db.pool.get()?;
     let usage = tag_repo::usage_count(&conn, id)?;
-    emit_sql_log(app, "DELETE", "tags", &format!("id={id}, usage={usage}"), file!(), line!());
+    emit_sql_log(
+        app,
+        "DELETE",
+        "tags",
+        &format!("id={id}, usage={usage}"),
+        file!(),
+        line!(),
+    );
     tag_repo::delete(&conn, id)?;
     Ok(usage)
 }

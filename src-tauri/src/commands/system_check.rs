@@ -72,8 +72,7 @@ fn detect_os_info() -> (String, String, String) {
         run_cmd("sw_vers", &["-productVersion"]).unwrap_or_else(|_| "未知".to_string())
     } else if cfg!(target_os = "windows") {
         // Windows 使用 ver 命令
-        run_cmd("cmd", &["/c", "ver"])
-            .unwrap_or_else(|_| "未知".to_string())
+        run_cmd("cmd", &["/c", "ver"]).unwrap_or_else(|_| "未知".to_string())
     } else if cfg!(target_os = "linux") {
         // 尝试读取 /etc/os-release 获取发行版名称
         let release = std::fs::read_to_string("/etc/os-release")
@@ -88,9 +87,7 @@ fn detect_os_info() -> (String, String, String) {
                             .to_string()
                     })
             })
-            .unwrap_or_else(|| {
-                run_cmd("uname", &["-r"]).unwrap_or_else(|_| "未知".to_string())
-            });
+            .unwrap_or_else(|| run_cmd("uname", &["-r"]).unwrap_or_else(|_| "未知".to_string()));
         release
     } else {
         "不可用".to_string()
@@ -114,8 +111,7 @@ fn check_node() -> CheckItem {
     match run_cmd("node", &["--version"]) {
         Ok(version) => {
             // 尝试获取安装路径
-            let node_path = run_cmd("which", &["node"])
-                .unwrap_or_else(|_| "无法获取".to_string());
+            let node_path = run_cmd("which", &["node"]).unwrap_or_else(|_| "无法获取".to_string());
             CheckItem {
                 name: "Node.js".to_string(),
                 value: version,
@@ -136,8 +132,8 @@ fn check_node() -> CheckItem {
 fn check_rust() -> CheckItem {
     match run_cmd("rustc", &["--version"]) {
         Ok(version) => {
-            let rustup_path = run_cmd("rustup", &["show", "home"])
-                .unwrap_or_else(|_| "无法获取".to_string());
+            let rustup_path =
+                run_cmd("rustup", &["show", "home"]).unwrap_or_else(|_| "无法获取".to_string());
             CheckItem {
                 name: "Rust".to_string(),
                 value: version,
@@ -176,7 +172,11 @@ fn check_paths(app: &AppHandle) -> Vec<CheckItem> {
         items.push(CheckItem {
             name: "数据目录".to_string(),
             value: path.clone(),
-            status: if exists { "ok".to_string() } else { "warning".to_string() },
+            status: if exists {
+                "ok".to_string()
+            } else {
+                "warning".to_string()
+            },
             detail: if exists {
                 None
             } else {

@@ -262,7 +262,9 @@ async fn run_skill_inner(
         .map(|c| c.model.trim().to_string())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "deepseek-chat".to_string());
-    let api_key = cfg.and_then(|c| c.api_key.clone()).map(|k| k.trim().to_string());
+    let api_key = cfg
+        .and_then(|c| c.api_key.clone())
+        .map(|k| k.trim().to_string());
     if api_key.as_deref().map_or(true, |k| k.is_empty()) {
         let hint = if endpoint.to_lowercase().contains("deepseek") {
             "（当前使用 DeepSeek，可在 https://platform.deepseek.com 获取）"
@@ -575,9 +577,7 @@ async fn react_loop(
         }));
 
         // 逐个执行工具并回填 Tool 消息（连接在本回合内使用后即归还）
-        let conn = pool
-            .get()
-            .map_err(|e| AppError::DbPool(e.to_string()))?;
+        let conn = pool.get().map_err(|e| AppError::DbPool(e.to_string()))?;
         for (_, tc) in &collected {
             if cancel_token.is_cancelled() {
                 let _ = emit_event(&app, "cancelled", "任务已被用户取消", request_id);
@@ -697,7 +697,12 @@ fn flush_remaining_line(
         return;
     }
     parse_sse_data(
-        &json_str, round_content, tool_calls, app, full_response, request_id,
+        &json_str,
+        round_content,
+        tool_calls,
+        app,
+        full_response,
+        request_id,
     );
 }
 
