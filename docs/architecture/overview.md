@@ -1,6 +1,6 @@
 # 架构总览
 
-> **适用版本**：`1.5.0`　|　**最后核对**：2026-09-03
+> **适用版本**：`1.6.0`　|　**最后核对**：2026-09-05
 >
 > TimeWrite（MirageInk / 智写时光）运行时为**双进程模型**：WebView 前端 + Rust Core。
 > v1.1 起 Agent 已由 Python 外部子进程迁移为 **Rust 原生引擎**（见 [Agent 引擎架构](agent-architecture)），
@@ -122,7 +122,7 @@ db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发�
 
 ## 数据库设计
 
-**21 张业务表 + 2 张 FTS5 虚拟表**
+**22 张业务表 + 2 张 FTS5 虚拟表**（另含 sqlite-vec 动态 `chunks_vec` 镜像表）
 
 | 表 | 关键字段 | 说明 |
 |----|---------|------|
@@ -132,7 +132,7 @@ db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发�
 | `snapshots` | chapter_id (FK), content_html, type ('auto'/'milestone'), label | 版本快照 |
 | `world_cards` | book_id (FK), type（6 类）, content_html, tags, vectorized | 世界观卡片 |
 | `embeddings` | source_type, source_id, embedding (BLOB), model | 向量索引，`UNIQUE(source_type, source_id)` |
-| `memories` | book_id, skill_type, memory_type, content, keywords, relevance_score | Agent 记忆（v1.1 起并入主库） |
+| `memories` | book_id, skill_type, memory_type, content, keywords, relevance_score, last_hit_at | Agent 记忆（v1.1 起并入主库；v1.6 补 last_hit_at 供过期清理） |
 | `diaries` | diary_date (UNIQUE), content_html, word_count, keywords, created_at, updated_at | 日记（每天至多一篇） |
 | `schedules` | schedule_date, content, done (0/1), created_at, updated_at | 旧个人日程（v1.5.0 起仅供数据迁移） |
 | `vocab_words` | word (UNIQUE), phonetic, meanings JSON, example / example_zh, details_json（AI 精讲缓存）, ease_factor / repetitions / interval_days / queue / due_at, status (learning/mastered/suspended) | 生词本 + SM-2 记忆参数（v1.4.0） |
@@ -146,6 +146,7 @@ db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发�
 | `task_activity_logs` | task_id / project_id, action, summary | 操作日志（v1.5.0） |
 | `task_templates` | name, project_id, title, priority, due_offset_days, subtask_titles | 任务模板（v1.5.0） |
 | `project_milestones` | project_id (FK), name, status, due_date | 项目里程碑（v1.5.0） |
+| `writing_stats` | book_id (FK, 级联删除), stat_date, words | 按日净增字数（v1.6.0，衍生展示表，不纳入备份导出） |
 | `chapters_fts` | FTS5（unicode61） | 章节全文搜索，由 3 个触发器自动同步 |
 | `world_cards_fts` | FTS5（unicode61） | 世界观全文搜索，由 3 个触发器自动同步 |
 

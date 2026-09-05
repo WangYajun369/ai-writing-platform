@@ -1,6 +1,6 @@
 # AI 模块架构
 
-> **适用版本**：`1.5.0`　|　**最后核对**：2026-09-03
+> **适用版本**：`1.6.0`　|　**最后核对**：2026-09-05
 >
 > 涵盖 AI 流式对话（工具箱）、AI 侧面板对话（经 Agent 引擎）、RAG 向量检索（预留）、内容总结、连接测试。
 > Agent 自动化引擎（Rust 原生）另见 [Agent 引擎架构](architecture/agent-architecture)。
@@ -287,7 +287,7 @@ Client::builder()
                ↓            ↓
     ┌──────────────────┐  ┌──────────────────┐
     │  向量语义搜索      │  │ FTS5 / LIKE 降级  │
-    │  余弦相似度        │  │  关键词匹配       │
+    │  sqlite-vec KNN   │  │  关键词匹配       │
     └────────┬─────────┘  └─────────┬────────┘
              └──────────┬───────────┘
                         ↓
@@ -295,15 +295,10 @@ Client::builder()
 ```
 
 - **检索范围**：`chapters` 表（排除软删除）+ `world_cards` 表，均按 `book_id` 隔离
-- **向量搜索**：查询向量经 `/embeddings` API 获取，与已索引向量计算余弦相似度，降序取 Top N
+- **向量搜索**：查询向量经 `/embeddings` API 获取，对 `chunks_vec` 虚拟表执行 sqlite-vec KNN（余弦距离）检索，升序取 Top N（v1.6.0 起不再全量内存余弦）
 - **降级策略**：查询词前 20 字符构造 `LIKE '%keyword%'`，先搜章节、不足时补搜世界观卡片，降级结果 `distance` 固定 0.5
 
-```rust
-fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
-    let (dot, na, nb) = /* ... */;
-    dot / (na.sqrt() * nb.sqrt())
-}
-```
+> v1.6.0 起语义检索改为 **sqlite-vec KNN**：索引向量写入 SQLite `chunks_vec`（vec0 虚拟表），查询执行 SQL `knn` 距离检索，不再全量加载 embeddings 到内存逐条余弦计算（`repository/embedding_repo.rs` 维护）。
 
 ### 5.2 Embedding 生成流程
 
@@ -517,10 +512,10 @@ interface AiMessage {
 | 架构分离 | Rust 处理 HTTP/SSE，前端仅处理 UI，规避 CORS 与流式解析问题 |
 | 流中断保护 | 60s 超时 + buffer 刷新 + 保留部分内容，用户体验友好 |
 | 自动重试 | 区分可重试/不可重试错误，指数退避，减少用户干预 |
-| 双检索模式（预留） | 后端实现向量语义 → FTS5/LIKE 降级，但前端未接线，对话上下文由 Agent 引擎工具检索提供 |
+| 双检索模式（v1.6.0） | 后端 sqlite-vec KNN 语义 → FTS5/LIKE 降级；对话上下文由 Agent 引擎工具检索提供 |
 | 章节智能总结 | 原文 > 300 字自动总结，节省 context token |
 | 多维度配置 | 对话/RAG 解耦，服务商独立 API Key，工具箱可扩展 |
-| 持久化可靠 | 高频更新不写 localStorage，流结束后一次性持久化 |
+| 持久化可靠 | AI 对话 800ms 防抖合并写盘 + 窗口卸载 / 页面隐藏 flush 兜底（v1.6.0） |
 | 迁移兼容 | 自动检测旧版配置格式并迁移，用户无感知升级 |
 | 请求透明 | RequestDetailModal 展示完整请求载荷，便于调试 |
 
@@ -530,10 +525,10 @@ interface AiMessage {
 |------|------|------|
 | Provider 扩展性 | 服务商硬编码在配置常量中 | 插件化或配置驱动的 Provider 注册机制 |
 | Embedding 服务商 | 仅智谱，写死 `bigmodel` | 支持 OpenAI embeddings、本地模型 |
-| RAG 检索效率 | 全量内存计算余弦相似度 | 内容量大后引入向量索引（faiss-rust / sqlite-vec） |
+| RAG 检索效率 | ✅ 已落地 sqlite-vec KNN（v1.6.0） | 可继续评估分片 / 量化压缩等进阶优化 |
 | 流式断点续传 | 断连后仅保留已生成内容 | 长思考场景可考虑真正的断点续传 |
 | API Key 轮换 | 每个服务商单 Key | 支持多 Key 负载均衡 / 故障转移 |
-| 对话导出 | 不支持 | 导出为 Markdown / JSON |
+| 对话导出 | ✅ 已支持 Markdown / JSON（v1.6.0，AI 侧边栏「导出对话」） | 可增加导出格式（TXT / HTML）与批量导出 |
 | 章节总结缓存 | 每次对话都重新总结 | summary 有效期内复用缓存 |
 | 系统默认工具 | 预设 29 个工具不可删除/重置 | 增加「恢复默认」功能 |
 | 请求参数可配置性 | Temperature 等为全局设置 | 每个工具可独立覆盖参数 |

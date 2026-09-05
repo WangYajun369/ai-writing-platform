@@ -1,6 +1,6 @@
 # 技术栈
 
-> **适用版本**：`1.5.0`　|　**最后核对**：2026-09-03
+> **适用版本**：`1.6.0`　|　**最后核对**：2026-09-05
 
 ---
 
@@ -38,7 +38,7 @@
 
 | 依赖 | 说明 |
 |------|------|
-| `zustand` | 全局业务状态（slice 模式）+ 插件状态 |
+| `zustand` | 全局业务状态（领域 store：booksStore / aiStore / preferencesStore）+ 插件状态 |
 | `jotai` | UI 原子状态（21 个 atom） |
 
 ### 富文本
@@ -101,6 +101,7 @@
 | `uuid` | UUID 生成 |
 | `chrono` | 时间处理 |
 | `aes-gcm` | AES-256-GCM 备份加密 |
+| `sqlite-vec` | KNN 向量检索（`chunks_vec` 镜像表，语义检索由全量内存余弦改为 SQLite KNN，v1.6.0） |
 | `anyhow` | 错误处理 |
 
 ---

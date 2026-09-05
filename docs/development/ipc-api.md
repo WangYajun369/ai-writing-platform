@@ -1,8 +1,8 @@
 # IPC 命令速查
 
-> **适用版本**：`1.5.0`　|　**最后核对**：2026-09-03
+> **适用版本**：`1.6.0`　|　**最后核对**：2026-09-05
 
-TimeWrite 共注册 **169 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用（Agent 命令为例外，见文末说明）。
+TimeWrite 共注册 **170 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用（Agent 命令为例外，见文末说明）。
 
 > **架构约定**：`tauri-bridge.ts` 是全项目**唯一**允许调用 `invoke` 的模块。禁止在其他文件中直接 import `@tauri-apps/api` 的 `invoke`。
 
@@ -38,7 +38,8 @@ TimeWrite 共注册 **169 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` �
 | [任务模板](#任务模板-template) | 5 | `commands/template.rs` |
 | [提醒](#提醒-reminder) | 1 | `commands/reminder.rs` |
 | [日程迁移](#日程迁移-migrate) | 1 | `commands/migrate.rs` |
-| **合计** | **169** | — |
+| [写作统计](#写作统计-writing_stats) | 1 | `commands/writing_stats.rs` |
+| **合计** | **170** | — |
 
 ---
 
@@ -271,6 +272,14 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 | 命令 | 说明 |
 |------|------|
 | `migrate_schedules` | 一键迁移（幂等：已迁移数据保持最新，未删除源记录） |
+
+## 写作统计 `writing_stats`
+
+> v1.6.0 新增。按日净增字数统计：保存章节时记录净增（新字数 − 旧字数，仅计正增量），`writing_stats` 表按 `(book_id, stat_date)` 聚合；随书籍删除级联清理。状态栏进度条 / 连续写作天数 / 30 日曲线均以此为数据源。
+
+| 命令 | 说明 |
+|------|------|
+| `get_writing_stats` | 当前作品写作统计：dailyTarget / todayWords / streakDays / lastDays（近 30 日每日净增） |
 
 ## 生词本 `vocab`
 

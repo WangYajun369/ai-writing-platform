@@ -1,6 +1,6 @@
 # TimeWrite（智写时光）代码架构深度分析
 
-> **适用版本**：`1.5.0`　|　**最后核对**：2026-09-03
+> **适用版本**：`1.6.0`　|　**最后核对**：2026-09-05
 >
 > 基于当前源码（前端 `src/`、Rust 后端 `src-tauri/`、脚本 `scripts/`）整理。
 > v1.1 起 Agent 已迁移为 **Rust 原生引擎**（`src-tauri/src/commands/agent/`），
@@ -27,7 +27,7 @@
 │  进程 2: Rust Core（Tauri v2）                                           │
 │  ┌───────────────────────────┴──────────────────────────────────────┐  │
 │  │ lib.rs (Builder / 插件注册 / 状态注入 / 事件)                      │  │
-│  │ commands/  (IPC 命令层，169 个命令 / 26 个模块)                     │  │
+│  │ commands/  (IPC 命令层，170 个命令 / 27 个模块)                     │  │
 │  │ service/   (业务编排层: 事务、审计日志、业务规则)                    │  │
 │  │ repository/(数据访问层: 纯 SQL，无业务逻辑)                         │  │
 │  │ db/        (r2d2 连接池 + SQLite WAL + FTS5，含 memories 表)       │  │
@@ -66,13 +66,13 @@ main.tsx
 
 ### 2.2 状态管理：Zustand（业务）+ Jotai（UI）双轨制
 
-**Zustand — 业务状态（`stores/`）**，采用 slice 模式：
+**Zustand — 业务状态（`stores/`）**，v1.6.0 起为**领域 store**（Phase 3 拆分，取代原单一 appStore + slice 组合；`appStore.ts` 保留为出口再导出 + 跨域选择器）：
 
-| Slice | 文件 | 职责 |
+| Store | 文件 | 职责 |
 |-------|------|------|
-| `booksSlice` | `stores/booksSlice.ts` | 书籍/卷/章节/世界观数据的加载、CRUD、回收站、选中态 |
-| `aiSlice` | `stores/aiSlice.ts` | AI 对话消息、配置、RAG、总结、连接状态 |
-| `preferencesSlice` | `stores/preferencesSlice.ts` | 主题/护眼/字体/网格/编辑器宽度等个性化偏好（localStorage 持久化） |
+| `booksStore` | `stores/booksStore.ts` | 书籍/卷/章节/世界观数据的加载、CRUD、回收站、选中态 |
+| `aiStore` | `stores/aiStore.ts` | AI 对话消息、配置、RAG、总结、连接状态（800ms 防抖持久化 + 卸载 flush） |
+| `preferencesStore` | `stores/preferencesStore.ts` | 主题/护眼/字体/网格/编辑器宽度等个性化偏好（localStorage 持久化） |
 | `pluginStore` | `stores/pluginStore.ts` | 插件启用状态 |
 | `vocabStore` / `ttsConfig` | `stores/vocabStore.ts` / `ttsConfig.ts` | 英语字典数据 + TTS 配置（v1.4.0，独立 store） |
 | `taskCardsStore` | `stores/taskCardsStore.ts` | 任务卡窗口数据（v1.5.0，独立 store，不持久化，经 `taskCardApi` 拉取并广播 `tasks-data-updated`） |
@@ -94,7 +94,7 @@ main.tsx
 | `library/` | BookCard, NewBookDialog, TrashModal, CoverPicker | 书库网格/列表、封面裁剪选择、回收站 |
 | `outline/` | OutlinePanel, DraggableVolume, DraggableChapter | 卷-章两级目录树、拖拽排序、回收站 |
 | `editor/` | RichTextEditor, EditorToolbar, SnapshotPanel, ImageCropperDialog | TipTap 富文本编辑、工具栏、版本快照 |
-| `ai/` | AiSidePanel, useAiChat, MessageBubble, panel/* | AI 对话面板、工具箱、请求详情 |
+| `ai/` | AiSidePanel, useAiChat, hooks/useAgentChatStream, hooks/useAiChatMessages, MessageBubble, panel/* | AI 对话面板、工具箱、请求详情（useAiChat 已拆分流式/消息/总结逻辑，v1.6.0） |
 | `agent/` | useAgent, AgentMemoryPanel, AgentMessageBubble | Agent Skill 交互、流式输出、记忆管理 |
 | `worldbuilding/` | WorldbuildingPanel, WorldCardEditor | 6 类世界观卡片管理 |
 | `diary/` | DiaryPanel, DiaryDialog, DiaryBookPage, DayTasksPanel | 首页右栏：按月日历 + 日记 + 当日任务（v1.5.0 任务卡驱动），「看日记」独立窗口 |
@@ -169,11 +169,11 @@ db/         连接与 Schema —— r2d2 连接池、迁移、FTS5 触发器、�
 2. **数据库初始化**：`app_data_dir/time_write.db` → `AppDb::new()`（建表 + 迁移 + 索引）
 3. **旧版 Agent 记忆库迁移**：检测旧 `agent_memory.db`（`<cwd>/data/` 与 `<app_data_dir>/`），存在则将存量记忆导入 `memories` 表（幂等，失败仅记日志）
 4. **窗口关闭拦截**：CloseRequested → prevent_close → emit `agent-status-changed {status:"closing"}` → 关调试窗口 → 真正关闭（AtomicBool 防死循环）
-5. 注册 169 个 IPC 命令（26 个命令模块：books / volumes / chapters / snapshots / world_cards / diaries / schedules / vocab / vocab_dict / tts / ai / io / image / window / agent / system_check + 任务卡 project/task/tag/task_meta/subtask/attachment/activity/template/reminder/migrate）
+5. 注册 170 个 IPC 命令（27 个命令模块：books / volumes / chapters / snapshots / world_cards / diaries / schedules / vocab / vocab_dict / tts / ai / io / image / window / agent / system_check + 任务卡 project/task/tag/task_meta/subtask/attachment/activity/template/reminder/migrate + v1.6.0 writing_stats）
 
 ### 3.3 数据库设计（db/schema.rs + db/mod.rs）
 
-**21 张业务表 + 2 张 FTS5 虚拟表**（v1.1 起新增 `memories`；v1.3 新增 `diaries` / `schedules`；v1.4 新增 `vocab_words` / `vocab_reviews`；v1.5 新增任务卡 10 张）：
+**22 张业务表 + 2 张 FTS5 虚拟表**（v1.1 起新增 `memories`；v1.3 新增 `diaries` / `schedules`；v1.4 新增 `vocab_words` / `vocab_reviews`；v1.5 新增任务卡 10 张；v1.6 新增 `writing_stats`；另 sqlite-vec 动态 `chunks_vec` 镜像表）：
 
 | 表 | 关键字段 | 说明 |
 |----|---------|------|
@@ -335,7 +335,7 @@ Agent 面板/AI 侧面板发送消息
 3. **记忆并入主数据库**：`memories` 表与业务数据同库同事务，旧 `agent_memory.db` 自动幂等迁移，无需维护第二套 SQLite。
 4. **双模型/多服务商对话**：AI 助手支持智谱/DeepSeek/Ollama/自定义，配置解耦、独立 API Key；DeepSeek 思考模式深度适配（reasoning_content 独立流、KV Cache 友好 Prompt、reasoning_effort=max、TTFT 监控）。
 5. **前端 RAF 缓冲**：Agent 流式输出按帧合并更新，避免高频 chunk 触发大量重渲染。
-6. **双轨状态管理**：Zustand 承载业务数据（slice 模式），Jotai 承载 UI 瞬态（21 个 atom），各司其职。
+6. **双轨状态管理**：Zustand 承载业务数据（领域 store：booksStore / aiStore / preferencesStore），Jotai 承载 UI 瞬态（21 个 atom），各司其职。
 7. **双保险自动保存**：防抖 + 定时器组合，配合后端事务更新全书字数。
 8. **多层网络容错**：AI 对话重试白名单、SSE 断流保留已生成内容、双层超时（10 分钟全局 / 60s chunk）。
 9. **权限最小化**：capabilities/default.json 仅向窗口授予核心权限，CSP 严格限定 connect-src。
@@ -350,7 +350,7 @@ MirageInk/
 ├── src/                      # 🔵 前端（React 19 + TS 6）
 │   ├── pages/                #   LibraryPage / EditorPage / SettingsPage
 │   ├── components/           #   13 个业务域组件目录 + ErrorBoundary
-│   ├── stores/               #   Zustand 3 slices + 独立 stores（plugin/vocab/tts/taskCards）+ Jotai 21 atoms
+│   ├── stores/               #   Zustand 领域 stores（books/ai/preferences + plugin/vocab/tts/taskCards）+ Jotai 21 atoms
 │   ├── lib/                  #   tauri-bridge.ts（IPC 入口）/ utils / toast / image
 │   ├── hooks/                #   useAppVersion / useConsoleInterceptor / useResizeHandle / useThemeFontInit
 │   ├── plugins/              #   PluginManager 单例 + 7 扩展点 + 2 个内置插件（dictionary / taskCards）
@@ -359,8 +359,8 @@ MirageInk/
 │   └── styles/               #   TailwindCSS 4 + HSL 主题变量（4 套主题）
 ├── src-tauri/                # 🟠 Rust 后端（Tauri v2）
 │   ├── src/
-│   │   ├── lib.rs            #   Builder / 插件 / 启动编排 / 169 命令注册
-│   │   ├── commands/         #   26 个模块：基础域 + ai/io/window/agent + 任务卡 10 文件
+│   │   ├── lib.rs            #   Builder / 插件 / 启动编排 / 170 命令注册
+│   │   ├── commands/         #   27 个模块：基础域 + ai/io/window/agent + 任务卡 10 文件 + writing_stats
 │   │   │   └── agent/        #   engine / prompts / tools / memory / skills（Rust 原生 Agent）
 │   │   ├── service/          #   20 个业务服务（事务 + 审计，含 task/reminder/migrate 等）
 │   │   ├── repository/       #   17 个数据仓库（纯 SQL）

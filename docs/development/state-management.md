@@ -1,6 +1,6 @@
 # 状态管理
 
-> **适用版本**：`1.5.0`　|　**最后核对**：2026-09-03
+> **适用版本**：`1.6.0`　|　**最后核对**：2026-09-05
 
 TimeWrite 采用**双层状态管理**架构：Zustand 承载业务数据，Jotai 承载 UI 瞬态。
 
@@ -12,9 +12,10 @@ TimeWrite 采用**双层状态管理**架构：Zustand 承载业务数据，Jota
 ┌──────────────────────────────────────────────────────┐
 │                  Zustand（业务层）                     │
 │  ┌──────────────┬──────────────┬──────────────────┐  │
-│  │ booksSlice   │   aiSlice    │ preferencesSlice │  │
+│  │  booksStore  │   aiStore    │ preferencesStore │  │
 │  │ 书籍/卷/章节  │ AI 对话/配置  │ 主题/字体/布局    │  │
 │  └──────────────┴──────────────┴──────────────────┘  │
+│   （三个独立 store，经 appStore.ts 再导出 —— v1.6.0）   │
 │  ┌──────────────┐                                    │
 │  │ pluginStore  │  插件启用状态                        │
 │  └──────────────┘                                    │
@@ -43,15 +44,15 @@ TimeWrite 采用**双层状态管理**架构：Zustand 承载业务数据，Jota
 
 ---
 
-## Zustand：Slice 模式
+## Zustand：领域 Store（v1.6.0 起）
 
-> v1.0.0 起，原单一 `appStore` 重构为 slice 模式。当前是**代码组织层面的拆分**，各 slice 仍合并为同一个 store 实例；拆分为完全独立的 store 属于待优化项（见 [优化报告](meta/optimization-report) 问题 3）。
+> v1.0.0 起为单一 `appStore` + slice 组合（slice 仍合并为同一实例）；**v1.6.0（Phase 3 问题 3）拆分为三个真正独立的领域 store**，各自持有完整状态与 action、订阅互不干扰。`stores/appStore.ts` 保留为「领域 store 出口」：再导出三个 store，并聚合跨域便捷选择器（`useCurrentBook` / `useCurrentChapter` / `useCurrentAiMessages`）与 `getEditorState` 等工具，旧 import 路径向后兼容。
 
-| Slice | 文件 | 职责 |
+| Store | 文件 | 职责 |
 |-------|------|------|
-| `booksSlice` | `stores/booksSlice.ts` | 书籍/卷/章节/世界观数据的加载、CRUD、回收站、选中态 |
-| `aiSlice` | `stores/aiSlice.ts` | AI 对话消息、配置、RAG、总结、连接状态 |
-| `preferencesSlice` | `stores/preferencesSlice.ts` | 主题/护眼/字体/网格/编辑器宽度（localStorage 持久化） |
+| `booksStore` | `stores/booksStore.ts` | 书籍/卷/章节/世界观数据的加载、CRUD、回收站、选中态 |
+| `aiStore` | `stores/aiStore.ts` | AI 对话消息、配置、RAG、总结、连接状态（800ms 防抖持久化） |
+| `preferencesStore` | `stores/preferencesStore.ts` | 主题/护眼/字体/网格/编辑器宽度（localStorage 持久化） |
 | `pluginStore` | `stores/pluginStore.ts` | 插件启用状态（独立 store） |
 | `vocabStore` | `stores/vocabStore.ts` | 英语生词数据：`words` / `due` / `stats` 三查询 + `refreshAll` 全量刷新（v1.4.0，独立 store） |
 | `ttsConfig` | `stores/ttsConfig.ts` | 豆包语音合成配置：API Key / 音色（localStorage 持久化，独立 store） |
@@ -59,17 +60,17 @@ TimeWrite 采用**双层状态管理**架构：Zustand 承载业务数据，Jota
 
 ### 主要状态字段
 
-| 字段 | 所属 Slice | 持久化 | 说明 |
+| 字段 | 所属 Store | 持久化 | 说明 |
 |------|-----------|:---:|------|
-| `books` / `volumes` / `chapters` | books | ❌ | 业务数据（真源在 SQLite） |
-| `currentBookId` / `currentChapterId` | books | ❌ | 当前选中 |
-| `dbStatus` | books | ❌ | 数据库连接状态 |
-| `aiConfig` | ai | ✅ | `{ chat: AiChatConfig, rag: RagConfig }` |
-| `aiConversations` | ai | ✅ | `Record<bookId, AiMessage[]>` |
-| `aiConnectionStatus` | ai | ❌ | idle / testing / connected / error |
-| `theme` / `eyeCareMode` | preferences | ✅ | 主题与护眼模式 |
-| `fontFamily` / `fontSize` | preferences | ✅ | 字体（12–24px） |
-| `gridSize` / `editorWidth` | preferences | ✅ | 布局偏好 |
+| `books` / `volumes` / `chapters` | booksStore | ❌ | 业务数据（真源在 SQLite） |
+| `currentBookId` / `currentChapterId` | booksStore | ❌ | 当前选中 |
+| `dbStatus` | booksStore | ❌ | 数据库连接状态 |
+| `aiConfig` | aiStore | ✅ | `{ chat: AiChatConfig, rag: RagConfig }` |
+| `aiConversations` | aiStore | ✅ | `Record<bookId, AiMessage[]>`（800ms 防抖持久化） |
+| `aiConnectionStatus` | aiStore | ❌ | idle / testing / connected / error |
+| `theme` / `eyeCareMode` | preferencesStore | ✅ | 主题与护眼模式 |
+| `fontFamily` / `fontSize` | preferencesStore | ✅ | 字体（12–24px） |
+| `gridSize` / `editorWidth` | preferencesStore | ✅ | 布局偏好 |
 | `plugins` | pluginStore | ❌ | 已安装插件列表 |
 
 ### 主要 Actions
@@ -161,7 +162,7 @@ v1.1 起 Agent 为 Rust 原生引擎（内嵌主进程），**无启停流程**�
 | 数据 | 存储位置 | 说明 |
 |------|---------|------|
 | 业务数据（书籍/卷/章/快照/世界观卡片） | SQLite（Rust 管理） | **真源在后端**，前端 Zustand 仅为缓存 |
-| AI 对话记录 | `localStorage` | 按 `bookId` 分组；流式更新仅写内存，流结束后一次性写盘 |
+| AI 对话记录 | `localStorage` | 按 `bookId` 分组；800ms 防抖合并写盘 + 卸载 flush（v1.6.0） |
 | AI 配置 / 偏好设置 | `localStorage` | 应用启动时恢复，自动兼容旧版格式迁移 |
 | 编辑器状态（章节/滚动/光标） | `localStorage` | 按 `bookId` 保存，打开作品时恢复 |
 | Agent 记忆 | SQLite（`time_write.db` 的 `memories` 表） | Rust 引擎管理；旧独立库（`agent_memory.db`）启动时自动迁移 |
@@ -171,16 +172,16 @@ v1.1 起 Agent 为 Rust 原生引擎（内嵌主进程），**无启停流程**�
 | TTS 语音配置 | `localStorage` | `ttsConfig` store（豆包 API Key / 音色） |
 | UI 瞬态（Jotai） | 仅内存 | **不持久化** |
 
-### AI 对话写盘时机
+### AI 对话写盘时机（v1.6.0 防抖 + 兜底 flush）
 
 | 操作 | 是否写盘 |
 |------|:---:|
 | `addAiMessage` | ✅ 立即 |
-| `updateAiMessage`（流式高频） | ❌ 仅内存 |
-| `persistAiConversation`（流结束） | ✅ 一次写入 |
+| `updateAiMessage`（流式高频） | ⏱️ 800ms 防抖合并后写盘（v1.6.0，取代「仅内存 + 流结束一次性写」） |
+| 窗口卸载 / 页面隐藏（`beforeunload` / `visibilitychange`） | ✅ 立即 flush 剩余未落盘数据 |
 | 删除 / 清空 | ✅ 立即 |
 
-> 这是针对流式场景的关键优化：每秒数十次的增量更新若每次都序列化整个 conversations 对象，会造成严重的写放大。
+> 针对流式场景的关键优化：每秒数十次的增量更新经 800ms 防抖合并后再序列化整个 conversations 对象，避免逐条写放大；窗口关闭 / 切后台时立即 flush，杜绝打字内容丢失（离线草稿保护，Phase 3 问题 4）。
 
 ### 配置迁移
 

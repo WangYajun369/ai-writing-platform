@@ -14,7 +14,7 @@
 | **前端** | React 19 + TypeScript 6 + Vite 8 |
 | **样式** | TailwindCSS 4（CSS-first）+ HSL CSS 变量色彩体系（亮色/暗色/暖黄/豆沙绿四套主题） |
 | **富文本** | TipTap（H1-H3/加粗/斜体/下划线/颜色/图片/表格/代码高亮/任务列表/字符计数/Placeholder） |
-| **状态管理** | Zustand（业务数据 + 插件状态）+ Jotai（UI 原子状态） |
+| **状态管理** | Zustand（领域 store：booksStore / aiStore / preferencesStore）+ Jotai（UI 原子状态） |
 | **路由** | React Router v7（懒加载 Editor/Settings 页面） |
 | **后端** | Rust 2021 + SQLite（WAL 模式）+ rusqlite（bundled）+ r2d2 连接池 |
 | **AI 通信** | SSE 流式对话，reqwest stream + tokio 异步 |
@@ -74,6 +74,11 @@
 ### 专注写作
 - 专注模式：隐藏侧栏/工具栏/状态栏，Esc 退出
 
+### 写作统计（v1.6.0 新增）
+- 编辑器底部状态栏写作进度条：实时展示今日写作目标达成进度 + 连续写作天数徽标
+- 写作统计面板：近 30 日每日净增字数曲线 + 今日 / 累计数据，坚持看得见
+- 按日净增口径统计（仅计正增量），随书籍删除级联清理，不影响备份与整书字数
+
 ### 世界观资料库
 - 6 种卡片类型：人物/地点/时间线/势力/物品/其他
 - 搜索、标签、过滤、FTS5 全文搜索
@@ -83,11 +88,13 @@
 - 多服务商支持：智谱 BigModel / DeepSeek + 自定义 OpenAI 兼容端点
 - 推理模型 Thinking 展示，对话/RAG 配置完全解耦，API Key 按服务商独立管理
 - SSE 流式对话，自动重试与网络容错（2 次指数退避 + 60s 断流保底 + 保留已生成内容）
-- RAG 语义检索：向量检索 + FTS5 双轨降级，Embedding 索引管理（连接独立测试 + stale 过期提示）
+- RAG 语义检索：sqlite-vec KNN 向量检索 + FTS5 双轨降级（v1.6.0），Embedding 索引管理（连接独立测试 + stale 过期提示）
 - AI 工具箱：29 个预设快捷提示词，5 大分类（续写/润色/扩写/剧情推演/角色分析/章末总结 等）
 - 滑动窗口上下文管理（自动截断保护），对话总结压缩
 - 章节总结缓存、Token 用量统计、连接状态指示器
 - 请求详情面板：查看完整 AI 请求/响应内容
+- AI 对话一键导出 Markdown / JSON（v1.6.0）
+- 离线草稿保护：对话 800ms 防抖持久化 + 窗口关闭兜底 flush（v1.6.0）
 - 默认对话模型：`glm-5.1`，Embedding：`embedding-3`
 
 ### Agent 智能助手（Rust 原生引擎）

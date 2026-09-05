@@ -21,7 +21,7 @@
 > tiny_http Bridge / 端口 9876/9877 的条目（问题 27/28/30 等）已随迁移**整体解决**，
 > 正文中对应「未修复/待处理」状态以本注记为准（保留原文作为历史记录）。
 >
-> **v1.5.0 复核更新（2026-09-05）**：数据一致性收尾 —— **问题 1**（写操作事务保护）与
+> **v1.6.0 复核更新（2026-09-05）**：数据一致性收尾 —— **问题 1**（写操作事务保护）与
 > **问题 21**（构建命令 npm → pnpm）已**全部解决**，正文对应状态与 Phase 2 路线图已同步更新。
 >
 > **2026-09-05 复核更新（sqlite-vec 落地）**：**问题 13**（向量全量加载内存爆炸）已通过
@@ -112,7 +112,7 @@ let book_wc = book_repo::word_count_by_chapter(conn, book_id)?;
 - `hard_delete_chapter`
 - `restore_snapshot`
 
-> **状态**：✅ 已修复（2026-09-05，v1.5.0 复核）。影响范围内全部多步写路径已事务化：
+> **状态**：✅ 已修复（2026-09-05，v1.6.0 复核）。影响范围内全部多步写路径已事务化：
 > - `chapter_service.rs`：`save_chapter` / `delete_chapter` / `restore_chapter` / `hard_delete_chapter` 均在**同一事务**内完成（保存/软删/恢复 + 字数聚合 → 原子提交，任一步失败自动回滚）
 > - `volume_service.rs`：`delete_volume`（repo 层 `soft_delete` 已内置 `BEGIN IMMEDIATE/COMMIT/ROLLBACK` 显式事务）、`hard_delete_volume`（service 层 `conn.transaction()` 包装）
 > - `snapshot_service.rs`：`restore_snapshot` 事务化（快照内容回写 + 字数重算原子提交，窗口刷新事件移至提交成功之后）
@@ -621,9 +621,9 @@ let title: String = row.get("title")?;
 ### Phase 2（✅ 已于 2026-09-05 关闭）：Agent 收尾与一致性
 
 1. ~~为 Bridge Server（9876）增加 Token 鉴权（问题 27）~~ ✅ **已消除**：v1.1 迁移 Rust 原生引擎时 Bridge(9876)/Python(9877) 整体删除，无端口服务残留（2026-09-05 复核）
-2. ~~补齐 `book_service` / `world_card_service` / `snapshot_service` 的事务保护（问题 1 收尾）~~ ✅ **已完成**（2026-09-05，v1.5.0）
+2. ~~补齐 `book_service` / `world_card_service` / `snapshot_service` 的事务保护（问题 1 收尾）~~ ✅ **已完成**（2026-09-05，v1.6.0）
 3. ~~实现 `/skills/cancel` 真正的任务中断（问题 28）~~ ✅ **已完成**（2026-09-05）：CancelToken（Notify + select）即时中断，取消不再补发 done
-4. ~~`beforeDevCommand` / `beforeBuildCommand` 改为 `pnpm run …`（问题 21）~~ ✅ **已完成**（2026-09-05，v1.5.0）
+4. ~~`beforeDevCommand` / `beforeBuildCommand` 改为 `pnpm run …`（问题 21）~~ ✅ **已完成**（2026-09-05，v1.6.0）
 5. ~~向量搜索加 `LIMIT` 分页加载（问题 13 缓解）~~ ✅ 已由 sqlite-vec KNN 方案（O(k)）取代（2026-09-05）
 
 ### Phase 3（✅ 已于 2026-09-05 关闭）：体验与架构打磨

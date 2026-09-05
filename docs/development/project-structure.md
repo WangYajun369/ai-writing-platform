@@ -1,6 +1,6 @@
 # 项目结构
 
-> **适用版本**：`1.5.0`　|　**最后核对**：2026-09-03
+> **适用版本**：`1.6.0`　|　**最后核对**：2026-09-05
 >
 > 本文档描述 TimeWrite 的目录组织与分层设计。IPC 命令清单见 [IPC 命令速查](development/ipc-api)。
 
@@ -38,7 +38,7 @@ repository/ 数据访问层   —— 纯 SQL，接受 &Connection，无业务逻
 db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发器、索引
 ```
 
-各层职责边界在对应 `mod.rs` 注释中明确约定。共注册 **169 个 IPC 命令**（`#[tauri::command]` 计数）。
+各层职责边界在对应 `mod.rs` 注释中明确约定。共注册 **170 个 IPC 命令**（`#[tauri::command]` 计数）。
 
 ---
 
@@ -68,9 +68,9 @@ src/
 | `diary/` | `DiaryPanel`、`DiaryDialog`、`DiaryBookPage`、`DayTasksPanel` | 书库首页右栏：按月日历、TipTap 日记编辑器；当日任务（任务卡数据驱动）；「看日记」独立窗口（diary-book） |
 | `vocabulary/` | `VocabularyWindow`、`tab/WordBookTab`、`tab/ReviewTab`、`tab/StatsTab`、`dialog/*`、`SpeakButton`、`VocabKnowledgeView`、`vocab-utils` | 英语字典·生词本独立窗口：生词本 / SM-2 复习 / 统计，含 AI 精讲与语音朗读（v1.4.0） |
 | `taskCards/` | `TaskCardsWindow`、`TaskCardView`、`AllTasksView`、`ProjectDetailView`、`TodayView`、`TrashView`、`SettingsDrawer`、`ProjectFormModal`、`TaskModal`、`CompleteSummaryModal`、`TagManager`、`TemplatesTab`、`ScheduleMigrationTab`、`ReminderSettingsTab`、`ActivityTimeline`、`ProjectReportModal`、`RecurrencePicker`、`SubtaskEditor`、`AttachmentUploader` | 任务卡独立窗口：今日 / 项目看板 / 全部任务 / 回收站 / 设置（标签 / 模板 / 日程迁移 / 提醒）（v1.5.0） |
-| `outline/` | `OutlinePanel`（842 行） | 卷-章两级目录树、拖拽排序（@dnd-kit）、虚拟滚动、回收站 |
+| `outline/` | `OutlinePanel`、`hooks/useOutlineDnd`、`hooks/useOutlineDialogs` | 卷-章两级目录树、拖拽排序（@dnd-kit）、虚拟滚动、回收站（拖拽 / 对话框逻辑已抽 hook，v1.6.0） |
 | `editor/` | `RichTextEditor`、`EditorToolbar`、`SnapshotPanel`、`ImageCropperDialog`、`ImageViewerDialog` | TipTap 编辑、工具栏、版本快照、图片处理 |
-| `ai/` | `AiSidePanel`、`AiToolboxPanel`、`MessageBubble`、`RequestDetailModal`、`useAiChat`（425 行）、`panel/*` | AI 对话面板、工具箱、请求详情 |
+| `ai/` | `AiSidePanel`、`AiToolboxPanel`、`MessageBubble`、`RequestDetailModal`、`useAiChat`、`hooks/useAgentChatStream`、`hooks/useAiChatMessages`、`hooks/useConversationSummarizer` | AI 对话面板、工具箱、请求详情（useAiChat 拆分流式 / 消息 / 总结逻辑，v1.6.0） |
 | `agent/` | `useAgent`、`AgentMemoryPanel`、`AgentMessageBubble`、`types.ts` | Agent Skill 交互（Rust 原生引擎）、流式输出、记忆管理 |
 | `worldbuilding/` | `WorldbuildingPanel`、`WorldCardEditor` | 6 类世界观卡片管理 |
 | `settings/` | `AiConfigSection`、`RagConfigSection`、`AppearanceSection`、`AiToolboxSection` 等 12 个 | 设置页分区 |
@@ -145,7 +145,7 @@ src-tauri/
 ├── icons/                    # 应用图标（25 PNG + ICNS + ICO）
 └── src/
     ├── main.rs               # 程序入口
-    ├── lib.rs                # Tauri Builder：7 插件 + 数据库 + 记忆迁移 + 169 命令注册
+    ├── lib.rs                # Tauri Builder：7 插件 + 数据库 + 记忆迁移 + 170 命令注册
     ├── error.rs              # AppError 统一错误枚举（10 种变体）
     ├── logging.rs            # 日志模块
     ├── utils.rs              # HTTP 客户端工厂、HTML 工具、FTS5 转义、字段校验、local_now
@@ -187,6 +187,7 @@ src-tauri/
 | 任务模板 | `template.rs` | 5 |
 | 提醒 | `reminder.rs` | 1 |
 | 日程迁移 | `migrate.rs` | 1 |
+| 写作统计 | `writing_stats.rs` | 1 |
 
 ### 业务服务 `service/`
 
@@ -212,14 +213,15 @@ src-tauri/
 | `project_stats_service.rs` | 近 8 周「新增 / 完成」周报统计（v1.5.0） |
 | `reminder_service.rs` | 到期 / 逾期提醒扫描（系统通知）与「立即检查」（v1.5.0） |
 | `migrate_service.rs` | 旧 `schedules` → 项目「日程迁移」幂等迁移（v1.5.0） |
+| `writing_stats_service.rs` | 按日净增字数统计（保存章节时增量更新 `writing_stats`，v1.6.0） |
 
 ### 数据仓库 `repository/`
 
-纯 SQL 访问层，不含业务逻辑。基础模块：`book_repo.rs` / `chapter_repo.rs` / `volume_repo.rs` / `snapshot_repo.rs` / `world_card_repo.rs` / `diary_repo.rs` / `schedule_repo.rs` / `vocab_repo.rs` / `embedding_repo.rs`；任务卡模块（v1.5.0）：`project_repo.rs` / `task_repo.rs` / `tag_repo.rs` / `task_meta_repo.rs` / `subtask_repo.rs` / `attachment_repo.rs` / `activity_log_repo.rs` / `template_repo.rs`。
+纯 SQL 访问层，不含业务逻辑。基础模块：`book_repo.rs` / `chapter_repo.rs` / `volume_repo.rs` / `snapshot_repo.rs` / `world_card_repo.rs` / `diary_repo.rs` / `schedule_repo.rs` / `vocab_repo.rs` / `embedding_repo.rs`（含 sqlite-vec `chunks_vec` 表维护）；任务卡模块（v1.5.0）：`project_repo.rs` / `task_repo.rs` / `tag_repo.rs` / `task_meta_repo.rs` / `subtask_repo.rs` / `attachment_repo.rs` / `activity_log_repo.rs` / `template_repo.rs`；v1.6.0：`writing_stats_repo.rs`。
 
 ### 数据库 `db/`
 
-21 张业务表（v1.1 起含 `memories`；v1.3 新增 `diaries` / `schedules`；v1.4 新增 `vocab_words` / `vocab_reviews`；v1.5 新增任务卡 10 张）+ 2 张 FTS5 虚拟表：
+22 张业务表（v1.1 起含 `memories`；v1.3 新增 `diaries` / `schedules`；v1.4 新增 `vocab_words` / `vocab_reviews`；v1.5 新增任务卡 10 张；v1.6 新增 `writing_stats`）+ 2 张 FTS5 虚拟表 + sqlite-vec 动态 `chunks_vec` 镜像表：
 
 | 表 | 关键字段 |
 |----|---------|
@@ -229,7 +231,7 @@ src-tauri/
 | `snapshots` | chapter_id(FK), content_html, type('auto'/'milestone'), label |
 | `world_cards` | book_id(FK), type(6 类), content_html, tags, vectorized |
 | `embeddings` | source_type, source_id, embedding(BLOB), model — UNIQUE(source_type, source_id) |
-| `memories` | book_id, skill_type, memory_type(preference/decision/lesson), content, keywords, relevance_score（v1.1 起，Agent 记忆并入主库） |
+| `memories` | book_id, skill_type, memory_type(preference/decision/lesson), content, keywords, relevance_score, last_hit_at（命中时间，过期清理依据；v1.1 并入主库，v1.6 补列） |
 | `diaries` | diary_date(UNIQUE), content_html, word_count, keywords(JSON 数组文本), created_at, updated_at（每天至多一篇） |
 | `schedules` | schedule_date, content, done(0/1), created_at, updated_at（某天可有多条；v1.5.0 起仅保留历史数据供迁移） |
 | `vocab_words` | word(唯一), phonetic, meanings JSON, example / example_zh, details_json（AI 精讲缓存）, ease_factor / repetitions / interval_days / queue / due_at（SM-2 记忆参数）, status（learning/mastered/suspended）, created_at |
@@ -244,6 +246,7 @@ src-tauri/
 | `task_activity_logs`（v1.5.0） | task_id / project_id, action, summary, created_at — 操作日志时间线 |
 | `task_templates`（v1.5.0） | name, project_id, title, description, priority, due_offset_days, tag_ids, subtask_titles(JSON) |
 | `project_milestones`（v1.5.0） | project_id(FK CASCADE), name, description, color, status(planned/doing/done), due_date, sort_order |
+| `writing_stats`（v1.6.0） | book_id(FK CASCADE), stat_date, words — 按日净增字数，PK(book_id, stat_date)；衍生展示表，不纳入备份导出 |
 | `chapters_fts` / `world_cards_fts` | FTS5（unicode61），由 6 个 CREATE TRIGGER 自动同步 |
 
 技术要点：
@@ -284,7 +287,7 @@ Python Agent（`agent/`）与 Bridge（`src-tauri/src/python/`）已删除，Age
 
 ## 相关文档
 
-- [IPC 命令速查](development/ipc-api) — 169 条命令完整清单
+- [IPC 命令速查](development/ipc-api) — 170 条命令完整清单
 - [技术栈](development/tech-stack)
 - [架构总览](architecture/overview)
 - [代码架构深度分析](architecture/code-architecture)

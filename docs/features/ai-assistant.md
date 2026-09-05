@@ -68,7 +68,7 @@
 **双策略**：
 
 ```
-有 Embedding 索引 → 向量语义搜索（余弦相似度）
+有 Embedding 索引 → 向量语义搜索（sqlite-vec KNN，v1.6.0）
 无 Embedding 索引 → FTS5 全文搜索 + SQL LIKE 关键词降级
 ```
 

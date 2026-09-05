@@ -1,6 +1,6 @@
 # ADR-003：Zustand 管业务状态 + Jotai 管 UI 瞬态
 
-> **状态**：已采纳
+> **状态**：已采纳（v1.6.0 演进：slice 组合阶段已被三个独立领域 store 取代，见下「后续演进」；「Zustand 管业务 + Jotai 管 UI」的决策结论仍有效）
 > **日期**：2026-06-03（v0.1.0）
 > **影响范围**：前端
 
@@ -55,6 +55,8 @@
 
 ### 需要 follow-up 的事项
 
-- 将 slice 升级为真正独立的 store（`useBookStore` / `useAiStore` / `usePreferencesStore`），见 [优化报告](meta/optimization-report) 问题 3
-- `useAiChat.ts`（483 行）职责过多，建议拆分为 `useChapterValidation` / `useChapterSummary` / `useStreamChat` / `useConversationCompression`（问题 6）
-- 流式期间高频更新不写 localStorage（仅内存），流结束后一次性持久化 —— 此优化已实施，需保持
+- ~~将 slice 升级为真正独立的 store（`booksStore` / `aiStore` / `preferencesStore`）~~ ✅ v1.6.0 已落地（`appStore.ts` 保留为出口 + 跨域选择器，见 [状态管理](development/state-management)）
+- ~~`useAiChat`（483 行）职责过多~~ ✅ v1.6.0 已拆为 `hooks/useAgentChatStream` / `hooks/useAiChatMessages` / `hooks/useConversationSummarizer` + 主编排（原建议 4 hook，落地形态见 [优化报告](meta/optimization-report) 问题 6）
+- 流式期间高频更新不写 localStorage（仅内存），流结束后一次性持久化 —— v1.6.0 演进为 800ms 防抖合并写盘 + 卸载 flush 兜底（问题 4），需保持
+
+> **后续演进（v1.6.0）**：本 ADR 采纳时的 slice 组合阶段已结束。业务状态拆分为三个互不持有对方状态的领域 store（`stores/booksStore.ts` / `stores/aiStore.ts` / `stores/preferencesStore.ts`），`appStore.ts` 仅做再导出与跨域便捷选择器，订阅粒度问题由独立 store 各自收敛解决。
