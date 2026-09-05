@@ -4,6 +4,7 @@
 
 use rusqlite::{Connection, params, Result};
 use crate::models::Book;
+use crate::repository::embedding_repo;
 
 /// 完整的 SELECT 列名
 pub const BOOK_SELECT: &str = "id,title,author,description,cover_image,word_count,daily_target,today_count,db_path,tags,created_at,updated_at,deleted_at,outline";
@@ -201,7 +202,11 @@ pub fn list_all_include_deleted(conn: &Connection) -> Result<Vec<Book>> {
 // ---- 清理孤立 embedding ----
 
 /// 清理 orphan chapter embeddings（章节已被删除但 embedding 残留）
+///
+/// 同步清理 chunks_vec 镜像行（vec0 不随普通表级联，rowid ↔ embeddings.id）。
 pub fn cleanup_orphan_chapter_embeddings(conn: &Connection) -> Result<()> {
+    let ids = orphan_embedding_ids(conn, "chapter")?;
+    embedding_repo::delete_vec_rows(conn, &ids)?;
     conn.execute(
         "DELETE FROM embeddings WHERE source_type='chapter' AND source_id NOT IN (SELECT id FROM chapters)",
         [],
@@ -210,10 +215,25 @@ pub fn cleanup_orphan_chapter_embeddings(conn: &Connection) -> Result<()> {
 }
 
 /// 清理 orphan world_card embeddings
+///
+/// 同步清理 chunks_vec 镜像行（vec0 不随普通表级联，rowid ↔ embeddings.id）。
 pub fn cleanup_orphan_world_card_embeddings(conn: &Connection) -> Result<()> {
+    let ids = orphan_embedding_ids(conn, "world_card")?;
+    embedding_repo::delete_vec_rows(conn, &ids)?;
     conn.execute(
         "DELETE FROM embeddings WHERE source_type='world_card' AND source_id NOT IN (SELECT id FROM world_cards)",
         [],
     )?;
     Ok(())
+}
+
+/// 查询指定 source_type 下已无对应源记录的 embeddings.id 列表
+fn orphan_embedding_ids(conn: &Connection, source_type: &str) -> Result<Vec<i64>> {
+    let sql = match source_type {
+        "chapter" => "SELECT id FROM embeddings WHERE source_type='chapter' AND source_id NOT IN (SELECT id FROM chapters)",
+        _ => "SELECT id FROM embeddings WHERE source_type='world_card' AND source_id NOT IN (SELECT id FROM world_cards)",
+    };
+    let mut stmt = conn.prepare(sql)?;
+    let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
+    rows.collect()
 }

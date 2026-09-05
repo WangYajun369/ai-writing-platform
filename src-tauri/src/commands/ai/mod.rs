@@ -150,32 +150,6 @@ pub fn floats_to_bytes(floats: &[f32]) -> Vec<u8> {
     floats.iter().flat_map(|f| f.to_le_bytes()).collect()
 }
 
-/// 从字节 BLOB 反序列化为 f32 向量
-pub fn bytes_to_floats(bytes: &[u8]) -> Vec<f32> {
-    bytes
-        .chunks_exact(4)
-        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-        .collect()
-}
-
-/// 余弦相似度（返回 0.0 ~ 1.0）
-pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
-    let len = a.len().min(b.len());
-    let (dot, na, nb) = a[..len].iter().zip(b[..len].iter()).fold(
-        (0.0f64, 0.0f64, 0.0f64),
-        |(d, x, y), (&ai, &bi)| {
-            let af = ai as f64;
-            let bf = bi as f64;
-            (d + af * bf, x + af * af, y + bf * bf)
-        },
-    );
-    if na == 0.0 || nb == 0.0 {
-        0.0
-    } else {
-        dot / (na.sqrt() * nb.sqrt())
-    }
-}
-
 // strip_html / snippet 已提取至 crate::utils，此处不再重复定义。
 
 /// 截断文本以适应 Embedding API 的 token 限制

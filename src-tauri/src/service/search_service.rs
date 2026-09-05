@@ -5,11 +5,12 @@
 use tauri::AppHandle;
 use crate::db::AppDb;
 use crate::error::AppError;
-use crate::commands::ai::{RagResult, EmbeddingStatus, EmbeddingProgress, bytes_to_floats, cosine_similarity, truncate_for_embedding};
+use crate::commands::ai::{RagResult, EmbeddingStatus, EmbeddingProgress, truncate_for_embedding};
 use crate::commands::ai::embedding::call_embedding_api;
 use crate::commands::window::emit_sql_log;
 use crate::utils::{strip_html, snippet, escape_fts5_query, like_pattern};
 use crate::repository::{embedding_repo, chapter_repo, world_card_repo};
+use std::collections::HashMap;
 
 /// RAG 语义搜索（向量 + 关键词降级）
 pub async fn rag_search(
@@ -41,7 +42,16 @@ pub async fn rag_search(
             };
 
             if let Some(qv) = query_vec {
-                return vector_search(app, &conn, book_id, &qv, top_n);
+                // 向量无命中或失败时降级关键词搜索（不直接抛错）
+                match vector_search(app, &conn, book_id, &qv, top_n) {
+                    Ok(results) if !results.is_empty() => return Ok(results),
+                    Ok(_) => {
+                        crate::app_log!("[rag] 向量搜索无命中，降级为关键词搜索");
+                    }
+                    Err(e) => {
+                        crate::app_log!("[rag] 向量搜索失败，降级为关键词搜索: {e}");
+                    }
+                }
             }
         }
     }
@@ -49,7 +59,11 @@ pub async fn rag_search(
     fts5_search(app, &conn, book_id, query, top_n)
 }
 
-/// 向量相似度搜索
+/// 向量相似度搜索（sqlite-vec KNN，SQLite 内完成，内存占用 O(k)）
+///
+/// 流程：vec0 镜像表 KNN 取候选 → 按 embeddings.id 关联章节/卡片元数据并过滤书 →
+/// Rust 侧仅对候选排序取 top_n。相比旧实现（全书向量加载进内存逐条余弦），
+/// 向量扫描与距离计算全部下沉到 SQLite，大书库不再内存爆炸。
 fn vector_search(
     app: &AppHandle,
     conn: &rusqlite::Connection,
@@ -57,29 +71,45 @@ fn vector_search(
     query_vec: &[f32],
     top_n: usize,
 ) -> Result<Vec<RagResult>, AppError> {
-    let mut all_rows: Vec<embedding_repo::EmbRow> = Vec::new();
+    // vec0 镜像表缺失（尚无向量数据）→ 空结果，由调用方降级关键词搜索
+    if !embedding_repo::vec_table_exists(conn)? {
+        crate::app_log!("[rag] vec0 镜像表不存在，跳过向量搜索");
+        return Ok(vec![]);
+    }
 
-    emit_sql_log(app, "SELECT", "embeddings+chapters",
-        &format!("book_id={book_id}, embeddings for vector search"), file!(), line!());
-    all_rows.extend(embedding_repo::list_chapter_embeddings(conn, book_id)?);
+    // KNN 候选数放大：候选可能命中其他书籍，过滤后需保证本书仍有 ≥ top_n 结果
+    let k = top_n.saturating_mul(50).clamp(200, 2000) as i64;
+    let query_blob = crate::commands::ai::floats_to_bytes(query_vec);
 
-    emit_sql_log(app, "SELECT", "embeddings+world_cards",
-        &format!("book_id={book_id}, embeddings for vector search"), file!(), line!());
-    all_rows.extend(embedding_repo::list_world_card_embeddings(conn, book_id)?);
+    emit_sql_log(app, "SELECT", embedding_repo::VEC_TABLE,
+        &format!("book_id={book_id}, KNN top-{k}"), file!(), line!());
+    let hits = embedding_repo::knn_search(conn, &query_blob, k)?;
+    if hits.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let ids: Vec<i64> = hits.iter().map(|(id, _)| *id).collect();
+    let mut sim_by_id: HashMap<i64, f64> = HashMap::with_capacity(ids.len());
+    for (id, dist) in &hits {
+        // vec0 cosine distance = 1 - cos；还原为相似度（越大越相关），clamp 防浮点越界
+        sim_by_id.insert(*id, (1.0 - dist).clamp(0.0, 1.0));
+    }
+
+    emit_sql_log(app, "SELECT", "embeddings+chapters+world_cards",
+        &format!("book_id={book_id}, resolve {} KNN candidates", ids.len()), file!(), line!());
+    let chapter_rows = embedding_repo::find_chapter_meta_by_ids(conn, &ids, book_id)?;
+    let card_rows = embedding_repo::find_world_card_meta_by_ids(conn, &ids, book_id)?;
 
     let mut scored: Vec<(f64, String, String, String, String)> = Vec::new();
-    for row in &all_rows {
-        let emb_vec = bytes_to_floats(&row.embedding);
-        let sim = cosine_similarity(query_vec, &emb_vec);
-        let plain = strip_html(&row.content_html);
-        let snip = snippet(&plain, 200);
-        scored.push((
-            sim,
-            snip,
-            row.source_id.clone(),
-            row.title.clone(),
-            row.source_type.clone(),
-        ));
+    for (eid, sid, title, html) in chapter_rows {
+        if let Some(&sim) = sim_by_id.get(&eid) {
+            scored.push((sim, snippet(&strip_html(&html), 200), sid, title, "chapter".into()));
+        }
+    }
+    for (eid, sid, title, html) in card_rows {
+        if let Some(&sim) = sim_by_id.get(&eid) {
+            scored.push((sim, snippet(&strip_html(&html), 200), sid, title, "world_card".into()));
+        }
     }
 
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
@@ -332,6 +362,12 @@ pub async fn trigger_embedding(
                 let _ = world_card_repo::mark_vectorized(&conn, sid);
             }
         }
+
+        // 重建 vec0 KNN 镜像：embeddings upsert 可能变更 rowid（INSERT OR REPLACE），
+        // 且模型维度可能变化，全量重建保证镜像与事实源一致。
+        emit_sql_log(app, "REBUILD", embedding_repo::VEC_TABLE,
+            &format!("rebuild after embedding trigger, {} entries", results.len()), file!(), line!());
+        embedding_repo::rebuild_chunks_vec(&conn)?;
     }
 
     Ok(EmbeddingProgress {

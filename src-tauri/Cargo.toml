@@ -30,6 +30,9 @@ futures-util = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.40", features = ["bundled"] }
+# sqlite-vec：内嵌 C 源码静态编译，经 sqlite3_auto_extension 注册 vec0 虚拟表（KNN 语义检索）
+# 注：0.1.10-alpha.x 在 crates.io 打包缺 sqlite-vec-diskann.c 无法编译，固定用 0.1.9 稳定版
+sqlite-vec = "=0.1.9"
 r2d2 = "0.8"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }

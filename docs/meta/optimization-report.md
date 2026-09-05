@@ -23,6 +23,10 @@
 >
 > **v1.5.0 复核更新（2026-09-05）**：数据一致性收尾 —— **问题 1**（写操作事务保护）与
 > **问题 21**（构建命令 npm → pnpm）已**全部解决**，正文对应状态与 Phase 2 路线图已同步更新。
+>
+> **2026-09-05 复核更新（sqlite-vec 落地）**：**问题 13**（向量全量加载内存爆炸）已通过
+> sqlite-vec vec0 KNN 镜像彻底解决（SQLite 内检索，O(k) 内存），正文问题 13、P1 汇总清单
+> 与 Phase 2/4 路线图已同步更新。
 
 ---
 
@@ -294,6 +298,14 @@ all_rows.extend(embedding_repo::list_world_card_embeddings(conn, book_id)?);
 - 短期：限制 `LIMIT` 加载数量
 - 长期：使用 sqlite-vss 扩展或 LanceDB 嵌入
 
+> **状态**：✅ 已修复（2026-09-05，sqlite-vec 迁移落地）。
+> - 新增 vec0 虚拟表 `chunks_vec`（rowid ↔ `embeddings.id`）作为 KNN 索引镜像，经 `sqlite3_auto_extension` 进程级注册 sqlite-vec 扩展（静态编译，bundled SQLite 直接可用，无 load_extension 权限问题）。
+> - 语义检索改为 SQLite 内完成：`embedding MATCH ? ORDER BY distance LIMIT k`（cosine），内存占用 O(k)（k≤2000），彻底移除旧实现「全书向量读入内存 + Rust 逐条余弦」的 O(n·d) 路径；`bytes_to_floats` / `cosine_similarity` 已删除。
+> - `embeddings` 表保持为唯一事实来源（备份/清理/统计兼容）；`db/mod.rs::ensure_chunks_vec` 启动幂等对齐（维度探测，旧库自动回填），`rebuild_chunks_vec` 在 trigger_embedding / 导入后全量重建；孤儿清理、单书/全量备份导入均同步删除 vec 镜像行。
+> - 维度变化（更换 embedding 模型）自动重建镜像表；`search_service` 向量无命中或出错时降级 FTS5 关键词搜索，不再抛错。
+> - sqlite-vec crate 锁定 `0.1.9` 稳定版（0.1.10-alpha.x 的 crates.io 包缺失 `sqlite-vec-diskann.c` 无法编译）。
+> - 新增冒烟测试 `db::tests::sqlite_vec0_knn_cosine_smoke` 覆盖建表 / 插入 / cosine KNN / rowid 删除。
+
 #### 问题 14：`OutlinePanel` 虚拟化实现缺陷
 
 `overscan: activeId ? 9999 : 10` — 拖拽时渲染全部条目，大目录树会卡顿。
@@ -479,7 +491,7 @@ let title: String = row.get("title")?;
 | 🟡 P1 | Zustand 单 store 过重（问题 3） | 架构 | 性能/可维护性 | 🟡 |
 | 🟡 P1 | AI 对话写放大（问题 4） | 性能 | localStorage 频繁序列化 | 🟡 |
 | 🟡 P1 | 前端乐观更新无验证（问题 2） | 数据一致性 | 状态可能不同步 | ⚪ |
-| 🟡 P1 | 向量搜索全量加载（问题 13） | 性能 | 大库内存爆炸 | ❌ |
+| 🟡 P1 | 向量搜索全量加载（问题 13） | 性能 | 大库内存爆炸 | ✅ |
 | 🟡 P1 | 缺少快捷键系统（问题 23） | 功能缺失 | 用户体验 | ❌ |
 | 🟡 P1 | 缺少写作统计面板（问题 24） | 功能缺失 | 用户激励 | 🟡 |
 | 🟢 P2 | 动态 SQL 重复（问题 17） | 代码质量 | 可维护性 | ⚪ |
@@ -522,7 +534,7 @@ let title: String = row.get("title")?;
 2. ~~补齐 `book_service` / `world_card_service` / `snapshot_service` 的事务保护（问题 1 收尾）~~ ✅ **已完成**（2026-09-05，v1.5.0）
 3. 实现 `/skills/cancel` 真正的任务中断（问题 28）
 4. ~~`beforeDevCommand` / `beforeBuildCommand` 改为 `pnpm run …`（问题 21）~~ ✅ **已完成**（2026-09-05，v1.5.0）
-5. 向量搜索加 `LIMIT` 分页加载（问题 13 缓解）
+5. ~~向量搜索加 `LIMIT` 分页加载（问题 13 缓解）~~ ✅ 已由 sqlite-vec KNN 方案（O(k)）取代（2026-09-05）
 
 ### Phase 3（中期 — 2-4 周）
 
@@ -536,7 +548,7 @@ let title: String = row.get("title")?;
 ### Phase 4（长期）
 
 1. 动态 SQL 构建抽取为宏/泛型函数（问题 17）
-2. sqlite-vec / LanceDB 迁移，彻底解决向量检索内存问题（问题 13）
+2. ~~sqlite-vec / LanceDB 迁移，彻底解决向量检索内存问题（问题 13）~~ ✅ **已完成**（2026-09-05，vec0 镜像 + KNN）
 3. AI 对话导出为 Markdown / JSON（问题 25）
 4. Linux 构建目标（deb / AppImage）（问题 26）
 5. 写作统计面板：日更进度条、连续天数、字数曲线（问题 24）

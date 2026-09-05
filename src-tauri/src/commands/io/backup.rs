@@ -327,6 +327,8 @@ fn run_full_import(
     payload: &ExportPayload,
 ) -> Result<(), AppError> {
     emit_sql_log(app, "DELETE", "all tables", "full import: clearing all data", file!(), line!());
+    // 先清 vec0 KNN 镜像（表不存在则跳过），再清事实源
+    embedding_repo::clear_vec_table(conn)?;
     conn.execute("DELETE FROM embeddings", [])?;
     conn.execute("DELETE FROM snapshots", [])?;
     conn.execute("DELETE FROM world_cards", [])?;
@@ -345,6 +347,9 @@ fn run_single_import(
     book_id: &str,
 ) -> Result<(), AppError> {
     emit_sql_log(app, "DELETE", "all tables", &format!("single import: clearing data for book_id={}", book_id), file!(), line!());
+    // 先删该书在 vec0 KNN 镜像中的行（rowid ↔ embeddings.id），再清事实源
+    let book_emb_ids = embedding_repo::list_ids_by_book(conn, book_id)?;
+    embedding_repo::delete_vec_rows(conn, &book_emb_ids)?;
     conn.execute(
         "DELETE FROM embeddings WHERE source_id IN (SELECT id FROM chapters WHERE book_id=?1)",
         params![book_id],

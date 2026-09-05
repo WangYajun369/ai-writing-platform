@@ -8,6 +8,33 @@ pub mod schema;
 use r2d2::{Pool, ManageConnection};
 use rusqlite::{Connection, Result};
 use anyhow::Context as _;
+use std::sync::atomic::{AtomicBool, Ordering};
+use crate::repository::embedding_repo;
+
+/// sqlite-vec 扩展全局注册（进程内仅一次）。
+///
+/// 通过 `sqlite3_auto_extension` 注册 vec0 虚拟表模块，此后新建的每个
+/// SQLite 连接都会自动加载该扩展（无需 load_extension 权限，适合 bundled）。
+/// 必须在任何 Connection 打开之前调用，故置于 `AppDb::new` 起始处。
+pub fn register_sqlite_vec_extension() {
+    static REGISTERED: AtomicBool = AtomicBool::new(false);
+    if REGISTERED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    // sqlite-vec crate 在编译期静态链接了 sqlite-vec 的 C 实现并导出 sqlite3_vec_init。
+    // bindgen 为 sqlite3_auto_extension 生成了完整三参 C 签名，需经指针转换注册
+    // （与 sqlite-vec crate 自身测试一致的写法）。
+    unsafe {
+        type VecInit = unsafe extern "C" fn(
+            *mut rusqlite::ffi::sqlite3,
+            *mut *mut std::os::raw::c_char,
+            *const rusqlite::ffi::sqlite3_api_routines,
+        ) -> std::os::raw::c_int;
+        let init: VecInit = std::mem::transmute(sqlite_vec::sqlite3_vec_init as *const ());
+        let _ = rusqlite::ffi::sqlite3_auto_extension(Some(init));
+    }
+    crate::app_log!("[sqlite-vec] vec0 扩展已注册（KNN 语义检索可用）");
+}
 
 /// SQLite 连接管理器，实现 r2d2::ManageConnection
 pub struct SqliteConnectionManager {
@@ -70,6 +97,9 @@ pub struct AppDb {
 impl AppDb {
     /// 创建数据库实例并执行自动迁移（建表 + 索引）
     pub fn new(db_path: &str) -> anyhow::Result<Self> {
+        // 必须先注册 sqlite-vec 扩展，再打开任何连接（auto-extension 对后续连接生效）
+        register_sqlite_vec_extension();
+
         let manager = SqliteConnectionManager::new(db_path.to_string());
         let pool = Pool::builder()
             .max_size(10)
@@ -507,6 +537,85 @@ impl AppDb {
             CREATE INDEX IF NOT EXISTS idx_templates_project ON task_templates(project_id);
         "#).context("创建索引失败")?;
 
+        // sqlite-vec KNN 镜像表：已有向量数据时建表并回填（幂等）；
+        // 维度变化（更换 embedding 模型）时自动重建。
+        crate::app_log!("[SQL] sqlite-vec → ensure {} 镜像表", embedding_repo::VEC_TABLE);
+        embedding_repo::ensure_chunks_vec(&conn)
+            .map_err(|e| anyhow::anyhow!("初始化 sqlite-vec 镜像表失败: {}", e))?;
+
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::params;
+
+    /// sqlite-vec 冒烟测试：验证 vec0 虚拟表建表、插入、KNN（cosine）与 rowid 删除可用。
+    ///
+    /// 覆盖运行时最关键的三个假设：auto-extension 注册生效、cosine 距离语义、
+    /// 镜像清理所依赖的按 rowid DELETE。
+    #[test]
+    fn sqlite_vec0_knn_cosine_smoke() {
+        register_sqlite_vec_extension();
+
+        let conn = Connection::open_in_memory().expect("open memory db");
+        conn.execute_batch(
+            "CREATE VIRTUAL TABLE chunks_vec USING vec0(embedding float[3] distance_metric=cosine);",
+        )
+        .expect("create vec0 table");
+
+        let encode = |v: &[f32]| -> Vec<u8> { v.iter().flat_map(|f| f.to_le_bytes()).collect() };
+
+        conn.execute(
+            "INSERT INTO chunks_vec (rowid, embedding) VALUES (1, ?1)",
+            params![encode(&[1.0, 0.0, 0.0])],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO chunks_vec (rowid, embedding) VALUES (2, ?1)",
+            params![encode(&[0.0, 1.0, 0.0])],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO chunks_vec (rowid, embedding) VALUES (3, ?1)",
+            params![encode(&[0.0, 0.0, 1.0])],
+        )
+        .unwrap();
+
+        // 查询 [1,0,0]：最近邻应依次为 rowid 1、rowid 2/3（cosine distance ≈ 0 / 1）
+        let q = encode(&[1.0, 0.0, 0.0]);
+        let mut stmt = conn
+            .prepare(
+                "SELECT rowid, distance FROM chunks_vec
+                 WHERE embedding MATCH ?1 ORDER BY distance LIMIT 3",
+            )
+            .unwrap();
+        let rows: Vec<(i64, f64)> = stmt
+            .query_map(params![q], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].0, 1, "最近邻应为 rowid 1，实际 {:?}", rows);
+        assert!(
+            rows[0].1.abs() < 1e-5,
+            "self cosine distance 应约为 0，实际 {}",
+            rows[0].1
+        );
+        assert!(
+            (rows[1].1 - 1.0).abs() < 1e-4,
+            "正交向量 cosine distance 应约为 1，实际 {}",
+            rows[1].1
+        );
+
+        // rowid 删除能力（镜像清理路径依赖）
+        conn.execute("DELETE FROM chunks_vec WHERE rowid = 2", []).unwrap();
+        let cnt: i64 = conn
+            .query_row("SELECT COUNT(*) FROM chunks_vec", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(cnt, 2);
     }
 }

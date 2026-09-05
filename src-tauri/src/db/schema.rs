@@ -40,6 +40,8 @@ pub const TABLE_SCHEMA: &[(&str, &[&str])] = &[
         "embeddings",
         &["id", "source_type", "source_id", "embedding", "model", "created_at"],
     ),
+    // 注：chunks_vec 为 sqlite-vec vec0 虚拟表（KNN 镜像，rowid ↔ embeddings.id），
+    // 列结构由 vec0 模块管理，不参与本清单的列名校验，也不在备份导出范围内。
     (
         "memories",
         &[
