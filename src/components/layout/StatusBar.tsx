@@ -8,6 +8,7 @@ import { wordCountAtom, isSavingAtom, lastSavedAtom } from '@/stores/uiAtoms.ts'
 import { useCurrentChapter, useCurrentBook } from '@/stores/appStore.ts'
 import { formatWordCount } from '@/lib/utils.ts'
 import { format } from 'date-fns'
+import WritingStatsPanel from './WritingStatsPanel'
 
 export default function StatusBar() {
   const [wordCount] = useAtom(wordCountAtom)
@@ -34,6 +35,9 @@ export default function StatusBar() {
       <span>全书 {formatWordCount(totalWordCount)}</span>
 
       <div className="flex-1" />
+
+      {/* 写作统计（今日字数 / 目标进度 / 连续天数 / 30 日曲线） */}
+      <WritingStatsPanel />
 
       {/* 保存状态 */}
       {isSaving && <span className="text-primary animate-pulse">保存中…</span>}

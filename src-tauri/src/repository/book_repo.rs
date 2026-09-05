@@ -235,3 +235,12 @@ fn orphan_embedding_ids(conn: &Connection, source_type: &str) -> Result<Vec<i64>
     let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
     rows.collect()
 }
+
+/// 查询书籍日更目标（写作统计用，缺省 0）
+pub fn find_daily_target(conn: &Connection, book_id: &str) -> Result<i64> {
+    conn.query_row(
+        "SELECT COALESCE(daily_target, 0) FROM books WHERE id=?1",
+        params![book_id],
+        |row| row.get::<_, i64>(0),
+    )
+}

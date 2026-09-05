@@ -15,6 +15,7 @@ pub mod snapshot_service;
 pub mod vocab_service;
 pub mod volume_service;
 pub mod world_card_service;
+pub mod writing_stats_service;
 // ── 任务卡模块 ──
 pub mod activity_log_service;
 pub mod attachment_service;

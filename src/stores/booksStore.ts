@@ -6,6 +6,7 @@
  */
 import { create } from 'zustand'
 import type { Book, Chapter, Volume } from '../types'
+import { volumeApi, chapterApi } from '@/lib/tauri-bridge'
 
 export interface BooksState {
   books: Book[]
@@ -41,6 +42,8 @@ export interface BooksState {
   updateBook: (id: string, patch: Partial<Book>) => void
   addBook: (book: Book) => void
   removeBook: (id: string) => void
+  /** 从后端全量重载书籍的卷/章节（含回收站数据），用于关键操作后的状态对账（Phase 4 问题 2） */
+  refreshTree: (bookId: string) => Promise<void>
 }
 
 export const useBooksStore = create<BooksState>()((set) => ({
@@ -63,6 +66,19 @@ export const useBooksStore = create<BooksState>()((set) => ({
   setDbStatus: (dbStatus) => set({ dbStatus }),
   setLoadingBooks: (v) => set({ isLoadingBooks: v }),
   setLoadingChapters: (v) => set({ isLoadingChapters: v }),
+
+  refreshTree: async (bookId) => {
+    const [volumes, deletedVolumes, chapters, deletedChapters] = await Promise.all([
+      volumeApi.listByBook(bookId),
+      volumeApi.listDeleted(bookId),
+      chapterApi.listByBook(bookId),
+      chapterApi.listDeleted(bookId),
+    ])
+    set({
+      volumes: [...volumes, ...deletedVolumes],
+      chapters: [...chapters, ...deletedChapters],
+    })
+  },
 
   updateChapter: (id, patch) =>
     set((s) => ({

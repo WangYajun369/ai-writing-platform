@@ -14,6 +14,7 @@ pub mod snapshot_repo;
 pub mod vocab_repo;
 pub mod volume_repo;
 pub mod world_card_repo;
+pub mod writing_stats_repo;
 // ── 任务卡模块 ──
 pub mod activity_log_repo;
 pub mod attachment_repo;

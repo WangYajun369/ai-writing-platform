@@ -8,7 +8,9 @@ use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::Book;
 use crate::repository::book_repo;
-use crate::utils::{now, validate_len, MAX_AUTHOR_LEN, MAX_DESCRIPTION_LEN, MAX_TITLE_LEN};
+use crate::utils::{
+    now, validate_len, DynamicUpdate, MAX_AUTHOR_LEN, MAX_DESCRIPTION_LEN, MAX_TITLE_LEN,
+};
 use tauri::AppHandle;
 use uuid::Uuid;
 
@@ -127,61 +129,42 @@ pub fn update_book(
     {
         let conn = db.pool.get()?;
 
-        let mut set_clauses: Vec<String> = Vec::new();
-        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-
-        let mut push_str = |col: &str, val: String| {
-            set_clauses.push(format!("{}=?{}", col, set_clauses.len() + 1));
-            param_values.push(Box::new(val));
-        };
-
+        // 字段收集统一走 DynamicUpdate 构建器（Phase 4 问题 17 去重）
+        let mut upd = DynamicUpdate::new("books");
         if let Some(v) = params.title {
-            push_str("title", v);
+            upd.push("title", v);
         }
         if let Some(v) = params.author {
-            push_str("author", v);
+            upd.push("author", v);
         }
         if let Some(v) = params.description {
-            push_str("description", v);
+            upd.push("description", v);
         }
         if let Some(v) = params.cover_image {
-            push_str("cover_image", v);
+            upd.push("cover_image", v);
         }
         if let Some(v) = params.outline {
-            push_str("outline", v);
+            upd.push("outline", v);
         }
         if let Some(v) = params.daily_target {
-            set_clauses.push(format!("daily_target=?{}", set_clauses.len() + 1));
-            param_values.push(Box::new(v));
+            upd.push("daily_target", v);
         }
-        if let Some(ref v) = params.tags {
-            let tags_json = serde_json::to_string(v).unwrap_or_else(|_| "[]".to_string());
-            set_clauses.push(format!("tags=?{}", set_clauses.len() + 1));
-            param_values.push(Box::new(tags_json));
+        if let Some(v) = params.tags {
+            upd.push_json("tags", v);
         }
 
-        if !set_clauses.is_empty() {
-            let ts_idx = set_clauses.len() + 1;
-            set_clauses.push(format!("updated_at=?{}", ts_idx));
-            param_values.push(Box::new(ts.clone()));
-
-            let sql = format!(
-                "UPDATE books SET {} WHERE id=?{}",
-                set_clauses.join(", "),
-                ts_idx + 1
-            );
-            param_values.push(Box::new(id.to_string()));
-
+        let fields = upd.field_count();
+        if let Some((sql, values)) = upd.build(&id, &ts) {
             emit_sql_log(
                 app,
                 "UPDATE",
                 "books",
-                &format!("id={id}, fields={}", set_clauses.len() - 1),
+                &format!("id={id}, fields={fields}"),
                 file!(),
                 line!(),
             );
             let params_refs: Vec<&dyn rusqlite::types::ToSql> =
-                param_values.iter().map(|p| p.as_ref()).collect();
+                values.iter().map(|p| p.as_ref()).collect();
             conn.execute(&sql, params_refs.as_slice())?;
         }
     }

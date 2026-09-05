@@ -22,8 +22,8 @@ use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::Chapter;
-use crate::repository::{book_repo, chapter_repo, volume_repo};
-use crate::utils::{now, validate_len, MAX_CHAPTER_CONTENT_LEN, MAX_TITLE_LEN};
+use crate::repository::{book_repo, chapter_repo, volume_repo, writing_stats_repo};
+use crate::utils::{local_today, now, validate_len, MAX_CHAPTER_CONTENT_LEN, MAX_TITLE_LEN};
 use tauri::AppHandle;
 use uuid::Uuid;
 
@@ -181,6 +181,10 @@ pub fn save_chapter(
     let mut conn = db.pool.get()?;
     let tx = conn.transaction()?;
 
+    // Step 0: 读取旧字数与归属书籍（写作统计 delta 依据；须在写入前取值）
+    let (book_id, old_wc) = chapter_repo::find_book_and_wc(&tx, chapter_id)
+        .map_err(|e| AppError::Business(format!("保存失败 [step0-read_old_wc]: {}", e)))?;
+
     // Step 1: 保存内容到 chapters 表（写入 content_html 和 word_count，触发 FTS5 同步）
     emit_sql_log(
         app,
@@ -200,6 +204,13 @@ pub fn save_chapter(
     // Step 3: 回读更新后的书籍字数，确保调用方拿到最新值
     let book_wc = book_repo::word_count_by_chapter(&tx, chapter_id)
         .map_err(|e| AppError::Business(format!("保存失败 [step3-read_book_wc]: {}", e)))?;
+
+    // Step 3.5: 写作统计——按当日净增字数（新字数 − 旧字数）落库，仅累计正增量
+    let delta = word_count.saturating_sub(old_wc);
+    if delta > 0 {
+        writing_stats_repo::record_delta(&tx, &book_id, &local_today(), delta)
+            .map_err(|e| AppError::Business(format!("保存失败 [step3.5-record_stats]: {}", e)))?;
+    }
 
     emit_sql_log(
         app,

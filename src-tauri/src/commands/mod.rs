@@ -18,6 +18,7 @@ pub mod vocab_dict;
 pub mod volume;
 pub mod window;
 pub mod world_card;
+pub mod writing_stats;
 // ── 任务卡模块 ──
 pub mod activity;
 pub mod attachment;

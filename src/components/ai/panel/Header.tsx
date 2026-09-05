@@ -5,7 +5,7 @@
  */
 import { memo } from 'react'
 import {
-  BotIcon, Trash2Icon, MessageSquareIcon, SparklesIcon, BrainIcon,
+  BotIcon, Trash2Icon, MessageSquareIcon, SparklesIcon, BrainIcon, DownloadIcon, FileJsonIcon, FileTextIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { SkillType } from '@/components/agent/types'
@@ -28,6 +28,25 @@ interface HeaderProps {
   /** Agent 记忆面板相关 */
   showMemory: boolean
   onToggleMemory: () => void
+  /** AI 对话导出（Phase 4 问题 25；仅聊天模式） */
+  exportOpen?: boolean
+  onExportToggle?: () => void
+  onExportFormat?: (format: 'markdown' | 'json') => void
+}
+
+/** 导出菜单项 */
+function ExportMenuItem({
+  icon, label, onClick,
+}: { icon: React.ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-xs text-left hover:bg-muted transition-colors"
+    >
+      {icon}
+      {label}
+    </button>
+  )
 }
 
 export const Header = memo(function Header({
@@ -38,6 +57,7 @@ export const Header = memo(function Header({
   selectedSkill, onSkillChange,
   onClear,
   showMemory, onToggleMemory,
+  exportOpen, onExportToggle, onExportFormat,
 }: HeaderProps) {
   const StatusIcon = STATUS_CONFIG[statusKey].icon
   const statusColor = STATUS_CONFIG[statusKey].color
@@ -109,6 +129,37 @@ export const Header = memo(function Header({
               <BrainIcon className="w-3 h-3" />
               <span>记忆</span>
             </button>
+          )}
+          {/* AI 对话导出（仅聊天模式；Phase 4 问题 25） */}
+          {mode === 'chat' && (
+            <div className="relative">
+              <button
+                onClick={onExportToggle}
+                title="导出 AI 对话（Markdown / JSON）"
+                className="flex items-center gap-1 px-2 py-1 rounded hover:bg-muted text-muted-foreground text-xs transition-colors"
+              >
+                <DownloadIcon className="w-3 h-3" />
+                <span>导出</span>
+              </button>
+              {exportOpen && (
+                <>
+                  {/* 点击外部关闭 */}
+                  <div className="fixed inset-0 z-10" onClick={onExportToggle} />
+                  <div className="absolute right-0 top-full z-20 mt-1 rounded-md border bg-popover text-popover-foreground shadow-md p-1 min-w-32">
+                    <ExportMenuItem
+                      icon={<FileTextIcon className="w-3.5 h-3.5" />}
+                      label="Markdown (.md)"
+                      onClick={() => onExportFormat?.('markdown')}
+                    />
+                    <ExportMenuItem
+                      icon={<FileJsonIcon className="w-3.5 h-3.5" />}
+                      label="JSON (.json)"
+                      onClick={() => onExportFormat?.('json')}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
           )}
           <button
             onClick={onClear}

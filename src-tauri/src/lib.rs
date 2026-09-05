@@ -250,6 +250,8 @@ pub fn run() {
             commands::world_card::update_world_card,
             commands::world_card::delete_world_card,
             commands::world_card::search_world_cards,
+            // ══════ 写作统计 ══════
+            commands::writing_stats::get_writing_stats,
             // ══════ 日记管理 ══════
             commands::diary::list_month_diaries,
             commands::diary::list_all_diaries,

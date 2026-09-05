@@ -1007,3 +1007,26 @@ export const taskCardApi = {
     return invoke<MigrateResult>('migrate_schedules')
   },
 }
+
+// ==================== 写作统计（Phase 4 问题 24） ====================
+
+/** 单日写作量（对齐 Rust DailyWords） */
+export interface WritingDailyPoint {
+  date: string
+  words: number
+}
+
+/** 写作统计聚合（对齐 Rust WritingStats） */
+export interface WritingStatsPayload {
+  dailyTarget: number
+  todayWords: number
+  streakDays: number
+  lastDays: WritingDailyPoint[]
+}
+
+export const writingApi = {
+  /** 获取书籍写作统计（今日字数 / 连续天数 / 近 30 日曲线） */
+  async getWritingStats(bookId: string): Promise<WritingStatsPayload> {
+    return invoke<WritingStatsPayload>('get_writing_stats', { bookId })
+  },
+}

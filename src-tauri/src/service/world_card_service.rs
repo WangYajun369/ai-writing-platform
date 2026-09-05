@@ -8,7 +8,8 @@ use crate::error::AppError;
 use crate::models::WorldCard;
 use crate::repository::world_card_repo;
 use crate::utils::{
-    escape_fts5_query, like_pattern, now, validate_len, MAX_TAGS_COUNT, MAX_TAG_LEN, MAX_TITLE_LEN,
+    escape_fts5_query, like_pattern, now, validate_len, DynamicUpdate, MAX_TAGS_COUNT, MAX_TAG_LEN,
+    MAX_TITLE_LEN, SEARCH_DEFAULT_LIMIT,
 };
 use tauri::AppHandle;
 use uuid::Uuid;
@@ -129,21 +130,7 @@ pub fn update_world_card(
         line!(),
     );
 
-    let mut set_clauses: Vec<String> = Vec::new();
-    let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-
-    if let Some(v) = params.title {
-        set_clauses.push(format!("title=?{}", set_clauses.len() + 1));
-        param_values.push(Box::new(v));
-    }
-    if let Some(v) = params.content {
-        set_clauses.push(format!("content=?{}", set_clauses.len() + 1));
-        param_values.push(Box::new(v));
-    }
-    if let Some(v) = params.content_html {
-        set_clauses.push(format!("content_html=?{}", set_clauses.len() + 1));
-        param_values.push(Box::new(v));
-    }
+    // 标签校验（DynamicUpdate 收集前完成，失败提前返回）
     if let Some(ref v) = params.tags {
         if v.len() > MAX_TAGS_COUNT {
             return Err(AppError::Validation(format!(
@@ -162,25 +149,26 @@ pub fn update_world_card(
                 )));
             }
         }
-        let tags_json = serde_json::to_string(v).unwrap_or_else(|_| "[]".to_string());
-        set_clauses.push(format!("tags=?{}", set_clauses.len() + 1));
-        param_values.push(Box::new(tags_json));
     }
 
-    if !set_clauses.is_empty() {
-        let ts_idx = set_clauses.len() + 1;
-        set_clauses.push(format!("updated_at=?{}", ts_idx));
-        param_values.push(Box::new(ts.clone()));
+    // 字段收集统一走 DynamicUpdate 构建器（Phase 4 问题 17 去重）
+    let mut upd = DynamicUpdate::new("world_cards");
+    if let Some(v) = params.title {
+        upd.push("title", v);
+    }
+    if let Some(v) = params.content {
+        upd.push("content", v);
+    }
+    if let Some(v) = params.content_html {
+        upd.push("content_html", v);
+    }
+    if let Some(v) = params.tags {
+        upd.push_json("tags", v);
+    }
 
-        let sql = format!(
-            "UPDATE world_cards SET {} WHERE id=?{}",
-            set_clauses.join(", "),
-            ts_idx + 1
-        );
-        param_values.push(Box::new(id.to_string()));
-
+    if let Some((sql, values)) = upd.build(&id, &ts) {
         let params_refs: Vec<&dyn rusqlite::types::ToSql> =
-            param_values.iter().map(|p| p.as_ref()).collect();
+            values.iter().map(|p| p.as_ref()).collect();
         conn.execute(&sql, params_refs.as_slice())?;
     }
 
@@ -210,7 +198,10 @@ pub fn delete_world_card(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), Ap
     Ok(())
 }
 
-/// 搜索世界观卡片（FTS5 + LIKE 降级）
+/// 搜索世界观卡片（FTS5 优先 + 无命中 LIKE 兜底，与 search_service 策略一致）
+///
+/// Phase 4 问题 18 统一：limit 使用共享常量 `SEARCH_DEFAULT_LIMIT`（不再硬编码 20），
+/// 降级语义对齐 `search_service` —— FTS5 有结果直接返回；无结果再尝试 LIKE 兜底。
 pub fn search_world_cards(
     app: &AppHandle,
     db: &AppDb,
@@ -229,9 +220,13 @@ pub fn search_world_cards(
             file!(),
             line!(),
         );
-        return Ok(world_card_repo::search_fts5(
-            &conn, book_id, &fts_query, 20,
-        )?);
+        let hits = world_card_repo::search_fts5(&conn, book_id, &fts_query, SEARCH_DEFAULT_LIMIT)?;
+        if !hits.is_empty() {
+            return Ok(hits);
+        }
+        crate::app_log!(
+            "[search] world_cards FTS5 无命中，降级 LIKE: book_id={book_id} query={query}"
+        );
     }
 
     emit_sql_log(
@@ -243,5 +238,10 @@ pub fn search_world_cards(
         line!(),
     );
     let pattern = like_pattern(query, 100);
-    Ok(world_card_repo::search_like(&conn, book_id, &pattern, 20)?)
+    Ok(world_card_repo::search_like(
+        &conn,
+        book_id,
+        &pattern,
+        SEARCH_DEFAULT_LIMIT,
+    )?)
 }

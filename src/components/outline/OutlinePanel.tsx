@@ -15,26 +15,15 @@ import {
   Trash2Icon,
 } from 'lucide-react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  closestCenter,
-} from '@dnd-kit/core'
-import type {
-  DragStartEvent,
-  DragEndEvent,
-  DragMoveEvent,
-  CollisionDetection,
-} from '@dnd-kit/core'
+import { DndContext, DragOverlay } from '@dnd-kit/core'
 import { useBooksStore } from '@/stores/booksStore'
 import { chapterApi, volumeApi } from '@/lib/tauri-bridge'
 import type { Chapter } from '@/types'
 
-import type { InputDialogState, ConfirmDialogState, FlatItem } from './types'
+import type { FlatItem } from './types'
 import { dndId, chapterGroup } from './utils'
+import { useOutlineDnd } from './hooks/useOutlineDnd'
+import { useOutlineDialogs } from './hooks/useOutlineDialogs'
 import { InputDialog, ConfirmDialog } from './OutlineDialogs'
 import OutlineRecycleBin from './OutlineRecycleBin'
 import DraggableVolume from './DraggableVolume'
@@ -56,38 +45,22 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
     removeChapter,
     updateBook,
     setVolumes,
-    reorderVolumes,
-    reorderChapters,
-    moveChapterToVolume,
+    refreshTree,
   } = useBooksStore()
 
   const [collapsedVolumes, setCollapsedVolumes] = useState<Set<string>>(new Set())
-  const [inputDialog, setInputDialog] = useState<InputDialogState>({
-    open: false,
-    label: '',
-    defaultValue: '',
-    onSubmit: () => {},
-  })
-  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState>({
-    open: false,
-    title: '',
-    message: '',
-    onConfirm: () => {},
-  })
-  const [recycleBinOpen, setRecycleBinOpen] = useState(false)
 
-  // 拖拽状态
-  const [activeId, setActiveId] = useState<string | null>(null)
-  const [overId, setOverId] = useState<string | null>(null)
-  const [dropIndicator, setDropIndicator] = useState<{
-    id: string
-    position: 'before' | 'after'
-  } | null>(null)
-  const dropIndicatorRef = useRef<{
-    id: string
-    position: 'before' | 'after'
-  } | null>(null)
-  const dragStartPos = useRef<{ x: number; y: number } | null>(null)
+  // 对话框状态（已拆至 useOutlineDialogs hook）
+  const {
+    inputDialog,
+    confirmDialog,
+    recycleBinOpen,
+    setRecycleBinOpen,
+    openInputDialog,
+    openConfirmDialog,
+    closeInputDialog,
+    closeConfirmDialog,
+  } = useOutlineDialogs()
 
   // 虚拟化
   const parentRef = useRef<HTMLDivElement>(null)
@@ -156,17 +129,14 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
     return items
   }, [volumes, chapters])
 
-  // 当前拖拽中项
-  const activeItem = useMemo(
-    () => flatItems.find((f) => dndId(f) === activeId) ?? null,
-    [activeId, flatItems],
-  )
+  // ---------- DnD（逻辑已拆至 useOutlineDnd hook，Phase 4 问题 5） ----------
+  const dnd = useOutlineDnd({ flatItems, volumes, chapters })
 
   const virtualizer = useVirtualizer({
     count: flatItems.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 36,
-    overscan: activeId ? 9999 : 10,
+    overscan: dnd.activeId ? 9999 : 10,
   })
 
   // 折叠/展开时重新测量
@@ -174,253 +144,9 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
     virtualizer.measure()
   }, [collapsedVolumes, virtualizer])
 
-  // ---------- DnD ----------
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-  )
-
-  /** 自定义碰撞检测：卷只能拖到卷；章节可拖到卷或任意章节 */
-  const collisionDetection = useCallback<CollisionDetection>(
-    (args) => {
-      const collisions = closestCenter(args)
-      return collisions.filter((collision) => {
-        if (collision.id === 'unassigned-zone-__unassigned-zone__') {
-          return activeItem?.type === 'chapter' && !!activeItem.chapter.volumeId
-        }
-
-        const collidedItem = flatItems.find((f) => dndId(f) === collision.id)
-        if (!activeItem || !collidedItem) return false
-
-        if (activeItem.type === 'volume') {
-          return collidedItem.type === 'volume'
-        }
-
-        if (activeItem.type === 'chapter') {
-          if (collidedItem.type === 'volume') return true
-          if (collidedItem.type === 'chapter') return true
-          return false
-        }
-
-        return false
-      })
-    },
-    [activeItem, flatItems],
-  )
-
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    setActiveId(event.active.id as string)
-    const e = event.activatorEvent as PointerEvent
-    if (e) {
-      dragStartPos.current = { x: e.clientX, y: e.clientY }
-    }
-  }, [])
-
-  const handleDragMove = useCallback(
-    (event: DragMoveEvent) => {
-      const over = event.over
-      if (!over || !dragStartPos.current || !activeItem) return
-
-      const targetItem = flatItems.find((f) => dndId(f) === over.id)
-      if (!targetItem) return
-
-      if (
-        (activeItem.type === 'volume' && targetItem.type === 'volume') ||
-        (activeItem.type === 'chapter' && targetItem.type === 'chapter')
-      ) {
-        const currentY = dragStartPos.current.y + event.delta.y
-        const rect = over.rect
-        const midY = rect.top + rect.height / 2
-        const indicator = {
-          id: over.id as string,
-          position: (currentY < midY ? 'before' : 'after') as 'before' | 'after',
-        }
-        setDropIndicator(indicator)
-        dropIndicatorRef.current = indicator
-      } else {
-        setDropIndicator(null)
-        dropIndicatorRef.current = null
-      }
-    },
-    [activeItem, flatItems],
-  )
-
-  const handleDragEnd = useCallback(
-    async (event: DragEndEvent) => {
-      const { active, over } = event
-      const finalIndicator = dropIndicatorRef.current
-      setActiveId(null)
-      setOverId(null)
-      setDropIndicator(null)
-      dropIndicatorRef.current = null
-      dragStartPos.current = null
-
-      if (!over || active.id === over.id) return
-
-      // ---------- 章节移到未分卷区域 ----------
-      if (over.id === 'unassigned-zone-__unassigned-zone__') {
-        const fromItem = flatItems.find((f) => dndId(f) === active.id)
-        if (!fromItem || fromItem.type !== 'chapter') return
-        if (!fromItem.chapter.volumeId) return
-        try {
-          await chapterApi.moveToVolume(fromItem.chapter.id, null)
-          moveChapterToVolume(fromItem.chapter.id, null)
-        } catch (err) {
-          console.error('移动章节到未分卷区域失败', err)
-        }
-        return
-      }
-
-      const fromItem = flatItems.find((f) => dndId(f) === active.id)
-      const toItem = flatItems.find((f) => dndId(f) === over.id)
-      if (!fromItem || !toItem) return
-
-      // ---------- 卷重排 ----------
-      if (fromItem.type === 'volume' && toItem.type === 'volume') {
-        const orderedVolumes = [...volumes].sort(
-          (a, b) => a.sortOrder - b.sortOrder,
-        )
-        const fromIdx = orderedVolumes.findIndex(
-          (v) => v.id === fromItem.volume.id,
-        )
-        const toIdx = orderedVolumes.findIndex(
-          (v) => v.id === toItem.volume.id,
-        )
-        if (fromIdx === -1 || toIdx === -1) return
-
-        const reordered = [...orderedVolumes]
-        const [moved] = reordered.splice(fromIdx, 1)
-        reordered.splice(toIdx, 0, moved)
-
-        const ids = reordered.map((v) => v.id)
-        try {
-          await volumeApi.reorder(ids)
-          reorderVolumes(ids)
-        } catch (err) {
-          console.error('卷重排失败', err)
-        }
-        return
-      }
-
-      // ---------- 章节重排 / 跨组移动 ----------
-      if (fromItem.type === 'chapter' && toItem.type === 'chapter') {
-        const fromGroup = chapterGroup(fromItem.chapter)
-        const toGroup = chapterGroup(toItem.chapter)
-
-        if (fromGroup === toGroup) {
-          const groupChapters = chapters
-            .filter((c) => !c.deletedAt && chapterGroup(c) === fromGroup)
-            .sort((a, b) => a.sortOrder - b.sortOrder)
-
-          const fromIdx = groupChapters.findIndex(
-            (c) => c.id === fromItem.chapter.id,
-          )
-          const toIdx = groupChapters.findIndex(
-            (c) => c.id === toItem.chapter.id,
-          )
-          if (fromIdx === -1 || toIdx === -1) return
-
-          const reordered = [...groupChapters]
-          const [moved] = reordered.splice(fromIdx, 1)
-          reordered.splice(toIdx, 0, moved)
-
-          const ids = reordered.map((c) => c.id)
-          try {
-            await chapterApi.reorder(ids)
-            reorderChapters(ids)
-          } catch (err) {
-            console.error('章节重排失败', err)
-          }
-        } else {
-          const targetVolumeId =
-            toGroup === '__unassigned__' ? null : toGroup
-          try {
-            await chapterApi.moveToVolume(
-              fromItem.chapter.id,
-              targetVolumeId,
-            )
-            moveChapterToVolume(fromItem.chapter.id, targetVolumeId)
-
-            if (finalIndicator && finalIndicator.id === dndId(toItem)) {
-              const groupChapters = chapters
-                .filter(
-                  (c) =>
-                    !c.deletedAt && chapterGroup(c) === toGroup,
-                )
-                .sort((a, b) => a.sortOrder - b.sortOrder)
-
-              const targetIdx = groupChapters.findIndex(
-                (c) => c.id === toItem.chapter.id,
-              )
-              const movedIdx = groupChapters.findIndex(
-                (c) => c.id === fromItem.chapter.id,
-              )
-
-              if (
-                targetIdx >= 0 &&
-                movedIdx >= 0 &&
-                targetIdx !== movedIdx
-              ) {
-                const reordered = [...groupChapters]
-                const [moved] = reordered.splice(movedIdx, 1)
-                const adjustedTarget =
-                  movedIdx < targetIdx ? targetIdx - 1 : targetIdx
-                const insertAt =
-                  finalIndicator.position === 'before'
-                    ? adjustedTarget
-                    : adjustedTarget + 1
-                reordered.splice(insertAt, 0, moved)
-                const ids = reordered.map((c) => c.id)
-                await chapterApi.reorder(ids)
-                reorderChapters(ids)
-              }
-            }
-          } catch (err) {
-            console.error('移动章节失败', err)
-          }
-        }
-        return
-      }
-
-      // ---------- 章节移动到卷 ----------
-      if (fromItem.type === 'chapter' && toItem.type === 'volume') {
-        const targetVolumeId = toItem.volume.id
-        if (fromItem.chapter.volumeId === targetVolumeId) return
-        if (!fromItem.chapter.volumeId && !targetVolumeId) return
-
-        try {
-          await chapterApi.moveToVolume(
-            fromItem.chapter.id,
-            targetVolumeId || null,
-          )
-          moveChapterToVolume(fromItem.chapter.id, targetVolumeId || null)
-        } catch (err) {
-          console.error('移动章节失败', err)
-        }
-      }
-    },
-    [flatItems, volumes, chapters, reorderVolumes, reorderChapters, moveChapterToVolume],
-  )
+  // （DnD / 对话框状态逻辑已拆至 useOutlineDnd / useOutlineDialogs hooks）
 
   // ---------- 操作处理器 ----------
-  const openInputDialog = useCallback(
-    (
-      label: string,
-      defaultValue: string,
-      onSubmit: (value: string) => void,
-    ) => {
-      setInputDialog({ open: true, label, defaultValue, onSubmit })
-    },
-    [],
-  )
-
-  const closeInputDialog = useCallback(() => {
-    setInputDialog((prev) => ({ ...prev, open: false }))
-  }, [])
-
-  const closeConfirmDialog = useCallback(() => {
-    setConfirmDialog((prev) => ({ ...prev, open: false }))
-  }, [])
-
   const handleAddChapter = useCallback(
     (volumeId?: string) => {
       openInputDialog('新章节标题', '', async (title) => {
@@ -454,7 +180,7 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
 
   const handleDeleteChapter = useCallback(
     (chapterId: string, chapterTitle: string) => {
-      setConfirmDialog({
+      openConfirmDialog({
         open: true,
         title: '删除章节',
         message: `确定要删除章节「${chapterTitle}」吗？删除后将移入回收站，可在回收站中恢复。`,
@@ -491,13 +217,15 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
         volumeId: result.volumeId ?? undefined,
       })
       updateBook(bookId, { wordCount: result.bookWordCount })
+      // Phase 4 问题 2：恢复会改变 sort_order 等排序状态，做一次全量对账
+      await refreshTree(bookId)
     } catch (err) {
       console.error('恢复章节失败', err)
     }
   }
 
   function handlePermanentDeleteChapter(chapterId: string, chapterTitle: string) {
-    setConfirmDialog({
+    openConfirmDialog({
       open: true,
       title: '永久删除',
       message: `确定要永久删除章节「${chapterTitle}」吗？此操作不可撤销。`,
@@ -521,7 +249,7 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
     const chaptersToDelete = trashItems.filter((item) => item.type === 'chapter')
     const volumesToDelete = trashItems.filter((item) => item.type === 'volume')
 
-    setConfirmDialog({
+    openConfirmDialog({
       open: true,
       title: '清空回收站',
       message: `确定要永久删除回收站中的 ${trashItems.length} 个项目吗？此操作不可撤销。`,
@@ -559,7 +287,7 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
           hasError = true
         }
         if (hasError) {
-          setConfirmDialog({
+          openConfirmDialog({
             open: true,
             title: '部分操作失败',
             message:
@@ -569,6 +297,8 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
             onConfirm: closeConfirmDialog,
           })
         }
+        // Phase 4 问题 2：全量对账，确保与后端删除结果一致
+        await refreshTree(bookId)
         closeConfirmDialog()
       },
     })
@@ -580,7 +310,7 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
         (c) => c.volumeId === volumeId && !c.deletedAt,
       )
       if (volumeChapters.length > 0) {
-        setConfirmDialog({
+        openConfirmDialog({
           open: true,
           title: '无法删除',
           message: `卷「${volumeTitle}」下还有 ${volumeChapters.length} 个章节，请先将卷内章节全部删除后再删除卷。`,
@@ -591,7 +321,7 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
         return
       }
 
-      setConfirmDialog({
+      openConfirmDialog({
         open: true,
         title: '删除卷',
         message: `确定要删除卷「${volumeTitle}」吗？删除后将移入回收站，可在回收站中恢复。`,
@@ -619,13 +349,15 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
       setVolumes(volumes.map((v) =>
         v.id === volumeId ? { ...v, deletedAt: undefined } : v,
       ))
+      // Phase 4 问题 2：恢复卷会连带章节归属/顺序变化，做全量对账
+      await refreshTree(bookId)
     } catch (err) {
       console.error('恢复卷失败', err)
     }
   }
 
   function handlePermanentDeleteVolume(volumeId: string, volumeTitle: string) {
-    setConfirmDialog({
+    openConfirmDialog({
       open: true,
       title: '永久删除卷',
       message: `确定要永久删除卷「${volumeTitle}」吗？此操作不可撤销。`,
@@ -715,12 +447,12 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
 
   return (
     <DndContext
-      sensors={sensors}
-      collisionDetection={collisionDetection}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-      onDragMove={handleDragMove}
-      onDragOver={(e) => setOverId((e.over?.id as string) ?? null)}
+      sensors={dnd.sensors}
+      collisionDetection={dnd.collisionDetection}
+      onDragStart={dnd.handleDragStart}
+      onDragEnd={dnd.handleDragEnd}
+      onDragMove={dnd.handleDragMove}
+      onDragOver={dnd.handleDragOver}
     >
       <div className="flex flex-col h-full">
         {/* 顶部操作 */}
@@ -771,9 +503,9 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
 
         {/* 虚拟化章节树 */}
         <div ref={parentRef} className="flex-1 overflow-y-auto py-1">
-          {activeItem?.type === 'chapter' && activeItem.chapter.volumeId && (
+          {dnd.activeItem?.type === 'chapter' && dnd.activeItem.chapter.volumeId && (
             <DroppableUnassignedZone
-              isOver={overId === 'unassigned-zone-__unassigned-zone__'}
+              isOver={dnd.overId === 'unassigned-zone-__unassigned-zone__'}
               hasDraggingChapter
             />
           )}
@@ -809,11 +541,11 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
                   >
                     <OutlineListRow
                       item={item}
-                      overId={overId}
-                      activeItem={activeItem}
+                      overId={dnd.overId}
+                      activeItem={dnd.activeItem}
                       currentChapterId={currentChapterId}
-                      dropId={dropIndicator?.id ?? null}
-                      dropPosition={dropIndicator?.position ?? null}
+                      dropId={dnd.dropIndicator?.id ?? null}
+                      dropPosition={dnd.dropIndicator?.position ?? null}
                       handlers={rowHandlers}
                     />
                   </div>
@@ -843,11 +575,11 @@ export default function OutlinePanel({ bookId }: OutlinePanelProps) {
 
       {/* 拖拽预览 */}
       <DragOverlay dropAnimation={null}>
-        {activeItem ? (
-          activeItem.type === 'volume' ? (
-            <VolumePreview volume={activeItem.volume} />
-          ) : activeItem.type === 'chapter' ? (
-            <ChapterPreview chapter={activeItem.chapter} />
+        {dnd.activeItem ? (
+          dnd.activeItem.type === 'volume' ? (
+            <VolumePreview volume={dnd.activeItem.volume} />
+          ) : dnd.activeItem.type === 'chapter' ? (
+            <ChapterPreview chapter={dnd.activeItem.chapter} />
           ) : null
         ) : null}
       </DragOverlay>

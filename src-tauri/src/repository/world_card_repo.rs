@@ -5,38 +5,40 @@
 use crate::models::WorldCard;
 use rusqlite::{params, Connection, Result};
 
-/// 从 row 解析 WorldCard（列顺序固定）
+/// world_cards 查询列清单（与 parse_world_card 列名一一对应，勿调整顺序）
+const WORLD_CARD_COLS: &str =
+    "id,book_id,type,title,content,content_html,tags,vectorized,created_at,updated_at";
+
+/// 从 row 解析 WorldCard（按列名访问，schema 变更时不易错位）
 pub fn parse_world_card(row: &rusqlite::Row) -> Result<WorldCard> {
-    let tags_str: String = row.get(6)?;
+    let tags_str: String = row.get("tags")?;
     let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
     Ok(WorldCard {
-        id: row.get(0)?,
-        book_id: row.get(1)?,
-        card_type: row.get(2)?,
-        title: row.get(3)?,
-        content: row.get(4)?,
-        content_html: row.get(5)?,
+        id: row.get("id")?,
+        book_id: row.get("book_id")?,
+        card_type: row.get("type")?,
+        title: row.get("title")?,
+        content: row.get("content")?,
+        content_html: row.get("content_html")?,
         tags,
-        vectorized: row.get::<_, i64>(7)? == 1,
-        created_at: row.get(8)?,
-        updated_at: row.get(9)?,
+        vectorized: row.get::<_, i64>("vectorized")? == 1,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
     })
 }
 
 /// 列出所有世界观卡片，用于备份导出
 pub fn list_all(conn: &Connection) -> Result<Vec<WorldCard>> {
-    let mut stmt = conn.prepare(
-        "SELECT id,book_id,type,title,content,content_html,tags,vectorized,created_at,updated_at FROM world_cards"
-    )?;
+    let mut stmt = conn.prepare(&format!("SELECT {WORLD_CARD_COLS} FROM world_cards"))?;
     let items = stmt.query_map([], |row| parse_world_card(row))?;
     items.collect()
 }
 
 /// 列出指定书籍的所有世界观卡片，按 updated_at 降序
 pub fn list_by_book(conn: &Connection, book_id: &str) -> Result<Vec<WorldCard>> {
-    let mut stmt = conn.prepare(
-        "SELECT id,book_id,type,title,content,content_html,tags,vectorized,created_at,updated_at FROM world_cards WHERE book_id=?1 ORDER BY updated_at DESC"
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {WORLD_CARD_COLS} FROM world_cards WHERE book_id=?1 ORDER BY updated_at DESC"
+    ))?;
     let items = stmt.query_map(params![book_id], |row| parse_world_card(row))?;
     items.collect()
 }
@@ -44,7 +46,7 @@ pub fn list_by_book(conn: &Connection, book_id: &str) -> Result<Vec<WorldCard>> 
 /// 根据 ID 查询单张卡片
 pub fn find_by_id(conn: &Connection, id: &str) -> Result<WorldCard> {
     conn.query_row(
-        "SELECT id,book_id,type,title,content,content_html,tags,vectorized,created_at,updated_at FROM world_cards WHERE id=?1",
+        &format!("SELECT {WORLD_CARD_COLS} FROM world_cards WHERE id=?1"),
         params![id],
         |row| parse_world_card(row),
     )
@@ -101,10 +103,16 @@ pub fn search_fts5(
     fts_query: &str,
     limit: usize,
 ) -> Result<Vec<WorldCard>> {
-    let sql = "SELECT w.id,w.book_id,w.type,w.title,w.content,w.content_html,w.tags,w.vectorized,w.created_at,w.updated_at \
-               FROM world_cards w INNER JOIN world_cards_fts fts ON w.rowid = fts.rowid \
-               WHERE w.book_id=?1 AND world_cards_fts MATCH ?2 ORDER BY rank LIMIT ?3";
-    let mut stmt = conn.prepare(sql)?;
+    let fts_cols = WORLD_CARD_COLS
+        .split(',')
+        .map(|c| format!("w.{c}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "SELECT {fts_cols} FROM world_cards w INNER JOIN world_cards_fts fts ON w.rowid = fts.rowid \
+         WHERE w.book_id=?1 AND world_cards_fts MATCH ?2 ORDER BY rank LIMIT ?3"
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let items = stmt.query_map(params![book_id, fts_query, limit as i64], |row| {
         parse_world_card(row)
     })?;
@@ -118,9 +126,9 @@ pub fn search_like(
     pattern: &str,
     limit: usize,
 ) -> Result<Vec<WorldCard>> {
-    let mut stmt = conn.prepare(
-        "SELECT id,book_id,type,title,content,content_html,tags,vectorized,created_at,updated_at FROM world_cards WHERE book_id=?1 AND (title LIKE ?2 OR content LIKE ?2) ORDER BY updated_at DESC LIMIT ?3"
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {WORLD_CARD_COLS} FROM world_cards WHERE book_id=?1 AND (title LIKE ?2 OR content LIKE ?2) ORDER BY updated_at DESC LIMIT ?3"
+    ))?;
     let items = stmt.query_map(params![book_id, pattern, limit as i64], |row| {
         parse_world_card(row)
     })?;

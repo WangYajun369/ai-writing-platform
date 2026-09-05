@@ -152,6 +152,78 @@ pub fn like_pattern(query: &str, max_chars: usize) -> String {
     format!("%{}%", query.chars().take(max_chars).collect::<String>())
 }
 
+/// 搜索接口默认返回条数（各 service 统一，避免魔法数字不一致）
+pub const SEARCH_DEFAULT_LIMIT: usize = 20;
+
+// ---- 动态 UPDATE 构建（Phase 4 问题 17：抽取重复的动态更新逻辑）----
+
+/// 动态部分更新构建器：按需收集「列 = ?N」子句与参数值，支持 String /
+/// i64 / JSON 等不同类型混合，最终统一生成
+/// `UPDATE {table} SET ... , updated_at=?M WHERE id=?K` 语句。
+///
+/// 原 book_service::update_book 与 world_card_service::update_world_card
+/// 各自手写了一遍「逐字段 push + format 序号 + 参数收集」逻辑，现收敛到此处。
+pub struct DynamicUpdate {
+    table: &'static str,
+    clauses: Vec<String>,
+    values: Vec<Box<dyn rusqlite::types::ToSql>>,
+}
+
+impl DynamicUpdate {
+    pub fn new(table: &'static str) -> Self {
+        Self {
+            table,
+            clauses: Vec::new(),
+            values: Vec::new(),
+        }
+    }
+
+    /// 追加一个字段（列名需为白名单内且来自代码字面量，禁止外部拼接）
+    pub fn push(&mut self, column: &'static str, value: impl rusqlite::types::ToSql + 'static) {
+        let idx = self.values.len() + 1;
+        self.clauses.push(format!("{column}=?{idx}"));
+        self.values.push(Box::new(value));
+    }
+
+    /// 追加一个 JSON 序列化字段（如 tags）
+    pub fn push_json(&mut self, column: &'static str, value: impl serde::Serialize) {
+        let json = serde_json::to_string(&value).unwrap_or_else(|_| "[]".to_string());
+        self.push(column, json);
+    }
+
+    /// 可更新字段数量（供 SQL 审计日志展示，需在 build 前调用）
+    pub fn field_count(&self) -> usize {
+        self.clauses.len()
+    }
+
+    /// 生成完整 SQL 与参数。无任何可更新字段时返回 `None`（调用方应跳过执行）。
+    pub fn build(
+        self,
+        id: &str,
+        updated_at: &str,
+    ) -> Option<(String, Vec<Box<dyn rusqlite::types::ToSql>>)> {
+        if self.clauses.is_empty() {
+            return None;
+        }
+        let mut clauses = self.clauses;
+        let mut values = self.values;
+
+        let updated_idx = values.len() + 1;
+        clauses.push(format!("updated_at=?{updated_idx}"));
+        values.push(Box::new(updated_at.to_string()));
+
+        let id_idx = values.len() + 1;
+        let sql = format!(
+            "UPDATE {} SET {} WHERE id=?{}",
+            self.table,
+            clauses.join(", "),
+            id_idx
+        );
+        values.push(Box::new(id.to_string()));
+        Some((sql, values))
+    }
+}
+
 // ---- 输入校验 ----
 
 /// 字段最大长度常量

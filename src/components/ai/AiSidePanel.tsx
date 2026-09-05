@@ -22,6 +22,7 @@ import { useBooksStore } from '@/stores/booksStore'
 import type { ChatRequestPayload } from '@/types'
 import { getChatApiKey } from '@/types'
 import { aiApi } from '@/lib/tauri-bridge'
+import { exportAiConversation, type AiExportFormat } from '@/lib/conversationExport'
 import { useAiChat, PROVIDER_LABELS } from './useAiChat'
 import { RequestDetailModal } from './RequestDetailModal'
 import { useAgent } from '@/components/agent/useAgent'
@@ -40,6 +41,7 @@ type PanelMode = 'chat' | 'agent'
 export default function AiSidePanel() {
   const [mode, setMode] = useState<PanelMode>('chat')
   const [showMemory, setShowMemory] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const messages = useCurrentAiMessages()
   const [input, setInput] = useState('')
   const [selectedSkill, setSelectedSkill] = useState<SkillType>('writing')
@@ -154,6 +156,25 @@ export default function AiSidePanel() {
 
   const onClear = mode === 'agent' ? clearAgentMessages : handleClear
 
+  // AI 对话导出（Phase 4 问题 25）：点击时从 store 取最新消息生成 md/json 文件
+  const onExportFormat = useCallback(
+    async (format: AiExportFormat) => {
+      setExportOpen(false)
+      if (!book) return
+      const bookId = book.id
+      const msgs = useAiStore.getState().aiConversations[bookId] ?? []
+      const summary = useAiStore.getState().aiSummaries[bookId] ?? null
+      await exportAiConversation({
+        bookId,
+        bookTitle: book.title,
+        messages: msgs,
+        summary,
+        format,
+      })
+    },
+    [book],
+  )
+
   return (
     <div className="flex flex-col h-full min-h-0">
       <Header
@@ -170,6 +191,9 @@ export default function AiSidePanel() {
         onClear={onClear}
         showMemory={showMemory}
         onToggleMemory={() => setShowMemory((v) => !v)}
+        exportOpen={exportOpen}
+        onExportToggle={() => setExportOpen((v) => !v)}
+        onExportFormat={onExportFormat}
       />
 
       {/* 消息列表 — 记忆面板切换 */}

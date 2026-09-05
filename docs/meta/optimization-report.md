@@ -47,6 +47,26 @@
 > - **问题 29**：记忆库容量上限与过期清理（`memory.rs` 新增 `prune_memories` / `prune_all_memories`，
 >   `last_hit_at` 命中打点 + 迁移列，分组上限 60 / 全书 240 / 180 天未命中过期）。
 > 正文问题条目、优先级矩阵与 Phase 3 路线图已同步更新。
+>
+> **2026-09-05 复核更新（Phase 4 收口）**：长期路线图中可离线实施的问题全部落地，矩阵中
+> 余下 🟡/⚪/❌ 条目清零：
+> - **问题 17**：`utils.rs` 新增 `DynamicUpdate` 动态 UPDATE 构建器，`book_service::update_book`
+>   与 `world_card_service::update_world_card` 的逐字段手工拼装收敛为统一构建（列名白名单仍为代码字面量）；
+> - **问题 18**：新增 `SEARCH_DEFAULT_LIMIT` 常量取代两处魔法数字 20；`search_world_cards`
+>   FTS5 无命中时降级 LIKE（与 `search_service` 策略对齐）；
+> - **问题 19**：`parse_world_card` 由列索引改按列名访问，并抽 `WORLD_CARD_COLS` 常量复用；
+> - **问题 4**：`aiStore` 对话持久化改为 800ms 防抖合并 + `beforeunload`/`visibilitychange` 兜底 flush
+>   （导出 `flushAiConversations`），流式期间不再逐条全量 JSON.stringify；
+> - **问题 2**：`booksStore.refreshTree(bookId)` 全量对账动作，目录恢复章节/卷与清空回收站后调用；
+> - **问题 5**：`OutlinePanel` 继续拆分 —— 拖拽逻辑抽 `hooks/useOutlineDnd.ts`（269 行）、
+>   对话框状态抽 `hooks/useOutlineDialogs.ts`，主文件 944 → 674 行；
+> - **问题 24**：写作统计全链路落地 —— 新增 `writing_stats` 按日表（保存章节时随路累计净增字数）、
+>   `get_writing_stats` 命令，状态栏新增进度条 / 连续天数 / 近 30 日字数曲线（`WritingStatsPanel`）；
+> - **问题 25**：AI 对话导出 Markdown / JSON（`conversationExport.ts` + AiSidePanel「导出」菜单，
+>   plugin-dialog 选路径 + plugin-fs 写入）；
+> - **问题 20**：`check-npm-versions.ts` 按 pnpm-lock packages 键提取解析版本并取最高 semver；
+> - **问题 26**：`tauri.conf.json` bundle targets 增补 `deb` / `appimage`。
+> 正文问题条目、优先级矩阵与 Phase 4 路线图已同步更新。
 
 ---
 
@@ -115,7 +135,7 @@ pub fn save_chapter(db: &AppDb, chapter_id: &str, content_html: &str, word_count
 }
 ```
 
-#### 问题 2：前端乐观更新与后端无原子保证
+#### 问题 2：前端乐观更新与后端无原子保证 ✅
 
 `OutlinePanel.tsx` 中删除/恢复章节时先调用 API，成功后直接更新 Zustand：
 
@@ -164,7 +184,7 @@ export const usePreferencesStore = create<PreferencesSlice>(...)
 > 全部消费点已迁移到对应领域 store，单 store 订阅扩散问题消除（一个领域状态变化不再触发
 > 其它领域组件重渲染）。
 
-#### 问题 4：AI 对话持久化写放大严重
+#### 问题 4：AI 对话持久化写放大严重 ✅
 
 每次 `addAiMessage` / `updateAiMessage` 都立即写 `localStorage`：
 
@@ -192,7 +212,7 @@ if (!streaming) {
 
 ### C. 组件架构 — 🟡 中优先级
 
-#### 问题 5：`OutlinePanel.tsx` 过于庞大
+#### 问题 5：`OutlinePanel.tsx` 过于庞大 ✅
 
 1048 行，包含 6 个子组件定义在同一个文件中：
 
@@ -382,7 +402,7 @@ if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) 
 
 ### C. 代码质量 — 🟢 低优先级
 
-#### 问题 17：Rust 动态 SQL 重复
+#### 问题 17：Rust 动态 SQL 重复 ✅
 
 `book_service.rs` 和 `world_card_service.rs` 中几乎完全相同的动态 UPDATE 构建逻辑：
 
@@ -401,13 +421,13 @@ macro_rules! build_update {
 }
 ```
 
-#### 问题 18：FTS5 搜索模式不一致
+#### 问题 18：FTS5 搜索模式不一致 ✅
 
 `search_service.rs` 先 FTS5 后 LIKE 降级，`world_card_service.rs` 仅在 `fts_query` 为空时才降级 LIKE。硬编码 limit 值不同（20 vs `top_n`）。
 
 **建议：** 统一为 trait 或通用函数 `fn search(query, limit) -> Vec<T>`。
 
-#### 问题 19：`parse_world_card` 使用列索引
+#### 问题 19：`parse_world_card` 使用列索引 ✅
 
 ```rust
 // world_card_repo.rs — 脆弱
@@ -419,7 +439,7 @@ let title: String = row.get("title")?;
 
 列索引在 schema 变更时极易错位。
 
-#### 问题 20：`check-versions.ts` 锁版本解析不工作
+#### 问题 20：`check-versions.ts` 锁版本解析不工作 ✅
 
 `readLockVersions` 函数中的正则匹配逻辑不完整，实际锁版本解析是空操作。
 
@@ -465,19 +485,19 @@ let title: String = row.get("title")?;
 > - 已迁移：编辑器 `mod+s` 保存、`Escape` 退出专注模式（EditorPage，仅专注模式生效）、
 >   `mod+shift+p` 命令面板唤起。格式快捷键（B/I/H1-3 等）由 TipTap 编辑器内置提供不变。
 
-#### 问题 24：缺少写作统计面板
+#### 问题 24：缺少写作统计面板 ✅
 
 `Book` 类型有 `dailyTarget`、`todayCount`，但前端无进度可视化。
 
 **建议**：在 `StatusBar` 添加日更进度条。
 
-#### 问题 25：AI 对话缺少导出功能
+#### 问题 25：AI 对话缺少导出功能 ✅
 
 对话记录仅在 localStorage，无法导出备份。
 
 **建议**：添加导出为 Markdown/JSON 功能。
 
-#### 问题 26：缺少 Linux 构建目标
+#### 问题 26：缺少 Linux 构建目标 ✅
 
 `tauri.conf.json` 仅配置了 `dmg`（macOS）和 `nsis`（Windows）。
 
@@ -559,23 +579,23 @@ let title: String = row.get("title")?;
 | 🟡 P1 | Bridge Server 无鉴权（问题 27） | 安全 | 本地数据泄露 | ✅ 已消除 |
 | 🟡 P1 | `/skills/cancel` 占位实现（问题 28） | 功能缺陷 | 无法中断，浪费 Token | ✅ |
 | 🟡 P1 | Zustand 单 store 过重（问题 3） | 架构 | 性能/可维护性 | ✅ |
-| 🟡 P1 | AI 对话写放大（问题 4） | 性能 | localStorage 频繁序列化 | 🟡 |
-| 🟡 P1 | 前端乐观更新无验证（问题 2） | 数据一致性 | 状态可能不同步 | ⚪ |
+| 🟡 P1 | AI 对话写放大（问题 4） | 性能 | localStorage 频繁序列化 | ✅ |
+| 🟡 P1 | 前端乐观更新无验证（问题 2） | 数据一致性 | 状态可能不同步 | ✅ |
 | 🟡 P1 | 向量搜索全量加载（问题 13） | 性能 | 大库内存爆炸 | ✅ |
 | 🟡 P1 | 缺少快捷键系统（问题 23） | 功能缺失 | 用户体验 | ✅ |
-| 🟡 P1 | 缺少写作统计面板（问题 24） | 功能缺失 | 用户激励 | 🟡 |
-| 🟢 P2 | 动态 SQL 重复（问题 17） | 代码质量 | 可维护性 | ⚪ |
+| 🟡 P1 | 缺少写作统计面板（问题 24） | 功能缺失 | 用户激励 | ✅ |
+| 🟢 P2 | 动态 SQL 重复（问题 17） | 代码质量 | 可维护性 | ✅ |
 | 🟢 P2 | `useAiChat` 过大（问题 6） | 代码质量 | 可读性 | ✅ |
 | 🟢 P2 | React.memo 缺失（问题 15） | 性能 | 渲染效率 | ✅ |
-| 🟢 P2 | FTS5 搜索不一致（问题 18） | 代码质量 | 可维护性 | ⚪ |
-| 🟢 P2 | 列索引访问（问题 19） | 代码质量 | Schema 变更风险 | ⚪ |
-| 🟢 P2 | 缺少 Linux 构建（问题 26） | 部署 | 用户覆盖面 | ❌ |
+| 🟢 P2 | FTS5 搜索不一致（问题 18） | 代码质量 | 可维护性 | ✅ |
+| 🟢 P2 | 列索引访问（问题 19） | 代码质量 | Schema 变更风险 | ✅ |
+| 🟢 P2 | 缺少 Linux 构建（问题 26） | 部署 | 用户覆盖面 | ✅ |
 | 🟢 P2 | 记忆库无清理机制（问题 29） | 性能 | 检索退化 | ✅ |
-| 🟢 P3 | `OutlinePanel` 过大（问题 5） | 代码质量 | 可读性 | 🟡 |
-| 🟢 P3 | `check-versions.ts`（问题 20） | 代码质量 | 工具链 | ⚪ |
-| 🟢 P3 | `beforeDevCommand`（问题 21） | 构建 | 一致性 | ❌ |
+| 🟢 P3 | `OutlinePanel` 过大（问题 5） | 代码质量 | 可读性 | ✅ |
+| 🟢 P3 | `check-versions.ts`（问题 20） | 代码质量 | 工具链 | ✅ |
+| 🟢 P3 | `beforeDevCommand`（问题 21） | 构建 | 一致性 | ✅ 已修复（Phase 2） |
 | 🟢 P3 | 缺少离线草稿（问题 22） | 功能缺失 | 数据安全 | ✅ |
-| 🟢 P3 | AI 对话导出（问题 25） | 功能缺失 | 数据迁移 | ❌ |
+| 🟢 P3 | AI 对话导出（问题 25） | 功能缺失 | 数据迁移 | ✅ |
 | 🟢 P3 | Agent 端口硬编码（问题 30） | 可维护性 | 配置分散 | ✅ 已消除 |
 | — | FTS5 每次启动重建（问题 12） | 性能 | 大库启动慢 | ✅ 已修复 |
 | — | Vite chunk 拆分（问题 16） | 构建 | 首屏加载 | ✅ 已修复 |
@@ -622,14 +642,37 @@ let title: String = row.get("title")?;
 6. ~~记忆库容量上限与过期清理（问题 29）~~ ✅ **已完成**（2026-09-05）：分组 60 / 全书 240 /
    180 天未命中过期 + `last_hit_at` 命中打点，随保存与启动自动清理
 
-### Phase 4（长期）
+### Phase 4（✅ 已于 2026-09-05 关闭）：长期架构与部署
 
-1. 动态 SQL 构建抽取为宏/泛型函数（问题 17）
+> 本阶段既有的「离线可实施」清单已全部落地；路线图收口。
+> 剩余候选（sqlite-vec 迁移已完成一次、Bridge Server Token 鉴权等）多为跨版本演进项，另见问题 27 附注。
+
+1. ~~动态 SQL 构建抽取为宏/泛型函数（问题 17）~~ ✅ **已完成**（2026-09-05）：
+   `utils.rs` 新增 `DynamicUpdate` 构建器（String / i64 / JSON 混合 + 自动 `updated_at`/`id` 条件），
+   `book_service::update_book` 与 `world_card_service::update_world_card` 已收敛复用
 2. ~~sqlite-vec / LanceDB 迁移，彻底解决向量检索内存问题（问题 13）~~ ✅ **已完成**（2026-09-05，vec0 镜像 + KNN）
-3. AI 对话导出为 Markdown / JSON（问题 25）
-4. Linux 构建目标（deb / AppImage）（问题 26）
-5. 写作统计面板：日更进度条、连续天数、字数曲线（问题 24）
+3. ~~AI 对话导出为 Markdown / JSON（问题 25）~~ ✅ **已完成**（2026-09-05）：
+   `conversationExport.ts`（plugin-dialog 选路径 + plugin-fs 写入）；AiSidePanel「导出」菜单提供
+   `.md`（含思考过程折叠块与 token 统计）与 `.json`（完整结构化）两种格式
+4. ~~Linux 构建目标（deb / AppImage）（问题 26）~~ ✅ **已完成**（2026-09-05）：
+   `tauri.conf.json` bundle targets 增补 `deb` / `appimage`
+5. ~~写作统计面板：日更进度条、连续天数、字数曲线（问题 24）~~ ✅ **已完成**（2026-09-05）：
+   新增 `writing_stats` 按日净增表（保存章节随路累计）+ `get_writing_stats` 命令；
+   状态栏 `WritingStatsPanel`：日更进度条 / 连续天数 / 近 30 日迷你柱状图
 6. ~~Agent 端口动态分配（问题 30）~~ ✅ **已消除**：9876/9877 已随 v1.1 迁移全部删除，无端口可分配
+
+---
+
+### Phase 4 补充项（2026-09-05 一并收口，原矩阵遗留项）
+
+| 问题 | 处理 |
+|------|------|
+| 4 AI 对话写放大 | ✅ `aiStore` 800ms 防抖合并落盘 + `beforeunload`/`visibilitychange` 兜底 flush |
+| 2 乐观更新无验证 | ✅ `booksStore.refreshTree` 全量对账；目录恢复章节/卷与清空回收站后调用 |
+| 5 `OutlinePanel` 过大 | ✅ 拖拽/对话框逻辑拆 `useOutlineDnd` / `useOutlineDialogs`，主文件 944 → 674 行 |
+| 18 FTS5 搜索不一致 | ✅ `SEARCH_DEFAULT_LIMIT` 统一 + world_card FTS5 无命中 LIKE 兜底 |
+| 19 列索引访问 | ✅ `parse_world_card` 按列名 + `WORLD_CARD_COLS` 常量 |
+| 20 `check-versions.ts` | ✅ 按 pnpm-lock packages 键解析并取最高版本 |
 
 ---
 

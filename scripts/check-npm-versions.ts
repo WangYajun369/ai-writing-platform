@@ -174,14 +174,48 @@ async function getToolchainInfo(): Promise<ToolchainInfo> {
 }
 
 // ========== 读取 pnpm-lock.yaml ==========
+/** 按 semver 版本号比较（大版本靠后）；同版本 pre-release 视为旧 */
+function compareSemver(a: string, b: string): number {
+  const pa = parseSemver(a)
+  const pb = parseSemver(b)
+  return (
+    pa[0] - pb[0] ||
+    pa[1] - pb[1] ||
+    pa[2] - pb[2] ||
+    (pa[3] ? 1 : 0) - (pb[3] ? 1 : 0)
+  )
+}
+
+/**
+ * 从 pnpm-lock.yaml 提取每个依赖在 lock 文件中的实际解析版本。
+ *
+ * pnpm-lock v6/v9 的 packages 记录键形如：
+ *   /@babel/code-frame@7.24.7:
+ *   /pkg@1.2.3:
+ *   /@babel/core@7.24.7_@babel+helper-module-transforms@7.24.7(...):
+ *
+ * 正则从「包名 @ 版本」提取首个完整 semver；peer 变体（`_` 后缀）、
+ * file:/link:/workspace: 等非 registry 条目（键中无 semver）自动跳过。
+ * 同一包存在多版本（peer 组合）时取最高版本作为「实际安装版本」。
+ */
 function readLockVersions(): Map<string, string> {
   const map = new Map<string, string>()
   try {
     const content = readFileSync(join(ROOT, 'pnpm-lock.yaml'), 'utf-8')
-    const specRegex = /^\s+['"]?(@?[\w@/.-]+)['"]?:\s+['"]?([\d.]+)['"]?:?$/gm
+    const specRegex =
+      /^\s{2,}\/((?:@[^/@\s]+\/)?[^/@\s]+)@(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)(?=:|_|$)/gm
     let match: RegExpExecArray | null
+    const versionsByName = new Map<string, string[]>()
     while ((match = specRegex.exec(content)) !== null) {
-      map.set(match[1], match[2])
+      const name = match[1]
+      const version = match[2]
+      const list = versionsByName.get(name) ?? []
+      if (!list.includes(version)) list.push(version)
+      versionsByName.set(name, list)
+    }
+    for (const [name, versions] of versionsByName) {
+      versions.sort(compareSemver)
+      map.set(name, versions[versions.length - 1])
     }
   } catch {
     // lock 文件不存在或无法解析

@@ -388,3 +388,12 @@ pub fn search_like_plain(
     })?;
     results.collect::<Result<Vec<_>, _>>()
 }
+
+/// 查询章节所属书籍与当前字数（写作统计 delta 计算用）
+pub fn find_book_and_wc(conn: &Connection, chapter_id: &str) -> Result<(String, i64)> {
+    conn.query_row(
+        "SELECT book_id, word_count FROM chapters WHERE id=?1",
+        params![chapter_id],
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+    )
+}

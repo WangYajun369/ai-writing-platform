@@ -420,6 +420,15 @@ impl AppDb {
                 created_at  TEXT NOT NULL,
                 updated_at  TEXT NOT NULL
             );
+
+            -- 写作统计（按日累计净增字数，支撑日更进度/连续天数/字数曲线；
+            --    衍生展示表，不纳入备份导出，随书籍删除级联清理）
+            CREATE TABLE IF NOT EXISTS writing_stats (
+                book_id   TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                stat_date TEXT NOT NULL,
+                words     INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (book_id, stat_date)
+            );
         "#).context("创建数据表失败")?;
 
         // FTS5 全文搜索虚拟表（章节 + 世界观卡片）
