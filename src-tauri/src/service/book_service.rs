@@ -203,29 +203,44 @@ pub fn restore_book(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppErro
 }
 
 /// 硬删除书籍及其关联数据
+///
+/// 硬删除（级联删 volumes/chapters/snapshots/world_cards）+ 两次孤立 embedding
+/// 清理放入同一事务，避免删除成功但清理失败导致孤儿数据残留。
 pub fn hard_delete_book(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
-    let conn = db.pool.get()?;
+    emit_sql_log(app, "BEGIN", "transaction", "hard_delete_book", file!(), line!());
+    let mut conn = db.pool.get()?;
+    let tx = conn.transaction()?;
+
     emit_sql_log(app, "DELETE", "books", &format!("id={id}, hard delete"), file!(), line!());
-    book_repo::hard_delete(&conn, id)?;
+    book_repo::hard_delete(&tx, id)?;
 
     emit_sql_log(app, "DELETE", "embeddings", "cleanup orphan chapter embeddings", file!(), line!());
-    book_repo::cleanup_orphan_chapter_embeddings(&conn)?;
+    book_repo::cleanup_orphan_chapter_embeddings(&tx)?;
     emit_sql_log(app, "DELETE", "embeddings", "cleanup orphan world_card embeddings", file!(), line!());
-    book_repo::cleanup_orphan_world_card_embeddings(&conn)?;
+    book_repo::cleanup_orphan_world_card_embeddings(&tx)?;
+
+    emit_sql_log(app, "COMMIT", "transaction", "hard_delete_book committed", file!(), line!());
+    tx.commit().map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
     Ok(())
 }
 
-/// 清空回收站
+/// 清空回收站（清空 + 清理孤立 embedding 在同一事务内原子完成）
 pub fn clear_book_trash(app: &AppHandle, db: &AppDb) -> Result<u32, AppError> {
-    let conn = db.pool.get()?;
+    emit_sql_log(app, "BEGIN", "transaction", "clear_book_trash", file!(), line!());
+    let mut conn = db.pool.get()?;
+    let tx = conn.transaction()?;
+
     emit_sql_log(app, "SELECT", "books", "COUNT deleted", file!(), line!());
-    let count = book_repo::count_deleted(&conn)?;
+    let count = book_repo::count_deleted(&tx)?;
     emit_sql_log(app, "DELETE", "books", &format!("clear trash, count={count}"), file!(), line!());
-    book_repo::clear_trash(&conn)?;
+    book_repo::clear_trash(&tx)?;
 
     emit_sql_log(app, "DELETE", "embeddings", "cleanup orphan chapter embeddings", file!(), line!());
-    let _ = book_repo::cleanup_orphan_chapter_embeddings(&conn);
+    book_repo::cleanup_orphan_chapter_embeddings(&tx)?;
     emit_sql_log(app, "DELETE", "embeddings", "cleanup orphan world_card embeddings", file!(), line!());
-    let _ = book_repo::cleanup_orphan_world_card_embeddings(&conn);
+    book_repo::cleanup_orphan_world_card_embeddings(&tx)?;
+
+    emit_sql_log(app, "COMMIT", "transaction", "clear_book_trash committed", file!(), line!());
+    tx.commit().map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
     Ok(count)
 }

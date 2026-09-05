@@ -14,7 +14,7 @@
 //! ## 设计原则
 //!
 //! - 所有数据库操作均通过 `emit_sql_log!` 宏产生日志，便于调试与审计
-//! - 字数相关操作采用分段式步骤（保存 → 更新聚合 → 回读），每步独立错误处理
+//! - 字数相关操作在**同一事务**内执行（保存 → 更新聚合 → 回读），失败自动回滚，不会残留半成品状态
 //! - 硬删除使用事务保证数据一致性（获取关联信息 → 删除 → 重算 → 提交）
 
 use tauri::AppHandle;
@@ -116,7 +116,7 @@ pub fn create_chapter(
 
 /// 保存章节 HTML 内容，并自动级联更新所属书籍的聚合字数
 ///
-/// # 执行流程
+/// # 执行流程（整体处于同一事务中，任一步失败自动回滚）
 ///
 /// 1. **保存内容**：将 `content_html` 写入 `chapters` 表，FTS5 触发器自动同步全文索引
 /// 2. **更新书籍字数**：调用 `book_repo::update_word_count_by_chapter` 重算并更新 `books.word_count`
@@ -144,20 +144,26 @@ pub fn save_chapter(
     let ts = now();
     validate_len("章节内容", content_html, MAX_CHAPTER_CONTENT_LEN)?;
 
-    let conn = db.pool.get()?;
-    emit_sql_log(app, "UPDATE", "chapters", &format!("id={chapter_id}, save content_html, wc={word_count}"), file!(), line!());
+    // 三步操作放入同一事务：保存失败时字数聚合不会残留半成品状态
+    emit_sql_log(app, "BEGIN", "transaction", "save_chapter", file!(), line!());
+    let mut conn = db.pool.get()?;
+    let tx = conn.transaction()?;
 
     // Step 1: 保存内容到 chapters 表（写入 content_html 和 word_count，触发 FTS5 同步）
-    chapter_repo::save_content(&conn, chapter_id, content_html, word_count, &ts)
+    emit_sql_log(app, "UPDATE", "chapters", &format!("id={chapter_id}, save content_html, wc={word_count}"), file!(), line!());
+    chapter_repo::save_content(&tx, chapter_id, content_html, word_count, &ts)
         .map_err(|e| AppError::Business(format!("保存内容失败 [step1-save_content]: {}", e)))?;
 
     // Step 2: 级联更新书籍总字数（基于所有未删除章节的字数求和）
-    book_repo::update_word_count_by_chapter(&conn, chapter_id, &ts)
+    book_repo::update_word_count_by_chapter(&tx, chapter_id, &ts)
         .map_err(|e| AppError::Business(format!("保存失败 [step2-update_book_wc]: {}", e)))?;
 
     // Step 3: 回读更新后的书籍字数，确保调用方拿到最新值
-    let book_wc = book_repo::word_count_by_chapter(&conn, chapter_id)
+    let book_wc = book_repo::word_count_by_chapter(&tx, chapter_id)
         .map_err(|e| AppError::Business(format!("保存失败 [step3-read_book_wc]: {}", e)))?;
+
+    emit_sql_log(app, "COMMIT", "transaction", "save_chapter committed", file!(), line!());
+    tx.commit().map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
 
     Ok(SaveChapterResult { word_count, book_word_count: book_wc })
 }
@@ -215,16 +221,23 @@ pub fn list_deleted_chapters(app: &AppHandle, db: &AppDb, book_id: &str) -> Resu
 /// # Returns
 /// 更新后的全书总字数
 pub fn delete_chapter(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Result<i64, AppError> {
-    let conn = db.pool.get()?;
     let ts = now();
-    emit_sql_log(app, "UPDATE", "chapters", &format!("id={chapter_id}, soft delete"), file!(), line!());
+
+    // 软删除标记与书籍字数扣除放入同一事务，避免删除成功但字数未扣的中间态
+    emit_sql_log(app, "BEGIN", "transaction", "delete_chapter", file!(), line!());
+    let mut conn = db.pool.get()?;
+    let tx = conn.transaction()?;
 
     // 标记章节为已删除（设置 deleted_at 时间戳）
-    chapter_repo::soft_delete(&conn, chapter_id, &ts)?;
+    emit_sql_log(app, "UPDATE", "chapters", &format!("id={chapter_id}, soft delete"), file!(), line!());
+    chapter_repo::soft_delete(&tx, chapter_id, &ts)?;
 
     // 软删除后需将章节字数从书籍总字数中扣除
-    book_repo::update_word_count_by_chapter(&conn, chapter_id, &ts)?;
-    let book_wc = book_repo::word_count_by_chapter(&conn, chapter_id)?;
+    book_repo::update_word_count_by_chapter(&tx, chapter_id, &ts)?;
+    let book_wc = book_repo::word_count_by_chapter(&tx, chapter_id)?;
+
+    emit_sql_log(app, "COMMIT", "transaction", "delete_chapter committed", file!(), line!());
+    tx.commit().map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
     Ok(book_wc)
 }
 
@@ -239,17 +252,21 @@ pub fn delete_chapter(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Result<i
 /// # Returns
 /// `RestoreChapterResult`，包含恢复后所在卷 ID 和更新后的全书字数
 pub fn restore_chapter(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Result<RestoreChapterResult, AppError> {
-    let conn = db.pool.get()?;
     let ts = now();
+
+    // 恢复标记与书籍字数重算放入同一事务，避免恢复成功但字数未计回的中间态
+    emit_sql_log(app, "BEGIN", "transaction", "restore_chapter", file!(), line!());
+    let mut conn = db.pool.get()?;
+    let tx = conn.transaction()?;
 
     // 查询章节当前关联的卷 ID（即使已软删除仍保留此字段）
     emit_sql_log(app, "SELECT", "chapters", &format!("id={chapter_id}, check volume_id"), file!(), line!());
-    let current_vid = chapter_repo::find_volume_id(&conn, chapter_id)?;
+    let current_vid = chapter_repo::find_volume_id(&tx, chapter_id)?;
 
     // 确认原卷是否仍处于活跃状态（未被删除）
     let effective_volume_id = if let Some(ref vid) = current_vid {
         emit_sql_log(app, "SELECT", "volumes", &format!("id={vid}, check exists"), file!(), line!());
-        if volume_repo::exists_active(&conn, vid)? {
+        if volume_repo::exists_active(&tx, vid)? {
             Some(vid.clone()) // 原卷存在，恢复到原卷
         } else {
             None // 原卷已删除，恢复到根目录
@@ -260,11 +277,14 @@ pub fn restore_chapter(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Result<
 
     // 清除 deleted_at 并将章节恢复到有效卷
     emit_sql_log(app, "UPDATE", "chapters", &format!("id={chapter_id}, restore"), file!(), line!());
-    chapter_repo::restore(&conn, chapter_id, &effective_volume_id, &ts)?;
+    chapter_repo::restore(&tx, chapter_id, &effective_volume_id, &ts)?;
 
     // 将恢复的章节字数重新计入书籍聚合
-    book_repo::update_word_count_by_chapter(&conn, chapter_id, &ts)?;
-    let book_wc = book_repo::word_count_by_chapter(&conn, chapter_id)?;
+    book_repo::update_word_count_by_chapter(&tx, chapter_id, &ts)?;
+    let book_wc = book_repo::word_count_by_chapter(&tx, chapter_id)?;
+
+    emit_sql_log(app, "COMMIT", "transaction", "restore_chapter committed", file!(), line!());
+    tx.commit().map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
 
     Ok(RestoreChapterResult { volume_id: effective_volume_id, book_word_count: book_wc })
 }

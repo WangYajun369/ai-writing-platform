@@ -20,6 +20,9 @@
 > **v1.2 复核更新（2026-09-02）**：Agent 已迁移为 Rust 原生引擎。涉及 Python Agent /
 > tiny_http Bridge / 端口 9876/9877 的条目（问题 27/28/30 等）已随迁移**整体解决**，
 > 正文中对应「未修复/待处理」状态以本注记为准（保留原文作为历史记录）。
+>
+> **v1.5.0 复核更新（2026-09-05）**：数据一致性收尾 —— **问题 1**（写操作事务保护）与
+> **问题 21**（构建命令 npm → pnpm）已**全部解决**，正文对应状态与 Phase 2 路线图已同步更新。
 
 ---
 
@@ -65,7 +68,12 @@ let book_wc = book_repo::word_count_by_chapter(conn, book_id)?;
 - `hard_delete_chapter`
 - `restore_snapshot`
 
-> **状态**：🟡 部分修复。`service/chapter_service.rs`（6 处）与 `service/volume_service.rs`（4 处）已引入 `conn.transaction()`；但 `book_service` / `world_card_service` / `snapshot_service` 仍无事务保护。
+> **状态**：✅ 已修复（2026-09-05，v1.5.0 复核）。影响范围内全部多步写路径已事务化：
+> - `chapter_service.rs`：`save_chapter` / `delete_chapter` / `restore_chapter` / `hard_delete_chapter` 均在**同一事务**内完成（保存/软删/恢复 + 字数聚合 → 原子提交，任一步失败自动回滚）
+> - `volume_service.rs`：`delete_volume`（repo 层 `soft_delete` 已内置 `BEGIN IMMEDIATE/COMMIT/ROLLBACK` 显式事务）、`hard_delete_volume`（service 层 `conn.transaction()` 包装）
+> - `snapshot_service.rs`：`restore_snapshot` 事务化（快照内容回写 + 字数重算原子提交，窗口刷新事件移至提交成功之后）
+> - `book_service.rs`：`hard_delete_book` / `clear_book_trash` 事务化（级联删除/清空 + 孤立 embedding 清理原子提交）
+> - `world_card_service.rs`：复核结论为**无需事务** —— 三个写操作（insert/update/delete）均为单条 SQL，FTS5 索引同步由数据库触发器原子完成，无多步写不一致风险点
 
 **建议方案：**
 
@@ -369,7 +377,7 @@ let title: String = row.get("title")?;
 
 项目使用 `pnpm`，应改为 `pnpm run dev` / `pnpm run build`。
 
-> **状态**：❌ 未修复（`tauri.conf.json:7,9` 仍为 `npm run dev` / `npm run build`）。
+> **状态**：✅ 已修复（2026-09-05）：`tauri.conf.json` 的 `beforeDevCommand` / `beforeBuildCommand` 已改为 `pnpm run dev` / `pnpm run build`，与项目 pnpm 包管理一致。
 
 ---
 
@@ -463,7 +471,7 @@ let title: String = row.get("title")?;
 |--------|------|------|------|------|
 | 🔴 P0 | 硬编码加密密钥（问题 7） | 安全 | 备份数据完全可破解 | ✅ |
 | 🔴 P0 | Updater 签名未配置（问题 9） | 安全 | 更新包可被篡改 | ✅ |
-| 🔴 P0 | 写操作无事务保护（问题 1） | 数据一致性 | 字数统计错乱 | 🟡 |
+| 🔴 P0 | 写操作无事务保护（问题 1） | 数据一致性 | 字数统计错乱 | ✅ |
 | 🔴 P0 | CSP/权限策略过宽（问题 8、11） | 安全 | XSS/信息泄露风险 | ✅ |
 | 🟡 P1 | `withGlobalTauri: true`（问题 10） | 安全 | XSS 攻击面增大 | ✅ |
 | 🟡 P1 | Bridge Server 无鉴权（问题 27） | 安全 | 本地数据泄露 | ❌ |
@@ -511,9 +519,9 @@ let title: String = row.get("title")?;
 ### Phase 2（短期 — 1 周）
 
 1. 为 Bridge Server（9876）增加 Token 鉴权（问题 27）
-2. 补齐 `book_service` / `world_card_service` / `snapshot_service` 的事务保护（问题 1 收尾）
+2. ~~补齐 `book_service` / `world_card_service` / `snapshot_service` 的事务保护（问题 1 收尾）~~ ✅ **已完成**（2026-09-05，v1.5.0）
 3. 实现 `/skills/cancel` 真正的任务中断（问题 28）
-4. `beforeDevCommand` / `beforeBuildCommand` 改为 `pnpm run …`（问题 21）
+4. ~~`beforeDevCommand` / `beforeBuildCommand` 改为 `pnpm run …`（问题 21）~~ ✅ **已完成**（2026-09-05，v1.5.0）
 5. 向量搜索加 `LIMIT` 分页加载（问题 13 缓解）
 
 ### Phase 3（中期 — 2-4 周）

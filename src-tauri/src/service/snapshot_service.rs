@@ -59,17 +59,24 @@ pub fn get_snapshot_content(app: &AppHandle, db: &AppDb, snapshot_id: &str) -> R
 
 /// 从快照恢复章节内容
 pub fn restore_snapshot(app: &AppHandle, db: &AppDb, snapshot_id: &str) -> Result<SaveChapterResult, AppError> {
-    let conn = db.pool.get()?;
+    // 恢复内容与书籍字数重算放入同一事务，避免部分提交导致字数不一致
+    emit_sql_log(app, "BEGIN", "transaction", "restore_snapshot", file!(), line!());
+    let mut conn = db.pool.get()?;
+    let tx = conn.transaction()?;
+
     emit_sql_log(app, "SELECT", "snapshots", &format!("id={snapshot_id}, restore content"), file!(), line!());
-    let (chapter_id, content_html, wc) = snapshot_repo::find_full(&conn, snapshot_id)?;
+    let (chapter_id, content_html, wc) = snapshot_repo::find_full(&tx, snapshot_id)?;
 
     let ts = now();
     emit_sql_log(app, "UPDATE", "chapters", &format!("id={chapter_id}, restore from snapshot"), file!(), line!());
-    chapter_repo::save_content(&conn, &chapter_id, &content_html, wc, &ts)?;
+    chapter_repo::save_content(&tx, &chapter_id, &content_html, wc, &ts)?;
 
-    book_repo::update_word_count_by_chapter(&conn, &chapter_id, &ts)?;
+    book_repo::update_word_count_by_chapter(&tx, &chapter_id, &ts)?;
 
-    let book_wc = book_repo::word_count_by_chapter(&conn, &chapter_id)?;
+    let book_wc = book_repo::word_count_by_chapter(&tx, &chapter_id)?;
+
+    emit_sql_log(app, "COMMIT", "transaction", "restore_snapshot committed", file!(), line!());
+    tx.commit().map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
 
     // 通知主窗口刷新编辑器内容
     if let Some(main) = app.get_webview_window("main") {
