@@ -1,6 +1,6 @@
 # TimeWrite（智写时光）代码架构深度分析
 
-> **适用版本**：`1.6.0`　|　**最后核对**：2026-09-05
+> **适用版本**：`1.7.0`　|　**最后核对**：2026-09-05
 >
 > 基于当前源码（前端 `src/`、Rust 后端 `src-tauri/`、脚本 `scripts/`）整理。
 > v1.1 起 Agent 已迁移为 **Rust 原生引擎**（`src-tauri/src/commands/agent/`），
@@ -27,7 +27,7 @@
 │  进程 2: Rust Core（Tauri v2）                                           │
 │  ┌───────────────────────────┴──────────────────────────────────────┐  │
 │  │ lib.rs (Builder / 插件注册 / 状态注入 / 事件)                      │  │
-│  │ commands/  (IPC 命令层，170 个命令 / 27 个模块)                     │  │
+│  │ commands/  (IPC 命令层，173 个命令 / 34 个模块)                     │  │
 │  │ service/   (业务编排层: 事务、审计日志、业务规则)                    │  │
 │  │ repository/(数据访问层: 纯 SQL，无业务逻辑)                         │  │
 │  │ db/        (r2d2 连接池 + SQLite WAL + FTS5，含 memories 表)       │  │
@@ -169,11 +169,11 @@ db/         连接与 Schema —— r2d2 连接池、迁移、FTS5 触发器、�
 2. **数据库初始化**：`app_data_dir/time_write.db` → `AppDb::new()`（建表 + 迁移 + 索引）
 3. **旧版 Agent 记忆库迁移**：检测旧 `agent_memory.db`（`<cwd>/data/` 与 `<app_data_dir>/`），存在则将存量记忆导入 `memories` 表（幂等，失败仅记日志）
 4. **窗口关闭拦截**：CloseRequested → prevent_close → emit `agent-status-changed {status:"closing"}` → 关调试窗口 → 真正关闭（AtomicBool 防死循环）
-5. 注册 170 个 IPC 命令（27 个命令模块：books / volumes / chapters / snapshots / world_cards / diaries / schedules / vocab / vocab_dict / tts / ai / io / image / window / agent / system_check + 任务卡 project/task/tag/task_meta/subtask/attachment/activity/template/reminder/migrate + v1.6.0 writing_stats）
+5. 注册 173 个 IPC 命令（34 个命令模块：books / volumes / chapters / snapshots / world_cards / diaries / schedules / vocab / vocab_dict / tts / ai / io / image / window / agent / system_check + 任务卡 project/task/tag/task_meta/subtask/attachment/activity/template/reminder/migrate + v1.6.0 writing_stats）
 
 ### 3.3 数据库设计（db/schema.rs + db/mod.rs）
 
-**22 张业务表 + 2 张 FTS5 虚拟表**（v1.1 起新增 `memories`；v1.3 新增 `diaries` / `schedules`；v1.4 新增 `vocab_words` / `vocab_reviews`；v1.5 新增任务卡 10 张；v1.6 新增 `writing_stats`；另 sqlite-vec 动态 `chunks_vec` 镜像表）：
+**24 张业务表 + 2 张 FTS5 虚拟表**（v1.1 起新增 `memories`；v1.3 新增 `diaries` / `schedules`；v1.4 新增 `vocab_words` / `vocab_reviews`；v1.5 新增任务卡 10 张；v1.6 新增 `writing_stats`；v1.7 新增 `import_log`，`import_rollback_log` 承载导入回退点；另 sqlite-vec 动态 `chunks_vec` 镜像表）：
 
 | 表 | 关键字段 | 说明 |
 |----|---------|------|
@@ -218,7 +218,7 @@ Python 子进程时代已整体移除，替换为 6 个 Rust 模块，**内嵌�
 
 > 原 `python/manager.rs`（子进程管理 + 看门狗）、`python/client.rs`（HTTP 客户端）、
 > `python/bridge.rs`（tiny_http 回调 Server）已删除，`tiny_http` 依赖已移除。
-> 引擎细节见 [Agent 引擎架构](agent-architecture)。
+> 引擎细节见 [Agent 引擎架构](architecture/agent-architecture)。
 
 ### 3.5 AI 通信层（commands/ai/）
 
@@ -254,7 +254,7 @@ Python 子进程时代已整体移除，替换为 6 个 Rust 模块，**内嵌�
 
 ## 4. Agent 引擎（核心要点）
 
-> 完整设计见 [Agent 引擎架构](agent-architecture)。此处仅列要点，便于快速索引：
+> 完整设计见 [Agent 引擎架构](architecture/agent-architecture)。此处仅列要点，便于快速索引：
 
 - **执行链路**：`execute_agent_skill` → `engine::run_skill` → ReAct 循环（Prompt 组装 → 云端 SSE → 工具调用 → 文本流）
 - **事件协议**：`agent-stream-chunk`，`{ event: chunk/done/error/cancelled, data, requestId }`，前端 RAF 缓冲合并
@@ -356,10 +356,10 @@ MirageInk/
 │   ├── plugins/              #   PluginManager 单例 + 7 扩展点 + 2 个内置插件（dictionary / taskCards）
 │   ├── router/               #   React Router v7（懒加载）
 │   ├── types/                #   全部领域类型 + DTO 对齐
-│   └── styles/               #   TailwindCSS 4 + HSL 主题变量（4 套主题）
+│   └── styles/               #   TailwindCSS 4 + HSL 主题变量（3 基础主题 × 2 护眼档 = 6 套配色）
 ├── src-tauri/                # 🟠 Rust 后端（Tauri v2）
 │   ├── src/
-│   │   ├── lib.rs            #   Builder / 插件 / 启动编排 / 170 命令注册
+│   │   ├── lib.rs            #   Builder / 插件 / 启动编排 / 173 命令注册
 │   │   ├── commands/         #   27 个模块：基础域 + ai/io/window/agent + 任务卡 10 文件 + writing_stats
 │   │   │   └── agent/        #   engine / prompts / tools / memory / skills（Rust 原生 Agent）
 │   │   ├── service/          #   20 个业务服务（事务 + 审计，含 task/reminder/migrate 等）

@@ -1,10 +1,12 @@
 # TimeWrite（智写时光）
 
-跨平台桌面端小说写作软件 —— Tauri v2 + React 19 + TipTap
+跨平台桌面端小说写作软件 —— Tauri v2 + React 19 + TipTap + Rust 原生 AI Agent
 
 面向网络小说作者和文学创作者，提供从书库管理、章节编辑到 AI 辅助创作的完整写作工作流。
 
-🌐 **项目介绍**：[https://wangyajun369.github.io/ai-writing-platform/](https://wangyajun369.github.io/ai-writing-platform/)
+**当前版本：`1.7.0`**　|　🌐 **项目介绍**：[https://wangyajun369.github.io/ai-writing-platform/](https://wangyajun369.github.io/ai-writing-platform/)　|　📦 **下载**：[GitHub Releases](https://github.com/WangYajun369/ai-writing-platform/releases)
+
+> **v1.7.0 亮点**：数据备份与导入导出 v2 —— 导入前只读预览（结构校验 / 内容指纹 / 幂等识别 / 逐表对账）、三种导入策略、TXT 导入智能去重与行级分章、导出进度与可取消、统一错误码与前端友好提示。详见 [更新日志](./docs/CHANGELOG.md)。
 
 ## 技术栈
 
@@ -12,21 +14,23 @@
 |------|------|
 | **桌面框架** | Tauri v2 |
 | **前端** | React 19 + TypeScript 6 + Vite 8 |
-| **样式** | TailwindCSS 4（CSS-first）+ HSL CSS 变量色彩体系（亮色/暗色/暖黄/豆沙绿四套主题） |
+| **样式** | TailwindCSS 4（CSS-first）+ HSL CSS 变量色彩体系（3 基础主题 × 2 护眼档 = 6 套配色） |
 | **富文本** | TipTap（H1-H3/加粗/斜体/下划线/颜色/图片/表格/代码高亮/任务列表/字符计数/Placeholder） |
-| **状态管理** | Zustand（领域 store：booksStore / aiStore / preferencesStore）+ Jotai（UI 原子状态） |
+| **状态管理** | Zustand（8 个领域 store）+ Jotai（23 个 UI atom） |
 | **路由** | React Router v7（懒加载 Editor/Settings 页面） |
-| **后端** | Rust 2021 + SQLite（WAL 模式）+ rusqlite（bundled）+ r2d2 连接池 |
+| **后端** | Rust 2021 + SQLite（WAL 模式 + FTS5 全文索引 + sqlite-vec KNN 向量检索）+ rusqlite（bundled）+ r2d2 连接池 |
 | **AI 通信** | SSE 流式对话，reqwest stream + tokio 异步 |
 | **Agent 引擎** | Rust 原生实现（Skill Prompt + SSE 流式 ReAct 工具循环），无外部进程 |
 | **Agent 记忆** | SQLite 持久化（time_write.db memories 表，跨会话偏好/决策/经验记忆，关键词相关性检索） |
 | **包管理** | pnpm >= 11，Node >= 22 |
 | **深度链接** | com.ukcoder.timewrite 协议（`com.ukcoder.timewrite://`），支持外部应用唤起与参数传递 |
 
+> **规模速览**：173 个 IPC 命令 · 18 个 `tauri-bridge` API 对象 · 24 张数据表 + 2 个 FTS5 虚拟表 + 1 个 sqlite-vec 镜像表 · 8 个独立窗口 · 2 个内置插件 · 7 个插件扩展点。
+
 ## 功能特性
 
 ### 书库管理
-- 多作品管理，网格/列表双视图切换，虚拟化滚动
+- 多作品网格视图，虚拟化滚动
 - 搜索、排序（时间/字数/书名）
 - 创建/编辑/删除书籍，书籍封面设置（JPG/PNG/WebP）
 - 每日写作目标 + 进度环可视化
@@ -82,7 +86,7 @@
 ### 世界观资料库
 - 6 种卡片类型：人物/地点/时间线/势力/物品/其他
 - 搜索、标签、过滤、FTS5 全文搜索
-- 独立悬浮窗口模式（always_on_top，420×650）
+- 独立悬浮窗口模式（always_on_top，580×680）
 
 ### AI 助手
 - 多服务商支持：智谱 BigModel / DeepSeek + 自定义 OpenAI 兼容端点
@@ -117,15 +121,20 @@ Agent 引擎已完全内置于 Rust 后端（无 Python / 外部进程依赖）�
 - 支持预览、恢复到历史版本、删除快照
 - 版本历史独立窗口
 
-### 导入导出
-- 导出为 TXT / Markdown / HTML
-- 导入 TXT，自动按正则识别章节分隔
+### 导入导出（v1.7.0 全面升级）
+- 导出为 TXT / Markdown / HTML，支持卷结构（`==== 卷名 ====` / `# 卷名` / `<h3>`）
+- 导出进度事件 + 一键取消（取消不留半成品）；临时文件 + rename 原子写出
+- 导入 TXT：行级章节识别（第X章 / Chapter / 序章楔子尾声后记番外）、开篇引言保留为「前言」章、按「书名 + 正文指纹」去重（全文一致跳过 / 同名不同文自动追加「（导入 N）」）
+- **导入预览对话框**：导入备份前先只读预检，展示文件概况 / 幂等提示 / 校验问题 / 逐表对账清单，可选「智能合并 · 仅补齐缺失 · 覆盖式导入」
+- **v2 备份载荷**：`schemaVersion` / `appVersion` / `payloadHash`（规范化 JSON 的 SHA-256），篡改文件拒绝导入（零写入）
+- **幂等与回滚**：同一备份重复导入提示「曾于 xx 导入」；导入回退点支持一键回滚
+- **统一错误码**：`E_BACKUP_*` / `E_TXT_*` / `E_EXPORT_*` / `E_IO_BUSY`，前端解析后按 code 给出建议动作
 - 数据备份：全量导出/单作品导出，AES-256-GCM 加密，支持完整恢复（密钥管理见 [安全设计](#-安全设计)）
 
 ### 个性化设置
-- 浅色/深色/跟随系统主题切换
-- 护眼模式：暖黄色 / 豆沙绿（亮色 + 暗色各一套）
-- 全局字体切换（微软雅黑/黑体/宋体/楷体）
+- 主题：浅色 / 深色 / 跟随系统
+- 护眼模式：暖黄 / 豆沙绿（亮色与暗色各一套，共 6 种配色组合）
+- 全局字体切换（微软雅黑 / 黑体 / 宋体 / 楷体）
 - 字体大小自定义（12-24px）
 - 作品列表网格尺寸（小/中/大）
 - 编辑器显示宽度（移动端/标准/宽屏）
@@ -194,7 +203,7 @@ Agent 引擎已完全内置于 Rust 后端（无 Python / 外部进程依赖）�
 | 应用标识 | `com.ukcoder.timewrite` |
 | 版本 | 1.7.0 |
 | 窗口默认尺寸 | 1280 × 800 |
-| 窗口最小尺寸 | 800 × 600 |
+| 窗口最小尺寸 | 960 × 600 |
 | 深度链接协议 | `com.ukcoder.timewrite://` |
 
 ## 许可证

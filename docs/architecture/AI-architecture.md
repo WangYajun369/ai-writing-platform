@@ -1,6 +1,6 @@
 # AI 模块架构
 
-> **适用版本**：`1.6.0`　|　**最后核对**：2026-09-05
+> **适用版本**：`1.7.0`　|　**最后核对**：2026-09-05
 >
 > 涵盖 AI 流式对话（工具箱）、AI 侧面板对话（经 Agent 引擎）、RAG 向量检索（预留）、内容总结、连接测试。
 > Agent 自动化引擎（Rust 原生）另见 [Agent 引擎架构](architecture/agent-architecture)。
@@ -68,7 +68,7 @@
 8. 流式事件三阶段通知：`thinking` → `answering` → `done`
 
 > **v1.0.0 变更**：原 `commands/ai.rs`（约 1265 行）已拆分为 `ai/{chat,embedding,summarize,test}.rs` 四个子模块。
-> **v1.2.0 变更**：Agent 迁移为 Rust 原生后，AI 面板对话接入 Agent 引擎（见 [Agent 引擎架构](agent-architecture)）。
+> **v1.2.0 变更**：Agent 迁移为 Rust 原生后，AI 面板对话接入 Agent 引擎（见 [Agent 引擎架构](architecture/agent-architecture)）。
 
 ---
 

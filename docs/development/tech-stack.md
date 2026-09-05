@@ -1,6 +1,6 @@
 # 技术栈
 
-> **适用版本**：`1.6.0`　|　**最后核对**：2026-09-05
+> **适用版本**：`1.7.0`　|　**最后核对**：2026-09-05
 
 ---
 
@@ -38,8 +38,8 @@
 
 | 依赖 | 说明 |
 |------|------|
-| `zustand` | 全局业务状态（领域 store：booksStore / aiStore / preferencesStore）+ 插件状态 |
-| `jotai` | UI 原子状态（21 个 atom） |
+| `zustand` | 领域业务状态（booksStore / aiStore / preferencesStore / taskCardsStore / vocabStore / ttsConfig / pluginStore）+ `appStore` 汇聚出口 |
+| `jotai` | UI 原子状态（`stores/uiAtoms.ts` 21 个 + `lib/toast.ts` 2 个 = 23 个 atom） |
 
 ### 富文本
 
@@ -48,14 +48,14 @@
 | `@tiptap/react` / `@tiptap/starter-kit` | 编辑器核心与基础扩展 |
 | `@tiptap/extension-*` | 表格（4 件套）、图片、颜色、文本样式、下划线、任务列表、字符计数 |
 | `@tiptap/extension-code-block-lowlight` | 代码块语法高亮 |
-| `lowlight` | 语法高亮引擎（34 种语言） |
+| `lowlight` | 语法高亮引擎（`common` 语言集；工具栏 `CODE_LANGUAGES` 暴露 34 种） |
 | `katex` | LaTeX 数学公式渲染 |
 
 ### UI 工具
 
 | 依赖 | 说明 |
 |------|------|
-| `tailwind-merge` + `clsx` | 类名合并（`cn()` 工具函数） |
+| `clsx` | 类名合并（`src/lib/utils.ts` 的 `cn()`；项目未引入 `tailwind-merge`） |
 | `class-variance-authority` | 组件变体管理 |
 | `lucide-react` | 图标库 |
 | `react-markdown` + `remark-gfm` | AI 消息的 Markdown 渲染（含 GFM 表格/删除线） |
@@ -63,7 +63,6 @@
 | `@tanstack/react-virtual` | 虚拟化滚动（书库、大纲面板） |
 | `@dnd-kit/core` + `@dnd-kit/utilities` | 大纲拖拽排序、任务卡看板拖拽（v1.5.0） |
 | `react-image-crop` | 图片裁剪对话框 |
-| `@tauri-apps/plugin-notification` | 系统通知（任务卡到期 / 逾期提醒，v1.5.0） |
 
 ### 工具函数
 

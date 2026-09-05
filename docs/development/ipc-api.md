@@ -1,8 +1,8 @@
 # IPC 命令速查
 
-> **适用版本**：`1.6.0`　|　**最后核对**：2026-09-05
+> **适用版本**：`1.7.0`　|　**最后核对**：2026-09-05
 
-TimeWrite 共注册 **170 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用（Agent 命令为例外，见文末说明）。
+TimeWrite 共注册 **173 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用（Agent 命令为例外，见文末说明）。桥接层导出 **18 个 API 对象**（`bookApi` `volumeApi` `chapterApi` `snapshotApi` `worldCardApi` `diaryApi` `scheduleApi` `windowApi` `aiApi` `imageApi` `importExportApi` `debugApi` `systemApi` `vocabApi` `ttsApi` `dictApi` `taskCardApi` `writingApi`）。
 
 > **架构约定**：`tauri-bridge.ts` 是全项目**唯一**允许调用 `invoke` 的模块。禁止在其他文件中直接 import `@tauri-apps/api` 的 `invoke`。
 
@@ -23,7 +23,7 @@ TimeWrite 共注册 **170 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` �
 | [离线词典](#离线词典-vocab_dict) | 5 | `commands/vocab_dict.rs` |
 | [语音合成](#语音合成-tts) | 1 | `commands/tts.rs` |
 | [AI](#ai-commandsai) | 8 | `commands/ai/{test,embedding,chat,summarize}.rs` |
-| [导入导出](#导入导出-commandsio) | 5 | `commands/io/{export,import_txt,backup}.rs` |
+| [导入导出](#导入导出-commandsio) | 8（export 2 / import_txt 1 / backup 5） | `commands/io/{export,import_txt,backup}.rs` |
 | [图片](#图片-image) | 2 | `commands/image.rs` |
 | [窗口](#窗口-commandswindow) | 22 | `commands/window/{manager,debug,validate}.rs` |
 | [Agent](#agent-commandsagent) | 6 | `commands/agent/skills.rs` |
@@ -39,7 +39,7 @@ TimeWrite 共注册 **170 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` �
 | [提醒](#提醒-reminder) | 1 | `commands/reminder.rs` |
 | [日程迁移](#日程迁移-migrate) | 1 | `commands/migrate.rs` |
 | [写作统计](#写作统计-writing_stats) | 1 | `commands/writing_stats.rs` |
-| **合计** | **170** | — |
+| **合计** | **173** | — |
 
 ---
 
@@ -350,13 +350,47 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 
 ## 导入导出 `commands/io/`
 
+> v1.7.0 重写：备份载荷升级为 v2（含 `schemaVersion` / `appVersion` / `payloadHash`），新增只读预检与幂等识别；全部命令受 `try_acquire_io_lock()` 互斥保护，并发调用返回 `E_IO_BUSY`。
+
 | 命令 | 源文件 | 说明 |
 |------|--------|------|
-| `export_book` | `io/export.rs` | 导出为 TXT / Markdown / HTML |
-| `import_txt` | `io/import_txt.rs` | 导入 TXT，正则识别章节分隔 |
-| `export_all_data` | `io/backup.rs` | 全量加密备份（AES-256-GCM） |
+| `export_book` | `io/export.rs` | 导出为 TXT / Markdown / HTML（支持卷结构，发 `export-progress` 事件，临时文件 + rename 原子写出） |
+| `cancel_book_export` | `io/export.rs` | 取消进行中的导出，不留半成品（返回 `E_EXPORT_CANCELED`） |
+| `import_txt` | `io/import_txt.rs` | 导入 TXT：行级章节识别 + 按「书名 + 正文指纹」去重，返回 `chaptersCreated / chaptersSkipped / chaptersRenamed` |
+| `export_all_data` | `io/backup.rs` | 全量加密备份（AES-256-GCM，v2 载荷） |
 | `export_single_book` | `io/backup.rs` | 单作品加密备份 |
-| `import_backup` | `io/backup.rs` | 从备份恢复 |
+| `import_backup` | `io/backup.rs` | 按选定策略（智能合并 / 仅补齐缺失 / 覆盖式）从备份恢复，落库前建回退点 |
+| `inspect_backup` | `io/backup.rs` | **只读预检**：解密 → 结构/引用校验 → 指纹校验 → 幂等识别 → 逐表对账，返回报告供预览对话框展示，零写入 |
+| `rollback_import` | `io/backup.rs` | 回滚到指定导入回退点（24h 内有效） |
+
+### 错误码约定
+
+`src-tauri/src/error.rs` 的 `AppError` 实现自定义 `Serialize`，所有命令错误统一输出 `{ code, message }`。取码规则（`AppError::code()`）：消息以 `E_` 开头时提取该前缀码（如 `E_TXT_READ：读取 TXT 失败` → `E_TXT_READ`），否则按变体归默认码 —— `E_DB_POOL` / `E_DB` / `E_HTTP` / `E_SERDE` / `E_IO` / `E_CRYPTO` / `E_VALIDATION` / `E_NOT_FOUND` / `E_BUSINESS` / `E_GENERAL`。
+
+io 目录定义的业务码：
+
+| 码 | 触发场景 |
+|----|---------|
+| `E_IO_BUSY` | 已有导入/导出/回滚操作进行中（命令级互斥） |
+| `E_BACKUP_VERSION` | 备份主版本高于当前支持版本 |
+| `E_BACKUP_KEY` | 备份密钥不符（非本机导出的备份） |
+| `E_BACKUP_FILE` | 文件读取失败 / 格式不合法 |
+| `E_BACKUP_SCHEMA` / `E_BACKUP_REFERENCE` | 载荷结构校验 / 引用完整性校验失败 |
+| `E_BACKUP_TOO_LARGE` | 序列化后超过 200 MB |
+| `E_BACKUP_SERIALIZE` | JSON 序列化失败 |
+| `E_BACKUP_WRITE` | 临时文件写入或 rename 失败 |
+| `E_BACKUP_TXN` | 导入/回滚事务异常 |
+| `E_BACKUP_ROLLBACK` | 回退点不存在、已过期或作用域异常 |
+| `E_BACKUP_CACHE` | 缓存数据解析失败 |
+| `E_BACKUP_STRATEGY` | 导入策略非法 |
+| `E_TXT_READ` / `E_TXT_QUERY` / `E_TXT_TXN` / `E_TXT_COMMIT` | TXT 导入的读取 / 查询 / 事务 / 提交阶段 |
+| `E_TXT_TOO_LARGE` | 超过 20 MB 或 2,000 章上限 |
+| `E_TXT_NO_CHAPTERS` | 未识别出任何章节内容 |
+| `E_EXPORT_FORMAT` | 不支持的导出格式 |
+| `E_EXPORT_WRITE` | 导出文件写入失败 |
+| `E_EXPORT_CANCELED` | 用户取消导出 |
+
+前端统一经错误解析层（`parseError` / `errText` / `adviceFor` / `showError`）处理，兼容对象 / 字符串 / `Error` 三种形态，并按 code 追加建议动作（如 `E_BACKUP_VERSION` 附「前往更新」按钮跳 GitHub Releases）。
 
 ## 图片 `image`
 

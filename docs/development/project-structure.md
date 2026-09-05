@@ -1,6 +1,6 @@
 # 项目结构
 
-> **适用版本**：`1.6.0`　|　**最后核对**：2026-09-05
+> **适用版本**：`1.7.0`　|　**最后核对**：2026-09-05
 >
 > 本文档描述 TimeWrite 的目录组织与分层设计。IPC 命令清单见 [IPC 命令速查](development/ipc-api)。
 
@@ -38,7 +38,7 @@ repository/ 数据访问层   —— 纯 SQL，接受 &Connection，无业务逻
 db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发器、索引
 ```
 
-各层职责边界在对应 `mod.rs` 注释中明确约定。共注册 **170 个 IPC 命令**（`#[tauri::command]` 计数）。
+各层职责边界在对应 `mod.rs` 注释中明确约定。共注册 **173 个 IPC 命令**（`#[tauri::command]` 计数）。
 
 ---
 
@@ -145,7 +145,7 @@ src-tauri/
 ├── icons/                    # 应用图标（25 PNG + ICNS + ICO）
 └── src/
     ├── main.rs               # 程序入口
-    ├── lib.rs                # Tauri Builder：7 插件 + 数据库 + 记忆迁移 + 170 命令注册
+    ├── lib.rs                # Tauri Builder：7 插件 + 数据库 + 记忆迁移 + 173 命令注册
     ├── error.rs              # AppError 统一错误枚举（10 种变体）
     ├── logging.rs            # 日志模块
     ├── utils.rs              # HTTP 客户端工厂、HTML 工具、FTS5 转义、字段校验、local_now
@@ -174,7 +174,7 @@ src-tauri/
 | 图片 | `image.rs` | 2 |
 | 系统检查 | `system_check.rs` | 1 |
 | AI | `ai/{mod,chat,embedding,summarize,test}.rs` | 8 |
-| 导入导出 | `io/{mod,export,import_txt,backup,crypto}.rs` | 5 |
+| 导入导出 | `io/{mod,export,import_txt,backup,crypto}.rs` | 8（v1.7.0 新增 `inspect_backup` / `cancel_book_export`） |
 | 窗口 | `window/{mod,manager,debug,validate}.rs` | 22 |
 | Agent | `agent/{mod,engine,prompts,tools,memory,skills}.rs` | 6 |
 | 任务项目 | `project.rs` | 9 |
@@ -221,7 +221,7 @@ src-tauri/
 
 ### 数据库 `db/`
 
-22 张业务表（v1.1 起含 `memories`；v1.3 新增 `diaries` / `schedules`；v1.4 新增 `vocab_words` / `vocab_reviews`；v1.5 新增任务卡 10 张；v1.6 新增 `writing_stats`）+ 2 张 FTS5 虚拟表 + sqlite-vec 动态 `chunks_vec` 镜像表：
+24 张业务表（v1.1 起含 `memories`；v1.3 新增 `diaries` / `schedules`；v1.4 新增 `vocab_words` / `vocab_reviews`；v1.5 新增任务卡 10 张；v1.6 新增 `writing_stats`；v1.7 新增 `import_log`，`import_rollback_log` 承载导入回退点）+ 2 张 FTS5 虚拟表 + sqlite-vec 动态 `chunks_vec` 镜像表：
 
 | 表 | 关键字段 |
 |----|---------|
@@ -247,7 +247,10 @@ src-tauri/
 | `task_templates`（v1.5.0） | name, project_id, title, description, priority, due_offset_days, tag_ids, subtask_titles(JSON) |
 | `project_milestones`（v1.5.0） | project_id(FK CASCADE), name, description, color, status(planned/doing/done), due_date, sort_order |
 | `writing_stats`（v1.6.0） | book_id(FK CASCADE), stat_date, words — 按日净增字数，PK(book_id, stat_date)；衍生展示表，不纳入备份导出 |
+| `import_rollback_log` | rollback_id, scope, created_at, tables(JSON) — 导入前的回退点（`__tw_rb_{ts}_{table}` 克隆表），24h 内可回滚，启动自动清理 |
+| `import_log`（v1.7.0） | payload_hash, file_type, file_size, imported_at — 已导入备份的指纹日志，滚动保留最近 20 条，用于重复导入识别 |
 | `chapters_fts` / `world_cards_fts` | FTS5（unicode61），由 6 个 CREATE TRIGGER 自动同步 |
+| `chunks_vec` | sqlite-vec `vec0` 动态镜像表（`repository/embedding_repo.rs` 维护），供 KNN 语义检索 |
 
 技术要点：
 
@@ -287,7 +290,7 @@ Python Agent（`agent/`）与 Bridge（`src-tauri/src/python/`）已删除，Age
 
 ## 相关文档
 
-- [IPC 命令速查](development/ipc-api) — 170 条命令完整清单
+- [IPC 命令速查](development/ipc-api) — 173 条命令完整清单
 - [技术栈](development/tech-stack)
 - [架构总览](architecture/overview)
 - [代码架构深度分析](architecture/code-architecture)
