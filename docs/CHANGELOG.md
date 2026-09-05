@@ -1,5 +1,31 @@
 # 更新日志
 
+## v1.6.0 (2026-09-05)
+
+### 新增
+- **写作统计面板**：状态栏新增今日写作进度条与连续写作天数徽标，写作统计弹窗展示近 30 日写作量曲线（按日净增字数统计：Rust `writing_stats` 表 + `get_writing_stats` 命令 + 前端 `WritingStatsPanel`）
+- **AI 对话导出**：AI 侧边栏新增「导出对话」菜单，支持导出为 Markdown / JSON（`lib/conversationExport.ts`，复用 `tauri-bridge` 导出能力）
+- 大纲树状态对账：恢复 / 清空回收站等操作后自动全量刷新，消除大纲与书库数据的漂移（refreshTree 对账）
+
+### 修复
+- 写操作全量事务化，杜绝部分写入导致的脏数据（合并入库 / 备份 / 导入 / 回收站等）
+- Agent 任务取消升级为即时中断：取消后立即停止执行并回收子进程资源，而非等待下一次检查点
+- `check.mjs` 状态管理断言对齐 Phase 3 领域 store 架构（`*Slice.ts` → `*Store.ts`），200 项检查全绿
+
+### 优化
+- **状态管理重构**：单一 `appStore` + slice 拆分为独立领域 store（`booksStore` / `aiStore` / `preferencesStore`，见 `appStore.ts` 出口），组件按需订阅互不干扰
+- **AI 面板逻辑拆分**：`useAiChat` 拆分出 `useAgentChatStream`（流式事件监听）/ `useAiChatMessages` / `useConversationSummarizer`；大纲面板拖拽与对话框逻辑抽取为 `useOutlineDnd` / `useOutlineDialogs`（OutlinePanel 944 → 674 行）
+- **快捷键系统**：新增 `useShortcut` hook 统一管理快捷键监听与清理
+- AI 会话离线草稿保护：800ms 防抖持久化 + 窗口卸载 flush，杜绝打字内容丢失
+- sqlite-vec KNN 语义检索取代全量内存余弦相似度，记忆库检索性能与并发稳定提升
+- 动态 SQL 收敛：`DynamicUpdate` 构建器统一 book / world_card 更新语句；`SEARCH_DEFAULT_LIMIT` 常量统一；world_card FTS5 无命中自动降级 LIKE 模糊搜索
+- 组件 memo 化减少不必要重渲染；`aiStore` 流式更新节流
+
+### 工程
+- Rust：新增 `commands/writing_stats.rs`、`repository/writing_stats_repo.rs`、`service/writing_stats_service.rs`；AI 对话持久化改用 SQLite 防抖存储；Activity / Agent 取消链路重构为即时中断模型
+- 前端：`src/stores/*Store.ts` 领域化拆分、`src/components/ai/hooks/*` 与 `src/components/outline/hooks/*` 抽取、`src/hooks/useShortcut.ts`、`src/lib/conversationExport.ts`
+- 构建：bundle targets 增补 deb / appimage；`check-npm-versions` 锁版本解析修复；`Cargo.lock` 新增 sqlite-vec 依赖
+
 ## v1.5.0 (2026-09-03)
 
 ### 新增
