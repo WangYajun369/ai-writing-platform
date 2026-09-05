@@ -178,14 +178,17 @@ const storeFiles = [
   'src/stores/appStore.ts',
   'src/stores/appTypes.ts',
   'src/stores/uiAtoms.ts',
-  'src/stores/aiSlice.ts',
-  'src/stores/booksSlice.ts',
+  'src/stores/aiStore.ts',
+  'src/stores/booksStore.ts',
   'src/stores/pluginStore.ts',
-  'src/stores/preferencesSlice.ts',
+  'src/stores/preferencesStore.ts',
 ]
 for (const f of storeFiles) check(f, fileExists(f))
 
-check('appStore 含 Zustand create', fileContains('src/stores/appStore.ts', 'create<'))
+check(
+  'appStore 为领域 store 出口 (booksStore/aiStore/preferencesStore)',
+  fileContains('src/stores/appStore.ts', 'useBooksStore', 'useAiStore', 'usePreferencesStore')
+)
 check('uiAtoms 含 Jotai atom', fileContains('src/stores/uiAtoms.ts', "from 'jotai'"))
 check('appTypes 含核心类型定义', fileContains('src/stores/appTypes.ts', 'Book', 'Chapter', 'Volume'))
 
@@ -241,7 +244,11 @@ check('AiSidePanel.tsx', fileExists('src/components/ai/AiSidePanel.tsx'))
 check('AiToolboxPanel.tsx', fileExists('src/components/ai/AiToolboxPanel.tsx'))
 check('MessageBubble.tsx', fileExists('src/components/ai/MessageBubble.tsx'))
 check('RequestDetailModal.tsx', fileExists('src/components/ai/RequestDetailModal.tsx'))
-check('useAiChat 含流式事件监听', fileExists('src/components/ai/useAiChat.ts') && fileContains('src/components/ai/useAiChat.ts', 'agent-stream-chunk'))
+check(
+  'useAiChat 拆分：useAiChat.ts 复用 useAgentChatStream 流式监听',
+  fileExists('src/components/ai/useAiChat.ts') &&
+    fileContains('src/components/ai/hooks/useAgentChatStream.ts', 'agent-stream-chunk')
+)
 
 // 设置页
 check('SettingsPage.tsx (详细设置)', fileExists('src/components/settings/SettingsPage.tsx'))
@@ -392,9 +399,9 @@ check(
   fileContains('src/lib/tauri-bridge.ts', 'bookApi', 'chapterApi', 'volumeApi', 'worldCardApi', 'aiApi')
 )
 check(
-  'AppStore 包含所有关键 action (slice 模式)',
-  fileContains('src/stores/booksSlice.ts', 'setBooks', 'setChapters', 'setVolumes', 'setCurrentChapterId') &&
-  fileContains('src/stores/aiSlice.ts', 'setAiConfig')
+  '领域 store 含关键 action (booksStore/aiStore)',
+  fileContains('src/stores/booksStore.ts', 'setBooks', 'setChapters', 'setVolumes', 'setCurrentChapterId') &&
+  fileContains('src/stores/aiStore.ts', 'setAiConfig')
 )
 
 // ── 9. GitHub Actions & CI ─────────────────────────────────
