@@ -27,6 +27,12 @@
 > **2026-09-05 复核更新（sqlite-vec 落地）**：**问题 13**（向量全量加载内存爆炸）已通过
 > sqlite-vec vec0 KNN 镜像彻底解决（SQLite 内检索，O(k) 内存），正文问题 13、P1 汇总清单
 > 与 Phase 2/4 路线图已同步更新。
+>
+> **2026-09-05 复核更新（Phase 2 收口）**：**问题 27**（Bridge 9876 无鉴权）复核确认已随 v1.1
+> Rust 原生引擎迁移**整体删除**（src-tauri 无任何 TcpListener/HTTP server 残留，仅存注释）；
+> **问题 28**（skills/cancel 占位）已实现 `CancelToken` 即时中断（AtomicBool + tokio::Notify +
+> tokio::select!，SSE 读取与 HTTP 发送均可即时打断，取消不再补发 done）。**Phase 2 全部关闭**，
+> 正文与矩阵状态已同步。
 
 ---
 
@@ -441,7 +447,10 @@ let title: String = row.get("title")?;
 
 **建议**：Bridge 启动时生成随机 Token 写入临时文件，Python 侧读取后置于 `Authorization` 头；Rust 侧校验。
 
-> **状态**：❌ 未修复。
+> **状态**：✅ 已消除（2026-09-05 复核确认）。v1.1 Agent 迁移为 Rust 原生引擎时，Python
+> Agent(9877) 与 tiny_http Bridge(9876) 已**整体删除**：`src-tauri` 无任何 TcpListener/HTTP
+> server 残留（仅存注释），无跨进程 HTTP 回调，Agent 同进程经 repository 层直查 SQLite——
+> 本问题的本地数据泄露攻击面已不存在，正文保留为 v1.0 历史记录。
 
 #### 问题 28：`/skills/cancel` 为占位实现 🟡 P1
 
@@ -449,7 +458,11 @@ let title: String = row.get("title")?;
 
 **建议**：引入任务注册表（requestId → asyncio.Task），cancel 时 `task.cancel()` 并触发 SSE `cancelled` 事件。
 
-> **状态**：❌ 未修复。
+> **状态**：✅ 已修复（2026-09-05）。Rust 引擎取消升级为 `CancelToken`（AtomicBool +
+> tokio::Notify）：`cancel_agent_skill` 置位并 `notify_waiters()`，引擎在 SSE 流读取与 HTTP
+> 发送两个阻塞点经 `tokio::select!` **即时中断**——不再等待 60s 行超时或下一个 chunk；被放弃
+> 的流读取随即 drop、连接关闭，服务端停止生成；取消路径不再补发 `done` 事件（`engine.rs`
+> 可验证）。
 
 #### 问题 29：记忆库无容量上限与过期清理 ❌ 🟢 P2
 
@@ -465,7 +478,8 @@ let title: String = row.get("title")?;
 
 **建议**：统一由 Rust 侧动态分配空闲端口并注入 Python 环境变量，CSP 改用运行时注入。
 
-> **状态**：⚪ 待确认（端口冲突时 AgentManager 会 kill 僵尸进程，可勉强工作）。
+> **状态**：✅ 已消除（2026-09-05 复核）。9876/9877 随 v1.1 Rust 原生引擎迁移全部删除，
+> 当前无任何端口监听/CSP 端口条目，本问题前提已不存在。
 
 #### 问题 31：Agent 依赖管理 ✅
 
@@ -486,8 +500,8 @@ let title: String = row.get("title")?;
 | 🔴 P0 | 写操作无事务保护（问题 1） | 数据一致性 | 字数统计错乱 | ✅ |
 | 🔴 P0 | CSP/权限策略过宽（问题 8、11） | 安全 | XSS/信息泄露风险 | ✅ |
 | 🟡 P1 | `withGlobalTauri: true`（问题 10） | 安全 | XSS 攻击面增大 | ✅ |
-| 🟡 P1 | Bridge Server 无鉴权（问题 27） | 安全 | 本地数据泄露 | ❌ |
-| 🟡 P1 | `/skills/cancel` 占位实现（问题 28） | 功能缺陷 | 无法中断，浪费 Token | ❌ |
+| 🟡 P1 | Bridge Server 无鉴权（问题 27） | 安全 | 本地数据泄露 | ✅ 已消除 |
+| 🟡 P1 | `/skills/cancel` 占位实现（问题 28） | 功能缺陷 | 无法中断，浪费 Token | ✅ |
 | 🟡 P1 | Zustand 单 store 过重（问题 3） | 架构 | 性能/可维护性 | 🟡 |
 | 🟡 P1 | AI 对话写放大（问题 4） | 性能 | localStorage 频繁序列化 | 🟡 |
 | 🟡 P1 | 前端乐观更新无验证（问题 2） | 数据一致性 | 状态可能不同步 | ⚪ |
@@ -506,7 +520,7 @@ let title: String = row.get("title")?;
 | 🟢 P3 | `beforeDevCommand`（问题 21） | 构建 | 一致性 | ❌ |
 | 🟢 P3 | 缺少离线草稿（问题 22） | 功能缺失 | 数据安全 | ❌ |
 | 🟢 P3 | AI 对话导出（问题 25） | 功能缺失 | 数据迁移 | ❌ |
-| 🟢 P3 | Agent 端口硬编码（问题 30） | 可维护性 | 配置分散 | ⚪ |
+| 🟢 P3 | Agent 端口硬编码（问题 30） | 可维护性 | 配置分散 | ✅ 已消除 |
 | — | FTS5 每次启动重建（问题 12） | 性能 | 大库启动慢 | ✅ 已修复 |
 | — | Vite chunk 拆分（问题 16） | 构建 | 首屏加载 | ✅ 已修复 |
 
@@ -528,11 +542,11 @@ let title: String = row.get("title")?;
 
 > 剩余与安全相关的未决项：**Bridge Server（9876）Token 鉴权**（问题 27，需代码改动 + 协议变更，已移至 Phase 2）。
 
-### Phase 2（短期 — 1 周）
+### Phase 2（✅ 已于 2026-09-05 关闭）：Agent 收尾与一致性
 
-1. 为 Bridge Server（9876）增加 Token 鉴权（问题 27）
+1. ~~为 Bridge Server（9876）增加 Token 鉴权（问题 27）~~ ✅ **已消除**：v1.1 迁移 Rust 原生引擎时 Bridge(9876)/Python(9877) 整体删除，无端口服务残留（2026-09-05 复核）
 2. ~~补齐 `book_service` / `world_card_service` / `snapshot_service` 的事务保护（问题 1 收尾）~~ ✅ **已完成**（2026-09-05，v1.5.0）
-3. 实现 `/skills/cancel` 真正的任务中断（问题 28）
+3. ~~实现 `/skills/cancel` 真正的任务中断（问题 28）~~ ✅ **已完成**（2026-09-05）：CancelToken（Notify + select）即时中断，取消不再补发 done
 4. ~~`beforeDevCommand` / `beforeBuildCommand` 改为 `pnpm run …`（问题 21）~~ ✅ **已完成**（2026-09-05，v1.5.0）
 5. ~~向量搜索加 `LIMIT` 分页加载（问题 13 缓解）~~ ✅ 已由 sqlite-vec KNN 方案（O(k)）取代（2026-09-05）
 
@@ -552,7 +566,7 @@ let title: String = row.get("title")?;
 3. AI 对话导出为 Markdown / JSON（问题 25）
 4. Linux 构建目标（deb / AppImage）（问题 26）
 5. 写作统计面板：日更进度条、连续天数、字数曲线（问题 24）
-6. Agent 端口动态分配（问题 30）
+6. ~~Agent 端口动态分配（问题 30）~~ ✅ **已消除**：9876/9877 已随 v1.1 迁移全部删除，无端口可分配
 
 ---
 

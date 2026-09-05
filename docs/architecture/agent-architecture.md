@@ -60,7 +60,7 @@ Agent 引擎与主进程**同进程运行**：Skill Prompt 组装 → 云端模�
 |------|------|
 | `mod.rs` | 模块声明：engine / memory / prompts / skills / tools |
 | `skills.rs` | **IPC 命令层**：`execute_agent_skill`（流式执行）、`cancel_agent_skill`、记忆管理命令；参数类型 `AiConfigParams`（camelCase）→ `engine::AiModelConfig` |
-| `engine.rs` | **引擎核心**：`run_skill()` SSE 流式 ReAct 循环（工具调用 + 文本增量）、全局取消标志 `cancel_current_task()` |
+| `engine.rs` | **引擎核心**：`run_skill()` SSE 流式 ReAct 循环（工具调用 + 文本增量）、`CancelToken` 即时任务取消（`cancel_current_task()`） |
 | `prompts.rs` | 4 个技能 System Prompt（`skill_base_prompt`）、动态场景提示（`get_dynamic_prompt`）、Token 估算 |
 | `tools.rs` | 6 个数据库工具：按技能返回工具集（`tools_for_skill`）、构建 function-calling schema、`execute_tool` 分发执行 |
 | `memory.rs` | `memories` 表 CRUD、规则式记忆提取（`extract_and_save`）、关键词检索（`retrieve_memories`）、旧库迁移（`migrate_legacy_db`） |
@@ -100,7 +100,7 @@ Agent 引擎与主进程**同进程运行**：Skill Prompt 组装 → 云端模�
 
 ```
 run_skill()
-  ├─ register_cancel_flag()（全局取消标志）
+  ├─ register_cancel_token()（全局取消令牌：标志 + Notify）
   ├─ 组装 System Prompt
   │    ├─ skill_base_prompt(skill)          # 技能核心指令
   │    ├─ get_dynamic_prompt(skill, msg)    # 关键词匹配场景提示（≤3 条）
@@ -124,7 +124,7 @@ run_skill()
 | `error` | 执行失败（data 为错误信息） |
 | `cancelled` | 用户取消 |
 
-**超时与取消**：SSE 单行读取超时 60s、总超时 600s；`cancel_current_task()` 置位取消标志，循环在下一次迭代检查后终止并以 `cancelled` 事件收尾。
+**超时与取消**：SSE 单行读取超时 60s、总超时 600s。取消采用 `CancelToken`（原子标志 + `tokio::Notify`）：`cancel_current_task()` 置位并 `notify_waiters()`，引擎在 SSE 流读取与 HTTP 发送两个阻塞点通过 `tokio::select!` 与取消通知竞争——**即时中断**，无需等待 60s 行超时或下一个 chunk；被放弃的流读取随即 drop、底层连接关闭，服务端感知后停止生成，任务以 `cancelled` 事件收尾（取消路径不再补发 `done`）。
 
 ---
 

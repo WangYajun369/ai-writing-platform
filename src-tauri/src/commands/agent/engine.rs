@@ -16,6 +16,7 @@ use r2d2::Pool;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter};
+use tokio::sync::Notify;
 use tokio::time::timeout;
 
 use crate::commands::agent::{memory, prompts, tools};
@@ -67,34 +68,68 @@ const MAX_HISTORY_CHARS: usize = 2000;
 const MAX_TOOL_RESULT_CHARS: usize = 30_000;
 
 // ─── 取消管理 ───
-// 全局只保留一个"当前任务"的取消标志（前端同一时刻仅执行一个 Agent 任务，
+// 全局只保留一个"当前任务"的取消令牌（前端同一时刻仅执行一个 Agent 任务，
 // 与 Python 端 /skills/cancel 的全局语义一致）。
+// CancelToken = 原子标志 + tokio::Notify：
+// cancel() 置位标志并 notify_waiters()，引擎在任意阻塞点（SSE 流读取 /
+// HTTP 发送等待响应头）通过 tokio::select! 与其竞争，实现即时中断——
+// 不必等待 60s 行超时或下一个 chunk 到达。
 
-static CURRENT_CANCEL: StdMutex<Option<Arc<AtomicBool>>> = StdMutex::new(None);
-
-fn register_cancel_flag() -> Arc<AtomicBool> {
-    let flag = Arc::new(AtomicBool::new(false));
-    if let Ok(mut guard) = CURRENT_CANCEL.lock() {
-        *guard = Some(flag.clone());
-    }
-    flag
+struct CancelToken {
+    flag: AtomicBool,
+    notify: Notify,
 }
 
-fn unregister_cancel_flag(flag: &Arc<AtomicBool>) {
+impl CancelToken {
+    fn new() -> Self {
+        Self {
+            flag: AtomicBool::new(false),
+            notify: Notify::new(),
+        }
+    }
+
+    fn cancel(&self) {
+        self.flag.store(true, Ordering::SeqCst);
+        self.notify.notify_waiters();
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.flag.load(Ordering::SeqCst)
+    }
+
+    /// 取消通知 future（供 tokio::select! 与业务 await 竞争）
+    fn notified(&self) -> tokio::sync::futures::Notified<'_> {
+        self.notify.notified()
+    }
+}
+
+static CURRENT_CANCEL: StdMutex<Option<Arc<CancelToken>>> = StdMutex::new(None);
+
+fn register_cancel_token() -> Arc<CancelToken> {
+    let token = Arc::new(CancelToken::new());
+    if let Ok(mut guard) = CURRENT_CANCEL.lock() {
+        *guard = Some(token.clone());
+    }
+    token
+}
+
+fn unregister_cancel_token(token: &Arc<CancelToken>) {
     if let Ok(mut guard) = CURRENT_CANCEL.lock() {
         if let Some(cur) = guard.as_ref() {
-            if Arc::ptr_eq(cur, flag) {
+            if Arc::ptr_eq(cur, token) {
                 *guard = None;
             }
         }
     }
 }
 
-/// 取消当前正在执行的 Agent 任务（IPC cancel_agent_skill 调用）
+/// 取消当前正在执行的 Agent 任务（IPC cancel_agent_skill 调用）：
+/// 置位取消标志并唤醒引擎阻塞中的等待，使任务在下个 await 点立即以
+/// cancelled 事件收尾，正在进行的 SSE 流随即被丢弃、连接关闭。
 pub fn cancel_current_task() {
     if let Ok(guard) = CURRENT_CANCEL.lock() {
-        if let Some(flag) = guard.as_ref() {
-            flag.store(true, Ordering::SeqCst);
+        if let Some(token) = guard.as_ref() {
+            token.cancel();
         }
     }
 }
@@ -124,7 +159,7 @@ pub async fn run_skill(
     request_id: String,
     conversation_summary: Option<String>,
 ) -> Result<String, AppError> {
-    let cancel_flag = register_cancel_flag();
+    let cancel_token = register_cancel_token();
 
     let result = run_skill_inner(
         app.clone(),
@@ -136,14 +171,14 @@ pub async fn run_skill(
         ai_config.as_ref(),
         &request_id,
         conversation_summary.as_deref(),
-        &cancel_flag,
+        &cancel_token,
     )
     .await;
 
-    unregister_cancel_flag(&cancel_flag);
+    unregister_cancel_token(&cancel_token);
 
     // cancelled：不保存记忆，返回已累积文本（若提示词中文本为空则返回空串）
-    if cancel_flag.load(Ordering::SeqCst) {
+    if cancel_token.is_cancelled() {
         return result;
     }
 
@@ -177,7 +212,7 @@ async fn run_skill_inner(
     ai_config: Option<&AiModelConfig>,
     request_id: &str,
     conversation_summary: Option<&str>,
-    cancel_flag: &Arc<AtomicBool>,
+    cancel_token: &Arc<CancelToken>,
 ) -> Result<String, AppError> {
     // ========== 1. 组装 System Prompt ==========
     let dynamic_prompt = prompts::get_dynamic_prompt(skill, message);
@@ -266,14 +301,17 @@ async fn run_skill_inner(
             &mut full_response,
             &mut tool_rounds,
             request_id,
-            cancel_flag,
+            cancel_token,
         ),
     )
     .await;
 
     match total_guard {
         Ok(Ok(())) => {
-            let _ = emit_event(&app, "done", "", request_id);
+            // 取消路径已由 react_loop 发出 cancelled 事件，这里不再补发 done
+            if !cancel_token.is_cancelled() {
+                let _ = emit_event(&app, "done", "", request_id);
+            }
             Ok(full_response)
         }
         Ok(Err(e)) => {
@@ -305,10 +343,10 @@ async fn react_loop(
     full_response: &mut String,
     tool_rounds: &mut usize,
     request_id: &str,
-    cancel_flag: &Arc<AtomicBool>,
+    cancel_token: &Arc<CancelToken>,
 ) -> Result<(), AppError> {
     loop {
-        if cancel_flag.load(Ordering::SeqCst) {
+        if cancel_token.is_cancelled() {
             let _ = emit_event(&app, "cancelled", "任务已被用户取消", request_id);
             return Ok(());
         }
@@ -340,31 +378,46 @@ async fn react_loop(
             .header("Accept", "text/event-stream")
             .header("Authorization", format!("Bearer {api_key}"));
 
-        let response = req
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| {
-                let err_str = e.to_string();
-                let hint = if err_str.contains("dns") || err_str.contains("resolve") {
-                    "\n诊断：DNS 解析失败，请检查网络连接或尝试配置代理"
-                } else if err_str.contains("refused") {
-                    "\n诊断：连接被拒绝，请确认 API 地址正确且服务可用"
-                } else if err_str.contains("timeout") || err_str.contains("timed out") {
-                    "\n诊断：连接超时，请检查网络稳定性或尝试使用代理"
-                } else if err_str.contains("tls")
-                    || err_str.contains("certificate")
-                    || err_str.contains("ssl")
-                {
-                    "\n诊断：TLS/证书验证失败，请检查系统时间是否正确，或尝试设置 HTTPS_PROXY 环境变量"
-                } else if err_str.contains("502") || err_str.contains("503") || err_str.contains("504")
-                {
-                    "\n诊断：AI 服务暂时不可用，请稍后重试"
-                } else {
-                    "\n诊断：无法连接到 AI 服务（可能是代理/防火墙阻止），请在系统中设置 HTTPS_PROXY 环境变量后重启应用"
-                };
-                AppError::Business(format!("请求失败: {err_str}{hint}"))
-            })?;
+        // 发送阶段也与取消信号竞争：客户端仅配 connect_timeout（30s），
+        // 若服务端迟迟不返回响应头，取消可在此即时退出而不被长时间挂起
+        let send_fut = req.json(&body).send();
+        tokio::pin!(send_fut);
+        let send_notified = cancel_token.notified();
+        tokio::pin!(send_notified);
+        let send_result = tokio::select! {
+            biased;
+            _ = &mut send_notified => {
+                if cancel_token.is_cancelled() {
+                    let _ = emit_event(&app, "cancelled", "任务已被用户取消", request_id);
+                    return Ok(());
+                }
+                // 非取消通知（理论上不发生）：继续完成原请求
+                send_fut.await
+            }
+            resp = &mut send_fut => resp,
+        };
+
+        let response = send_result.map_err(|e| {
+            let err_str = e.to_string();
+            let hint = if err_str.contains("dns") || err_str.contains("resolve") {
+                "\n诊断：DNS 解析失败，请检查网络连接或尝试配置代理"
+            } else if err_str.contains("refused") {
+                "\n诊断：连接被拒绝，请确认 API 地址正确且服务可用"
+            } else if err_str.contains("timeout") || err_str.contains("timed out") {
+                "\n诊断：连接超时，请检查网络稳定性或尝试使用代理"
+            } else if err_str.contains("tls")
+                || err_str.contains("certificate")
+                || err_str.contains("ssl")
+            {
+                "\n诊断：TLS/证书验证失败，请检查系统时间是否正确，或尝试设置 HTTPS_PROXY 环境变量"
+            } else if err_str.contains("502") || err_str.contains("503") || err_str.contains("504")
+            {
+                "\n诊断：AI 服务暂时不可用，请稍后重试"
+            } else {
+                "\n诊断：无法连接到 AI 服务（可能是代理/防火墙阻止），请在系统中设置 HTTPS_PROXY 环境变量后重启应用"
+            };
+            AppError::Business(format!("请求失败: {err_str}{hint}"))
+        })?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -385,12 +438,29 @@ async fn react_loop(
         let mut stream_finished = false;
 
         'outer: loop {
-            let chunk = match timeout(
+            // 等待下一个 SSE chunk 与取消信号竞争：用户取消可即时打断阻塞的
+            // 流读取（含 60s 行超时窗口与流已结束的静默期），无需等待超时或
+            // 下一个 chunk 到达；被放弃的 stream.next() future 随即 drop，
+            // 底层 reqwest 连接中止，服务端感知后停止继续生成。
+            let notified = cancel_token.notified();
+            tokio::pin!(notified);
+            let next_chunk = timeout(
                 std::time::Duration::from_secs(SSE_READ_TIMEOUT_SECS),
                 stream.next(),
-            )
-            .await
-            {
+            );
+            let chunk = tokio::select! {
+                biased;
+                _ = &mut notified => {
+                    if cancel_token.is_cancelled() {
+                        let _ = emit_event(&app, "cancelled", "任务已被用户取消", request_id);
+                        return Ok(());
+                    }
+                    continue; // 非取消通知：回到等待
+                }
+                chunk = next_chunk => chunk,
+            };
+
+            let chunk = match chunk {
                 Ok(Some(Ok(c))) => c,
                 Ok(Some(Err(e))) => {
                     // 流中断：若已输出内容，则当作"无工具结果"正常收尾
@@ -429,7 +499,7 @@ async fn react_loop(
                 }
             };
 
-            if cancel_flag.load(Ordering::SeqCst) {
+            if cancel_token.is_cancelled() {
                 let _ = emit_event(&app, "cancelled", "任务已被用户取消", request_id);
                 return Ok(());
             }
@@ -509,7 +579,7 @@ async fn react_loop(
             .get()
             .map_err(|e| AppError::DbPool(e.to_string()))?;
         for (_, tc) in &collected {
-            if cancel_flag.load(Ordering::SeqCst) {
+            if cancel_token.is_cancelled() {
                 let _ = emit_event(&app, "cancelled", "任务已被用户取消", request_id);
                 return Ok(());
             }
