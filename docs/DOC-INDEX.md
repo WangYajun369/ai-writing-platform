@@ -1,6 +1,6 @@
 # 文档地图
 
-> **最后更新**：2026-09-05　|　**当前版本**：`1.6.0`
+> **最后更新**：2026-09-05　|　**当前版本**：`1.7.0`
 
 本页是 TimeWrite 文档的**索引与维护规范**。如果你想找某篇文档、或想知道该如何新增/更新文档，从这一页开始。
 
@@ -23,7 +23,7 @@
 | 用 AI 聊天、续写、润色 | [AI 助手](user-guide/ai-assistant) |
 | 让 AI 自主完成复杂写作任务 | [Agent 自动化](user-guide/agent-panel) |
 | 回退到旧版本 | [版本管理](user-guide/version-management) |
-| 导出作品 / 备份数据 | [导入导出](user-guide/import-export) |
+| 导出作品 / 备份与恢复 | [导入导出](user-guide/import-export)　·　[导入导出规范](development/import-export-spec) |
 | 换主题、调字体 | [个性化设置](user-guide/personalization) |
 | 查问题 | [常见问题](FAQ) |
 
@@ -110,7 +110,7 @@
 每篇文档开头应包含适用版本与核对日期：
 
 ```markdown
-> **适用版本**：`1.0.0`　|　**最后核对**：2026-08-31
+> **适用版本**：`1.7.0`　|　**最后核对**：2026-09-05
 ```
 
 无法确认版本的文档应标注：
@@ -147,9 +147,26 @@ GitHub Wiki 不支持子目录页面，同步脚本会做两件事：
 | 文件扁平化 | `docs/user-guide/quick-start.md` | `user-guide-quick-start.md` |
 | 链接改写 | `user-guide/quick-start` | `user-guide-quick-start` |
 
-**因此：文档内部链接一律写仓库路径（含 `/`）**，脚本会自动转换。
+**因此：文档内部链接一律写成「相对 `docs/` 根」的路径（含 `/`）**，脚本会自动转换。
 
-不要手动写成扁平化形式 —— 否则在仓库内直接浏览文档时链接会失效（脚本也无匹配可转换）。
+### 写法规则（唯一标准）
+
+| 链接目标位置 | 写法 | 示例 |
+|------------|------|------|
+| `docs/` 根级页面 | 直接写文件名 | `CHANGELOG`、`FAQ`、`Home`、`DOC-INDEX` |
+| `docs/<子目录>/` 下的页面 | 写完整的子目录路径 | `user-guide/quick-start`、`architecture/adr/README` |
+
+关键约束：
+
+- **不要写 `../`**（如 `../development/ipc-api`）—— 脚本只匹配 `(<子目录>/`，`../` 前缀无法转换，同步到 Wiki 后失效。
+- **不要写同级裸文件名**（如 `docs/architecture/overview.md` 里写 `agent-architecture`）—— 在仓库内浏览会解析成 `docs/architecture/agent-architecture`，与 Wiki 扁平化规则不一致，必须写成 `architecture/agent-architecture`。
+- **不要手动写成扁平化形式**（`user-guide-quick-start`）—— 脚本无匹配可转换，且仓库内浏览会失效。
+
+> 2026-09-05 全量核对时统一了这一规则：此前混用 `../` 与同级裸文件名，导致仓库与 Wiki 各有一批链接失效。
+
+### 自检方法
+
+改动链接后，按「扁平化」规则验证：把 `docs/a/b.md` 映射为 `a-b`，把链接 `a/b` 映射为 `a-b`，确认该名字存在于页面集合中。
 
 ### 3.5 同步机制
 
@@ -183,6 +200,7 @@ GitHub Wiki 不支持子目录页面，同步脚本会做两件事：
 | 问题 | 处理方式 |
 |------|---------|
 | 版本标注混乱（0.9.4 / 0.6.0 / 1.0.0 并存） | 统一为 `1.0.0`，CHANGELOG 补 v1.0.0 条目 |
+| v1.7.0 发布后文档仍停留 `1.6.0` | 2026-09-05 全量核对并统一为 `1.7.0`，补齐 v1.7.0 的导入导出 v2 说明 |
 | `PROJECT_STRUCTURE.md` 与 `development/project-structure.md` 重复 | 拆分合并为 `project-structure.md` + `ipc-api.md` |
 | 三份 AI 文档描述同一主题 | 合并为 `architecture/AI-architecture.md` + `features/ai-assistant.md` |
 | 1.0.0 的 Python Agent 特性零覆盖 | 新增 `architecture/agent-architecture.md` + `user-guide/agent-panel.md` |

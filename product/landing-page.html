@@ -42,7 +42,7 @@
 <section class="hero">
   <div class="hero-badge">
     <span class="hero-badge-dot"></span>
-    v1.6.0 已发布 — 新增写作统计：今日进度条、连续写作天数与 30 日趋势曲线
+    v1.7.0 已发布 — 数据备份与导入导出升级：导入前只读预览、逐表对账、指纹校验与幂等去重
   </div>
 
   <h1>
@@ -71,6 +71,7 @@
     支持 macOS &nbsp;·&nbsp;
     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M6.555 1.375 0 9.651h5.556L2.292 14.82l9.154-8.276H5.904l3.301-5.17z"/></svg>
     支持 Windows &nbsp;·&nbsp;
+    Linux（deb / AppImage）&nbsp;·&nbsp;
     完全免费
   </div>
 
@@ -87,7 +88,7 @@
       <span class="showcase-tag">搭建书库：2分钟</span>
       <div class="showcase-card-title">创建作品，建立专属空间</div>
       <ul class="showcase-list">
-        <li class="showcase-item">多作品管理，网格/列表双视图</li>
+        <li class="showcase-item">多作品管理，网格视图 + 虚拟化滚动</li>
         <li class="showcase-item">自定义封面，搜索排序随手用</li>
         <li class="showcase-item">每日写作目标，进度环实时可视化</li>
         <li class="showcase-item">误删不怕，回收站一键恢复</li>
@@ -117,10 +118,10 @@
       <span class="showcase-tag">成稿发布：5分钟</span>
       <div class="showcase-card-title">导出发布，数据安全无忧</div>
       <ul class="showcase-list">
-        <li class="showcase-item">导出 TXT / Markdown / HTML</li>
-        <li class="showcase-item highlight">AES-256-GCM 加密备份，完整恢复</li>
-        <li class="showcase-item">智能分章，导入 TXT 自动识别章节</li>
-        <li class="showcase-item">更新包签名校验，安全可信</li>
+        <li class="showcase-item">导出 TXT / Markdown / HTML，带进度可取消</li>
+        <li class="showcase-item highlight">导入预览对账 + 指纹校验，误操作可回滚</li>
+        <li class="showcase-item">智能分章，导入 TXT 自动识别章节并去重</li>
+        <li class="showcase-item">AES-256-GCM 加密备份，更新包签名校验</li>
       </ul>
     </div>
   </div>
@@ -213,7 +214,7 @@
     <div class="feature-card">
       <div class="feature-icon purple">📚</div>
       <h3>书库管理</h3>
-      <p>多作品管理，网格/列表双视图自由切换、虚拟化滚动。支持搜索、排序（时间/字数/书名），一键创建与删除作品，每部作品可设置独立封面。每日写作目标通过进度环实时可视化，误删数据进入回收站，支持随时恢复。</p>
+      <p>多作品网格视图 + 虚拟化滚动，作品再多也不卡顿。支持搜索、排序（时间/字数/书名），一键创建与删除作品，每部作品可设置独立封面。每日写作目标通过进度环实时可视化，误删数据进入回收站，支持随时恢复。</p>
       <div class="feature-tags">
         <span class="feature-tag">多作品管理</span>
         <span class="feature-tag">目标进度环</span>
@@ -224,7 +225,7 @@
     <div class="feature-card">
       <div class="feature-icon teal">✏️</div>
       <h3>章节编辑器</h3>
-      <p>基于 TipTap v3 的专业富文本编辑，支持 H1-H3 标题、加粗、斜体、文字颜色、图片缩放、表格、36 种语言代码高亮、任务列表、KaTeX 数学公式。图片支持查看器与精确选区裁剪，卷-章节两级目录树，滚动与光标位置自动记忆。</p>
+      <p>基于 TipTap v3 的专业富文本编辑，支持 H1-H3 标题、加粗、斜体、文字颜色、图片缩放、表格、34 种语言代码高亮、任务列表、KaTeX 数学公式。图片支持查看器与精确选区裁剪，卷-章节两级目录树，滚动与光标位置自动记忆。</p>
       <div class="feature-tags">
         <span class="feature-tag">TipTap 编辑器</span>
         <span class="feature-tag">数学公式</span>
@@ -302,10 +303,11 @@
     <div class="feature-card">
       <div class="feature-icon blue">📤</div>
       <h3>导入导出与备份</h3>
-      <p>灵活的内容迁移：支持导出为 TXT、Markdown、HTML 三种格式；导入 TXT 自动通过正则识别章节分隔符，智能拆分长篇内容。数据备份采用 AES-256-GCM 加密（密钥不硬编码），支持全量/单作品导出与完整恢复。</p>
+      <p>导入前先看清楚再决定：备份文件经只读预检，展示文件概况、逐表对账与幂等提示，可选「智能合并 / 仅补齐缺失 / 覆盖式」三种策略，确认后才写入并自动生成回退点。载荷带内容指纹，被篡改的文件零写入拒绝。导出支持 TXT / Markdown / HTML 与卷结构，带进度条且可随时取消。</p>
       <div class="feature-tags">
-        <span class="feature-tag">TXT / MD / HTML</span>
-        <span class="feature-tag">智能分章</span>
+        <span class="feature-tag">导入预览对账</span>
+        <span class="feature-tag">指纹校验</span>
+        <span class="feature-tag">可取消导出</span>
         <span class="feature-tag">加密备份</span>
       </div>
     </div>
@@ -313,9 +315,9 @@
     <div class="feature-card">
       <div class="feature-icon green">🎨</div>
       <h3>个性化定制</h3>
-      <p>4 套 HSL CSS 变量主题：亮色/暗色/暖黄/豆沙绿，护眼模式轻松切换。全局字体任选、字体大小 12-24px 自由调整，编辑器显示宽度三档可选，作品列表网格尺寸随心调节，打造属于自己的写作环境。</p>
+      <p>6 套 HSL CSS 变量配色：亮色 / 暗色 × 常规 / 暖黄护眼 / 豆沙绿护眼，护眼模式轻松切换。全局字体任选（微软雅黑 / 黑体 / 宋体 / 楷体）、字体大小 12-24px 自由调整，编辑器显示宽度三档可选，作品列表网格尺寸随心调节，打造属于自己的写作环境。</p>
       <div class="feature-tags">
-        <span class="feature-tag">4 套主题</span>
+        <span class="feature-tag">6 套配色</span>
         <span class="feature-tag">多字体可选</span>
         <span class="feature-tag">护眼模式</span>
       </div>
@@ -568,7 +570,7 @@
 <!-- Footer -->
 <footer class="footer">
   <p>
-    <strong>智写时光 TimeWrite</strong> &nbsp;·&nbsp; v1.6.0 &nbsp;·&nbsp;
+    <strong>智写时光 TimeWrite</strong> &nbsp;·&nbsp; v1.7.0 &nbsp;·&nbsp;
     <a href="https://github.com/WangYajun369/ai-writing-platform" target="_blank" rel="noopener">GitHub</a> &nbsp;·&nbsp;
     <a href="https://github.com/WangYajun369/ai-writing-platform/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
   </p>

@@ -1,6 +1,6 @@
 # Agent 引擎架构（Rust 原生）
 
-> **适用版本**：`1.6.0`　|　**最后核对**：2026-09-05
+> **适用版本**：`1.7.0`　|　**最后核对**：2026-09-05
 >
 > Agent 自动化引擎已整体内嵌于 Rust（`src-tauri/src/commands/agent/`），**无外部进程、无需 Python 环境**。
 > 历史：v1.0 曾以 Python FastAPI + LangGraph 子进程实现（端口 9877），v1.1 迁移为 Rust 原生引擎，`agent/`、`src-tauri/src/python/` 已删除。
@@ -276,7 +276,7 @@ CREATE TABLE memories (
 - AI 侧面板（`AiSidePanel`）与工具箱在 Agent 模式下同样复用 `execute_agent_skill`
 
 > **约定例外**：以上 Agent invoke 直接由组件发起（未封装进 `tauri-bridge.ts`），
-> 与「唯一 IPC 入口」约定不一致，见 [架构总览](overview) 备注。
+> 与「唯一 IPC 入口」约定不一致，见 [架构总览](architecture/overview) 备注。
 
 ---
 
@@ -295,8 +295,8 @@ CREATE TABLE memories (
 
 ## 9. 相关文档
 
-- [Agent 使用指南](../user-guide/agent-panel) — 面向用户
-- [AI 模块架构](AI-architecture) — AI 对话 / RAG（非 Agent）
-- [架构总览](overview) — 系统级双进程模型
-- [IPC 命令速查](../development/ipc-api) — Agent 相关命令与事件
-- [ADR-002（Bridge 只读架构，已废弃）](adr/ADR-002-agent-bridge-readonly) — v1.0 历史决策记录
+- [Agent 使用指南](user-guide/agent-panel) — 面向用户
+- [AI 模块架构](architecture/AI-architecture) — AI 对话 / RAG（非 Agent）
+- [架构总览](architecture/overview) — 系统级双进程模型
+- [IPC 命令速查](development/ipc-api) — Agent 相关命令与事件
+- [ADR-002（Bridge 只读架构，已废弃）](architecture/adr/ADR-002-agent-bridge-readonly) — v1.0 历史决策记录

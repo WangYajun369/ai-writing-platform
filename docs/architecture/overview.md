@@ -1,9 +1,9 @@
 # 架构总览
 
-> **适用版本**：`1.6.0`　|　**最后核对**：2026-09-05
+> **适用版本**：`1.7.0`　|　**最后核对**：2026-09-05
 >
 > TimeWrite（MirageInk / 智写时光）运行时为**双进程模型**：WebView 前端 + Rust Core。
-> v1.1 起 Agent 已由 Python 外部子进程迁移为 **Rust 原生引擎**（见 [Agent 引擎架构](agent-architecture)），
+> v1.1 起 Agent 已由 Python 外部子进程迁移为 **Rust 原生引擎**（见 [Agent 引擎架构](architecture/agent-architecture)），
 > 不再存在独立的 Agent 进程与 9877/9876 桥接端口。
 
 ---
@@ -65,7 +65,7 @@ Agent 自动化能力由 `src-tauri/src/commands/agent/` 提供，**无外部进
 | `skills.rs` | IPC 命令层：`execute_agent_skill` / `cancel_agent_skill` + 记忆管理命令 |
 
 Agent 执行时直接调用**同一 Rust 进程内**的 repository 层查询 SQLite（不再经 HTTP 回调），
-流式输出通过 Tauri 事件 `agent-stream-chunk` 推送前端。详见 [Agent 引擎架构](agent-architecture)。
+流式输出通过 Tauri 事件 `agent-stream-chunk` 推送前端。详见 [Agent 引擎架构](architecture/agent-architecture)。
 
 ---
 
@@ -122,7 +122,7 @@ db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发�
 
 ## 数据库设计
 
-**22 张业务表 + 2 张 FTS5 虚拟表**（另含 sqlite-vec 动态 `chunks_vec` 镜像表）
+**24 张业务表 + 2 张 FTS5 虚拟表**（另含 sqlite-vec 动态 `chunks_vec` 镜像表）
 
 | 表 | 关键字段 | 说明 |
 |----|---------|------|
@@ -248,9 +248,9 @@ CSS 类组合由两者叠加而成（`.eyecare-warm`、`.dark.eyecare-green` 等
 
 | 主题 | 文档 |
 |------|------|
-| Agent 引擎（Rust 原生） | [Agent 引擎架构](agent-architecture) |
-| AI 对话 / RAG / 总结 | [AI 模块架构](AI-architecture) |
+| Agent 引擎（Rust 原生） | [Agent 引擎架构](architecture/agent-architecture) |
+| AI 对话 / RAG / 总结 | [AI 模块架构](architecture/AI-architecture) |
 | 目录结构与分层细节 | [项目结构](development/project-structure) |
-| 每个模块的实现细节 | [代码架构深度分析](code-architecture) |
+| 每个模块的实现细节 | [代码架构深度分析](architecture/code-architecture) |
 | 全部 IPC 命令 | [IPC 命令速查](development/ipc-api) |
 | 已知问题与改进项 | [优化报告](meta/optimization-report) |
