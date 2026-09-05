@@ -31,6 +31,7 @@ import {
 } from 'lucide-react'
 import { cn, htmlToPlainText } from '@/lib/utils'
 import { toast } from '@/lib/toast'
+import { errText } from '@/lib/errors'
 import { useTaskCardsStore } from '@/stores/taskCardsStore'
 import type { ProjectView, TaskCard, TaskPriority, TaskStatus } from '@/types'
 import { STATUS_META, STATUS_ORDER } from '@/lib/taskCardsMeta'
@@ -232,7 +233,7 @@ export default function ProjectDetailView({
       const insertAt = idx === -1 ? order.length : idx
       order.splice(insertAt, 0, taskId)
       await dragTask(taskId, targetStatus, order).catch((err) => {
-        toast.error(typeof err === 'string' ? err : '拖拽失败')
+        toast.error(errText(err, '拖拽失败'))
       })
       return
     }
@@ -244,7 +245,7 @@ export default function ProjectDetailView({
       const order = columnOrderIds(targetStatus).filter((id) => id !== taskId)
       order.push(taskId)
       await dragTask(taskId, targetStatus, order).catch((err) => {
-        toast.error(typeof err === 'string' ? err : '拖拽失败')
+        toast.error(errText(err, '拖拽失败'))
       })
     }
   }
@@ -264,7 +265,7 @@ export default function ProjectDetailView({
       toast.success('任务已创建')
       void useTaskCardsStore.getState().fetchProjectTasks(created.projectId)
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '创建失败')
+      toast.error(errText(err, '创建失败'))
     } finally {
       setQuickBusy(false)
     }
@@ -277,7 +278,7 @@ export default function ProjectDetailView({
       toast.success('项目已移入回收站')
       onDeleted()
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '删除失败')
+      toast.error(errText(err, '删除失败'))
     }
   }
 

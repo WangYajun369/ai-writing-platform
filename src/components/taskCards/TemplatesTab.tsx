@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
+import { errText } from '@/lib/errors'
 import { taskCardApi } from '@/lib/tauri-bridge'
 import { useTaskCardsStore } from '@/stores/taskCardsStore'
 import type { TaskPriority, TaskTemplate } from '@/types'
@@ -56,7 +57,7 @@ export default function TemplatesTab({ onTaskCreated }: Props) {
       const tpls = await taskCardApi.listTemplates()
       setList(tpls)
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '加载模板失败')
+      toast.error(errText(err, '加载模板失败'))
     } finally {
       setLoading(false)
     }
@@ -96,7 +97,7 @@ export default function TemplatesTab({ onTaskCreated }: Props) {
       resetForm()
       await load()
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '保存失败')
+      toast.error(errText(err, '保存失败'))
     } finally {
       setBusy(false)
     }
@@ -114,7 +115,7 @@ export default function TemplatesTab({ onTaskCreated }: Props) {
       void useTaskCardsStore.getState().refreshAll()
       onTaskCreated?.()
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '创建失败')
+      toast.error(errText(err, '创建失败'))
     } finally {
       setBusy(false)
     }
@@ -127,7 +128,7 @@ export default function TemplatesTab({ onTaskCreated }: Props) {
       setList((prev) => prev.filter((t) => t.id !== tpl.id))
       toast.success('模板已删除')
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '删除失败')
+      toast.error(errText(err, '删除失败'))
     }
   }
 

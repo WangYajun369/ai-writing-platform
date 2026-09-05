@@ -24,6 +24,7 @@ import {
 import { emit, listen } from '@tauri-apps/api/event'
 import { diaryApi, taskCardApi, windowApi } from '@/lib/tauri-bridge'
 import { toast } from '@/lib/toast'
+import { errText } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import {
   buildMonthCells,
@@ -80,7 +81,7 @@ export default function DiaryPanel() {
       setEntries(list)
     } catch (err) {
       console.error('加载日记列表失败', err)
-      toast.error(`加载日记列表失败：${err instanceof Error ? err.message : err}`)
+      toast.error(`加载日记列表失败：${errText(err)}`)
     } finally {
       setLoading(false)
     }
@@ -97,7 +98,7 @@ export default function DiaryPanel() {
       setProjects(projs)
     } catch (err) {
       console.error('加载任务卡数据失败', err)
-      toast.error(`加载当日任务失败：${err instanceof Error ? err.message : err}`)
+      toast.error(`加载当日任务失败：${errText(err)}`)
     }
   }, [])
 
@@ -115,7 +116,7 @@ export default function DiaryPanel() {
       if (seq === selectedReqRef.current) {
         setSelLoading(false)
         console.error('加载日记失败', err)
-        toast.error(`加载日记失败：${err instanceof Error ? err.message : err}`)
+        toast.error(`加载日记失败：${errText(err)}`)
       }
     }
   }, [])
@@ -176,7 +177,7 @@ export default function DiaryPanel() {
           })
           .catch((err) => {
             console.error('重新打开任务失败', err)
-            toast.error(`重新打开任务失败：${err instanceof Error ? err.message : err}`)
+            toast.error(`重新打开任务失败：${errText(err)}`)
           })
       } else {
         // 未完成 → 先校验子任务是否全部完成；有未完成项则不允许完成

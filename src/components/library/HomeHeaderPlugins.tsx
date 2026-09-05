@@ -18,6 +18,7 @@ import { COMMAND_ICON_MAP, FALLBACK_COMMAND_ICON } from '@/plugins/commandIcons'
 import type { PluginCommand } from '@/plugins/types'
 import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
+import { errText } from '@/lib/errors'
 
 export default function HomeHeaderPlugins() {
   const [commands, setCommands] = useState<PluginCommand[]>([])
@@ -92,7 +93,7 @@ export default function HomeHeaderPlugins() {
       // 执行后（可能切换窗口/改变数据）刷新状态
       await pullState()
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '操作失败，请稍后重试')
+      toast.error(errText(err, '操作失败，请稍后重试'))
     } finally {
       setBusyId(null)
     }

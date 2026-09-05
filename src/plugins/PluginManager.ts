@@ -5,7 +5,8 @@
  * 单例模式，通过 usePluginStore 交互。
  */
 
-import type {
+import { errText } from '@/lib/errors'
+import {
   Plugin,
   PluginCommand,
   PluginContext,
@@ -46,7 +47,7 @@ class PluginManagerImpl {
       this.notifyListeners()
     } catch (err) {
       this.statuses.set(pluginId, 'error')
-      this.errors.set(pluginId, err instanceof Error ? err.message : String(err))
+      this.errors.set(pluginId, errText(err, '未知错误'))
       this.notifyListeners()
       throw err
     }

@@ -5,6 +5,7 @@
  * 流式调用通过 Rust 侧 SSE 处理，前端监听 ai-stream-chunk 事件。
  */
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { errText } from '@/lib/errors'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { SparklesIcon } from 'lucide-react'
 import { useAiStore } from '@/stores/aiStore'
@@ -185,7 +186,7 @@ export default function AiToolboxPanel({ initialToolId }: { initialToolId?: stri
         messages,
       })
     } catch (err) {
-      const rawErr = String(err)
+      const rawErr = errText(err, '未知错误')
       const friendly = getFriendlyAiError(rawErr)
       setGeneratedContent(`⚠️ ${friendly}\n\n> 错误详情：${rawErr}`)
       setErrorMsg(friendly)

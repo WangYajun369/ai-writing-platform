@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
+import { errText } from '@/lib/errors'
 import { useTaskCardsStore } from '@/stores/taskCardsStore'
 import { isOverdue, isToday } from '@/lib/taskCardsTime'
 import type { TaskCard } from '@/types'
@@ -150,7 +151,7 @@ export default function TodayView({
       await updateTask(task.id, { dueTime: tomorrowDue(task), plannedToday: false })
       toast.success('已顺延到明天')
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '顺延失败')
+      toast.error(errText(err, '顺延失败'))
     }
   }
 
@@ -173,7 +174,7 @@ export default function TodayView({
       toast.success('已加入「计划今日」')
       setQuickTitle('')
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '创建失败')
+      toast.error(errText(err, '创建失败'))
     } finally {
       setQuickBusy(false)
     }

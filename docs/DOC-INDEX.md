@@ -38,6 +38,7 @@
 | 写插件 | [插件系统](development/plugin-system) |
 | 看日志、排查问题 | [调试控制台](development/debug-console) |
 | 了解 CI/CD | [GitHub 集成](development/github-integration) |
+| 改备份/导入导出 | [导入导出规范](development/import-export-spec) · [开发计划](development/import-export-plan) |
 | 提 PR | [贡献指南](development/contributing) |
 
 ### 🏗️ 我要理解架构
@@ -78,9 +79,9 @@
 
 `feature-list` · `ai-assistant`
 
-### `development/`（8 篇）
+### `development/`（10 篇）
 
-`project-structure` · `ipc-api` · `tech-stack` · `state-management` · `plugin-system` · `debug-console` · `github-integration` · `contributing`
+`project-structure` · `ipc-api` · `tech-stack` · `state-management` · `plugin-system` · `debug-console` · `github-integration` · `import-export-spec` · `import-export-plan` · `contributing`
 
 ### `architecture/`（4 篇）
 
@@ -98,7 +99,7 @@
 
 ---
 
-**合计 38 篇**（根级 6 + `user-guide/` 13 + `features/` 2 + `development/` 8 + `architecture/` 4 + `architecture/adr/` 4 + `meta/` 1）
+**合计 40 篇**（根级 6 + `user-guide/` 13 + `features/` 2 + `development/` 10 + `architecture/` 4 + `architecture/adr/` 4 + `meta/` 1）
 
 ---
 

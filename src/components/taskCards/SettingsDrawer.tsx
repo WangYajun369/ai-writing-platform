@@ -22,6 +22,7 @@ import {
 import TemplatesTab from './TemplatesTab'
 import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
+import { errText } from '@/lib/errors'
 import { taskCardApi } from '@/lib/tauri-bridge'
 import { useTaskCardsStore } from '@/stores/taskCardsStore'
 import type { ReminderPrefs, TaskTag } from '@/types'
@@ -69,7 +70,7 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
         toast.info('当前没有符合条件的到期/逾期任务，或尚未到 09:00 提醒时段')
       }
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '检查失败')
+      toast.error(errText(err, '检查失败'))
     } finally {
       setChecking(false)
     }
@@ -105,7 +106,7 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
       await fetchTags()
       toast.success('标签已创建')
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '创建失败')
+      toast.error(errText(err, '创建失败'))
     } finally {
       setTagBusy(false)
     }
@@ -116,7 +117,7 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
       await taskCardApi.updateTag(id, patch)
       await fetchTags()
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '保存失败')
+      toast.error(errText(err, '保存失败'))
     }
   }
 
@@ -128,7 +129,7 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
       await fetchTags()
       toast.success(removed > 0 ? `标签已删除，移除了 ${removed} 个任务上的关联` : '标签已删除')
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '删除失败')
+      toast.error(errText(err, '删除失败'))
     } finally {
       setTagBusy(false)
     }
@@ -146,7 +147,7 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
       }
       await useTaskCardsStore.getState().refreshAll()
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '迁移失败')
+      toast.error(errText(err, '迁移失败'))
     } finally {
       setMigrating(false)
     }
@@ -158,7 +159,7 @@ export default function SettingsDrawer({ onClose }: { onClose: () => void }) {
       await taskCardApi.setReminderPrefs(JSON.stringify(next))
       toast.success('提醒偏好已保存')
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '保存失败')
+      toast.error(errText(err, '保存失败'))
     }
   }
 

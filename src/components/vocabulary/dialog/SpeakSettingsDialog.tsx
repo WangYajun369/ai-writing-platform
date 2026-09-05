@@ -11,6 +11,7 @@ import { XIcon, Volume2Icon, LoaderIcon, CheckCircle2Icon, SaveIcon, InfoIcon } 
 import { ttsApi } from '@/lib/tauri-bridge'
 import { playAudioFile } from '@/lib/tts-player'
 import { toast } from '@/lib/toast'
+import { errText } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { useTtsConfigStore, DEFAULT_TTS_SPEAKER } from '@/stores/ttsConfig'
 
@@ -65,7 +66,7 @@ export default function SpeakSettingsDialog({ open, onClose }: Props) {
       playAudioFile(result.audioPath)
       toast.success('试听成功：朗读服务可用')
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '试听失败，请核对 API Key 与音色 ID')
+      toast.error(errText(err, '试听失败，请核对 API Key 与音色 ID'))
     } finally {
       setTesting(false)
     }

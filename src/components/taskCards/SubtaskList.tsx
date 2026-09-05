@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, Loader2Icon, PlusIcon, Trash2Icon, XIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
+import { errText } from '@/lib/errors'
 import { taskCardApi } from '@/lib/tauri-bridge'
 import type { TaskSubtask } from '@/types'
 
@@ -58,7 +59,7 @@ export default function SubtaskList({ taskId }: Props) {
         setItems((prev) => [...prev, item])
         setEditingId(null)
       })
-      .catch((e) => toast.error(String(e)))
+      .catch((e) => toast.error(errText(e)))
   }
 
   const toggle = (item: TaskSubtask) => {
@@ -71,7 +72,7 @@ export default function SubtaskList({ taskId }: Props) {
       .setSubtaskDone(item.id, !item.done)
       .catch((e) => {
         setItems(prev)
-        toast.error(String(e))
+        toast.error(errText(e))
       })
   }
 
@@ -89,12 +90,12 @@ export default function SubtaskList({ taskId }: Props) {
     taskCardApi
       .updateSubtask(id, title)
       .then((item) => setItems((list) => list.map((x) => (x.id === id ? item : x))))
-      .catch((e) => toast.error(String(e)))
+      .catch((e) => toast.error(errText(e)))
   }
 
   const remove = (item: TaskSubtask) => {
     setItems((list) => list.filter((x) => x.id !== item.id))
-    taskCardApi.deleteSubtask(item.id).catch((e) => toast.error(String(e)))
+    taskCardApi.deleteSubtask(item.id).catch((e) => toast.error(errText(e)))
   }
 
   return (

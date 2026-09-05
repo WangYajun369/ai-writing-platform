@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 import { CalendarDays, Infinity as InfinityIcon, Loader2Icon, PinIcon, XIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
+import { errText } from '@/lib/errors'
 import { useTaskCardsStore } from '@/stores/taskCardsStore'
 import type { ProjectStatus, TaskProject } from '@/types'
 
@@ -85,7 +86,7 @@ export default function ProjectFormModal({
         onSaved(created.id)
       }
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '保存失败')
+      toast.error(errText(err, '保存失败'))
     } finally {
       setSaving(false)
     }

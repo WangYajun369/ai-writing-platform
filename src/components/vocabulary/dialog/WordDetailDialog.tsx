@@ -6,6 +6,7 @@ import { XIcon, PencilIcon, HistoryIcon, Trash2Icon, CheckCircle2Icon, PauseIcon
 import { confirm as confirmDialog } from '@tauri-apps/plugin-dialog'
 import { vocabApi } from '@/lib/tauri-bridge'
 import { toast } from '@/lib/toast'
+import { errText } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { useVocabStore } from '@/stores/vocabStore'
 import type { VocabReviewLog, VocabWord } from '@/types'
@@ -42,7 +43,7 @@ export default function WordDetailDialog({ word, onClose, onEdit }: Props) {
       void refreshAll()
       onClose()
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '操作失败')
+      toast.error(errText(err, '操作失败'))
     }
   }
 

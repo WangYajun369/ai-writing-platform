@@ -9,6 +9,7 @@ import { Volume2Icon, LoaderIcon } from 'lucide-react'
 import { ttsApi } from '@/lib/tauri-bridge'
 import { playAudioFile } from '@/lib/tts-player'
 import { toast } from '@/lib/toast'
+import { errText } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { useTtsConfigStore } from '@/stores/ttsConfig'
 
@@ -38,7 +39,7 @@ export default function SpeakButton({ text, className, size = 15, title }: Props
       const result = await ttsApi.speak(content, apiKey, speaker)
       playAudioFile(result.audioPath)
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '朗读失败，请检查朗读设置')
+      toast.error(errText(err, '朗读失败，请检查朗读设置'))
     } finally {
       setSynthing(false)
     }

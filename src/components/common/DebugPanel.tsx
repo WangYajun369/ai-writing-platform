@@ -12,6 +12,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { Trash2Icon, BugIcon, DatabaseIcon, CheckCircle2Icon, AlertTriangleIcon, XIcon, Loader2Icon } from 'lucide-react'
 import { debugApi } from '@/lib/tauri-bridge'
+import { errText } from '@/lib/errors'
 import type { LogEntry, ValidationResult } from '@/lib/tauri-bridge'
 
 /** 日志级别对应的颜色样式 */
@@ -100,7 +101,7 @@ export default function DebugPanel() {
       setValidationResult({
         ok: false,
         tablesCount: 0,
-        issues: [{ table: '-', issueType: 'integrity_error', detail: `校验执行失败: ${String(e)}` }],
+        issues: [{ table: '-', issueType: 'integrity_error', detail: `校验执行失败: ${errText(e)}` }],
       })
     } finally {
       setValidating(false)

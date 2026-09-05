@@ -2,6 +2,7 @@
  * 系统检查区块 —— 检测运行环境（Agent 引擎/Node/Rust、系统信息、安装路径）
  */
 import { useState, useEffect } from 'react'
+import { errText } from '@/lib/errors'
 import { RefreshCwIcon, CheckCircleIcon, AlertTriangleIcon, XCircleIcon } from 'lucide-react'
 
 interface CheckItem {
@@ -44,7 +45,7 @@ export function SystemCheckSection() {
       setState('done')
     } catch (err) {
       console.error('[SystemCheck] 检查失败:', err)
-      setErrorMsg(err instanceof Error ? err.message : String(err))
+      setErrorMsg(errText(err, '未知错误'))
       setState('error')
     }
   }

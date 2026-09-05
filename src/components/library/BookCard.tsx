@@ -11,6 +11,8 @@ import { stat } from '@tauri-apps/plugin-fs'
 import type { Book } from '@/types'
 import { bookApi, importExportApi } from '@/lib/tauri-bridge.ts'
 import { formatWordCount, formatRelativeTime } from '@/lib/utils'
+import { toast } from '@/lib/toast'
+import { showError } from '@/lib/errors'
 import { useBooksStore } from '@/stores/booksStore'
 import { resolveCoverSrc, processCroppedCoverImage, COVER_ASPECT } from '@/lib/image-utils.ts'
 import type { CropArea } from '@/lib/image-utils'
@@ -81,10 +83,10 @@ export default function BookCard({ book, onOpen, onRefresh }: BookCardProps) {
       }
 
       await importExportApi.exportSingleBook(book.id, filePath, JSON.stringify(cacheData))
-      alert(`《${book.title}》导出成功！`)
+      toast.success(`《${book.title}》导出成功！`)
     } catch (err) {
       console.error('导出作品失败', err)
-      alert(`导出失败：${err}`)
+      showError(err, '导出作品失败')
     } finally {
       setIsExportingBook(false)
     }
@@ -119,7 +121,7 @@ export default function BookCard({ book, onOpen, onRefresh }: BookCardProps) {
       // 校验扩展名
       const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
       if (!ALLOWED_COVER_EXTS.includes(ext)) {
-        alert(`不支持的图片格式 .${ext}，仅支持 jpg、png、webp`)
+        toast.warning(`不支持的图片格式 .${ext}，仅支持 jpg、png、webp`)
         setCoverChanging(false)
         return
       }
@@ -128,7 +130,7 @@ export default function BookCard({ book, onOpen, onRefresh }: BookCardProps) {
       const fileStat = await stat(filePath)
       if (fileStat.size > MAX_COVER_SIZE) {
         const sizeMB = (fileStat.size / (1024 * 1024)).toFixed(1)
-        alert(`图片过大（${sizeMB} MB），封面不能超过 5 MB`)
+        toast.warning(`图片过大（${sizeMB} MB），封面不能超过 5 MB`)
         setCoverChanging(false)
         return
       }
@@ -137,7 +139,7 @@ export default function BookCard({ book, onOpen, onRefresh }: BookCardProps) {
       setCropperFile(filePath)
     } catch (err) {
       console.error('修改封面失败', err)
-      alert('修改封面失败，请重试')
+      showError(err, '修改封面失败')
       setCoverChanging(false)
     }
   }
@@ -152,7 +154,7 @@ export default function BookCard({ book, onOpen, onRefresh }: BookCardProps) {
       updateBook(book.id, updated)
     } catch (err) {
       console.error('裁剪封面失败', err)
-      alert('裁剪封面失败，请重试')
+      showError(err, '裁剪封面失败')
     } finally {
       setCoverChanging(false)
     }

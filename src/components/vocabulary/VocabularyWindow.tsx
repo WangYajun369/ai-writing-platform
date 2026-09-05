@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { dictApi } from '@/lib/tauri-bridge'
 import { toast } from '@/lib/toast'
+import { errText } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { useVocabStore } from '@/stores/vocabStore'
 import { setVocabWindowOpen } from '@/plugins/dictionary/windowState'
@@ -98,7 +99,7 @@ export default function VocabularyWindow() {
         toast.error('词典导入失败：文件格式不受支持')
       }
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '词典导入失败')
+      toast.error(errText(err, '词典导入失败'))
     } finally {
       setImporting(false)
     }

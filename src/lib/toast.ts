@@ -9,11 +9,18 @@ import { useCallback } from 'react'
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info'
 
+/** Toast 动作按钮（如「前往更新」），点击后关闭该通知并执行回调 */
+export interface ToastAction {
+  label: string
+  onClick: () => void
+}
+
 export interface ToastItem {
   id: string
   type: ToastType
   message: string
   duration?: number
+  action?: ToastAction
 }
 
 export const toastsAtom = atom<ToastItem[]>([])
@@ -22,10 +29,10 @@ const removeToastAtom = atom(null, (get, set, id: string) => {
   set(toastsAtom, get(toastsAtom).filter((t) => t.id !== id))
 })
 
-function pushToast(type: ToastType, message: string, duration = 3000) {
+function pushToast(type: ToastType, message: string, duration = 3000, action?: ToastAction) {
   const store = getDefaultStore()
   const id = crypto.randomUUID()
-  store.set(toastsAtom, (prev) => [...prev, { id, type, message, duration }])
+  store.set(toastsAtom, (prev) => [...prev, { id, type, message, duration, action }])
   if (duration > 0) {
     setTimeout(() => store.set(removeToastAtom, id), duration)
   }
@@ -37,6 +44,9 @@ export const toast = {
   error: (msg: string) => pushToast('error', msg, 5000),
   warning: (msg: string) => pushToast('warning', msg, 4000),
   info: (msg: string) => pushToast('info', msg),
+  /** 带动作按钮的通知（错误类建议动作使用），点击执行后自动关闭 */
+  action: (type: ToastType, msg: string, action: ToastAction) =>
+    pushToast(type, msg, 8000, action),
 }
 
 /**

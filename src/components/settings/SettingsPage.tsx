@@ -9,6 +9,7 @@
  * - 版本（当前版本 / 检查更新）
  */
 import { useState } from 'react'
+import { errText } from '@/lib/errors'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeftIcon, BotIcon, PaletteIcon, DatabaseIcon, ArrowUpCircleIcon, PenLineIcon, WrenchIcon, MonitorCheckIcon } from 'lucide-react'
 import { useAiStore } from '@/stores/aiStore'
@@ -89,7 +90,7 @@ export default function SettingsPage() {
                     )
                     setAiConnectionStatus(result.ok ? 'connected' : 'error', result.detail)
                   } catch (err) {
-                    setAiConnectionStatus('error', String(err))
+                    setAiConnectionStatus('error', errText(err, '未知错误'))
                   }
                 }}
               />

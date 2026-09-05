@@ -564,13 +564,96 @@ export const imageApi = {
 
 // ==================== 导入导出 ====================
 
+export type ImportStrategy = 'replace' | 'merge' | 'fill-gaps'
+
+/** 单表写入统计 */
+export interface TableWriteStats {
+  inserted: number
+  updated: number
+  skipped: number
+}
+
+/** merge / fill-gaps 导入报告（各表统计） */
+export type ImportWriteStats = Record<string, TableWriteStats>
+
+/** import_backup 统一返回（replace：rollbackTs；merge/fill-gaps：stats） */
+export interface ImportBackupResult {
+  cache: unknown
+  backupType: string
+  strategy?: ImportStrategy
+  rollbackTs?: string | null
+  stats?: ImportWriteStats
+}
+
+/** 单表行级对账分类（Spec §5.5） */
+export interface RowReconcile {
+  matched: number
+  targetStale: number
+  targetNewer: number
+  missing: number
+}
+
+/** 逐表对账汇总 */
+export interface ReconcileReport {
+  books: RowReconcile
+  volumes: RowReconcile
+  chapters: RowReconcile
+  snapshots: RowReconcile
+  worldCards: RowReconcile
+}
+
+/** inspect_backup 只读预检报告（①文件 → ②解密 → ③结构/引用 → ④幂等 → ⑤对账） */
+export interface BackupInspectReport {
+  ok: boolean
+  backupType: 'full' | 'single'
+  fileName: string
+  fileSizeBytes: number
+  counts: {
+    books: number
+    volumes: number
+    chapters: number
+    snapshots: number
+    worldCards: number
+    embeddings: number
+  }
+  singleBook: { id: string; title: string } | null
+  issues: string[]
+  /** v2 内容指纹（SHA-256）；v1 旧文件为 null */
+  payloadHash: string | null
+  /** 幂等判定：该文件曾于何时导入（同指纹 + 类型 + 大小命中 import_log） */
+  duplicateOf: { importedAt: string; fileName: string } | null
+  /** 备份各行 vs 目标库的对账清单 */
+  reconcile: ReconcileReport
+}
+
+/** 格式导出进度事件（Spec §7：export-progress 事件载荷） */
+export interface ExportProgress {
+  bookId: string
+  format: string
+  phase: string
+  done: number
+  total: number
+}
+
 export const importExportApi = {
   async exportBook(bookId: string, format: 'txt' | 'md' | 'html', outputPath: string): Promise<void> {
     return invoke<void>('export_book', { bookId, format, outputPath })
   },
 
-  async importTxt(bookId: string, filePath: string): Promise<{ chaptersCreated: number }> {
-    return invoke<{ chaptersCreated: number }>('import_txt', { bookId, filePath })
+  /** 取消进行中的格式导出（幂等，无导出时无副作用） */
+  async cancelBookExport(): Promise<void> {
+    return invoke<void>('cancel_book_export')
+  },
+
+  /** TXT 导入结果（Spec §6.3：去重后计数，前端据此提示） */
+  async importTxt(
+    bookId: string,
+    filePath: string,
+  ): Promise<{ chaptersCreated: number; chaptersSkipped: number; chaptersRenamed: number }> {
+    return invoke<{ chaptersCreated: number; chaptersSkipped: number; chaptersRenamed: number }>(
+      'import_txt',
+      { bookId, filePath },
+    )
   },
 
   /** 导出全部数据（数据库 + localStorage 缓存）到 JSON 文件 */
@@ -583,9 +666,29 @@ export const importExportApi = {
     return invoke<void>('export_single_book', { bookId, outputPath, cacheJson })
   },
 
-  /** 统一导入备份文件（自动根据 backupType 选择全量/单作品导入），返回 { cache, backupType } */
-  async importBackup(filePath: string): Promise<{ cache: unknown; backupType: string }> {
-    return invoke<{ cache: unknown; backupType: string }>('import_backup', { filePath })
+  /**
+   * 统一导入备份文件（自动根据 backupType 选择全量/单作品导入）。
+   * strategy：replace（默认，清空重建 + 可回退）/ merge（择优合并，保留目标新增）/
+   * fill-gaps（仅补缺）。merge / fill-gaps 返回 stats。
+   */
+  async importBackup(filePath: string, strategy?: ImportStrategy): Promise<ImportBackupResult> {
+    return invoke<ImportBackupResult>('import_backup', { filePath, strategy })
+  },
+
+  /** 只读预检备份文件（结构/行数/引用完整性，不写库），返回报告 */
+  async inspectBackup(filePath: string): Promise<BackupInspectReport> {
+    return invoke<BackupInspectReport>('inspect_backup', { filePath })
+  },
+
+  /** 撤销一次导入：把数据库恢复至该回退点快照（导入前状态，24h 内有效，执行后回退点即消费） */
+  async rollbackImport(ts: string): Promise<{
+    rolledBack: boolean
+    ts: string
+    scope: string
+    file_name: string
+    restored: Record<string, number>
+  }> {
+    return invoke('rollback_import', { ts })
   },
 }
 

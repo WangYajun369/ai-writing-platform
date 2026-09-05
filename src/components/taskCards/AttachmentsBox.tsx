@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react'
 import { Eye, Loader2, Paperclip, Plus, Trash2 } from 'lucide-react'
 import { toast } from '@/lib/toast'
+import { errText } from '@/lib/errors'
 import { taskCardApi } from '@/lib/tauri-bridge'
 import type { Attachment } from '@/types'
 
@@ -73,12 +74,12 @@ export default function AttachmentsBox({ taskId }: Props) {
       .then((att) => {
         if (att) reload()
       })
-      .catch((e) => toast.error(String(e)))
+      .catch((e) => toast.error(errText(e)))
       .finally(() => setBusy(false))
   }
 
   const onOpen = (id: string) => {
-    taskCardApi.openAttachment(id).catch((e) => toast.error(String(e)))
+    taskCardApi.openAttachment(id).catch((e) => toast.error(errText(e)))
   }
 
   const onDelete = (a: Attachment) => {
@@ -89,7 +90,7 @@ export default function AttachmentsBox({ taskId }: Props) {
         toast.success('附件已删除')
         setItems((prev) => prev.filter((x) => x.id !== a.id))
       })
-      .catch((e) => toast.error(String(e)))
+      .catch((e) => toast.error(errText(e)))
   }
 
   return (

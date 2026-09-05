@@ -39,6 +39,20 @@ pub fn strip_html(html: &str) -> String {
     re.replace_all(html, "").to_string()
 }
 
+/// 转义 HTML 特殊字符（& < >），用于把纯文本安全嵌入 HTML，防注入
+pub fn escape_html(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
 /// 截取文本片段（前 N 个可见字符）
 pub fn snippet(text: &str, max_chars: usize) -> String {
     let cleaned: String = text.chars().filter(|&c| c != '\n' && c != '\r').collect();

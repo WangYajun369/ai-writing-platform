@@ -429,6 +429,28 @@ impl AppDb {
                 words     INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (book_id, stat_date)
             );
+
+            -- 导入回退点元信息（运行态：replace 导入前快照，24h 内可经 rollback_import 撤销）。
+            -- 数据快照本体为同名克隆表 __tw_rb_{ts}_{table}（CREATE TABLE AS SELECT 生成，
+            -- 与主库同事务提交，避免逐行序列化的脆弱性）；本表只记录分组与归属。
+            CREATE TABLE IF NOT EXISTS import_rollback_log (
+                ts         TEXT PRIMARY KEY,   -- 快照分组 id（UTC 纳秒戳字符串）
+                scope      TEXT NOT NULL,      -- "full" | "single:{book_id}"
+                file_name  TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL       -- RFC3339，用于 24h 过期清理
+            );
+
+            -- 导入日志（运行态幂等判定，Spec §4.3）：仅在导入事务成功提交后写入；
+            -- 保留最近 20 条滚动清理；不参与备份导出、不随作品删除。
+            CREATE TABLE IF NOT EXISTS import_log (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                payload_hash TEXT NOT NULL,    -- database 规范化 JSON 的 SHA-256（Spec §4.2）
+                file_name    TEXT NOT NULL,    -- 原始文件名
+                backup_type  TEXT NOT NULL,    -- full / single
+                source_size  INTEGER NOT NULL, -- 文件字节数（辅助判定）
+                imported_at  TEXT NOT NULL     -- RFC3339
+            );
+            CREATE INDEX IF NOT EXISTS idx_import_log_hash ON import_log(payload_hash);
         "#).context("创建数据表失败")?;
 
         // FTS5 全文搜索虚拟表（章节 + 世界观卡片）

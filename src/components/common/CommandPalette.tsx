@@ -13,6 +13,7 @@ import { PluginManager } from '@/plugins/PluginManager'
 import { COMMAND_ICON_MAP, FALLBACK_COMMAND_ICON } from '@/plugins/commandIcons'
 import type { PluginCommand } from '@/plugins/types'
 import { toast } from '@/lib/toast'
+import { errText } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { useShortcut } from '@/hooks/useShortcut'
 
@@ -66,7 +67,7 @@ export default function CommandPalette() {
       })
       setOpen(false)
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '命令执行失败')
+      toast.error(errText(err, '命令执行失败'))
     } finally {
       setBusyId(null)
     }

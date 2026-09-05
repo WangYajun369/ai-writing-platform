@@ -9,6 +9,7 @@ import { createPortal } from 'react-dom'
 import { XIcon } from 'lucide-react'
 import { bookApi } from '@/lib/tauri-bridge'
 import { useBooksStore } from '@/stores/booksStore'
+import { showError } from '@/lib/errors'
 import CoverPicker from './CoverPicker'
 import { isRenderableSrc } from '@/lib/image-utils.ts'
 import type { Book } from '@/types'
@@ -57,7 +58,7 @@ export default function NewBookDialog({ onClose, onCreated }: NewBookDialogProps
       }
     } catch (err) {
       console.error('创建书籍失败', err)
-      alert('创建失败，请重试')
+      showError(err, '创建失败')
     } finally {
       setSubmitting(false)
     }

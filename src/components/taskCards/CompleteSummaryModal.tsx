@@ -36,6 +36,7 @@ import {
 import { cn } from '@/lib/utils'
 import { processEditorImage } from '@/lib/image-utils'
 import { toast } from '@/lib/toast'
+import { errText } from '@/lib/errors'
 import { useTaskCardsStore } from '@/stores/taskCardsStore'
 import type { TaskCard } from '@/types'
 import './TaskDescriptionEditor.css'
@@ -135,7 +136,7 @@ export default function CompleteSummaryModal({ task, onClose, onCompleted }: Pro
       onCompleted?.()
       onClose()
     } catch (err) {
-      const msg = typeof err === 'string' ? err : err instanceof Error ? err.message : '操作失败，请重试'
+      const msg = errText(err, '操作失败，请重试')
       toast.error(msg)
     } finally {
       setBusy(false)

@@ -8,6 +8,7 @@
  * - 字数实时统计
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { errText } from '@/lib/errors'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
@@ -145,7 +146,7 @@ export default function RichTextEditor() {
         // 已成功入库：清除会话草稿，避免下次加载误恢复
         clearDraft(chapter.bookId, chapter.id)
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
+        const msg = errText(err, '未知错误')
         console.error('[自动保存] 保存失败', msg)
         toast.error(`保存失败：${msg}`)
       } finally {

@@ -11,11 +11,13 @@
  * stripHtmlToText）保留在此处，供 AiSidePanel / AiToolboxPanel / QuickHints 引用。
  */
 import { useCallback, useRef, useState } from 'react'
+import { errText } from '@/lib/errors'
 import { invoke } from '@tauri-apps/api/core'
 import { useCurrentChapter, useCurrentAiMessages } from '@/stores/appStore'
 import { useAiStore } from '@/stores/aiStore'
 import { bookApi, chapterApi } from '@/lib/tauri-bridge'
 import { getChatApiKey } from '@/types'
+import { toast } from '@/lib/toast'
 import type { AiMessage, AiConfig, Chapter } from '@/types'
 import type { SkillType } from '@/components/agent/types'
 import { useAiChatMessages } from './hooks/useAiChatMessages'
@@ -140,7 +142,7 @@ export function useAiChat(options: UseAiChatOptions): UseAiChatReturn {
 
       const chatApiKey = getChatApiKey(aiConfig.chat)
       if (!chatApiKey) {
-        alert('请先在设置中配置 API Key')
+        toast.warning('请先在设置中配置 API Key')
         return
       }
 
@@ -251,7 +253,7 @@ export function useAiChat(options: UseAiChatOptions): UseAiChatReturn {
       } catch (err) {
         // 如果 SSE error 事件已经处理过，避免重复更新
         if (!streamErrorRef.current) {
-          const rawErr = String(err)
+          const rawErr = errText(err, '未知错误')
           const friendly = getFriendlyAiError(rawErr)
           updateAssistant(assistantId, `⚠️ ${friendly}\n\n> 错误详情：${rawErr}`, undefined, 'done')
           persist()

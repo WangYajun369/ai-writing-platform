@@ -1,5 +1,21 @@
 # 更新日志
 
+## v1.7.0 (2026-09-05) — 数据备份与导入导出 v2
+
+### 新增
+- **导入预览对话框**：导入 `.tw` 备份前先经只读预检（`inspect_backup`：文件 → 解密 → 结构/引用 → 内容指纹 → 幂等 → 对账），弹窗展示文件概况 / 幂等提示（「此前已导入过」）/ 校验问题阻断 / 逐表对账清单（一致 / 缺失 / 备份更新 / 目标更新）/ 导入策略单选（智能合并 · 仅补齐缺失 · 覆盖式导入），确认后才执行（`ImportPreviewDialog.tsx`）
+- **v2 备份载荷**：导出写入 `schemaVersion` / `appVersion` / `payloadHash`（database 规范化 JSON 的 SHA-256，排除导出时刻等易变字段）；导入侧校验指纹与声明一致，篡改文件拒绝导入（零写入）；`import_log` 表记录已导入文件的指纹 / 类型 / 大小（滚动保留最近 20 条）
+- **幂等与去重**：同一备份重复导入自动提示「曾于 xx 导入」并对账全 matched；TXT 导入按「书名 + 正文指纹」去重——全文一致跳过、同名不同文自动追加「（导入 N）」，返回值区分 `chaptersCreated / chaptersSkipped / chaptersRenamed`
+- **TXT 导入增强**：行级章节识别（第X章 / Chapter / 序章楔子尾声后记番外 +「后续非空行」防正文误判），开篇引言保留为独立「前言」章，空行折叠；≤ 20 MB / ≤ 2,000 章，超限报 `E_TXT_TOO_LARGE`；分章 + 字数统计单事务原子提交
+- **导出增强**：TXT / MD / HTML 导出支持卷结构（`==== 卷名 ====` / `# 卷名` / `<h3>`）；导出进度事件（`export-progress`）+ `cancel_book_export` 取消命令（取消不留半成品）；备份与格式导出均改「临时文件 + rename」原子写出；序列化后 > 200 MB 拒绝（`E_BACKUP_TOO_LARGE`）
+- **导入导出安全收口**：导入 / 导出 / 回滚命令级互斥（`E_IO_BUSY` 防双窗口并发）；备份文件主版本高于当前支持（v3+）报 `E_BACKUP_VERSION`；删除回退点、内容指纹校验等既有检查保留
+- **统一错误码与前端提示**：后端全部命令错误序列化为 `{ code, message }`（消息内 `E_` 前缀优先提取、无前缀按变体归默认码），io 目录 40+ 内部错误补全 `E_BACKUP_* / E_TXT_* / E_EXPORT_*` 前缀分类；前端新增统一错误解析层（`parseError / errText / adviceFor / showError`，兼容对象 / 字符串 / Error 三种形态），导入导出及其余 18 处 `alert` 收敛为 toast，按 code 追加建议动作（如 `E_BACKUP_VERSION` 附「前往更新」按钮跳 GitHub Releases）
+
+### 工程
+- Rust：`backup.rs` 重写校验/对账/指纹链路（新增 `import_log` 建表、`reconcile_*`、`record/lookup_import_log`、`database_canonical_hash`）；`import_txt.rs` 重写分章 / 去重 / 事务（Spec §6）；`export.rs` 卷结构 + 进度 + 取消；`chapter_repo::list_export_with_volume`；`commands/io/mod.rs` 命令级互斥
+- 前端：新增 `ImportPreviewDialog.tsx`；`LibraryPage.tsx` 导入流程改「选文件 → inspect 预览 → 按策略导入」；`tauri-bridge.ts` 扩展 `inspectBackup` 报告（`payloadHash / duplicateOf / reconcile`）、`importTxt` 去重计数、`ExportProgress` 与 `cancelBookExport`
+- 测试：`cargo test commands::io` 28 项全绿（备份指纹 / 幂等 / 对账 / TXT 分章去重 / 导出卷结构 / 版本守卫 / 互斥）；计划与规范文档同步（`docs/development/import-export-plan.md` A–F 各 Phase 落地说明）
+
 ## v1.6.0 (2026-09-05)
 
 ### 新增

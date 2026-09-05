@@ -9,6 +9,7 @@ import { createPortal } from 'react-dom'
 import { XIcon } from 'lucide-react'
 import { bookApi } from '@/lib/tauri-bridge'
 import { useBooksStore } from '@/stores/booksStore'
+import { showError } from '@/lib/errors'
 import CoverPicker from './CoverPicker'
 import { isRenderableSrc } from '@/lib/image-utils.ts'
 import type { Book } from '@/types'
@@ -68,7 +69,7 @@ export default function EditBookDialog({ book, onClose, onSaved }: EditBookDialo
       onSaved(finalBook)
     } catch (err) {
       console.error('更新作品失败', err)
-      alert('更新失败，请重试')
+      showError(err, '更新失败')
     } finally {
       setSubmitting(false)
     }

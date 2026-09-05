@@ -4,7 +4,7 @@
 //!
 //! # 架构概览
 //!
-//! ```
+//! ```text
 //! Tauri App (lib.rs)
 //! ├── 插件层：shell / dialog / fs / updater / deep_link / http
 //! ├── 数据层：AppDb（SQLite，存储书籍/卷/章节/快照/世界观/记忆）
@@ -112,6 +112,10 @@ pub fn run() {
                     // 启动兜底：清理存量超限/过期记忆（幂等，无则零开销）
                     if let Err(e) = commands::agent::memory::prune_all_memories(&conn) {
                         crate::app_log_error!("[Agent] 记忆库存量清理失败（跳过）: {}", e);
+                    }
+                    // 启动兜底：清理超过 24h 的导入回退点（上次会话遗留，幂等）
+                    if let Err(e) = commands::io::backup::prune_expired_rollbacks(&conn) {
+                        crate::app_log_error!("[Rollback] 过期导入回退点清理失败（跳过）: {}", e);
                     }
                 }
             }
@@ -296,12 +300,15 @@ pub fn run() {
             commands::tts::tts_speak,
             // ══════ 导入导出 — 格式导出 ══════
             commands::io::export::export_book,
+            commands::io::export::cancel_book_export,
             // ══════ 导入导出 — TXT 导入 ══════
             commands::io::import_txt::import_txt,
             // ══════ 导入导出 — 加密备份 ══════
             commands::io::backup::export_all_data,
             commands::io::backup::export_single_book,
             commands::io::backup::import_backup,
+            commands::io::backup::inspect_backup,
+            commands::io::backup::rollback_import,
             // ══════ 图片处理 ══════
             commands::image::process_image,
             commands::image::process_image_cropped,

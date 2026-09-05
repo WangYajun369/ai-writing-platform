@@ -6,6 +6,7 @@
 import React, { useState, useCallback, useEffect } from 'react'
 import { XIcon, Trash2Icon, PencilIcon, SaveIcon, RotateCcwIcon, BrainIcon } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
+import { errText } from '@/lib/errors'
 import type { MemoryInfo, MemoryListResponse } from './types'
 import { MEMORY_TYPE_LABELS, MEMORY_TYPE_COLORS } from './types'
 
@@ -35,7 +36,7 @@ export const AgentMemoryPanel: React.FC<AgentMemoryPanelProps> = ({ bookId, onCl
       })
       setMemories(resp.memories)
     } catch (e) {
-      setError(String(e))
+      setError(errText(e))
     } finally {
       setLoading(false)
     }
@@ -77,7 +78,7 @@ export const AgentMemoryPanel: React.FC<AgentMemoryPanelProps> = ({ bookId, onCl
       )
       cancelEdit()
     } catch (e) {
-      setError(String(e))
+      setError(errText(e))
     }
   }
 
@@ -88,7 +89,7 @@ export const AgentMemoryPanel: React.FC<AgentMemoryPanelProps> = ({ bookId, onCl
       setMemories((prev) => prev.filter((m) => m.id !== memoryId))
       if (editingId === memoryId) cancelEdit()
     } catch (e) {
-      setError(String(e))
+      setError(errText(e))
     }
   }
 
@@ -100,7 +101,7 @@ export const AgentMemoryPanel: React.FC<AgentMemoryPanelProps> = ({ bookId, onCl
       setMemories([])
       setConfirmClear(false)
     } catch (e) {
-      setError(String(e))
+      setError(errText(e))
     }
   }
 

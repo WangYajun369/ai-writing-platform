@@ -276,6 +276,34 @@ pub fn list_titles_and_content(conn: &Connection, book_id: &str) -> Result<Vec<(
     items.collect()
 }
 
+/// 格式导出用的章节行（含所属卷标题；无卷时 volume_title=None）
+#[derive(Debug, Clone)]
+pub struct ChapterExportRow {
+    pub volume_title: Option<String>,
+    pub title: String,
+    pub html: String,
+}
+
+/// 带卷信息的导出查询（Spec §7：TXT/MD 卷结构表达）。
+/// 排序：无卷章节在前，其后按卷 sort_order、章内 sort_order 排列。
+pub fn list_export_with_volume(conn: &Connection, book_id: &str) -> Result<Vec<ChapterExportRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT v.title, c.title, c.content_html
+         FROM chapters c
+         LEFT JOIN volumes v ON v.id = c.volume_id AND v.deleted_at IS NULL
+         WHERE c.book_id = ?1 AND c.deleted_at IS NULL
+         ORDER BY (CASE WHEN v.id IS NULL THEN -1 ELSE COALESCE(v.sort_order, 0) END), c.sort_order",
+    )?;
+    let rows = stmt.query_map(params![book_id], |row| {
+        Ok(ChapterExportRow {
+            volume_title: row.get::<_, Option<String>>(0)?,
+            title: row.get::<_, String>(1)?,
+            html: row.get::<_, String>(2)?,
+        })
+    })?;
+    rows.collect()
+}
+
 /// 统计书籍下有效章节数（有内容的）
 pub fn count_active_with_content(conn: &Connection, book_id: &str) -> Result<usize> {
     conn.query_row(

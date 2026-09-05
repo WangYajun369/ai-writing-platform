@@ -39,6 +39,11 @@ export default function ToastContainer() {
 function ToastCard({ toast, onClose }: { toast: ToastItem; onClose: () => void }) {
   const config = TOAST_CONFIG[toast.type]
 
+  const runAction = () => {
+    toast.action?.onClick()
+    onClose()
+  }
+
   return (
     <div
       className={cn(
@@ -47,7 +52,17 @@ function ToastCard({ toast, onClose }: { toast: ToastItem; onClose: () => void }
       )}
     >
       <config.icon className={cn('w-4 h-4 shrink-0 mt-0.5', config.iconColor)} />
-      <span className="text-sm flex-1">{toast.message}</span>
+      <div className="flex-1 min-w-0">
+        <span className="text-sm whitespace-pre-line break-words">{toast.message}</span>
+        {toast.action && (
+          <button
+            onClick={runAction}
+            className="mt-1.5 block text-xs font-medium text-primary hover:underline"
+          >
+            {toast.action.label}
+          </button>
+        )}
+      </div>
       <button
         onClick={onClose}
         className="p-0.5 rounded hover:bg-muted shrink-0 text-muted-foreground"

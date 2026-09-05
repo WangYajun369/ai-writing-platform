@@ -16,6 +16,7 @@
  *  - constants      → 状态配置 / getAgentQuickActions
  */
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { errText } from '@/lib/errors'
 import { useCurrentAiMessages, useCurrentBook } from '@/stores/appStore'
 import { useAiStore } from '@/stores/aiStore'
 import { useBooksStore } from '@/stores/booksStore'
@@ -90,7 +91,7 @@ export default function AiSidePanel() {
       }
     } catch (err) {
       setModelCheckStatus('error')
-      setModelCheckDetail(String(err))
+      setModelCheckDetail(errText(err, '未知错误'))
     }
   }, [aiConfig])
 

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
+import { errText } from '@/lib/errors'
 import { taskCardApi } from '@/lib/tauri-bridge'
 import { useTaskCardsStore } from '@/stores/taskCardsStore'
 import type { DeletedTaskItem, TaskProject } from '@/types'
@@ -39,7 +40,7 @@ export default function TrashView({ onBack }: { onBack: () => void }) {
       setProjects(ps)
       setTasks(ts)
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '加载回收站失败')
+      toast.error(errText(err, '加载回收站失败'))
     } finally {
       setLoading(false)
     }
@@ -57,7 +58,7 @@ export default function TrashView({ onBack }: { onBack: () => void }) {
       await refreshAll()
       toast.success(`已恢复项目「${p.name}」及其任务`)
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '恢复失败')
+      toast.error(errText(err, '恢复失败'))
     } finally {
       setBusy(false)
     }
@@ -71,7 +72,7 @@ export default function TrashView({ onBack }: { onBack: () => void }) {
       await load()
       toast.success('已彻底删除')
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '删除失败')
+      toast.error(errText(err, '删除失败'))
     } finally {
       setBusy(false)
     }
@@ -85,7 +86,7 @@ export default function TrashView({ onBack }: { onBack: () => void }) {
       await refreshAll()
       toast.success('已恢复任务')
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '恢复失败')
+      toast.error(errText(err, '恢复失败'))
     } finally {
       setBusy(false)
     }
@@ -99,7 +100,7 @@ export default function TrashView({ onBack }: { onBack: () => void }) {
       await load()
       toast.success('已彻底删除')
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '删除失败')
+      toast.error(errText(err, '删除失败'))
     } finally {
       setBusy(false)
     }
@@ -117,7 +118,7 @@ export default function TrashView({ onBack }: { onBack: () => void }) {
       await load()
       toast.success('回收站已清空')
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '清空失败')
+      toast.error(errText(err, '清空失败'))
     } finally {
       setBusy(false)
     }

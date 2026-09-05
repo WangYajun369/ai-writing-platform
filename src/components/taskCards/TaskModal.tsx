@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { cn, htmlToPlainText } from '@/lib/utils'
 import { toast } from '@/lib/toast'
+import { errText } from '@/lib/errors'
 import { taskCardApi } from '@/lib/tauri-bridge'
 import TaskDescriptionEditor from './TaskDescriptionEditor'
 import CompleteSummaryModal from './CompleteSummaryModal'
@@ -125,7 +126,7 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
       await updateTask(task.id, patch)
       flashSaved()
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '保存失败')
+      toast.error(errText(err, '保存失败'))
     } finally {
       setBusy(false)
     }
@@ -160,7 +161,7 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
       toggleTag(created)
       toast.success(`已创建标签「${created.name}」`)
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '创建标签失败')
+      toast.error(errText(err, '创建标签失败'))
     }
   }
 
@@ -208,7 +209,7 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
       onClose()
       void useTaskCardsStore.getState().fetchProjectTasks(created.projectId)
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '创建失败')
+      toast.error(errText(err, '创建失败'))
     } finally {
       setBusy(false)
     }
@@ -223,7 +224,7 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
       toast.success('已移入回收站')
       onClose()
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '删除失败')
+      toast.error(errText(err, '删除失败'))
     } finally {
       setBusy(false)
     }
@@ -236,7 +237,7 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
       await copyTask(task.id)
       toast.success('已复制任务')
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '复制失败')
+      toast.error(errText(err, '复制失败'))
     } finally {
       setBusy(false)
     }
@@ -253,7 +254,7 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
       toast.success('已移动任务（含其子任务）')
     } catch (err) {
       setSelProjectId(task.projectId)
-      toast.error(typeof err === 'string' ? err : '移动失败')
+      toast.error(errText(err, '移动失败'))
     } finally {
       setBusy(false)
     }

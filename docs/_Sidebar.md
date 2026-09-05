@@ -24,6 +24,8 @@
   - [插件系统](development/plugin-system)
   - [调试控制台](development/debug-console)
   - [GitHub 集成](development/github-integration)
+  - [导入导出规范](development/import-export-spec)
+  - [导入导出开发计划](development/import-export-plan)
   - [贡献指南](development/contributing)
 - 🏗️ 架构说明
   - [架构总览](architecture/overview)

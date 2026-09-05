@@ -11,6 +11,7 @@
  * - 关键字由正文自动提取，保存后展示于底部状态栏
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { errText } from '@/lib/errors'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
@@ -187,7 +188,7 @@ export default function DiaryDialog({ diaryDate, onClose, onChanged }: DiaryDial
         setWordCount(countWordsFromHtml(html))
       } catch (err) {
         console.error('加载日记失败', err)
-        toast.error(`加载日记失败：${err instanceof Error ? err.message : String(err)}`)
+        toast.error(`加载日记失败：${errText(err, '未知错误')}`)
       } finally {
         if (!cancelled) setLoaded(true)
       }
@@ -230,7 +231,7 @@ export default function DiaryDialog({ diaryDate, onClose, onChanged }: DiaryDial
             onChangedRef.current(diaryDate)
           } catch (err) {
             console.error('清空日记删除失败', err)
-            toast.error(`删除日记失败：${err instanceof Error ? err.message : String(err)}`)
+            toast.error(`删除日记失败：${errText(err, '未知错误')}`)
           }
         }
         return
@@ -251,7 +252,7 @@ export default function DiaryDialog({ diaryDate, onClose, onChanged }: DiaryDial
         onChangedRef.current(diaryDate)
       } catch (err) {
         console.error('保存日记失败', err)
-        toast.error(`保存日记失败：${err instanceof Error ? err.message : String(err)}`)
+        toast.error(`保存日记失败：${errText(err, '未知错误')}`)
       } finally {
         setSaving(false)
       }
@@ -432,7 +433,7 @@ export default function DiaryDialog({ diaryDate, onClose, onChanged }: DiaryDial
       onCloseRef.current()
     } catch (err) {
       console.error('删除日记失败', err)
-      toast.error(`删除日记失败：${err instanceof Error ? err.message : String(err)}`)
+      toast.error(`删除日记失败：${errText(err, '未知错误')}`)
     }
   }, [diaryDate])
 

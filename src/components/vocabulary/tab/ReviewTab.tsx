@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { LoaderIcon, SparklesIcon, PlayCircleIcon, CheckCircle2Icon, BookMarkedIcon, RotateCcwIcon } from 'lucide-react'
 import { vocabApi } from '@/lib/tauri-bridge'
 import { toast } from '@/lib/toast'
+import { errText } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { useVocabStore } from '@/stores/vocabStore'
 import type { VocabRating, VocabWord } from '@/types'
@@ -88,7 +89,7 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
         }
         setFlipped(false)
       } catch (err) {
-        toast.error(typeof err === 'string' ? err : '复习提交失败，请重试')
+        toast.error(errText(err, '复习提交失败，请重试'))
       } finally {
         setBusy(false)
       }

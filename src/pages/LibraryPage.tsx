@@ -19,11 +19,15 @@ import { useAiStore } from '@/stores/aiStore'
 import { usePreferencesStore } from '@/stores/preferencesStore'
 import { aiToolboxWindowOpenAtom, debugWindowOpenAtom } from '@/stores/uiAtoms'
 import { bookApi, importExportApi, windowApi, debugApi } from '@/lib/tauri-bridge'
+import type { BackupInspectReport, ImportStrategy } from '@/lib/tauri-bridge'
 import { cn, formatWordCount } from '@/lib/utils'
+import { toast } from '@/lib/toast'
+import { showError } from '@/lib/errors'
 import type { Book } from '@/types'
 import BookCard from '@/components/library/BookCard'
 import NewBookDialog from '@/components/library/NewBookDialog'
 import TrashModal from '@/components/library/TrashModal'
+import ImportPreviewDialog from '@/components/library/ImportPreviewDialog'
 import HomeHeaderPlugins from '@/components/library/HomeHeaderPlugins'
 import DiaryPanel from '@/components/diary/DiaryPanel'
 import { closeAllMenus } from '@/components/common/ContextMenu'
@@ -49,6 +53,16 @@ const GRID_GAP_MAP = { small: 'gap-2', medium: 'gap-4', large: 'gap-6' } as cons
  * measureElement 会在首帧后自动修正为精确值。
  */
 const GRID_ROW_HEIGHT_MAP = { small: 480, medium: 560, large: 680 } as const
+
+/** 随备份导出的 localStorage 缓存键白名单（导出收集与导入恢复共用，未知键一律忽略） */
+const CACHE_KEYS = [
+  'time-write-ai-config',
+  'time-write-preferences',
+  'time-write-editor-state',
+  'time-write-ai-conversations',
+  'time-write-ai-summaries',
+  'time-write-ai-tool-categories',
+] as const
 
 export default function LibraryPage() {
   const navigate = useNavigate()
@@ -130,17 +144,9 @@ export default function LibraryPage() {
       })
       if (!filePath) { setIsExporting(false); return }
 
-      // 收集 localStorage 缓存数据
+      // 收集 localStorage 缓存数据（仅白名单键）
       const cacheData: Record<string, unknown> = {}
-      const cacheKeys = [
-        'time-write-ai-config',
-        'time-write-preferences',
-        'time-write-editor-state',
-        'time-write-ai-conversations',
-        'time-write-ai-summaries',
-        'time-write-ai-tool-categories',
-      ]
-      for (const key of cacheKeys) {
+      for (const key of CACHE_KEYS) {
         const raw = localStorage.getItem(key)
         if (raw) {
           try { cacheData[key] = JSON.parse(raw) } catch { cacheData[key] = raw }
@@ -148,10 +154,10 @@ export default function LibraryPage() {
       }
 
       await importExportApi.exportAllData(filePath, JSON.stringify(cacheData))
-      alert('数据导出成功！')
+      toast.success('数据导出成功！')
     } catch (err) {
       console.error('导出数据失败', err)
-      alert(`导出失败：${err}`)
+      showError(err, '数据导出失败')
     } finally {
       setIsExporting(false)
     }
@@ -159,35 +165,56 @@ export default function LibraryPage() {
 
   /** 统一导入备份文件（自动识别全量/单作品备份） */
   const [isImporting, setIsImporting] = useState(false)
+  const [importPreview, setImportPreview] = useState<{
+    filePath: string
+    report: BackupInspectReport
+  } | null>(null)
+
+  /** ① 选择文件 → 只读预检（inspect_backup：指纹/引用/幂等/对账）→ 打开预览对话框 */
   const handleImportBackup = useCallback(async () => {
-    if (isImporting) return
+    if (isImporting || importPreview) return
     setIsImporting(true)
     try {
-      // 选择备份文件
       const filePath = await open({
         title: '选择备份文件',
         filters: [{ name: 'TimeWrite 备份', extensions: ['tw'] }],
         multiple: false,
       })
-      if (!filePath) { setIsImporting(false); return }
+      if (!filePath) return
 
       const filePathStr = typeof filePath === 'string' ? filePath : filePath[0]
-      if (!filePathStr) { setIsImporting(false); return }
+      if (!filePathStr) return
 
-      // 二次确认
-      if (!confirm('确认导入此备份文件？')) {
-        setIsImporting(false)
-        return
-      }
+      const report = await importExportApi.inspectBackup(filePathStr)
+      setImportPreview({ filePath: filePathStr, report })
+    } catch (err) {
+      console.error('备份文件预检失败', err)
+      showError(err, '无法读取该备份文件')
+    } finally {
+      setIsImporting(false)
+    }
+  }, [isImporting, importPreview])
 
-      // 调用后端统一导入，返回 { cache, backupType }
-      const result = await importExportApi.importBackup(filePathStr)
+  /** ② 预览对话框确认后，按所选策略执行真正导入 */
+  const runImport = useCallback(async (filePathStr: string, strategy: ImportStrategy) => {
+    setImportPreview(null)
+    setIsImporting(true)
+    try {
+      const result = await importExportApi.importBackup(filePathStr, strategy)
 
-      // 恢复 localStorage 缓存数据
+      // 恢复 localStorage 缓存（独立容错：失败只降级提示，不影响「数据导入成功」结论）
+      const failedKeys: string[] = []
       if (result.cache) {
         const cacheData = result.cache as Record<string, unknown>
-        for (const [key, value] of Object.entries(cacheData)) {
-          localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value))
+        for (const key of Object.keys(cacheData)) {
+          if (!(CACHE_KEYS as readonly string[]).includes(key)) continue // 仅白名单键
+          try {
+            const value = cacheData[key]
+            localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value))
+          } catch (err) {
+            console.warn('恢复本地缓存失败', key, err)
+            failedKeys.push(key)
+          }
         }
       }
 
@@ -197,14 +224,44 @@ export default function LibraryPage() {
       const msg = result.backupType === 'single'
         ? '单作品数据导入成功！'
         : '全量数据导入成功！'
-      alert(msg)
+
+      // 回退点撤销入口（replace 语义导入成功即创建，24h 内有效）
+      if (result.rollbackTs) {
+        const wantRollback = await confirm(
+          `${msg}\n\n如需撤销本次导入并恢复导入前状态（24 小时内有效），请选择「确定」；若保留本次导入结果，请选择「取消」。`,
+        )
+        if (wantRollback) {
+          try {
+            await importExportApi.rollbackImport(result.rollbackTs)
+            await loadBooks()
+            toast.success('已撤销本次导入，数据已恢复至导入前状态。')
+          } catch (err) {
+            console.error('撤销导入失败', err)
+            showError(err, '撤销导入失败')
+          }
+        }
+      } else if (result.stats) {
+        // merge / fill-gaps：非破坏性写入，展示各表统计摘要
+        const summary = Object.entries(result.stats)
+          .map(([table, s]) => `${table} 新增 ${s.inserted} / 更新 ${s.updated} / 跳过 ${s.skipped}`)
+          .join('，')
+        toast.success(`${msg}\n\n写入摘要（${result.strategy}）：${summary}`)
+      } else {
+        toast.success(msg)
+      }
+
+      if (failedKeys.length > 0) {
+        toast.warning(
+          `注意：部分本地偏好/AI 会话等缓存恢复失败（${failedKeys.join('、')}），不影响已导入的数据。`,
+        )
+      }
     } catch (err) {
       console.error('导入数据失败', err)
-      alert(`导入失败：${err}`)
+      showError(err, '导入失败')
     } finally {
       setIsImporting(false)
     }
-  }, [isImporting, loadBooks])
+  }, [loadBooks])
 
   async function handleToggleAiToolboxWindow() {
     if (aiToolboxWindowOpen) {
@@ -564,6 +621,15 @@ export default function LibraryPage() {
         <TrashModal
           onClose={() => setShowTrashModal(false)}
           onChanged={handleTrashChanged}
+        />
+      )}
+
+      {/* 导入预览弹窗（幂等提示 + 对账清单 + 策略单选） */}
+      {importPreview && (
+        <ImportPreviewDialog
+          report={importPreview.report}
+          onCancel={() => setImportPreview(null)}
+          onConfirm={(strategy) => runImport(importPreview.filePath, strategy)}
         />
       )}
     </div>

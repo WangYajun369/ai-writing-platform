@@ -8,6 +8,7 @@
  * 落盘方式：plugin-dialog 的 save 对话框 + plugin-fs 的 writeTextFile
  * （Tauri v2 中 dialog 选择的路径会自动加入 fs 运行权限）。
  */
+import { errText } from '@/lib/errors'
 import { save, message } from '@tauri-apps/plugin-dialog'
 import { writeTextFile } from '@tauri-apps/plugin-fs'
 import type { AiMessage, ConversationSummary } from '@/types'
@@ -176,7 +177,7 @@ export async function exportAiConversation(
     return 'saved'
   } catch (err) {
     console.error('[conversationExport] 导出失败:', err)
-    await message(`导出失败：${String(err)}`, {
+    await message(`导出失败：${errText(err, '未知错误')}`, {
       title: '导出 AI 对话',
       kind: 'error',
     }).catch(() => undefined)

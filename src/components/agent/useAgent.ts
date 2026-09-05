@@ -10,6 +10,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { errText } from '@/lib/errors'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useAiStore } from '@/stores/aiStore'
 import { getChatApiKey } from '@/types'
@@ -242,7 +243,7 @@ export function useAgent() {
           conversationSummary: null,
         })
       } catch (e) {
-        const errMsg = String(e)
+        const errMsg = errText(e)
         setError(errMsg)
         setMessages((prev) => {
           const updated = [...prev]
@@ -272,7 +273,7 @@ export function useAgent() {
         streamRafRef.current = null
       }
     } catch (e) {
-      setError(String(e))
+      setError(errText(e))
     }
   }, [])
 

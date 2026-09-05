@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { dictApi, vocabApi } from '@/lib/tauri-bridge'
 import { toast } from '@/lib/toast'
+import { errText } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { useAiStore } from '@/stores/aiStore'
 import { getChatApiKey } from '@/types'
@@ -207,9 +208,8 @@ export default function AddWordDialog({ open, editing, onClose }: Props) {
       toast.success('翻译完成：已整理音标 / 词根词缀 / 近反义词 / 常用搭配 / 词性例句')
     } catch (err) {
       console.error('[Vocab·翻译] 调用失败:', err)
-      const detail = typeof err === 'string' ? err : err instanceof Error ? err.message : JSON.stringify(err)
-      const shown = detail ? detail.slice(0, 300) : '翻译失败，请检查网络或稍后重试'
-      setAiError(shown)
+      const detail = errText(err, '翻译失败，请检查网络或稍后重试')
+      setAiError(detail.slice(0, 300))
       toast.error('翻译失败，详情见输入框下方提示')
     } finally {
       setAiBusy(false)
@@ -250,7 +250,7 @@ export default function AddWordDialog({ open, editing, onClose }: Props) {
       void refreshAll()
       onClose()
     } catch (err) {
-      toast.error(typeof err === 'string' ? err : '保存失败，请重试')
+      toast.error(errText(err, '保存失败，请重试'))
     } finally {
       setSaving(false)
     }

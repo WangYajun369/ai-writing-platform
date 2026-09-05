@@ -14,6 +14,7 @@
  * windowApi.closeDiaryBook() 销毁自身窗口。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { errText } from '@/lib/errors'
 import {
   BookOpenIcon,
   ChevronLeftIcon,
@@ -110,7 +111,7 @@ export default function DiaryBookPage() {
         setMetas(list)
       } catch (err) {
         console.error('加载日记目录失败', err)
-        toast.error(`加载日记失败：${err instanceof Error ? err.message : String(err)}`)
+        toast.error(`加载日记失败：${errText(err, '未知错误')}`)
       }
     })()
     return () => {

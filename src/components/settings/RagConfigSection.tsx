@@ -6,6 +6,7 @@
  * 此处仅保留连接配置与连通性测试，供未来接入语义检索使用。
  */
 import { useState } from 'react'
+import { errText } from '@/lib/errors'
 import { BrainIcon } from 'lucide-react'
 import type { RagConfig, RagProvider } from '@/types'
 import { getRagApiKey } from '@/types'
@@ -47,7 +48,7 @@ export function RagConfigSection({ config, onChange }: RagConfigSectionProps) {
       setRagTestDetail(result.detail)
     } catch (err) {
       setRagTestStatus('error')
-      setRagTestDetail(String(err))
+      setRagTestDetail(errText(err, '未知错误'))
     }
   }
 
