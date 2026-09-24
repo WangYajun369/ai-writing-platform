@@ -739,3 +739,69 @@ fn emit_event(app: &AppHandle, event: &str, data: &str, request_id: &str) -> boo
     )
     .is_ok()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clamp_text_truncates_with_marker() {
+        let short = "正常结果";
+        assert_eq!(clamp_text(short, 100), short);
+
+        let long = "字".repeat(100);
+        let out = clamp_text(&long, 50);
+        assert!(out.starts_with(&"字".repeat(50)));
+        assert!(out.contains("已截断"));
+        assert!(out.chars().count() < long.chars().count());
+    }
+
+    #[test]
+    fn cancel_token_flag_semantics() {
+        let token = CancelToken::new();
+        assert!(!token.is_cancelled());
+        token.cancel();
+        assert!(token.is_cancelled());
+    }
+
+    #[test]
+    fn global_cancel_registry_roundtrip() {
+        // 注册 → cancel_current_task 命中 → 注销（ptr_eq 防误删新令牌）
+        let token = register_cancel_token();
+        cancel_current_task();
+        assert!(token.is_cancelled(), "全局取消应作用于当前注册令牌");
+
+        unregister_cancel_token(&token);
+        // 注销后全局取消不再影响该令牌（语义：无当前任务时调用为空操作）
+        let token2 = CancelToken::new();
+        cancel_current_task();
+        assert!(!token2.is_cancelled());
+    }
+
+    /// cancel() 的 notify_waiters 能即时唤醒 select! 中的等待方（即时中断语义）
+    #[tokio::test]
+    async fn cancel_notifies_waiters_immediately() {
+        let token = Arc::new(CancelToken::new());
+        let waiter = token.clone();
+        // oneshot 以 await 等待就绪（让出执行权），避免阻塞 current_thread 运行时造成死锁
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
+        let handle = tokio::spawn(async move {
+            // enable() 在任务内注册等待者并通知主线程，确保 cancel 发生在注册之后（确定性）
+            let notified = waiter.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            let _ = ready_tx.send(());
+            tokio::select! {
+                _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => "timeout",
+                _ = notified => "cancelled",
+            }
+        });
+        ready_rx.await.expect("waiter registered");
+        token.cancel();
+        let outcome = tokio::time::timeout(std::time::Duration::from_secs(2), handle)
+            .await
+            .expect("取消唤醒应在 2s 内完成")
+            .unwrap();
+        assert_eq!(outcome, "cancelled");
+    }
+}

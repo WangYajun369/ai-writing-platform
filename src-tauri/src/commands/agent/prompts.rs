@@ -169,3 +169,64 @@ pub fn estimate_prompt_tokens(prompt: &str) -> usize {
     let other_chars = prompt.chars().count() - chinese_chars;
     (chinese_chars as f64 / 1.5 + other_chars as f64 / 3.5) as usize
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 4 个 Skill 各有独立 Prompt；未知 skill 回退 writing
+    #[test]
+    fn base_prompt_maps_skills_and_fallback() {
+        assert_eq!(skill_base_prompt("writing"), WRITING_PROMPT);
+        assert_eq!(skill_base_prompt("analysis"), ANALYSIS_PROMPT);
+        assert_eq!(skill_base_prompt("research"), RESEARCH_PROMPT);
+        assert_eq!(skill_base_prompt("polish"), POLISH_PROMPT);
+        assert_eq!(skill_base_prompt("no_such"), WRITING_PROMPT);
+        assert_eq!(skill_base_prompt(""), WRITING_PROMPT);
+        // 四个 Skill 的 Prompt 互不相同
+        assert_ne!(skill_base_prompt("analysis"), skill_base_prompt("writing"));
+        assert_ne!(skill_base_prompt("research"), skill_base_prompt("polish"));
+    }
+
+    /// 无关键词命中时返回纯基础 Prompt
+    #[test]
+    fn dynamic_prompt_without_keywords_is_base_only() {
+        let p = get_dynamic_prompt("writing", "随便帮我写点什么吧");
+        assert_eq!(p, WRITING_PROMPT);
+    }
+
+    /// 命中关键词注入对应场景提示；同名词条按 Skill 隔离（polish 的「对话」≠ writing 的「对话」）
+    #[test]
+    fn dynamic_prompt_injects_matched_hints_per_skill() {
+        let p = get_dynamic_prompt("writing", "帮我设计一个大纲");
+        assert!(p.starts_with(WRITING_PROMPT));
+        assert!(p.contains("大纲生成指引"));
+        assert!(!p.contains("情节设计指引"));
+
+        // polish 命中「对话」应注入对话润色，而非 writing 的角色对话指引
+        let p2 = get_dynamic_prompt("polish", "这段对话帮我润色");
+        assert!(p2.contains("对话润色指引"));
+        assert!(!p2.contains("角色对话指引"));
+    }
+
+    /// 场景提示注入上限为 3 条（超出按表序截断）
+    #[test]
+    fn dynamic_prompt_caps_at_three_hints() {
+        let p = get_dynamic_prompt("writing", "大纲 情节 对话 冲突 角色 全都要");
+        assert!(p.contains("大纲生成指引"));
+        assert!(p.contains("情节设计指引"));
+        assert!(p.contains("角色对话指引"));
+        assert!(!p.contains("冲突设计指引"), "第 4 条命中应被截断");
+        assert!(!p.contains("角色塑造指引"), "第 5 条命中应被截断");
+    }
+
+    /// Token 估算：中文 1.5 字/Token，其他字符 3.5 字/Token
+    #[test]
+    fn token_estimation_respects_char_classes() {
+        let cjk: String = "你".repeat(150);
+        assert_eq!(estimate_prompt_tokens(&cjk), 100);
+        let ascii: String = "a".repeat(35);
+        assert_eq!(estimate_prompt_tokens(&ascii), 10);
+        assert_eq!(estimate_prompt_tokens(""), 0);
+    }
+}

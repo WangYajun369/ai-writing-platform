@@ -84,9 +84,13 @@ pub fn get_memories(
     if let Some(mt) = memory_type {
         sql.push_str(&format!(" AND memory_type = ?{idx}"));
         params.push(Box::new(mt.to_string()));
+        idx += 1;
     }
-    sql.push_str(" ORDER BY relevance_score DESC, updated_at DESC LIMIT ?");
-    sql.push_str(&(limit.to_string()));
+    // LIMIT 同样使用编号占位符：?N 与拼接的 ?{idx} 保持一致，避免混用匿名占位符导致索引错乱
+    sql.push_str(&format!(
+        " ORDER BY relevance_score DESC, updated_at DESC LIMIT ?{idx}"
+    ));
+    params.push(Box::new(limit as i64));
 
     let mut stmt = conn.prepare(&sql)?;
     let refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|b| b.as_ref()).collect();
@@ -608,4 +612,202 @@ pub fn migrate_legacy_db(
         );
     }
     Ok(imported)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 与生产 schema 一致的 memories 表（db/mod.rs 同款 DDL）
+    fn test_conn() -> Connection {
+        let conn = Connection::open_in_memory().expect("open memory db");
+        conn.execute_batch(
+            r#"
+            CREATE TABLE memories (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id         TEXT NOT NULL,
+                skill_type      TEXT NOT NULL,
+                memory_type     TEXT NOT NULL,
+                content         TEXT NOT NULL,
+                keywords        TEXT NOT NULL DEFAULT '',
+                relevance_score REAL NOT NULL DEFAULT 1.0,
+                created_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+                updated_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+                last_hit_at     TEXT
+            );
+            "#,
+        )
+        .expect("create memories table");
+        conn
+    }
+
+    fn mem(memory_type: &str, keywords: &str, relevance: f64) -> MemoryInfo {
+        MemoryInfo {
+            id: 1,
+            book_id: "b1".into(),
+            skill_type: "writing".into(),
+            memory_type: memory_type.into(),
+            content: "内容".into(),
+            keywords: keywords.into(),
+            relevance_score: relevance,
+            created_at: "2026-01-01".into(),
+            updated_at: "2026-01-01".into(),
+            last_hit_at: None,
+        }
+    }
+
+    #[test]
+    fn crud_roundtrip() {
+        let conn = test_conn();
+        let id = save_memory(&conn, "b1", "writing", "preference", "喜欢简洁文风", "文风,简洁")
+            .unwrap();
+        assert!(id > 0);
+
+        let list = get_memories(&conn, "b1", Some("writing"), Some("preference"), 10).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].content, "喜欢简洁文风");
+
+        update_memory(&conn, id, Some("喜欢华丽文风"), None, Some("decision")).unwrap();
+        let list = get_memories(&conn, "b1", None, None, 10).unwrap();
+        assert_eq!(list[0].content, "喜欢华丽文风");
+        assert_eq!(list[0].memory_type, "decision");
+
+        assert_eq!(count_memories(&conn, Some("b1")).unwrap(), 1);
+        delete_memory(&conn, id).unwrap();
+        assert_eq!(count_memories(&conn, Some("b1")).unwrap(), 0);
+
+        save_memory(&conn, "b1", "writing", "lesson", "避免长句", "长句").unwrap();
+        save_memory(&conn, "b1", "writing", "lesson", "避免倒装", "倒装").unwrap();
+        assert_eq!(clear_memories(&conn, "b1").unwrap(), 2);
+        assert_eq!(count_memories(&conn, None).unwrap(), 0);
+    }
+
+    #[test]
+    fn extract_keywords_rules() {
+        // 频率降序（同频按字典序）+ 停用词过滤 + 单字丢弃 + max_words 截断
+        let kw = extract_keywords("大纲很重要，大纲是核心，the end", 5);
+        assert_eq!(kw, vec!["end", "大纲很重要", "大纲是核心"]);
+        assert!(!kw.iter().any(|w| w == "the"), "停用词应被过滤: {kw:?}");
+
+        let single = extract_keywords("我 是 人", 5);
+        assert!(single.is_empty(), "单字段应丢弃: {single:?}");
+
+        let capped = extract_keywords("甲一 乙二 丙三 丁四", 2);
+        assert_eq!(capped.len(), 2, "应按 max_words 截断");
+    }
+
+    #[test]
+    fn score_memory_math() {
+        let user: std::collections::HashSet<String> = ["大纲".to_string()].into_iter().collect();
+
+        // 1 个关键词交集：1.0 × (1 + 0.3×1) × 1.2（preference）= 1.56
+        let s = score_memory(&mem("preference", "大纲,情节", 1.0), &user);
+        assert!((s - 1.56).abs() < 1e-9, "实际 {s}");
+
+        // 无交集：仅基础分 × 类型权重
+        let s2 = score_memory(&mem("preference", "无关", 1.0), &user);
+        assert!((s2 - 1.2).abs() < 1e-9, "实际 {s2}");
+
+        // 类型权重：decision 1.0 / lesson 0.8 / 未知 1.0
+        assert!((type_weight("decision") - 1.0).abs() < 1e-9);
+        assert!((type_weight("lesson") - 0.8).abs() < 1e-9);
+        assert!((type_weight("other") - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn retrieve_ranks_by_score_and_marks_hits() {
+        let conn = test_conn();
+        let pref_id = save_memory(&conn, "b1", "writing", "preference", "偏好内容", "大纲,情节")
+            .unwrap();
+        save_memory(&conn, "b1", "writing", "decision", "决策内容", "无关词").unwrap();
+        save_memory(&conn, "b1", "writing", "lesson", "经验内容", "无关词").unwrap();
+
+        let got = retrieve_memories(&conn, "b1", "writing", "大纲 设计", 600, 10);
+        assert_eq!(got.len(), 3, "得分 > 0 的记忆都应返回");
+        assert_eq!(got[0].memory_type, "preference", "关键词交集 + 类型权重应排第一");
+        assert_eq!(got[1].memory_type, "decision");
+        assert_eq!(got[2].memory_type, "lesson");
+
+        // 命中打点：返回的记忆 last_hit_at 已被更新
+        let hit: Option<String> = conn
+            .query_row(
+                "SELECT last_hit_at FROM memories WHERE id = ?1",
+                rusqlite::params![pref_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(hit.is_some(), "命中记忆应写入 last_hit_at");
+    }
+
+    #[test]
+    fn retrieve_respects_token_budget() {
+        let conn = test_conn();
+        // 内容 20 字 → 估算 10 token；预算 5 → 全部跳过
+        save_memory(&conn, "b1", "writing", "decision", &"字".repeat(20), "大纲").unwrap();
+        let got = retrieve_memories(&conn, "b1", "writing", "大纲", 5, 10);
+        assert!(got.is_empty(), "超出 token 预算的记忆应被裁剪");
+
+        let got = retrieve_memories(&conn, "b1", "writing", "大纲", 600, 10);
+        assert_eq!(got.len(), 1);
+    }
+
+    #[test]
+    fn memory_prompt_format_and_empty() {
+        let conn = test_conn();
+        assert_eq!(memory_prompt(&conn, "b1", "writing", "任意消息"), "");
+
+        save_memory(&conn, "b1", "writing", "preference", "喜欢短句", "短句").unwrap();
+        let p = memory_prompt(&conn, "b1", "writing", "短句");
+        assert!(p.contains("## 历史记忆"));
+        assert!(p.contains("[偏好] 喜欢短句"));
+    }
+
+    #[test]
+    fn prune_enforces_group_limit_and_expiry() {
+        let conn = test_conn();
+        // 分组上限 60：插入 65 条 → 淘汰 5 条
+        for i in 0..65 {
+            save_memory(&conn, "b1", "writing", "lesson", &format!("记忆{i}"), "k").unwrap();
+        }
+        let removed = prune_memories(&conn, "b1", "writing").unwrap();
+        assert_eq!(removed, 5);
+        assert_eq!(count_memories(&conn, Some("b1")).unwrap(), 60);
+
+        // 过期清理：updated_at 200 天前且从未命中 → 删除
+        let id = save_memory(&conn, "b1", "writing", "lesson", "陈旧记忆", "k").unwrap();
+        conn.execute(
+            "UPDATE memories SET updated_at = datetime('now', 'localtime', '-200 days') WHERE id = ?1",
+            rusqlite::params![id],
+        )
+        .unwrap();
+        let removed = prune_memories(&conn, "b1", "writing").unwrap();
+        assert_eq!(removed, 1, "180 天未命中的记忆应过期删除");
+        assert_eq!(count_memories(&conn, Some("b1")).unwrap(), 60);
+    }
+
+    #[test]
+    fn extract_and_save_keyword_driven() {
+        let conn = test_conn();
+        // 用户侧命中「喜欢」→ preference；助手侧命中「建议」→ lesson
+        let saved = extract_and_save(
+            &conn,
+            "b1",
+            "writing",
+            "我喜欢简洁有力的文风",
+            "建议你注意节奏，避免拖沓。",
+        )
+        .unwrap();
+        assert_eq!(saved, 2);
+
+        let prefs = get_memories(&conn, "b1", None, Some("preference"), 10).unwrap();
+        assert_eq!(prefs.len(), 1);
+        assert!(prefs[0].content.contains("喜欢简洁有力的文风"));
+        let lessons = get_memories(&conn, "b1", None, Some("lesson"), 10).unwrap();
+        assert_eq!(lessons.len(), 1);
+        assert!(lessons[0].content.contains("建议"));
+
+        // 无关键词命中 → 不保存
+        let saved = extract_and_save(&conn, "b1", "writing", "今天天气不错", "嗯嗯。").unwrap();
+        assert_eq!(saved, 0);
+    }
 }

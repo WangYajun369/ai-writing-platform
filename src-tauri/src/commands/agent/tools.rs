@@ -337,3 +337,247 @@ fn tool_get_book_context(conn: &Connection, args: &Value) -> Result<String, AppE
 
     Ok(parts.join("\n"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 与生产 schema 一致的 books / chapters / world_cards 表（db/mod.rs 同款 DDL）
+    fn test_conn() -> Connection {
+        let conn = Connection::open_in_memory().expect("open memory db");
+        conn.execute_batch(
+            r#"
+            CREATE TABLE books (
+                id TEXT PRIMARY KEY, title TEXT NOT NULL, author TEXT NOT NULL DEFAULT '',
+                description TEXT NOT NULL DEFAULT '', cover_image TEXT,
+                word_count INTEGER NOT NULL DEFAULT 0, daily_target INTEGER NOT NULL DEFAULT 0,
+                today_count INTEGER NOT NULL DEFAULT 0, db_path TEXT NOT NULL DEFAULT '',
+                tags TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                deleted_at TEXT, outline TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE chapters (
+                id TEXT PRIMARY KEY, book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                volume_id TEXT, title TEXT NOT NULL, content_html TEXT NOT NULL DEFAULT '',
+                word_count INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'draft',
+                sort_order INTEGER NOT NULL DEFAULT 0, deleted_at TEXT,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                summary TEXT, summary_at TEXT, outline TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE world_cards (
+                id TEXT PRIMARY KEY, book_id TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'misc',
+                title TEXT NOT NULL, content TEXT NOT NULL DEFAULT '',
+                content_html TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '[]',
+                vectorized INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            "#,
+        )
+        .expect("create test schema");
+        conn.execute(
+            "INSERT INTO books (id, title, created_at, updated_at) VALUES ('b1', '测试书', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+        // c1：有摘要的短章；c2：无摘要的长章（5000 字，供分页测试）；c3：已删除章节
+        conn.execute(
+            "INSERT INTO chapters (id, book_id, title, content_html, sort_order, created_at, updated_at, summary)
+             VALUES ('c1', 'b1', '第一章', '<p>正文一</p>', 0, '2026-01-01', '2026-01-01', '本章摘要')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO chapters (id, book_id, title, content_html, sort_order, created_at, updated_at)
+             VALUES ('c2', 'b1', '第二章', ?1, 1, '2026-01-01', '2026-01-01')",
+            rusqlite::params!["字".repeat(5000)],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO chapters (id, book_id, title, sort_order, deleted_at, created_at, updated_at)
+             VALUES ('c3', 'b1', '已删章', 2, '2026-01-02', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO world_cards (id, book_id, type, title, content, created_at, updated_at)
+             VALUES ('w1', 'b1', 'char', '林雪', '冷静的女剑客', '2026-01-01', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn skill_tool_mapping_and_schemas() {
+        assert_eq!(tools_for_skill("polish").len(), 3);
+        assert_eq!(tools_for_skill("research").len(), 4);
+        // 未知 skill 回退默认五工具
+        assert_eq!(tools_for_skill("no_such").len(), 5);
+        // 每个映射工具都必须有 schema 定义
+        for skill in ["writing", "analysis", "research", "polish"] {
+            for name in tools_for_skill(skill) {
+                assert!(tool_schema(name).is_some(), "{skill} 的工具 {name} 缺少 schema");
+            }
+        }
+        // schema 结构符合 OpenAI function calling 契约
+        let schemas = build_tools_schema("research");
+        assert_eq!(schemas.len(), 4);
+        for s in &schemas {
+            assert_eq!(s["type"], "function");
+            assert!(s["function"]["name"].as_str().is_some());
+            assert_eq!(s["function"]["parameters"]["type"], "object");
+        }
+    }
+
+    #[test]
+    fn clamp_truncates_long_results() {
+        let short = "短内容";
+        assert_eq!(clamp(short), short);
+
+        let long = "字".repeat(MAX_TOOL_CONTENT_CHARS + 10);
+        let out = clamp(&long);
+        assert!(out.starts_with(&"字".repeat(MAX_TOOL_CONTENT_CHARS)));
+        assert!(out.contains("已截断"));
+        // 截断后长度 = 上限 + 截断标记
+        assert_eq!(
+            out.chars().count(),
+            MAX_TOOL_CONTENT_CHARS + "\n...[内容过长，已截断]".chars().count()
+        );
+    }
+
+    #[test]
+    fn unknown_tool_rejected() {
+        let conn = test_conn();
+        let err = execute_tool(&conn, "delete_everything", &serde_json::json!({})).unwrap_err();
+        assert!(err.to_string().contains("未知工具"), "{err}");
+    }
+
+    #[test]
+    fn read_chapter_full_and_summary_preview() {
+        let conn = test_conn();
+        // 有摘要：标题 + 摘要 + 正文
+        let out = execute_tool(
+            &conn,
+            "read_chapter",
+            &serde_json::json!({"book_id": "b1", "chapter_id": "c1"}),
+        )
+        .unwrap();
+        assert!(out.contains("# 第一章"));
+        assert!(out.contains("摘要：本章摘要"));
+        assert!(out.contains("<p>正文一</p>"));
+
+        // 无摘要：回退 500 字内容预览
+        let out = execute_tool(
+            &conn,
+            "read_chapter_summary",
+            &serde_json::json!({"book_id": "b1", "chapter_id": "c2"}),
+        )
+        .unwrap();
+        assert!(out.contains("内容预览（前500字）"));
+
+        // 不存在的章节
+        let err = execute_tool(
+            &conn,
+            "read_chapter",
+            &serde_json::json!({"book_id": "b1", "chapter_id": "nope"}),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("不存在"), "{err}");
+    }
+
+    #[test]
+    fn read_chapter_chunk_paging_and_bounds() {
+        let conn = test_conn();
+        // 5000 字 / 2000 = 3 段；首页含导航提示
+        let out = execute_tool(
+            &conn,
+            "read_chapter_chunk",
+            &serde_json::json!({"book_id": "b1", "chapter_id": "c2", "chunk_index": 0}),
+        )
+        .unwrap();
+        assert!(out.contains("第 1 / 3 段"), "{out}");
+        assert!(out.contains("chunk_index=1"), "应提示下一段: {out}");
+
+        // 末页不再有导航提示
+        let out = execute_tool(
+            &conn,
+            "read_chapter_chunk",
+            &serde_json::json!({"book_id": "b1", "chapter_id": "c2", "chunk_index": 2}),
+        )
+        .unwrap();
+        assert!(out.contains("第 3 / 3 段"));
+        assert!(!out.contains("还有"), "末段不应有续读提示");
+
+        // 越界返回结构化错误（非 Err）
+        let out = execute_tool(
+            &conn,
+            "read_chapter_chunk",
+            &serde_json::json!({"book_id": "b1", "chapter_id": "c2", "chunk_index": 9}),
+        )
+        .unwrap();
+        assert!(out.contains("chunk_index 超出范围"), "{out}");
+        assert!(out.contains("\"total_chunks\":3"), "{out}");
+
+        // chunk_size 下限 100：5000 / 100 = 50 段
+        let out = execute_tool(
+            &conn,
+            "read_chapter_chunk",
+            &serde_json::json!({"book_id": "b1", "chapter_id": "c2", "chunk_index": 0, "chunk_size": 10}),
+        )
+        .unwrap();
+        assert!(out.contains("第 1 / 50 段"), "{out}");
+    }
+
+    #[test]
+    fn list_chapters_excludes_deleted() {
+        let conn = test_conn();
+        let out = execute_tool(
+            &conn,
+            "list_book_chapters",
+            &serde_json::json!({"book_id": "b1"}),
+        )
+        .unwrap();
+        let list: Vec<Value> = serde_json::from_str(&out).unwrap();
+        assert_eq!(list.len(), 2, "已删除章节不应列出: {out}");
+        assert!(out.contains("第一章"));
+        assert!(!out.contains("已删章"));
+    }
+
+    #[test]
+    fn search_world_cards_like_fallback() {
+        let conn = test_conn(); // 无 FTS5 表 → search_fts5 失败 → 降级 LIKE
+        let out = execute_tool(
+            &conn,
+            "search_world_cards",
+            &serde_json::json!({"book_id": "b1", "query": "林雪"}),
+        )
+        .unwrap();
+        let obj: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(obj["total"], 1);
+        assert_eq!(obj["cards"][0]["name"], "林雪");
+
+        // 无命中
+        let out = execute_tool(
+            &conn,
+            "search_world_cards",
+            &serde_json::json!({"book_id": "b1", "query": "不存在的人"}),
+        )
+        .unwrap();
+        let obj: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(obj["total"], 0);
+    }
+
+    #[test]
+    fn get_book_context_overview() {
+        let conn = test_conn();
+        let out = execute_tool(
+            &conn,
+            "get_book_context",
+            &serde_json::json!({"book_id": "b1"}),
+        )
+        .unwrap();
+        assert!(out.contains("《测试书》"));
+        assert!(out.contains("第一章: 本章摘要"));
+        assert!(out.contains("第二章: (无摘要)"));
+        assert!(out.contains("[char] 林雪: 冷静的女剑客"));
+    }
+}
