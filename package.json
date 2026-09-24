@@ -14,6 +14,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "check": "node scripts/check.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "check-versions": "npx tsx scripts/check-npm-versions.ts",
     "check-rust-versions": "npx tsx scripts/check-rust-versions.ts",
     "node": "npx tsx scripts/node-manager.ts",
@@ -70,14 +73,20 @@
     "@tailwindcss/typography": "^0.5.20",
     "@tailwindcss/vite": "^4.3.0",
     "@tauri-apps/cli": "^2.11.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@types/katex": "^0.16.8",
     "@types/node": "^25.9.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
+    "@vitest/coverage-v8": "^5.0.1",
     "esbuild": "^0.28.0",
+    "jsdom": "^30.1.1",
     "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3",
-    "vite": "^8.0.16"
+    "vite": "^8.0.16",
+    "vitest": "^5.0.1"
   }
 }
