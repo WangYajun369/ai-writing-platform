@@ -116,6 +116,40 @@ fn is_retryable_error(error: &str) -> bool {
         || lower.contains("读取超时")
 }
 
+/// SSE 单帧解析结果（纯数据，不触碰事件发射）
+#[derive(Debug, Default, PartialEq)]
+struct SseFrame {
+    /// 正文增量（choices[0].delta.content）
+    content_delta: Option<String>,
+    /// 思考增量（choices[0].delta.reasoning_content，DeepSeek 思考模式）
+    reasoning_delta: Option<String>,
+    /// usage 统计（prompt_tokens, completion_tokens）
+    usage: Option<(u32, u32)>,
+}
+
+/// 解析 SSE data 帧 JSON，提取正文/思考增量与 usage（纯函数，可单测）
+fn parse_sse_frame(data: &serde_json::Value) -> SseFrame {
+    let usage = data["usage"].as_object().map(|u| {
+        let prompt_tokens = u.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        let completion_tokens = u
+            .get("completion_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+        (prompt_tokens, completion_tokens)
+    });
+    let reasoning_delta = data["choices"][0]["delta"]["reasoning_content"]
+        .as_str()
+        .map(str::to_string);
+    let content_delta = data["choices"][0]["delta"]["content"]
+        .as_str()
+        .map(str::to_string);
+    SseFrame {
+        content_delta,
+        reasoning_delta,
+        usage,
+    }
+}
+
 /// 刷新 SSE buffer 中的残留数据（流中断或正常结束时调用）
 fn flush_sse_buffer(
     accumulated: &mut String,
@@ -134,19 +168,15 @@ fn flush_sse_buffer(
         return;
     }
     if let Ok(data) = serde_json::from_str::<serde_json::Value>(json_str) {
-        if let Some(u) = data["usage"].as_object() {
-            let prompt_tokens = u.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-            let completion_tokens = u
-                .get("completion_tokens")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0) as u32;
-            *sse_usage = Some((prompt_tokens, completion_tokens));
+        let frame = parse_sse_frame(&data);
+        if let Some(u) = frame.usage {
+            *sse_usage = Some(u);
         }
-        if let Some(reasoning) = data["choices"][0]["delta"]["reasoning_content"].as_str() {
-            accumulated_thinking.push_str(reasoning);
+        if let Some(reasoning) = frame.reasoning_delta {
+            accumulated_thinking.push_str(&reasoning);
         }
-        if let Some(delta) = data["choices"][0]["delta"]["content"].as_str() {
-            accumulated.push_str(delta);
+        if let Some(delta) = frame.content_delta {
+            accumulated.push_str(&delta);
             let _ = app.emit(
                 "ai-stream-chunk",
                 StreamEvent {
@@ -387,35 +417,30 @@ async fn sse_loop_inner(
 
             match serde_json::from_str::<serde_json::Value>(json_str) {
                 Ok(data) => {
-                    if let Some(u) = data["usage"].as_object() {
-                        let prompt_tokens =
-                            u.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                        let completion_tokens = u
-                            .get("completion_tokens")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0) as u32;
+                    let frame = parse_sse_frame(&data);
+                    if let Some((prompt_tokens, completion_tokens)) = frame.usage {
                         sse_usage = Some((prompt_tokens, completion_tokens));
                         // KV Cache 命中统计（DeepSeek 自动启用，无需配置）
                         // 参考：https://api-docs.deepseek.com/zh-cn/guides/kv_cache
-                        if let (Some(hit), Some(miss)) = (
-                            u.get("prompt_cache_hit_tokens").and_then(|v| v.as_u64()),
-                            u.get("prompt_cache_miss_tokens").and_then(|v| v.as_u64()),
-                        ) {
-                            if hit > 0 {
-                                eprintln!(
-                                    "[KV Cache] 命中: {} tokens, 未命中: {} tokens, 命中率: {:.1}%",
-                                    hit,
-                                    miss,
-                                    hit as f64 / (hit + miss).max(1) as f64 * 100.0
-                                );
+                        if let Some(u) = data["usage"].as_object() {
+                            if let (Some(hit), Some(miss)) = (
+                                u.get("prompt_cache_hit_tokens").and_then(|v| v.as_u64()),
+                                u.get("prompt_cache_miss_tokens").and_then(|v| v.as_u64()),
+                            ) {
+                                if hit > 0 {
+                                    eprintln!(
+                                        "[KV Cache] 命中: {} tokens, 未命中: {} tokens, 命中率: {:.1}%",
+                                        hit,
+                                        miss,
+                                        hit as f64 / (hit + miss).max(1) as f64 * 100.0
+                                    );
+                                }
                             }
                         }
                     }
 
-                    if let Some(reasoning) =
-                        data["choices"][0]["delta"]["reasoning_content"].as_str()
-                    {
-                        accumulated_thinking.push_str(reasoning);
+                    if let Some(reasoning) = frame.reasoning_delta {
+                        accumulated_thinking.push_str(&reasoning);
                         let _ = app.emit(
                             "ai-stream-chunk",
                             StreamEvent {
@@ -431,8 +456,8 @@ async fn sse_loop_inner(
 
                     // 与 Agent 引擎推送 delta 增量不同：本事件 content 字段携带
                     // 的是累积后的完整文本，前端应整段替换正文而不是追加。
-                    if let Some(delta) = data["choices"][0]["delta"]["content"].as_str() {
-                        accumulated.push_str(delta);
+                    if let Some(delta) = frame.content_delta {
+                        accumulated.push_str(&delta);
                         if phase == "thinking" {
                             phase = "answering";
                         }
@@ -491,4 +516,129 @@ async fn sse_loop_inner(
     );
 
     Ok(accumulated)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── is_retryable_error ──
+
+    /// 网络抖动/临时性错误可重试
+    #[test]
+    fn retryable_errors_are_detected() {
+        let retryable = [
+            "request timeout",
+            "连接超时",
+            "connection refused",
+            "network unreachable",
+            "unexpected EOF",
+            "connection reset by peer",
+            "broken pipe",
+            "HTTP 500 Internal Server Error",
+            "HTTP 502 Bad Gateway",
+            "503 Service Unavailable",
+            "504 Gateway Timeout",
+            "too many requests",
+            "HTTP 429",
+            "AI 返回空内容",
+            "读取超时",
+            "temporarily unavailable",
+        ];
+        for e in retryable {
+            assert!(is_retryable_error(e), "应判定为可重试: {e}");
+        }
+    }
+
+    /// 认证/权限/参数类永久性错误不重试（避免无效重试消耗配额）
+    #[test]
+    fn permanent_errors_are_not_retried() {
+        let permanent = [
+            "HTTP 401 Unauthorized: invalid api key",
+            "HTTP 403 Forbidden",
+            "Authentication Fails, Your api key is invalid",
+            "HTTP 400 Bad Request: model not exist",
+            " insufficient balance ",
+        ];
+        for e in permanent {
+            assert!(!is_retryable_error(e), "不应重试: {e}");
+        }
+    }
+
+    // ── get_error_message ──
+
+    /// Business/Http/General 提取原始消息（避免 Display 前缀重复包装）
+    #[test]
+    fn error_message_unwraps_known_variants() {
+        assert_eq!(
+            get_error_message(&AppError::Business("原始错误".into())),
+            "原始错误"
+        );
+        assert_eq!(
+            get_error_message(&AppError::Http("http 层错误".into())),
+            "http 层错误"
+        );
+        assert_eq!(
+            get_error_message(&AppError::General("一般错误".into())),
+            "一般错误"
+        );
+        // 其他变体走 Display
+        let v = get_error_message(&AppError::Validation("校验失败".into()));
+        assert!(v.contains("校验失败"), "{v}");
+    }
+
+    // ── parse_sse_frame ──
+
+    /// 正文增量帧：仅 content_delta
+    #[test]
+    fn frame_parses_content_delta() {
+        let data = serde_json::json!({
+            "choices": [{"delta": {"content": "你好"}}]
+        });
+        let frame = parse_sse_frame(&data);
+        assert_eq!(frame.content_delta.as_deref(), Some("你好"));
+        assert_eq!(frame.reasoning_delta, None);
+        assert_eq!(frame.usage, None);
+    }
+
+    /// 思考增量帧（DeepSeek 思考模式）
+    #[test]
+    fn frame_parses_reasoning_delta() {
+        let data = serde_json::json!({
+            "choices": [{"delta": {"reasoning_content": "让我想想"}}]
+        });
+        let frame = parse_sse_frame(&data);
+        assert_eq!(frame.reasoning_delta.as_deref(), Some("让我想想"));
+        assert_eq!(frame.content_delta, None);
+    }
+
+    /// usage 帧：prompt/completion tokens 提取；缺字段归 0
+    #[test]
+    fn frame_parses_usage() {
+        let data = serde_json::json!({
+            "choices": [{"delta": {}}],
+            "usage": {"prompt_tokens": 120, "completion_tokens": 34}
+        });
+        let frame = parse_sse_frame(&data);
+        assert_eq!(frame.usage, Some((120, 34)));
+
+        let partial = serde_json::json!({"usage": {"prompt_tokens": 7}});
+        assert_eq!(parse_sse_frame(&partial).usage, Some((7, 0)));
+    }
+
+    /// 空 delta / 角色帧 / 缺 choices 均不 panic 且返回空帧
+    #[test]
+    fn frame_tolerates_empty_and_malformed() {
+        assert_eq!(parse_sse_frame(&serde_json::json!({})), SseFrame::default());
+        assert_eq!(
+            parse_sse_frame(&serde_json::json!({"choices": [{"delta": {}}]})),
+            SseFrame::default()
+        );
+        assert_eq!(
+            parse_sse_frame(
+                &serde_json::json!({"choices": [{"delta": {"role": "assistant"}}]})
+            ),
+            SseFrame::default()
+        );
+    }
 }

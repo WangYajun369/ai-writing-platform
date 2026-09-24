@@ -1,5 +1,17 @@
 # 更新日志
 
+## Unreleased
+
+### 修复
+- **Agent 记忆检索静默失效**：`get_memories` 将 limit 数字直接拼接在 `LIMIT ?` 占位符后（形成 `?10`/`?50` 编号占位符），触发 `InvalidParameterCount`；调用方 `unwrap_or_default` 吞掉错误使记忆检索长期返回空——Agent 记忆注入实际从未生效。已改为统一编号占位符 + limit 参数绑定，并以单测锁定回归（`memory.rs`）
+
+### 工程
+- **DB 结构版本化**：引入 `PRAGMA user_version`（`SCHEMA_VERSION=1`）——启动读取版本、高于支持版本拒绝启动（`E_DB_VERSION` 防降级误写）、幂等 DDL 对齐后写回版本号；预留 `run_versioned_migrations` 分发框架（`db/mod.rs`，+3 测试）
+- **backup.rs 拆分**：2911 行单文件拆为 `commands/io/backup/` 目录 7 文件（types / export / import / import_log / reconcile / rollback / mod），28 项 io 测试原样保留、零警告
+- **子窗口权限修复**：新增 `capabilities/sub-windows.json`，补齐 debug / diary-book 窗口最小权限——修复调试控制台 `listen('debug-log')` 被 core:event 默认拒绝导致事件流静默失效的问题
+- **AI SSE 解析去重**：提取纯函数 `parse_sse_frame`（content / reasoning / usage 三要素提取），主循环与 `flush_sse_buffer` 两处重复解析逻辑收敛为一处
+- **测试体系建立**：Rust 测试 32 → 80 项（db 版本化 +3、Agent 全链路 +25、task_service 纯函数与防环校验 +13、ai/chat SSE 解析与重试判定 +7）；前端引入 Vitest + jsdom + Testing Library（`pnpm test`，首批 19 项覆盖 tauri-bridge 契约 / preferencesStore / uiAtoms）
+
 ## v1.7.0 (2026-09-05) — 数据备份与导入导出 v2
 
 ### 新增

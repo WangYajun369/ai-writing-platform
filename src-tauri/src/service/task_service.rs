@@ -1162,3 +1162,294 @@ pub fn get_today_overview(app: &AppHandle, db: &AppDb) -> Result<TodayOverview, 
         badge: undone_due,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+
+    // ── 纯校验函数 ──
+
+    /// 三态/三档白名单校验
+    #[test]
+    fn status_and_priority_whitelist() {
+        for s in ["todo", "doing", "done"] {
+            assert!(valid_status(s));
+        }
+        for s in ["", "TODO", "archived", " doing"] {
+            assert!(!valid_status(s), "{s:?} 不应通过");
+        }
+        for p in ["high", "medium", "low"] {
+            assert!(valid_priority(p));
+        }
+        for p in ["", "HIGH", "urgent"] {
+            assert!(!valid_priority(p), "{p:?} 不应通过");
+        }
+    }
+
+    /// 空串/纯空白归一为 None；有效值去首尾空白
+    #[test]
+    fn norm_opt_normalizes_blank() {
+        assert_eq!(norm_opt(None).unwrap(), None);
+        assert_eq!(norm_opt(Some(String::new())).unwrap(), None);
+        assert_eq!(norm_opt(Some("   ".into())).unwrap(), None);
+        assert_eq!(
+            norm_opt(Some("  2026-09-24 10:00  ".into())).unwrap(),
+            Some("2026-09-24 10:00".to_string())
+        );
+    }
+
+    /// 开始时间 ≤ 截止时间；任一侧为空跳过校验
+    #[test]
+    fn time_range_validation() {
+        assert!(check_time_range(&None, &None).is_ok());
+        assert!(check_time_range(&Some("2026-09-24".into()), &None).is_ok());
+        assert!(check_time_range(
+            &Some("2026-09-24 08:00".into()),
+            &Some("2026-09-24 18:00".into())
+        )
+        .is_ok());
+        let err = check_time_range(
+            &Some("2026-09-25".into()),
+            &Some("2026-09-24".into()),
+        );
+        assert!(err.is_err(), "开始晚于截止应报错");
+    }
+
+    // ── 重复规则计算 ──
+
+    fn d(s: &str) -> NaiveDate {
+        NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+    }
+
+    /// daily：锚点 + interval 天
+    #[test]
+    fn recur_daily() {
+        assert_eq!(
+            next_recur_date(r#"{"freq":"daily"}"#, "2026-09-24"),
+            Some(d("2026-09-25"))
+        );
+        assert_eq!(
+            next_recur_date(r#"{"freq":"daily","interval":3}"#, "2026-09-24"),
+            Some(d("2026-09-27"))
+        );
+        // 跨月
+        assert_eq!(
+            next_recur_date(r#"{"freq":"daily","interval":2}"#, "2026-09-30"),
+            Some(d("2026-10-02"))
+        );
+    }
+
+    /// weekly：weekdays 为空 → +interval×7 天；非空 → 相位周内首个命中周几
+    #[test]
+    fn recur_weekly() {
+        // 2026-09-24 是周四
+        assert_eq!(
+            next_recur_date(r#"{"freq":"weekly"}"#, "2026-09-24"),
+            Some(d("2026-10-01"))
+        );
+        // weekdays=[5]（周五），interval=1 → 次日周五
+        assert_eq!(
+            next_recur_date(r#"{"freq":"weekly","weekdays":[5]}"#, "2026-09-24"),
+            Some(d("2026-09-25"))
+        );
+        // weekdays=[4]（周四，与锚点同周几），interval=1 → 下周周四
+        assert_eq!(
+            next_recur_date(r#"{"freq":"weekly","weekdays":[4]}"#, "2026-09-24"),
+            Some(d("2026-10-01"))
+        );
+        // interval=2 + weekdays=[1]（周一）→ 第 2 周相位内的周一：锚点周四 → lo=8,hi=14，
+        // 9-24+8=10-02(周五)…10-05(周一) 命中
+        assert_eq!(
+            next_recur_date(
+                r#"{"freq":"weekly","interval":2,"weekdays":[1]}"#,
+                "2026-09-24"
+            ),
+            Some(d("2026-10-05"))
+        );
+    }
+
+    /// monthly：monthDays 多日取最早晚于锚点者；日号超当月取月末
+    #[test]
+    fn recur_monthly() {
+        // monthDays=[15,20]，锚点 9-16 → 当月 20 日
+        assert_eq!(
+            next_recur_date(
+                r#"{"freq":"monthly","monthDays":[15,20]}"#,
+                "2026-09-16"
+            ),
+            Some(d("2026-09-20"))
+        );
+        // 锚点 9-20（含当天不算，须晚于锚点）→ 下月 15 日
+        assert_eq!(
+            next_recur_date(
+                r#"{"freq":"monthly","monthDays":[15,20]}"#,
+                "2026-09-20"
+            ),
+            Some(d("2026-10-15"))
+        );
+        // 旧版 monthDay=31，锚点 1-31 → 2 月取月末（2026 平年 28 日）
+        assert_eq!(
+            next_recur_date(r#"{"freq":"monthly","monthDay":31}"#, "2026-01-31"),
+            Some(d("2026-02-28"))
+        );
+        // 缺省 monthDays → 锚点日；锚点 1-31 → 2-28
+        assert_eq!(
+            next_recur_date(r#"{"freq":"monthly"}"#, "2026-01-31"),
+            Some(d("2026-02-28"))
+        );
+        // interval=2：当月无更晚命中 → 隔月命中（monthDays=[10]，锚点 9-16 → 11-10）
+        assert_eq!(
+            next_recur_date(
+                r#"{"freq":"monthly","interval":2,"monthDays":[10]}"#,
+                "2026-09-16"
+            ),
+            Some(d("2026-11-10"))
+        );
+    }
+
+    /// 无效规则返回 None（不生成下一期）
+    #[test]
+    fn recur_invalid_rules() {
+        assert_eq!(next_recur_date("not json", "2026-09-24"), None);
+        assert_eq!(next_recur_date(r#"{"freq":"yearly"}"#, "2026-09-24"), None);
+        assert_eq!(next_recur_date(r#"{"freq":"daily"}"#, "bad-date"), None);
+        assert_eq!(next_recur_date(r"{}", "2026-09-24"), None);
+    }
+
+    /// advance_month：跨年推进 + 月末钳制 + 闰年
+    #[test]
+    fn advance_month_edge_cases() {
+        assert_eq!(
+            advance_month(d("2026-12-15"), 20, 1),
+            Some(d("2027-01-20"))
+        );
+        // 1-31 推进 1 月 → 2 月月末（平年 28）
+        assert_eq!(
+            advance_month(d("2026-01-31"), 31, 1),
+            Some(d("2026-02-28"))
+        );
+        // 闰年 2024：1-31 → 2-29
+        assert_eq!(
+            advance_month(d("2024-01-31"), 31, 1),
+            Some(d("2024-02-29"))
+        );
+        // 4-30 推进 12 个月 → 次年 4-30
+        assert_eq!(
+            advance_month(d("2026-04-30"), 30, 12),
+            Some(d("2027-04-30"))
+        );
+    }
+
+    // ── resolve_parent_id（内存库） ──
+
+    /// 建最小 tasks 表（列与生产一致，FK 关闭便于独立测试）
+    fn setup_tasks_conn() -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE tasks (
+                id              TEXT PRIMARY KEY,
+                project_id      TEXT NOT NULL,
+                parent_id       TEXT,
+                title           TEXT NOT NULL,
+                description     TEXT NOT NULL DEFAULT '',
+                status          TEXT NOT NULL DEFAULT 'todo',
+                priority        TEXT NOT NULL DEFAULT 'medium',
+                plan_start_time TEXT,
+                due_time        TEXT,
+                planned_today   INTEGER NOT NULL DEFAULT 0,
+                completed_time  TEXT,
+                note            TEXT NOT NULL DEFAULT '',
+                remind_at       TEXT,
+                remind_type     TEXT NOT NULL DEFAULT '',
+                recurrence      TEXT NOT NULL DEFAULT '',
+                note_html       TEXT NOT NULL DEFAULT '',
+                completion_summary TEXT NOT NULL DEFAULT '',
+                started_at      TEXT,
+                work_seconds    INTEGER NOT NULL DEFAULT 0,
+                sort_order      INTEGER NOT NULL DEFAULT 0,
+                deleted_at      TEXT,
+                created_at      TEXT NOT NULL,
+                updated_at      TEXT NOT NULL
+            );",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn insert_task(conn: &rusqlite::Connection, id: &str, project: &str, parent: Option<&str>) {
+        conn.execute(
+            "INSERT INTO tasks (id, project_id, parent_id, title, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, '2026-09-24 10:00:00', '2026-09-24 10:00:00')",
+            rusqlite::params![id, project, parent, format!("任务{id}")],
+        )
+        .unwrap();
+    }
+
+    /// 空值/空串 → None（顶层任务）
+    #[test]
+    fn parent_none_for_blank() {
+        let conn = setup_tasks_conn();
+        assert_eq!(
+            resolve_parent_id(&conn, None, "p1", None).unwrap(),
+            None
+        );
+        assert_eq!(
+            resolve_parent_id(&conn, None, "p1", Some("  ".into())).unwrap(),
+            None
+        );
+    }
+
+    /// 合法父任务：同项目、未删除 → Some
+    #[test]
+    fn parent_accepts_valid() {
+        let conn = setup_tasks_conn();
+        insert_task(&conn, "A", "p1", None);
+        assert_eq!(
+            resolve_parent_id(&conn, None, "p1", Some("A".into())).unwrap(),
+            Some("A".to_string())
+        );
+    }
+
+    /// 拒绝：自己作为父任务
+    #[test]
+    fn parent_rejects_self() {
+        let conn = setup_tasks_conn();
+        insert_task(&conn, "A", "p1", None);
+        let err = resolve_parent_id(&conn, Some("A"), "p1", Some("A".into()));
+        assert!(err.is_err());
+        assert!(err.unwrap_err().to_string().contains("自己"));
+    }
+
+    /// 拒绝：后代作为父任务（防环）—— A→B→C 链上，A 不能挂到 C 下
+    #[test]
+    fn parent_rejects_descendant_cycle() {
+        let conn = setup_tasks_conn();
+        insert_task(&conn, "A", "p1", None);
+        insert_task(&conn, "B", "p1", Some("A"));
+        insert_task(&conn, "C", "p1", Some("B"));
+        let err = resolve_parent_id(&conn, Some("A"), "p1", Some("C".into()));
+        assert!(err.is_err());
+        assert!(err.unwrap_err().to_string().contains("循环"));
+    }
+
+    /// 拒绝：父任务不存在 / 已删除 / 跨项目
+    #[test]
+    fn parent_rejects_invalid_target() {
+        let conn = setup_tasks_conn();
+        insert_task(&conn, "A", "p1", None);
+        insert_task(&conn, "X", "p2", None);
+        // 不存在
+        assert!(resolve_parent_id(&conn, None, "p1", Some("ghost".into())).is_err());
+        // 跨项目
+        let err = resolve_parent_id(&conn, None, "p1", Some("X".into()));
+        assert!(err.unwrap_err().to_string().contains("同一项目"));
+        // 已删除（deleted_at 非空 → find_active 查不到）
+        conn.execute(
+            "UPDATE tasks SET deleted_at='2026-09-24 11:00:00' WHERE id='A'",
+            [],
+        )
+        .unwrap();
+        assert!(resolve_parent_id(&conn, None, "p1", Some("A".into())).is_err());
+    }
+}
