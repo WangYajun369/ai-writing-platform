@@ -1,7 +1,12 @@
 //! TimeWrite 数据库模块
 //!
 //! 基于 rusqlite + r2d2 连接池，WAL 模式 + 外键约束。
-//! 管理 7 张表：books / volumes / chapters / snapshots / world_cards / embeddings / memories。
+//! 管理 24 张业务表 + 2 个 FTS5 虚拟表（触发器同步）+ sqlite-vec KNN 镜像表。
+//!
+//! 结构版本治理：以 `PRAGMA user_version` 记录结构版本（[`SCHEMA_VERSION`]）。
+//! 现有 DDL 全部幂等（`CREATE TABLE IF NOT EXISTS` + `safe_add_column`），
+//! 启动即自动对齐；无法幂等表达的演进走 [`AppDb::run_versioned_migrations`] 逐级分发。
+//! 旧库（v1.7.0 之前）`user_version = 0`，视为基线版本；高于当前支持的版本拒绝启动（防降级误写）。
 
 pub mod schema;
 
@@ -73,6 +78,27 @@ impl ManageConnection for SqliteConnectionManager {
     }
 }
 
+/// 数据库结构版本号（`PRAGMA user_version`）。
+///
+/// - `0`：v1.7.0 之前的旧库（无版本标记），首次启动时由幂等 DDL 对齐后升为当前版本；
+/// - 高于当前值：拒绝启动（`E_DB_VERSION`），防止旧版本应用降级误写新结构；
+/// - 新增非幂等迁移时在 [`AppDb::run_versioned_migrations`] 追加分支并递增本常量。
+pub const SCHEMA_VERSION: u32 = 1;
+
+/// 读取当前数据库结构版本（`PRAGMA user_version`）
+fn user_version(conn: &Connection) -> anyhow::Result<u32> {
+    let v: i64 = conn
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .context("读取 PRAGMA user_version 失败")?;
+    Ok(v as u32)
+}
+
+/// 写入数据库结构版本（`PRAGMA user_version`，DDL 级别提交，不受事务影响）
+fn set_user_version(conn: &Connection, version: u32) -> anyhow::Result<()> {
+    conn.execute_batch(&format!("PRAGMA user_version = {}", version))
+        .context("写入 PRAGMA user_version 失败")
+}
+
 /// 执行 ALTER TABLE ADD COLUMN，若列已存在则跳过，其他错误向上传播
 ///
 /// 返回值：`true` = 本次实际新增了该列；`false` = 列已存在（跳过）
@@ -126,12 +152,27 @@ impl AppDb {
         Ok(db)
     }
 
-    /// 执行数据库自动迁移：启用 WAL + 外键 + 创建 6 张表 + 索引
+    /// 执行数据库自动迁移：版本守卫 → 幂等 DDL 全量对齐 → 版本化迁移分发 → 写回版本号
     fn migrate(&self) -> anyhow::Result<()> {
         let conn = self
             .pool
             .get()
             .map_err(|e| anyhow::anyhow!("获取数据库连接失败: {}", e))?;
+
+        // 版本守卫：高于当前支持版本的数据库拒绝启动（防降级误写，对齐备份 E_BACKUP_VERSION 语义）
+        let from_version = user_version(&conn)?;
+        if from_version > SCHEMA_VERSION {
+            return Err(anyhow::anyhow!(
+                "E_DB_VERSION: 数据库结构版本 v{} 高于当前应用支持的 v{}，请升级应用后再打开",
+                from_version,
+                SCHEMA_VERSION
+            ));
+        }
+        crate::app_log!(
+            "[SQL] user_version → 当前 v{}，目标 v{}",
+            from_version,
+            SCHEMA_VERSION
+        );
 
         crate::app_log!("[SQL] PRAGMA → journal_mode=WAL");
         conn.execute_batch("PRAGMA journal_mode=WAL;")
@@ -598,6 +639,31 @@ impl AppDb {
         embedding_repo::ensure_chunks_vec(&conn)
             .map_err(|e| anyhow::anyhow!("初始化 sqlite-vec 镜像表失败: {}", e))?;
 
+        // 版本化迁移分发（非幂等演进入口）；全部完成后写回结构版本号
+        Self::run_versioned_migrations(&conn, from_version)?;
+        if from_version != SCHEMA_VERSION {
+            set_user_version(&conn, SCHEMA_VERSION)?;
+            crate::app_log!(
+                "[SQL] user_version → 已升级 v{} → v{}",
+                from_version,
+                SCHEMA_VERSION
+            );
+        }
+
+        Ok(())
+    }
+
+    /// 版本化迁移分发：处理无法用幂等 DDL 表达的结构演进（改列、删表、数据搬移等）。
+    ///
+    /// 当前全部结构变更均可幂等表达，故无分发项；后续新增时按 `from_version < N`
+    /// 逐级追加（每级只负责把自己那版的变更做完），并在 [`SCHEMA_VERSION`] 上递增。
+    fn run_versioned_migrations(conn: &Connection, from_version: u32) -> anyhow::Result<()> {
+        let _ = conn;
+        match from_version {
+            // 基线：v1.7.0 之前的旧库，上方幂等 DDL 已覆盖全部结构，无需额外动作
+            0 => {}
+            _ => {}
+        }
         Ok(())
     }
 }
@@ -673,5 +739,82 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM chunks_vec", [], |r| r.get(0))
             .unwrap();
         assert_eq!(cnt, 2);
+    }
+
+    /// 生成本测试专用的临时库路径（附 WAL/SHM 清理辅助）
+    struct TempDb(String);
+    impl TempDb {
+        fn new() -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("tw_test_{}.db", uuid::Uuid::new_v4()))
+                .to_string_lossy()
+                .into_owned();
+            Self(path)
+        }
+        fn path(&self) -> &str {
+            &self.0
+        }
+    }
+    impl Drop for TempDb {
+        fn drop(&mut self) {
+            for suffix in ["", "-wal", "-shm"] {
+                let _ = std::fs::remove_file(format!("{}{}", self.0, suffix));
+            }
+        }
+    }
+
+    /// 全新数据库：初始化完成后 user_version 应写为当前 SCHEMA_VERSION
+    #[test]
+    fn fresh_db_sets_user_version() {
+        let tmp = TempDb::new();
+        {
+            let _db = AppDb::new(tmp.path()).expect("init fresh db");
+        }
+        let conn = Connection::open(tmp.path()).unwrap();
+        assert_eq!(user_version(&conn).unwrap(), SCHEMA_VERSION);
+    }
+
+    /// 重复打开：版本号保持、幂等 DDL 可重复执行、数据不丢
+    #[test]
+    fn reopen_db_keeps_version_and_data() {
+        let tmp = TempDb::new();
+        {
+            let db = AppDb::new(tmp.path()).expect("init db");
+            let conn = db.pool.get().unwrap();
+            conn.execute(
+                "INSERT INTO books (id, title, created_at, updated_at) VALUES ('b1', '测试书', '2026-01-01', '2026-01-01')",
+                [],
+            )
+            .unwrap();
+        }
+        {
+            let db = AppDb::new(tmp.path()).expect("reopen db");
+            let conn = db.pool.get().unwrap();
+            assert_eq!(user_version(&conn).unwrap(), SCHEMA_VERSION);
+            let title: String = conn
+                .query_row("SELECT title FROM books WHERE id = 'b1'", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(title, "测试书");
+        }
+    }
+
+    /// 降级守卫：user_version 高于当前支持版本时拒绝启动（E_DB_VERSION）
+    #[test]
+    fn newer_db_version_rejected() {
+        let tmp = TempDb::new();
+        {
+            let _db = AppDb::new(tmp.path()).expect("init db");
+            let conn = Connection::open(tmp.path()).unwrap();
+            set_user_version(&conn, SCHEMA_VERSION + 1).unwrap();
+        }
+        let err = match AppDb::new(tmp.path()) {
+            Ok(_) => panic!("应拒绝高版本数据库"),
+            Err(e) => e,
+        };
+        assert!(
+            err.to_string().contains("E_DB_VERSION"),
+            "错误应含 E_DB_VERSION，实际: {}",
+            err
+        );
     }
 }

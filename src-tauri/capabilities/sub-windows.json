@@ -1,0 +1,6 @@
+{
+  "identifier": "sub-windows-minimal",
+  "description": "Minimal capability for debug console and diary-book viewer windows (core event APIs only, no fs/dialog)",
+  "windows": ["debug", "diary-book"],
+  "permissions": ["core:default"]
+}
