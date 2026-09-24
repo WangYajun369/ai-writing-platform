@@ -310,10 +310,12 @@ check('commands/ai/mod.rs', fileExists('src-tauri/src/commands/ai/mod.rs'))
 const aiCmds = ['chat', 'embedding', 'summarize', 'test']
 for (const c of aiCmds) check(`commands/ai/${c}.rs`, fileExists(`src-tauri/src/commands/ai/${c}.rs`))
 
-// IO 命令
+// IO 命令（backup 已于 v1.7.0 后拆分为目录模块：mod.rs + 6 个子模块文件）
 check('commands/io/mod.rs', fileExists('src-tauri/src/commands/io/mod.rs'))
-const ioCmds = ['backup', 'crypto', 'export', 'import_txt']
+const ioCmds = ['crypto', 'export', 'import_txt']
 for (const c of ioCmds) check(`commands/io/${c}.rs`, fileExists(`src-tauri/src/commands/io/${c}.rs`))
+const backupMods = ['mod', 'types', 'export', 'import', 'import_log', 'reconcile', 'rollback']
+for (const m of backupMods) check(`commands/io/backup/${m}.rs`, fileExists(`src-tauri/src/commands/io/backup/${m}.rs`))
 
 // 窗口管理
 check('commands/window/mod.rs', fileExists('src-tauri/src/commands/window/mod.rs'))

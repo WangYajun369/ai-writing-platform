@@ -44,7 +44,7 @@ describe('preferencesStore', () => {
     expect(s.fontSize).toBe(20)
     expect(s.eyeCareMode).toBe('warm')
     expect(s.librarySortBy).toBe('wordCount')
-    expect(s.theme).toBe('system', '未触及的字段保持默认')
+    expect(s.theme).toBe('system') // 未触及的字段保持默认
   })
 
   it('saveCurrentEditorState 不改动偏好字段', () => {
