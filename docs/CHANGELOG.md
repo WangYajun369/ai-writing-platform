@@ -1,6 +1,6 @@
 # 更新日志
 
-## Unreleased
+## v1.8.0 (2026-09-24) — 工程质量强化：DB 版本化、测试体系与 Agent 记忆修复
 
 ### 修复
 - **Agent 记忆检索静默失效**：`get_memories` 将 limit 数字直接拼接在 `LIMIT ?` 占位符后（形成 `?10`/`?50` 编号占位符），触发 `InvalidParameterCount`；调用方 `unwrap_or_default` 吞掉错误使记忆检索长期返回空——Agent 记忆注入实际从未生效。已改为统一编号占位符 + limit 参数绑定，并以单测锁定回归（`memory.rs`）

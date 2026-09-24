@@ -4,9 +4,9 @@
 
 面向网络小说作者和文学创作者，提供从书库管理、章节编辑到 AI 辅助创作的完整写作工作流。
 
-**当前版本：`1.7.0`**　|　🌐 **项目介绍**：[https://wangyajun369.github.io/ai-writing-platform/](https://wangyajun369.github.io/ai-writing-platform/)　|　📦 **下载**：[GitHub Releases](https://github.com/WangYajun369/ai-writing-platform/releases)
+**当前版本：`1.8.0`**　|　🌐 **项目介绍**：[https://wangyajun369.github.io/ai-writing-platform/](https://wangyajun369.github.io/ai-writing-platform/)　|　📦 **下载**：[GitHub Releases](https://github.com/WangYajun369/ai-writing-platform/releases)
 
-> **v1.7.0 亮点**：数据备份与导入导出 v2 —— 导入前只读预览（结构校验 / 内容指纹 / 幂等识别 / 逐表对账）、三种导入策略、TXT 导入智能去重与行级分章、导出进度与可取消、统一错误码与前端友好提示。详见 [更新日志](./docs/CHANGELOG.md)。
+> **v1.8.0 亮点**：工程质量强化 —— DB 结构版本化（`PRAGMA user_version` 防降级）、backup 模块 2911 行单文件拆分为 7 文件目录、修复 Agent 记忆检索静默失效缺陷、测试体系建立（Rust 32→80 项 + 前端 Vitest 首批 19 项）。详见 [更新日志](./docs/CHANGELOG.md)。
 
 ## 技术栈
 
@@ -201,7 +201,7 @@ Agent 引擎已完全内置于 Rust 后端（无 Python / 外部进程依赖）�
 |------|------|
 | 应用名称 | TimeWrite |
 | 应用标识 | `com.ukcoder.timewrite` |
-| 版本 | 1.7.0 |
+| 版本 | 1.8.0 |
 | 窗口默认尺寸 | 1280 × 800 |
 | 窗口最小尺寸 | 960 × 600 |
 | 深度链接协议 | `com.ukcoder.timewrite://` |
