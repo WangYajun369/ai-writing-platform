@@ -21,9 +21,11 @@ pub fn try_task_log(db: &AppDb, task_id: &str, action: &str, summary: &str) {
         )
         .ok()
         .flatten();
+    // 冗余 project_id 查询失败（任务已被删除）时仍会写入日志，项目归属字段置空即可
     let _ = insert_quiet(&conn, Some(task_id), project_id.as_deref(), action, summary);
 }
 
+/// 底层写入：生成 UUID 并委托 repository；底层错误原样返回，由调用方决定是否吞掉
 fn insert_quiet(
     conn: &rusqlite::Connection,
     task_id: Option<&str>,

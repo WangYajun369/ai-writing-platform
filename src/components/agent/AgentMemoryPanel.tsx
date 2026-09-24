@@ -15,6 +15,12 @@ interface AgentMemoryPanelProps {
   onClose: () => void
 }
 
+/**
+ * 组件：Agent 记忆管理面板
+ *
+ * 数据来源：list_agent_memories / update_agent_memory / delete_agent_memory /
+ * clear_agent_memories 系列 IPC；交互：加载列表 → 编辑/删除单条 → 二次确认清空全部。
+ */
 export const AgentMemoryPanel: React.FC<AgentMemoryPanelProps> = ({ bookId, onClose }) => {
   const [memories, setMemories] = useState<MemoryInfo[]>([])
   const [loading, setLoading] = useState(false)
@@ -69,6 +75,7 @@ export const AgentMemoryPanel: React.FC<AgentMemoryPanelProps> = ({ bookId, onCl
         keywords: editKeywords.trim() || null,
         memoryType: null,
       })
+      // IPC 成功后乐观更新本地列表（避免整表重拉）；字段填空时后端视为不修改、本地沿用原值
       setMemories((prev) =>
         prev.map((m) =>
           m.id === memoryId

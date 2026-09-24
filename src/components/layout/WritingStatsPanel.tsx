@@ -13,8 +13,10 @@ import { formatWordCount } from '@/lib/utils'
 import { BarChart3Icon, FlameIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+/** 迷你柱状图高度（px） */
 const CHART_HEIGHT = 52
 
+// 组件：WritingStatsPanel 写作统计（今日字数 / 日更目标 / 连续天数 / 30 日柱状图）
 export default function WritingStatsPanel() {
   const book = useCurrentBook()
   const lastSaved = useAtomValue(lastSavedAtom)

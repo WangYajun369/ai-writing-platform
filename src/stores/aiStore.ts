@@ -124,6 +124,8 @@ export const useAiStore = create<AiState>()((set, get) => {
       if (idx === -1) return
       const target = msgs[idx]
       let filtered: AiMessage[] | null = null
+      // 成对删除：对话以 user→assistant 交替出现，删助手消息时连带删除它前面的
+      // 提问，删用户消息时连带删除紧随其后的回复，避免留下悬空的一轮对话。
       if (target.role === 'assistant') {
         const prevIdx = idx - 1
         const toRemove = new Set([idx])

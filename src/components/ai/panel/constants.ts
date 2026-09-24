@@ -25,6 +25,7 @@ export type StatusKey = keyof typeof STATUS_CONFIG
  * 在 AiSidePanel 和 AgentPanel 中共享，避免重复定义。
  */
 export function getAgentQuickActions(skill: SkillType): string[] {
+  // 各技能对应的快捷操作文案：渲染在空会话占位区，点击即填入输入框触发
   switch (skill) {
     case 'writing':
       return [

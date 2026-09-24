@@ -61,6 +61,7 @@ const SORT_OPTIONS: { key: SortMode; label: string }[] = [
 
 const SORT_STORAGE_KEY = 'taskcard:sortMode'
 
+/** 读取本地记忆的排序策略；非法值回退为手动排序 */
 function loadSortMode(): SortMode {
   const v = localStorage.getItem(SORT_STORAGE_KEY) as SortMode | null
   return v && SORT_OPTIONS.some((o) => o.key === v) ? v : 'manual'
@@ -69,6 +70,7 @@ function loadSortMode(): SortMode {
 const PRIORITY_RANK: Record<TaskPriority, number> = { high: 0, medium: 1, low: 2 }
 
 /** 按排序策略对单列任务排序 */
+/** 按排序策略对单列任务排序（manual 保持 sortOrder 存储序；其余规则排序时禁用同列手动拖拽） */
 function sortColumn(list: TaskCard[], mode: SortMode): TaskCard[] {
   const arr = [...list]
   switch (mode) {
@@ -101,6 +103,7 @@ function sortColumn(list: TaskCard[], mode: SortMode): TaskCard[] {
 
 type DueFilter = 'all' | 'today' | 'week' | 'overdue'
 
+/** 截止范围筛选：today/week/overdue；已完成与无截止任务只匹配 all */
 function matchDue(task: TaskCard, due: DueFilter): boolean {
   if (!task.dueTime || task.status === 'done') return due === 'all'
   switch (due) {

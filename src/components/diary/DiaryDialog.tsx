@@ -93,6 +93,7 @@ async function pickImage(): Promise<string | null> {
   return typeof selected === 'string' ? selected : null
 }
 
+// 组件：DiaryDialog 日记撰写/编辑弹窗（富文本编辑 + 自动保存，可删除记录）
 export default function DiaryDialog({ diaryDate, onClose, onChanged }: DiaryDialogProps) {
   const { fontSize, setFontSize } = usePreferencesStore()
 

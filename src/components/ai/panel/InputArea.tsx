@@ -1,5 +1,8 @@
 /**
- * AI 聊天模式输入区域
+ * InputArea — AI 聊天模式输入区域（受控组件）
+ *
+ * 纯展示/交互组件：textarea 内容由 AiSidePanel 持有并通过 props 下传；
+ * Enter 发送、Shift+Enter 换行；流式进行（streaming）时禁用输入并显示加载态。
  */
 import { memo } from 'react'
 import { SendIcon, Loader2Icon } from 'lucide-react'

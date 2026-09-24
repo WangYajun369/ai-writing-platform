@@ -1,5 +1,8 @@
 /**
- * 模型检测图标
+ * ModelCheckIcon — 模型可用性检测状态图标
+ *
+ * 纯展示组件：按 idle/checking/ok/error 渲染对应的 lucide 图标与颜色，
+ * 供 Header 中可点击的模型名使用。
  */
 import { memo } from 'react'
 import { Loader2Icon, CircleCheckIcon, CircleAlertIcon, CircleIcon } from 'lucide-react'

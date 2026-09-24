@@ -1,6 +1,7 @@
 //! 标签 IPC 命令（任务卡模块）
 //!
 //! 业务逻辑集中在 `service::tag_service`。
+//! 对应 tauri-bridge.ts 的 `taskCardApi`（listTags / createTag / updateTag / deleteTag）。
 
 use crate::db::AppDb;
 use crate::error::AppError;

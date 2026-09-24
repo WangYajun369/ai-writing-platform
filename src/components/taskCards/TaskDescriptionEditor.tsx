@@ -87,6 +87,7 @@ export default function TaskDescriptionEditor({ value, placeholder, onChange, on
     )
 
   // 工具栏按钮定义：title / icon / isActive / can
+  //（结构与 CompleteSummaryModal 的「完成总结」工具栏一致，必要时可抽取公共富文本工具栏）
   const groups: {
     key: string
     title: string

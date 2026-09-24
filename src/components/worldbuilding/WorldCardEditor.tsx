@@ -18,6 +18,7 @@ interface WorldCardEditorProps {
   onSaved: () => void
 }
 
+// 组件：WorldCardEditor 世界观卡片新建/编辑/删除弹窗
 export default function WorldCardEditor({ bookId, card, onClose, onSaved }: WorldCardEditorProps) {
   const [type, setType] = useState<WorldCardType>(card?.type ?? 'character')
   const [title, setTitle] = useState(card?.title ?? '')
@@ -29,6 +30,7 @@ export default function WorldCardEditor({ bookId, card, onClose, onSaved }: Worl
     if (!title.trim()) return
     setSubmitting(true)
     try {
+      // 标签解析：支持中英文逗号/顿号分隔，逐个去空白后过滤空串
       const tagList = tags.split(/[，、,]+/).map((t) => t.trim()).filter(Boolean)
       if (card) {
         await worldCardApi.update(card.id, { type, title, content, contentHtml: content, tags: tagList })

@@ -81,6 +81,7 @@ export default function TemplatesTab({ onTaskCreated }: Props) {
     }
     setBusy(true)
     try {
+      // 子任务清单：按行拆分、去首尾空白并剔除空行，作为模板预设子项
       const subtasks = subtaskText
         .split('\n')
         .map((s) => s.trim())

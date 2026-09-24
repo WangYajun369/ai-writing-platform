@@ -76,6 +76,14 @@ export function closeAllMenus() {
 
 // ---------- Hook ----------
 
+/**
+ * 声明式注册右键菜单的 Hook
+ *
+ * @param options.items    菜单项（ContextMenuEntry[]，支持分隔线/禁用/危险项）
+ * @param options.minWidth 菜单最小宽度，默认 160px
+ * @returns onContextMenu 绑定到目标元素；contextMenu 为需渲染进组件的菜单 JSX；
+ *          openMenu(x, y) 用于按钮点击等场景在指定坐标打开
+ */
 export function useContextMenu({ items, minWidth = 160 }: UseContextMenuOptions): UseContextMenuReturn {
   const [state, setState] = useState<{ open: boolean; x: number; y: number }>({
     open: false,

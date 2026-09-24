@@ -45,6 +45,7 @@ export function ToolboxCenterInput({
 
   const handleSavePrompt = (newPrompt: string) => {
     const trimmed = newPrompt.trim()
+    // 输入为空或与工具自带/默认提示一致 → 视为未自定义（null），下次展示恢复默认
     if (trimmed && trimmed !== (selectedTool.systemPrompt || defaultPrompt)) {
       onSystemPromptChange(trimmed)
     } else {

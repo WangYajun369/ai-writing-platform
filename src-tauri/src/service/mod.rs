@@ -6,6 +6,7 @@
 //! - 通过 `emit_sql_log` 记录 SQL 审计日志
 //! - 处理事务边界和业务规则
 
+// ── 写作模块 ──
 pub mod book_service;
 pub mod chapter_service;
 pub mod diary_service;

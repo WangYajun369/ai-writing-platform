@@ -4,6 +4,12 @@
 //! 避免在多处硬编码列名导致维护不一致。
 
 /// 每张表的预期列定义（表名, [列名列表]）
+///
+/// 供 validate.rs 做表结构完整性检查（缺表 / 缺列 / 外键孤儿检测）。
+/// 覆盖范围：书籍创作模块核心表 + embeddings / memories；
+/// 任务卡、生词本、日记等后加入模块的表不在此清单内。
+/// 维护约定：db::mod::migrate 若通过 safe_add_column 给旧库补列，
+/// 需同步更新此处对应表的列清单，否则 validate_database 会误报缺列。
 pub const TABLE_SCHEMA: &[(&str, &[&str])] = &[
     (
         "books",

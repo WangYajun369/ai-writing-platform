@@ -1,5 +1,11 @@
 /**
- * 生词本 UI 工具函数
+ * 生词本 UI 工具函数（纯前端辅助，不含任何调度计算）
+ *
+ * 复习调度说明：SM-2 间隔计算（到期日/EF/intervalDays 的推进）全部在
+ * Rust 后端完成——复习时前端只调用 vocabApi.review(id, rating) 并展示返回；
+ * 本文件的 masteryPercent / formatNextReview 仅是前端展示用的估算/文案。
+ * 其余为：释义文本解析（离线词典 translation / AI 返回兜底）、自评档位
+ * 与状态的中文文案、词条摘要等。
  */
 import type { DictHit, VocabMeaning, VocabRating, VocabWord } from '@/types'
 

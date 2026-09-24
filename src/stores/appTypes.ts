@@ -176,6 +176,13 @@ export type AppSlice = StateCreator<AppState, [], [], Partial<AppState>>
 
 // ==================== AI 工具分类持久化 ====================
 
+/**
+ * 加载 AI 工具箱分类（localStorage）
+ *
+ * 优先级：新键 time-write-ai-tool-categories → 旧键 time-write-ai-tool-prompts
+ * （自动迁移为单一「自定义」分类并移除旧键）→ 内置 DEFAULT_AI_TOOL_CATEGORIES。
+ * 数据缺失 / 非法 JSON / 空数组时均回退到内置默认分类。
+ */
 export function loadAiToolCategories(): AiToolCategory[] {
   try {
     const raw = localStorage.getItem(AI_TOOL_CATEGORIES_KEY)

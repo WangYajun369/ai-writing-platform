@@ -1,6 +1,7 @@
 //! 书籍管理 IPC 命令
 //!
 //! 对外暴露 Tauri 命令，内部委托给 Service 层处理业务逻辑。
+//! 对应 tauri-bridge.ts 的 `bookApi`（书架 / 书籍设置 / 封面 / 回收站）。
 
 use crate::db::AppDb;
 use crate::error::AppError;

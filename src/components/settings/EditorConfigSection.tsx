@@ -1,5 +1,8 @@
 /**
  * 编辑配置区块 —— 编辑器显示宽度
+ *
+ * 偏好存取：受控组件，editorWidth 由 SettingsPage 从 usePreferencesStore 读取，
+ * 变更经 onEditorWidthChange → setEditorWidth 持久化；默认值为 'standard'。
  */
 import { OptionGroup, type OptionItem } from './shared'
 

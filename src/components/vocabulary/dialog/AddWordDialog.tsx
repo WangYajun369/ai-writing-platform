@@ -5,6 +5,8 @@
  *   英式音标 / 词性释义 / 记忆例句 / 词根词缀 / 近反义词 / 常用词组 / 动词变形 / 按词性例句
  * - 离线词库已安装时，输入单词会先自动带出基础释义（可编辑）
  * - 手动补录也可以完全自定义
+ * - 保存走 vocabApi.add/update；复习排期（SM-2）由后端创建词条时初始化，
+ *   新词明天进入首次复习
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {

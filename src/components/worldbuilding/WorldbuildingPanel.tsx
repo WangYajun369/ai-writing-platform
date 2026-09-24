@@ -28,6 +28,7 @@ type TabKey = 'cards' | 'outline'
 const MIN_OUTLINE_HEIGHT = 80
 const MAX_OUTLINE_HEIGHT = 400
 
+// 组件：WorldbuildingPanel 世界观资料库面板（「设定」卡片库 + 「大纲」章节大纲）
 export default function WorldbuildingPanel({ bookId, initialTab }: WorldbuildingPanelProps) {
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab ?? 'cards')
 

@@ -1,6 +1,7 @@
 //! 卷管理 IPC 命令
 //!
 //! 对外暴露 Tauri 命令，内部委托给 Service 层处理。
+//! 对应 tauri-bridge.ts 的 `volumeApi`（卷列表 / 排序 / 回收站）。
 
 use crate::db::AppDb;
 use crate::error::AppError;

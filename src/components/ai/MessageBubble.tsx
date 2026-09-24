@@ -1,5 +1,13 @@
 /**
- * 消息气泡组件
+ * MessageBubble — AI 聊天消息气泡
+ *
+ * 数据来源：aiStore 当前书籍对话中的 AiMessage，由 MessageList 逐条传入。
+ * 用于 AiSidePanel 聊天模式，职责：
+ * - 用户消息按纯文本展示；助手消息以 Markdown(GFM) 渲染
+ * - 流式阶段呈现：thinking 深度思考、章节总结 loading、正式输出标签（phase=answering）
+ * - 助手消息支持查看请求详情、删除（二次确认）、一键插入编辑器
+ * - 「插入编辑器」通过 editorInstanceAtom 获取 TipTap 实例，将 Markdown 转 HTML 后
+ *   在光标处插入，并带 500ms 防重复与编辑器销毁保护（isEditorUsable）
  */
 import { memo, useState, useRef, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'

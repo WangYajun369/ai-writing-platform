@@ -164,6 +164,8 @@ pub async fn export_book(
         let _ = std::fs::remove_file(&tmp_path);
         return Err(e);
     }
+    // 成功路径：先关闭/刷写句柄再 rename——BufWriter 残留数据随 drop 落盘，
+    // 且 Windows 不允许 rename 一个仍被占用的文件
     drop(w);
 
     std::fs::rename(&tmp_path, &output_path).map_err(|e| {

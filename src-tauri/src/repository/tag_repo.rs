@@ -44,6 +44,7 @@ pub fn find_by_name(conn: &Connection, name: &str) -> Result<Option<Tag>> {
 pub fn find_by_id(conn: &Connection, id: &str) -> Result<Option<Tag>> {
     let mut stmt = conn.prepare(&format!("SELECT {TAG_SELECT} FROM tags WHERE id=?1"))?;
     let mut rows = stmt.query_map(params![id], |row| parse_tag(row))?;
+    // query_row 需命中恰好一行，标签按 id 查询唯一，改用迭代取首行即可表达「可空」
     match rows.next() {
         Some(r) => r.map(Some),
         None => Ok(None),

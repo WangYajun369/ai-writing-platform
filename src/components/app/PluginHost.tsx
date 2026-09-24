@@ -9,6 +9,7 @@ import { bootstrapBuiltinPlugins } from '@/plugins/bootstrap'
 import { PluginManager } from '@/plugins/PluginManager'
 import CommandPalette from '@/components/common/CommandPalette'
 
+// 组件：PluginHost 主窗口插件宿主（引导内置插件，并挂载命令面板）
 export default function PluginHost() {
   useEffect(() => {
     void bootstrapBuiltinPlugins()

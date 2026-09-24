@@ -54,6 +54,7 @@ fn check_date_range(start: &Option<String>, end: &Option<String>) -> Result<(), 
 
 // ── 更新参数 ──
 
+/// 项目部分更新参数：None 表示不修改该字段；空串（经 normalize_opt）表示清空对应可空字段
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateProjectParams {

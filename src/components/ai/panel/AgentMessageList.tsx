@@ -1,5 +1,10 @@
 /**
- * Agent 模式消息列表
+ * AgentMessageList — Agent 模式消息列表
+ *
+ * 数据来源：useAgent 维护的 AgentMessage[]（Rust Agent 引擎流式会话），
+ * 单条气泡渲染委托 @/components/agent/AgentMessageBubble（含技能/工具相关展示）。
+ * 空对话且引擎 running 时，按当前技能展示问候语与快捷操作（点击写入输入框）；
+ * 引擎不可用或出错时分别展示占位与错误条。滚动哨兵与容器 ref 由 AiSidePanel 注入。
  */
 import { memo } from 'react'
 import { BotIcon } from 'lucide-react'

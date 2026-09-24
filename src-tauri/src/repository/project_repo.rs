@@ -99,6 +99,7 @@ pub fn insert(
     pinned: i64,
     ts: &str,
 ) -> Result<()> {
+    // sort_order 固定初始 0、deleted_at 置 NULL；created_at/updated_at 共用同一时间戳
     conn.execute(
         "INSERT INTO projects (id,name,description,color,icon,status,plan_start_date,plan_end_date,pinned,sort_order,deleted_at,created_at,updated_at) \
          VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,0,NULL,?10,?10)",

@@ -3,6 +3,8 @@
 //! 提供统一的图片压缩、缩放、裁剪和 Base64 编码功能。
 //! 图片以压缩后的 Base64 data URL 形式内嵌在 HTML 中，
 //! 确保导出/导入完全自包含，无需外部文件依赖。
+//!
+//! 对应 tauri-bridge.ts 的 `imageApi`（编辑器插图 / 书籍封面 / 裁剪后上传）。
 
 use crate::error::AppError;
 use base64::engine::general_purpose::STANDARD;

@@ -1,6 +1,10 @@
 /**
- * 项目 新建/编辑 弹窗
- * 字段：名称、emoji 图标、颜色、描述、计划开始/结束日期、状态（编辑时）、钉置
+ * 项目 新建 / 编辑 弹窗（侧栏「新建项目」与项目详情「编辑」共用）
+ *
+ * 字段：名称、emoji 图标、颜色、描述、计划开始/结束日期、状态（仅编辑时可选）、钉置；
+ * 计划结束支持「永久 / 指定日期」二态。
+ * 数据与提交：useTaskCardsStore.createProject / updateProject（IPC projectApi 封装），
+ * 保存成功后经 onSaved(projectId) 回调，由宿主负责切换视图 / 刷新。
  */
 import { useEffect, useState } from 'react'
 import { CalendarDays, Infinity as InfinityIcon, Loader2Icon, PinIcon, XIcon } from 'lucide-react'

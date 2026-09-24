@@ -1,5 +1,9 @@
 /**
- * 请求详情弹窗组件
+ * RequestDetailModal — 请求详情弹窗
+ *
+ * 展示一次 AI 请求实际提交的载荷 ChatRequestPayload（请求参数、System Prompt、
+ * 章节总结、RAG 检索上下文、对话消息），由聊天消息的「详情」按钮触发，
+ * 便于排查与复现模型行为。纯展示组件：点遮罩或关闭按钮调用 onClose。
  */
 import { XIcon, InfoIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'

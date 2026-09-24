@@ -168,6 +168,7 @@ pub fn save_chapter(
 ) -> Result<SaveChapterResult, AppError> {
     let ts = now();
     validate_len("章节内容", content_html, MAX_CHAPTER_CONTENT_LEN)?;
+    // 字数由前端按编辑器统计后传入：后端信任该值，仅负责聚合与差值计算，不重新统计正文
 
     // 三步操作放入同一事务：保存失败时字数聚合不会残留半成品状态
     emit_sql_log(

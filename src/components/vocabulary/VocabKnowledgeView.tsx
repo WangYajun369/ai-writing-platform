@@ -9,8 +9,10 @@ import type { VocabKnowledge } from '@/types'
 import { cn } from '@/lib/utils'
 import SpeakButton from './SpeakButton'
 
+/** 构词单元类型 → 中文标签：前缀 / 词根 / 后缀（未知类型回退「构词」） */
 const KIND_LABEL: Record<string, string> = { prefix: '前缀', root: '词根', suffix: '后缀' }
 
+/** 板块小标题：统一大写字距排版，使六类内容在视觉上层次分明 */
 function SectionTitle({ children }: { children: ReactNode }) {
   return (
     <div className="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-zinc-500">
@@ -20,12 +22,15 @@ function SectionTitle({ children }: { children: ReactNode }) {
 }
 
 interface Props {
+  /** 词条精讲数据；null/undefined 或六类内容全空时整块不渲染 */
   knowledge: VocabKnowledge | null | undefined
+  /** 附加样式类 */
   className?: string
 }
 
 export default function VocabKnowledgeView({ knowledge, className }: Props) {
   if (!knowledge) return null
+  // 六类板块（词根词缀/近反义词/词组/动词变形/例句）全部为空时隐藏整个卡片
   const isEmpty =
     !knowledge.morphology.length &&
     !knowledge.synonyms.length &&

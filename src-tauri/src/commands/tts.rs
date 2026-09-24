@@ -15,6 +15,8 @@
 //! 合成结果聚合成整段 MP3，缓存到 `<app_data>/tts/<sha256(text|speaker)>.mp3`，
 //! 同文本重复朗读直接命中缓存（幂等，不再调用接口）。
 //! 缓存目录位于 app_data_dir 下，已落入 assetProtocol `$APPDATA/**` scope，前端可 convertFileSrc 播放。
+//!
+//! 对应 tauri-bridge.ts 的 `ttsApi`（单词 / 例句朗读按钮与朗读设置）。
 
 use std::path::PathBuf;
 use std::time::Duration;

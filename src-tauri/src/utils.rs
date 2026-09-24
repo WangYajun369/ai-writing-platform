@@ -54,6 +54,9 @@ pub fn escape_html(text: &str) -> String {
 }
 
 /// 截取文本片段（前 N 个可见字符）
+///
+/// 先过滤换行/回车使片段保持单行（用于列表卡片场景）；
+/// 计数与截取均基于 `chars()`（Unicode 标量），不会切碎中文/emoji 等多字节字符。
 pub fn snippet(text: &str, max_chars: usize) -> String {
     let cleaned: String = text.chars().filter(|&c| c != '\n' && c != '\r').collect();
     if cleaned.chars().count() <= max_chars {
@@ -154,6 +157,8 @@ pub fn escape_fts5_query(query: &str) -> String {
         .chars()
         .filter(|c| !matches!(c, '"' | '*' | '(' | ')' | '^'))
         .collect();
+    // 过滤后为空说明原查询全由保留字符构成（如仅输入 "*"），
+    // 返回空串表示"无可匹配项"，调用方据此降级为 like_pattern 模糊匹配
     if cleaned.is_empty() {
         String::new()
     } else {
@@ -194,6 +199,8 @@ impl DynamicUpdate {
 
     /// 追加一个字段（列名需为白名单内且来自代码字面量，禁止外部拼接）
     pub fn push(&mut self, column: &'static str, value: impl rusqlite::types::ToSql + 'static) {
+        // 占位符从 ?1 起按追加顺序连续编号，values 的物理顺序与 SQL 参数顺序一致；
+        // build() 会继续在同一序号体系末尾追加 updated_at 与 id
         let idx = self.values.len() + 1;
         self.clauses.push(format!("{column}=?{idx}"));
         self.values.push(Box::new(value));

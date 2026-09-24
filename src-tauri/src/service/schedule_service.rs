@@ -105,6 +105,7 @@ pub fn save_schedule(
     }
     validate_content(content)?;
 
+    // id 由前端携带：编辑传原 id（更新）；新建不传，此处生成新 id
     let id = id.unwrap_or_else(|| Uuid::new_v4().to_string());
     let ts = now();
     let done_i64 = if done { 1 } else { 0 };

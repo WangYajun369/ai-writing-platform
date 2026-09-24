@@ -1,5 +1,10 @@
 /**
  * 版本更新区块 —— 当前版本 / 检查更新 / 下载安装
+ *
+ * 更新链路：
+ * 1. 优先 Tauri updater 插件（应用内提示、可静默下载安装）
+ * 2. 插件不可用时回退 GitHub Releases API（checkViaGithub），仅提示并引导跳转下载
+ * APP_VERSION 取自 useAiStore（启动时经系统信息注入），作为对比基准。
  */
 import { useState } from 'react'
 import { RefreshCwIcon } from 'lucide-react'
@@ -105,6 +110,7 @@ export function VersionSection() {
     }
   }
 
+  /** 下载并安装新版本：GitHub 兜底命中时跳转浏览器下载；否则交给 updater 插件 */
   const handleDownloadAndInstall = async () => {
     if (releaseUrl) {
       await openUrl(releaseUrl)
@@ -126,6 +132,7 @@ export function VersionSection() {
     }
   }
 
+  // 不同检查结果对应的结果条底色/文字色
   const statusStyles: Record<string, string> = {
     available: 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400',
     error: 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400',

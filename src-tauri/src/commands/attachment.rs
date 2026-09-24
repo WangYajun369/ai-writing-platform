@@ -2,6 +2,7 @@
 //!
 //! 附件文件实体统一在应用数据目录；「选择并添加」使用系统文件对话框（async 命令
 //! 避免主线程阻塞）。业务逻辑集中在 `service::attachment_service`。
+//! 对应 tauri-bridge.ts 的 `taskCardApi`（任务详情附件区，pickAndAddAttachment 等）。
 
 use crate::db::AppDb;
 use crate::error::AppError;

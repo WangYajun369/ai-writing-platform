@@ -7,6 +7,10 @@
  * - 虚拟化滚动渲染（@tanstack/react-virtual）
  * - 章节行内重命名与状态标签显示
  * - 拖拽排序（@dnd-kit）：卷在卷之间排序，章节在同级分组内排序
+ *
+ * 数据来源：useBooksStore（volumes / chapters / currentChapterId 等）；
+ * 所有写操作先调 chapterApi / volumeApi（IPC）成功后更新 store，
+ * 排序/删除/恢复类操作后对回收站状态做全量对账（refreshTree）。
  */
 import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react'
 import {

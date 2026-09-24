@@ -1,5 +1,8 @@
 /**
- * 单词详情弹层：完整释义 / 例句 / SM-2 记忆参数 / 复习历史时间线
+ * 单词详情弹层：完整释义 / 例句 / AI 词条精讲 / SM-2 记忆参数 / 复习历史时间线
+ *
+ * 弹层为只读+管理态：内容展示 + 底部状态操作（标记掌握 / 恢复学习 / 暂停 / 删除）；
+ * 复习历史 logs 随 word 打开即时从后端拉取；删除走系统级 confirm 二次确认。
  */
 import { useEffect, useState } from 'react'
 import { XIcon, PencilIcon, HistoryIcon, Trash2Icon, CheckCircle2Icon, PauseIcon, PlayIcon } from 'lucide-react'
@@ -15,13 +18,17 @@ import VocabKnowledgeView from '../VocabKnowledgeView'
 import SpeakButton from '../SpeakButton'
 
 interface Props {
+  /** 当前要展示的单词；null 时不渲染（父级用其控制弹层显隐） */
   word: VocabWord | null
+  /** 关闭请求回调 */
   onClose: () => void
+  /** 点击「编辑」时回调，携带当前单词交由父级打开编辑对话框 */
   onEdit: (word: VocabWord) => void
 }
 
 export default function WordDetailDialog({ word, onClose, onEdit }: Props) {
   const refreshAll = useVocabStore((s) => s.refreshAll)
+  // 复习历史日志：word 变化（含首次打开）时清空并重新拉取，失败按空列表兜底
   const [logs, setLogs] = useState<VocabReviewLog[]>([])
 
   useEffect(() => {
@@ -35,6 +42,7 @@ export default function WordDetailDialog({ word, onClose, onEdit }: Props) {
 
   if (!word) return null
 
+  /** 切换学习状态（learning/mastered/suspended）：成功后刷新 store 并关闭弹层 */
   async function setStatus(status: VocabWord['status']) {
     if (!word) return
     try {
@@ -47,6 +55,7 @@ export default function WordDetailDialog({ word, onClose, onEdit }: Props) {
     }
   }
 
+  /** 删除生词：先经系统级 confirm 确认（连带复习记录清除），成功后再刷新并关闭 */
   async function handleDelete() {
     if (!word) return
     const ok = await confirmDialog(`确定删除「${word.word}」吗？\n其复习记录将一并清除，此操作不可撤销。`, {
@@ -62,6 +71,7 @@ export default function WordDetailDialog({ word, onClose, onEdit }: Props) {
     onClose()
   }
 
+  // 状态布尔值驱动头部徽标与底部操作按钮的「显示哪组」逻辑
   const mastered = word.status === 'mastered'
   const suspended = word.status === 'suspended'
 
@@ -235,6 +245,7 @@ export default function WordDetailDialog({ word, onClose, onEdit }: Props) {
   )
 }
 
+/** 记忆参数单元格：上方灰字标签 + 下方主值；超宽值省略并用 title 查看完整内容 */
 function MetaCell({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border border-white/6 bg-white/3 px-2.5 py-1.5">

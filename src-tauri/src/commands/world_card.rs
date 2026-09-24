@@ -1,6 +1,7 @@
 //! 世界观卡片 IPC 命令
 //!
 //! 对外暴露 Tauri 命令，内部委托给 Service 层处理。
+//! 对应 tauri-bridge.ts 的 `worldCardApi`（世界观资料库独立窗口）。
 
 use crate::db::AppDb;
 use crate::error::AppError;

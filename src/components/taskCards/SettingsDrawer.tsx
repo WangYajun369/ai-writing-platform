@@ -2,8 +2,12 @@
  * 标签与设置 — 右侧抽屉
  *
  * Tab1 标签管理：新增 / 改名 / 换色 / 启停 / 删除
- * Tab2 日程迁移：把旧「个人日程」一键迁移为任务卡项目
- * Tab3 提醒偏好：截止前一天/当天/逾期每日 09:00 提醒（通知插件就绪后生效）
+ * Tab2 任务模板：TemplatesTab，把常做任务存模板并一键套用
+ * Tab3 日程迁移：把旧「个人日程」一键迁移为任务卡项目
+ * Tab4 提醒偏好：截止前一天/当天/逾期每日 09:00 + 每日待办汇总（系统通知）
+ *
+ * 数据：标签走 taskCardsStore.fetchTags；提醒偏好经 taskCardApi
+ * get/setReminderPrefs（meta 表 JSON 存储），迁移走 migrateSchedules。
  */
 import { useEffect, useState } from 'react'
 import {

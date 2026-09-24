@@ -1,7 +1,8 @@
 /**
- * 保存状态指示器
+ * SaveIndicator — 保存状态指示器
  *
- * 显示当前是「保存中…」动画还是「已保存」状态。
+ * 订阅全局 uiAtoms：isSavingAtom（正在保存）+ lastSavedAtom（最近保存时间）。
+ * 保存中显示脉冲「保存中…」，最近保存后显示「已保存」，两者皆无则不渲染。
  */
 import { memo } from 'react'
 import { useAtom } from 'jotai'

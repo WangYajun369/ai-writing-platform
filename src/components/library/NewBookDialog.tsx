@@ -19,6 +19,7 @@ interface NewBookDialogProps {
   onCreated: (book: Book) => void
 }
 
+// 组件：NewBookDialog 新建作品弹窗（先创建书籍，再补写封面 data URL）
 export default function NewBookDialog({ onClose, onCreated }: NewBookDialogProps) {
   const [title, setTitle] = useState('')
   const [author, setAuthor] = useState('')

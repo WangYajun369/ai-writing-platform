@@ -1,6 +1,7 @@
 //! 操作日志 IPC 命令（任务卡 P2）
 //!
 //! 只读查询：任务动态时间线 / 项目动态。写入由各业务服务的埋点完成。
+//! 对应 tauri-bridge.ts 的 `taskCardApi`（listTaskActivity / listProjectActivity / projectWeeklyStats）。
 
 use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
@@ -64,5 +65,6 @@ pub fn project_weekly_stats(
     project_id: String,
     weeks: Option<u32>,
 ) -> Result<Vec<ProjectWeeklyStat>, AppError> {
+    // service 层会二次 clamp（实际范围 4~26 周），此处仅填充前端缺省值
     project_stats_service::project_weekly_stats(&app, &state, &project_id, weeks.unwrap_or(8))
 }

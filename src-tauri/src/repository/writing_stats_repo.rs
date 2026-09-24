@@ -8,6 +8,7 @@ use rusqlite::{params, Connection, Result};
 
 /// 累加当日净增字数（跨天首写自动建行）
 pub fn record_delta(conn: &Connection, book_id: &str, stat_date: &str, delta: i64) -> Result<()> {
+    // (book_id, stat_date) 联合主键冲突时累加 words，而非覆盖当日的既有累计值
     conn.execute(
         "INSERT INTO writing_stats (book_id, stat_date, words) VALUES (?1, ?2, ?3)
          ON CONFLICT(book_id, stat_date) DO UPDATE SET words = words + excluded.words",

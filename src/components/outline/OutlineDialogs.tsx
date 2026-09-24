@@ -1,5 +1,11 @@
 /**
  * OutlineDialogs — 目录面板的输入对话框 + 确认对话框
+ *
+ * 两个受控弹窗，状态完全由 props 驱动（OutlinePanel 通过 useOutlineDialogs
+ * hook 管理 InputDialogState / ConfirmDialogState）：
+ * - InputDialog：新建卷/章节、行内重命名时弹出，Enter 确认 / Esc 取消
+ * - ConfirmDialog：删除确认、清空回收站等二次确认，danger=false 时退化为
+ *   单按钮通知（无取消键）
  */
 import { useRef, useEffect } from 'react'
 import { cn } from '@/lib/utils'
@@ -11,6 +17,7 @@ interface InputDialogViewProps {
   onCancel: () => void
 }
 
+/** 输入对话框：受控渲染（state.open=false 返回 null），打开时自动全选文本便于覆写 */
 export function InputDialog({ state, onConfirm, onCancel }: InputDialogViewProps) {
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -72,6 +79,7 @@ interface ConfirmDialogViewProps {
   onClose: () => void
 }
 
+/** 确认对话框：受控渲染，danger=false 时隐藏“取消”作为纯提示使用 */
 export function ConfirmDialog({ state, onClose }: ConfirmDialogViewProps) {
   if (!state.open) return null
 

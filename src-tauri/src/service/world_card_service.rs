@@ -15,6 +15,7 @@ use tauri::AppHandle;
 use uuid::Uuid;
 
 /// 更新世界观卡片参数（强类型 DTO，替代 serde_json::Value）
+/// 世界观卡片部分更新参数：None 表示不修改该字段；tags 传 Some 时为全量替换
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateWorldCardParams {

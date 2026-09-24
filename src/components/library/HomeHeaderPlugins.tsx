@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 import { errText } from '@/lib/errors'
 
+// 组件：HomeHeaderPlugins 首页头部插件入口渲染（图标 + 角标 + 激活态 + 执行命令）
 export default function HomeHeaderPlugins() {
   const [commands, setCommands] = useState<PluginCommand[]>([])
   const [badges, setBadges] = useState<Record<string, number>>({})

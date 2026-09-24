@@ -21,6 +21,7 @@ function fmtSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`
 }
 
+/** 附件时间：今天显示「今天 HH:MM」，更早显示「M月D日 HH:MM」 */
 function fmtTime(s: string): string {
   const d = new Date(s)
   if (Number.isNaN(d.getTime())) return s
@@ -30,6 +31,7 @@ function fmtTime(s: string): string {
   return `${d.getMonth() + 1}月${d.getDate()}日 ${hh}:${mm}`
 }
 
+// 附件扩展名分组：用于给不同类型文件着色块底色（图片/视频/音频/PDF/压缩包/文档/表格）
 const IMG = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'heic']
 const VID = ['mp4', 'mov', 'avi', 'mkv', 'webm']
 const AUD = ['mp3', 'wav', 'm4a', 'flac', 'aac', 'ogg']

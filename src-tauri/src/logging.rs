@@ -32,6 +32,8 @@ macro_rules! app_log_inner {
     ($level:expr, $($arg:tt)*) => {{
         let msg = format!($($arg)*);
         let _ = std::io::Write::write_fmt(&mut std::io::stderr(), format_args!("{}\n", msg));
+        // 若缓冲互斥锁中毒（其它线程 panic），放弃写入缓冲而非让日志模块自身崩溃；
+        // 正常路径下 `.lock()` 只是短暂等待，不构成性能热点。
         if let Ok(mut buffer) = $crate::commands::window::log_buffer().lock() {
             if buffer.len() >= 1000 {
                 buffer.remove(0);
@@ -40,6 +42,8 @@ macro_rules! app_log_inner {
                 timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
                 level: $level.to_string(),
                 message: msg,
+                // 宏不采集调用点位置：file / file_name / line 留空。
+                // 这三个字段供前端上报（LogEntryInput）与验证模块（validate.rs）填充，宏路径不启用。
                 file: None,
                 file_name: None,
                 line: None,

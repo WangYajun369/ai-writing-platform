@@ -1,5 +1,9 @@
 /**
- * AI 聊天模式消息列表
+ * MessageList — AI 聊天模式消息列表
+ *
+ * 数据来源：AiSidePanel 传入的当前书籍 AI 对话（aiStore.aiConversations），
+ * 逐条渲染 MessageBubble。滚动容器与底部哨兵 ref 均由 AiSidePanel 注入，
+ * 供流式输出时自动滚动到底部；无消息时展示空状态引导文案。
  */
 import { memo } from 'react'
 import { BotIcon } from 'lucide-react'

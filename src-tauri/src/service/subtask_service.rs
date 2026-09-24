@@ -122,6 +122,7 @@ pub fn set_subtask_done(
     let conn = db.pool.get()?;
     let current = subtask_repo::find_by_id(&conn, id)
         .map_err(|_| AppError::NotFound("未找到该子任务".into()))?;
+    // 幂等处理：勾选状态未变化直接返回，避免重复写库与重复记操作日志
     if current.done == done {
         return Ok(current);
     }

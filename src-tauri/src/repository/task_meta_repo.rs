@@ -16,6 +16,7 @@ pub fn get(conn: &Connection, key: &str) -> Result<Option<String>> {
 
 /// 写入 key-value（upsert）
 pub fn set(conn: &Connection, key: &str, value: &str, ts: &str) -> Result<()> {
+    // task_meta 以 key 为主键，INSERT 命中冲突时原地覆盖 value 并刷新 updated_at
     conn.execute(
         "INSERT INTO task_meta (key,value,updated_at) VALUES (?1,?2,?3) \
          ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",

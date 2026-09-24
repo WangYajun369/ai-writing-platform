@@ -1,3 +1,15 @@
+/**
+ * useResizeHandle — 可拖拽调整面板宽度的通用 Hook
+ *
+ * 服务于编辑器页等「分栏面板 + 拖拽分隔条」布局：返回当前宽度/比例与
+ * resizeHandleProps（可直接展开到分隔条元素上），支持两种模式：
+ * - pixel（默认）：拖拽单位为像素，宽度固定，不受窗口缩放影响；
+ * - ratio：传入 containerRef 自动启用，宽度 = 容器宽度 × 比例（0-1），
+ *   窗口/容器尺寸变化时由 ResizeObserver 自动重算，适用于右侧自适应面板。
+ *
+ * direction 决定拖拽方向语义：'right'（默认，面板在右）向左拖面板变宽，
+ * 'left' 反之；拖拽过程中锁定 body 光标与文本选择，结束时回调 onResizeEnd。
+ */
 import { useCallback, useRef, useEffect, useState } from 'react'
 
 interface UseResizeHandleOptions {

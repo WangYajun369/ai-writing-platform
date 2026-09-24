@@ -16,6 +16,7 @@ interface State {
   error: Error | null
 }
 
+/** 组件：应用级错误边界（捕获子树渲染异常并展示可重试的兜底界面） */
 export default class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props)

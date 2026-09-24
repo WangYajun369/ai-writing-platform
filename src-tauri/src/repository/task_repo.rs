@@ -228,6 +228,7 @@ pub fn update_ext(
     work_seconds: Option<i64>,
     ts: &str,
 ) -> Result<()> {
+    // 动态拼装 SET 子句：仅把传入 Some 的列纳入更新，避免覆盖未修改字段
     let mut set_clauses: Vec<String> = Vec::new();
     let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
     macro_rules! push_set {
@@ -303,6 +304,7 @@ pub fn tags_of_tasks(
          WHERE tt.task_id IN ({}) ORDER BY t.name ASC",
         placeholders.join(",")
     );
+    // 占位符数量与 task_ids 等长，绑定参数需走 params_from_iter 的运行时迭代器
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(rusqlite::params_from_iter(task_ids.iter()), |row| {
         let task_id: String = row.get("task_id")?;

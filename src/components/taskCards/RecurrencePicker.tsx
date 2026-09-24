@@ -26,6 +26,7 @@ interface Props {
 export default function RecurrencePicker({ value, onChange }: Props) {
   const [rule, setRule] = useState<RecurrenceRule | null>(() => parseRule(value))
 
+  /** 规则变更统一出口：同步内部 state 并序列化为 JSON 回传父级（'' = 不重复） */
   function commit(next: RecurrenceRule | null) {
     setRule(next)
     onChange(serializeRule(next))

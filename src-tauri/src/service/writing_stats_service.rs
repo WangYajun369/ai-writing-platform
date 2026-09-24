@@ -33,6 +33,7 @@ pub fn get_writing_stats(
 
     let daily_target = book_repo::find_daily_target(&conn, book_id)?;
     let today = Local::now().date_naive();
+    // 查询窗口含 today 在内共 CURVE_DAYS 天：起始日 = today - (CURVE_DAYS - 1)
     let since = today - Duration::days(CURVE_DAYS - 1);
 
     let rows = writing_stats_repo::list_since(&conn, book_id, &since.to_string())?;

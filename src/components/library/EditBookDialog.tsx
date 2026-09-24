@@ -20,6 +20,7 @@ interface EditBookDialogProps {
   onSaved: (book: Book) => void
 }
 
+// 组件：EditBookDialog 编辑作品信息弹窗（书名/作者/简介/日更目标/封面）
 export default function EditBookDialog({ book, onClose, onSaved }: EditBookDialogProps) {
   const [title, setTitle] = useState(book.title)
   const [author, setAuthor] = useState(book.author)

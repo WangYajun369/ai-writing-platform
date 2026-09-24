@@ -1,8 +1,11 @@
 /**
  * AiToolboxPanel — AI 工具箱面板
  *
- * 三栏布局：左侧工具分类/列表，中间输入区域，右侧流式生成内容展示。
- * 流式调用通过 Rust 侧 SSE 处理，前端监听 ai-stream-chunk 事件。
+ * 数据来源：useAiStore 的 aiToolCategories（工具分类）与 aiConfig（模型参数）。
+ * 布局：左侧工具分类/列表 → 中间输入区域（含 System Prompt 编辑）→ 右侧结果展示。
+ * 生成流程：经 aiApi.streamChat 发起请求，同时监听 Rust 侧 `ai-stream-chunk` 事件
+ * 接收流式输出（content/thinking 为累积快照，分别渲染）；无 API Key 等前置校验
+ * 不通过时给出友好错误，事件与 invoke 异常路径均写入错误区。
  */
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { errText } from '@/lib/errors'
@@ -133,6 +136,8 @@ export default function AiToolboxPanel({ initialToolId }: { initialToolId?: stri
     }
 
     try {
+      // 载荷为引擎累积的“全量快照”（content/thinking 均非增量），直接覆盖写入即可；
+      // content 为空串（如仅 thinking 的事件）时跳过，避免清掉已生成正文。
       unlistenRef.current = await listen<StreamEvent>('ai-stream-chunk', (event) => {
         const { content, thinking, done, error, usage: evtUsage } = event.payload
 

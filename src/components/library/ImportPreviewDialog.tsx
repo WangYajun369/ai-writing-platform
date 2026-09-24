@@ -43,6 +43,7 @@ function reconcileTotal(r: RowReconcile): number {
   return r.matched + r.targetStale + r.targetNewer + r.missing
 }
 
+// 组件：ImportPreviewDialog 备份导入预览对话框（展示 inspect_backup 报告并选择导入策略）
 export default function ImportPreviewDialog({
   report,
   onCancel,

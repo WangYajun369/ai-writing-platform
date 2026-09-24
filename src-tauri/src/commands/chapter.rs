@@ -1,6 +1,7 @@
 //! 章节管理 IPC 命令
 //!
 //! 对外暴露 Tauri 命令，内部委托给 Service 层处理。
+//! 对应 tauri-bridge.ts 的 `chapterApi`（编辑器加载 / 保存 / 大纲 / AI 总结 / 回收站）。
 
 use crate::db::AppDb;
 use crate::error::AppError;
@@ -135,6 +136,7 @@ pub async fn delete_chapter(
     db: State<'_, AppDb>,
     chapter_id: String,
 ) -> Result<SaveChapterResult, AppError> {
+    // 删除不产生正文字数，word_count 固定返回 0（结构上复用保存返回值）
     let book_wc = chapter_service::delete_chapter(&app, &db, &chapter_id)?;
     Ok(SaveChapterResult {
         word_count: 0,
@@ -159,6 +161,7 @@ pub async fn hard_delete_chapter(
     db: State<'_, AppDb>,
     chapter_id: String,
 ) -> Result<SaveChapterResult, AppError> {
+    // 硬删除同样不产生字数，word_count 固定返回 0，前端只取 book_word_count
     let book_wc = chapter_service::hard_delete_chapter(&app, &db, &chapter_id)?;
     Ok(SaveChapterResult {
         word_count: 0,

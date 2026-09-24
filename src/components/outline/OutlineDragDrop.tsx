@@ -14,6 +14,7 @@ import type { Chapter, Volume } from '@/types'
 
 // ==================== 插入指示器 ====================
 
+/** 拖拽时的插入位置指示线（before = 顶部 / after = 底部），active 控制显隐 */
 export function DropIndicator({
   position,
   active,
@@ -34,6 +35,7 @@ export function DropIndicator({
 
 // ==================== 未分卷区域投放 ====================
 
+/** 列表顶部的“移出至最外层”投放区：仅拖拽「有卷章节」时出现并可接收 */
 export function DroppableUnassignedZone({
   isOver,
   hasDraggingChapter,
@@ -65,6 +67,7 @@ export function DroppableUnassignedZone({
 
 // ==================== 拖拽预览 ====================
 
+/** DragOverlay 中跟随指针的卷拖拽预览 */
 export function VolumePreview({ volume }: { volume: Volume }) {
   return (
     <div className="animate-pop-in flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-card border border-border rounded shadow-lg">
@@ -75,6 +78,7 @@ export function VolumePreview({ volume }: { volume: Volume }) {
   )
 }
 
+/** DragOverlay 中跟随指针的章节拖拽预览（含状态标签） */
 export function ChapterPreview({ chapter }: { chapter: Chapter }) {
   const statusCfg = CHAPTER_STATUS_CONFIG[chapter.status]
   return (

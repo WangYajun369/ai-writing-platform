@@ -14,6 +14,9 @@
 //! ```
 
 // ─── 模块声明 ───
+// 分层依赖（自底向上）：models / error / utils / logging 为公共基础层，被上层任意引用；
+// db（连接池 + Schema 迁移）与 repository（DAO）构成数据层；service 为业务逻辑层；
+// commands 为应用层（IPC 命令），仅允许依赖 service / repository / db。
 mod commands; // Tauri IPC 命令集合
 mod db; // 数据库连接与初始化
 mod error; // 统一错误类型

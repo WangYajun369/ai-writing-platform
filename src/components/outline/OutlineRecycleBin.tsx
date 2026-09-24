@@ -1,6 +1,10 @@
 /**
  * OutlineRecycleBin — 回收站对话框
- * 展示已软删除的卷和章节，支持恢复和永久删除
+ *
+ * 展示已软删除（deletedAt 非空）的卷和章节，支持恢复与永久删除。
+ * 数据来源：trashItems 由 OutlinePanel 从 useBooksStore 的 volumes/chapters
+ * 中按删除时间倒序组装后传入；各项操作（恢复/永久删除/清空）均回调给
+ * OutlinePanel 中的处理器，由其调用 volumeApi / chapterApi 并经 store 更新状态。
  */
 import {
   Trash2Icon,
@@ -13,11 +17,13 @@ import { cn } from '@/lib/utils'
 import { CHAPTER_STATUS_CONFIG } from '@/lib/utils'
 import type { Chapter, Volume } from '@/types'
 
+/** 回收站中的卷条目 */
 export interface RecycleBinItem {
   type: 'volume'
   data: Volume
 }
 
+/** 回收站中的章节条目 */
 export interface RecycleBinChapterItem {
   type: 'chapter'
   data: Chapter

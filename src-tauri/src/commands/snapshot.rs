@@ -1,6 +1,7 @@
 //! 版本快照 IPC 命令
 //!
 //! 对外暴露 Tauri 命令，内部委托给 Service 层处理。
+//! 对应 tauri-bridge.ts 的 `snapshotApi`（编辑器「历史版本」独立窗口）。
 
 use crate::commands::chapter::SaveChapterResult;
 use crate::db::AppDb;

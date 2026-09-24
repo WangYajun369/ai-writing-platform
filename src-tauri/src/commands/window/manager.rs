@@ -1,7 +1,9 @@
 //! 独立窗口打开/关闭
 //!
-//! 世界观资料库、版本历史、章节总结、AI 工具箱独立窗口管理。
-//! 独立窗口始终置顶于编辑页面之上。
+//! 世界观资料库、版本历史、章节总结、AI 工具箱、英语字典（生词本）、任务卡、看日记独立窗口管理。
+//! 每个 label 同一时刻至多存在一个实例：重复「打开」先关闭旧窗口再重建；
+//! 窗口销毁（含用户点 X）时通过 `close_event` 广播给主窗口，供前端同步按钮开关状态。
+//! 独立窗口始终置顶于编辑页面之上；URL 按 debug/release 指向 dev server（localhost:1420）或 `tauri://localhost`。
 
 use super::urlencoding;
 use crate::error::AppError;

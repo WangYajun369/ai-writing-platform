@@ -33,6 +33,7 @@ const DOT: Record<string, string> = {
   'attachment.removed': 'bg-rose-400',
 }
 
+/** 动态时间：当天仅给 HH:MM，更早显示 M月D日 HH:MM */
 function fmtTime(s: string): string {
   const d = new Date(s)
   if (Number.isNaN(d.getTime())) return s
@@ -42,6 +43,7 @@ function fmtTime(s: string): string {
   return `${d.getMonth() + 1}月${d.getDate()}日 ${hh}:${mm}`
 }
 
+/** 周起始日 'YYYY-MM-DD' → 柱状图轴标签「M月D日」 */
 function weekLabel(ws: string): string {
   const m = Number(ws.slice(5, 7))
   const d = Number(ws.slice(8, 10))
@@ -75,6 +77,7 @@ export default function ProjectReportModal({ project, onClose }: Props) {
     }
   }, [project.id])
 
+  // 后端按自然周（周一为一周开始）升序返回：末尾即本周；last4 汇总最近四周
   const thisWeek = stats.length > 0 ? stats[stats.length - 1] : null
   const last4 = stats.length > 0 ? stats.slice(-4) : []
   const sum4 = last4.reduce(

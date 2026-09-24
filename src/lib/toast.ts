@@ -23,8 +23,10 @@ export interface ToastItem {
   action?: ToastAction
 }
 
+/** 当前通知队列 atom（独立 toast API 与 useToast hook 共用同一列表） */
 export const toastsAtom = atom<ToastItem[]>([])
 
+/** 按 id 移除单条通知（供定时器/动作按钮关闭时调用） */
 const removeToastAtom = atom(null, (get, set, id: string) => {
   set(toastsAtom, get(toastsAtom).filter((t) => t.id !== id))
 })

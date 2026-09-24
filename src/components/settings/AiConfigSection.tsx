@@ -1,5 +1,10 @@
 /**
  * AI 配置区块 —— 对话与 RAG 解耦
+ *
+ * 纯组合容器：分别渲染 ChatConfigSection 与 RagConfigSection，并把子区块的
+ * 局部变更合并回外层 AiConfig（不可变更新）。
+ * 数据来源：config 由 SettingsPage 传入 useAiStore 的 aiConfig；
+ * onChange 冒泡回 setAiConfig 持久化。config.chat/rag 缺失时给出降级提示。
  */
 import type { AiConfig, AiChatConfig, RagConfig } from '@/types'
 import { ChatConfigSection } from './ChatConfigSection'

@@ -1,6 +1,7 @@
 //! 任务 IPC 命令（任务卡模块）
 //!
 //! 业务逻辑集中在 `service::task_service`。
+//! 对应 tauri-bridge.ts 的 `taskCardApi`（任务列表 / 看板拖拽 / 回收站 / 今日任务等）。
 
 use crate::db::AppDb;
 use crate::error::AppError;

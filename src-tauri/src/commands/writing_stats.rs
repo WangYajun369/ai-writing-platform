@@ -1,6 +1,7 @@
 //! 写作统计 IPC 命令
 //!
 //! 为编辑器状态栏提供日更目标 / 今日字数 / 连续天数 / 字数曲线数据。
+//! 对应 tauri-bridge.ts 的 `writingApi.getWritingStats`（编辑器底部状态栏字数统计）。
 
 use crate::db::AppDb;
 use crate::error::AppError;

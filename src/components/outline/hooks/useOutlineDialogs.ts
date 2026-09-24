@@ -25,6 +25,7 @@ export function useOutlineDialogs() {
   })
   const [recycleBinOpen, setRecycleBinOpen] = useState(false)
 
+  /** 打开输入对话框：label 为输入框提示文案，defaultValue 为初始值，onSubmit 回车时回调 */
   const openInputDialog = useCallback(
     (label: string, defaultValue: string, onSubmit: (value: string) => void) => {
       setInputDialog({ open: true, label, defaultValue, onSubmit })
@@ -32,14 +33,17 @@ export function useOutlineDialogs() {
     [],
   )
 
+  /** 打开二次确认框：统一把 open 置 true，其余字段（danger/onConfirm 等）由调用方透传 */
   const openConfirmDialog = useCallback((state: ConfirmDialogPayload) => {
     setConfirmDialog({ open: true, ...state })
   }, [])
 
+  /** 关闭输入对话框（保留 label/defaultValue，避免下次打开前的闪现） */
   const closeInputDialog = useCallback(() => {
     setInputDialog((prev) => ({ ...prev, open: false }))
   }, [])
 
+  /** 关闭二次确认框（保留标题与回调配置） */
   const closeConfirmDialog = useCallback(() => {
     setConfirmDialog((prev) => ({ ...prev, open: false }))
   }, [])

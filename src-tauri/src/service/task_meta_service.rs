@@ -22,6 +22,7 @@ pub fn get_meta(_app: &AppHandle, db: &AppDb, key: &str) -> Result<Option<String
 pub fn set_meta(app: &AppHandle, db: &AppDb, key: &str, value: &str) -> Result<(), AppError> {
     let ts = now();
     let conn = db.pool.get()?;
+    // 审计日志只记录 key、不回显 value（值由前端自定义，可能是大段 JSON 配置）
     emit_sql_log(
         app,
         "UPSERT",

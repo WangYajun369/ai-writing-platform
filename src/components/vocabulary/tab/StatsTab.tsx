@@ -1,5 +1,8 @@
 /**
  * 统计 Tab — 学习概览 + 近 30 天复习量柱状图
+ *
+ * 数据来源：全部来自 useVocabStore.stats（含 reviewHistory 近 30 天逐日复习次数），
+ * 由后端统计后经 refreshAll 拉取；本页纯只读展示，不触发任何写操作。
  */
 import { useMemo } from 'react'
 import { BookMarkedIcon, GraduationCapIcon, ClockIcon, FlameIcon } from 'lucide-react'

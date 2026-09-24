@@ -20,6 +20,7 @@ function maskApiKey(key: string): string {
   return key.slice(0, 4) + '****' + key.slice(-4)
 }
 
+/** API Key 输入框：默认掩码展示，点击进入编辑态（type=password，失焦/回车退出） */
 export function ApiKeyField({ label, hint, value, placeholder, onChange }: ApiKeyFieldProps) {
   const [editing, setEditing] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -70,6 +71,7 @@ interface ConnectionStatusBadgeProps {
   detail: string
 }
 
+/** 连接测试状态徽标：idle 时不渲染，testing/connected/error 三态图标 + 详情 */
 export function ConnectionStatusBadge({ status, detail }: ConnectionStatusBadgeProps) {
   if (status === 'idle') return null
 
@@ -109,6 +111,7 @@ interface OptionGroupProps {
   onChange: (value: string) => void
 }
 
+/** 选项按钮组：单项激活态单选，支持色块/图标/描述展示 */
 export function OptionGroup({ options, value, onChange }: OptionGroupProps) {
   return (
     <div className="flex flex-wrap gap-3">
@@ -144,6 +147,7 @@ interface ToggleProps {
   onChange: (enabled: boolean) => void
 }
 
+/** 通用开关按钮 */
 export function Toggle({ enabled, onChange }: ToggleProps) {
   return (
     <button

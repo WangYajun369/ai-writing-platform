@@ -16,7 +16,9 @@ import { cn } from '@/lib/utils'
 import { useTtsConfigStore, DEFAULT_TTS_SPEAKER } from '@/stores/ttsConfig'
 
 interface Props {
+  /** 弹窗受控开关：true 渲染遮罩层；父级负责关闭请求 */
   open: boolean
+  /** 请求关闭回调（遮罩点击 / Esc 关闭按钮 / 保存成功后调用） */
   onClose: () => void
 }
 
@@ -44,8 +46,10 @@ export default function SpeakSettingsDialog({ open, onClose }: Props) {
 
   if (!open) return null
 
+  // 是否已填写 Key：决定试听/保存按钮可用性与「已填写」提示
   const ready = !!apiKey.trim()
 
+  /** 保存到 ttsConfig store：Key 去空白；音色留空时回退默认音色 */
   function handleSave() {
     setConfig({
       apiKey: apiKey.trim(),
@@ -55,6 +59,7 @@ export default function SpeakSettingsDialog({ open, onClose }: Props) {
     onClose()
   }
 
+  /** 试听：用当前尚未保存的表单内容直接合成一次，校验 API Key 与音色是否可用 */
   async function handleTest() {
     if (!ready) {
       toast.error('请先填写豆包语音 API Key')

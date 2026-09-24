@@ -34,6 +34,7 @@ export interface CoverPickerProps {
   className?: string
 }
 
+// 组件：CoverPicker 封面选择 + 裁剪组件（选中图片后交给 ImageCropperDialog 裁剪，产出 data URL）
 export default function CoverPicker({ value, onChange, className }: CoverPickerProps) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)

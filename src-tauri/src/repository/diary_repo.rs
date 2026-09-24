@@ -86,6 +86,7 @@ pub fn upsert(
         "UPDATE diaries SET content_html = ?1, word_count = ?2, keywords = ?3, updated_at = ?4 WHERE diary_date = ?5",
         params![content_html, word_count, keywords_json, ts, date],
     )?;
+    // 先 UPDATE：影响行数为 0 说明该日期尚不存在，回退为 INSERT（幂等 upsert）
     if conn.changes() == 0 {
         conn.execute(
             "INSERT INTO diaries (id, diary_date, content_html, word_count, keywords, created_at, updated_at) \

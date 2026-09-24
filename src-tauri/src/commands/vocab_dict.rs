@@ -4,6 +4,8 @@
 //!   支持状态检测、导入与查询（精确 + 前缀建议）
 //! - **AI 兜底释义**：离线词库未命中或释义不理想时，调用 DeepSeek / OpenAI 兼容
 //!   接口生成音标 + 词性释义 + 例句（JSON 结构化输出）
+//!
+//! 对应 tauri-bridge.ts 的 `dictApi`（生词添加面板 / DeepSeek 翻译取词卡）。
 
 use crate::error::AppError;
 use crate::models::{

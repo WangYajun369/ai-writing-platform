@@ -74,6 +74,10 @@ pub fn list_all_meta(conn: &Connection) -> Result<Vec<(String, String, String, S
 }
 
 /// 插入或替换一条 embedding
+///
+/// 注意：命中 UNIQUE(source_type, source_id) 时 INSERT OR REPLACE 采用「先删后插」，
+/// 自增主键 id 会变化；chunks_vec 镜像按 rowid ↔ embeddings.id 关联，
+/// 调用方须在写入后重建镜像（rebuild_chunks_vec）或做等效同步，否则 KNN 结果不一致。
 pub fn upsert(
     conn: &Connection,
     source_type: &str,

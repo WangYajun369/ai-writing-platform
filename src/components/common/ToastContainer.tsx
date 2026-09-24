@@ -16,6 +16,7 @@ import { toastsAtom } from '@/lib/toast'
 import type { ToastItem } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
+/** 组件：全局通知容器（消费 toastsAtom，固定在视口右下角，需挂载在应用根部） */
 export default function ToastContainer() {
   const [toasts, setToasts] = useAtom(toastsAtom)
 
@@ -36,6 +37,7 @@ export default function ToastContainer() {
   )
 }
 
+/** 单条通知卡片：按类型渲染图标，支持可选操作按钮与手动关闭 */
 function ToastCard({ toast, onClose }: { toast: ToastItem; onClose: () => void }) {
   const config = TOAST_CONFIG[toast.type]
 
@@ -73,6 +75,7 @@ function ToastCard({ toast, onClose }: { toast: ToastItem; onClose: () => void }
   )
 }
 
+/** 通知类型 → 图标与图标颜色映射 */
 const TOAST_CONFIG = {
   success: { icon: CheckCircle2Icon, iconColor: 'text-green-500' },
   error: { icon: XCircleIcon, iconColor: 'text-red-500' },

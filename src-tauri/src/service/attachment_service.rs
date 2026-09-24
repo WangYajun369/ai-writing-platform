@@ -221,6 +221,7 @@ pub fn add_file(
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
+    // 磁盘文件名 = uuid(+扩展名)：uuid 全局唯一，天然不重名、不覆盖既有文件
     let id = Uuid::new_v4().to_string();
     let stored = if ext.is_empty() {
         format!("{id}")
@@ -358,6 +359,7 @@ pub fn cleanup_orphan_files(app: &AppHandle, db: &AppDb) -> Result<usize, AppErr
 }
 
 type ActiveTask = (String, Option<String>);
+/// 校验任务存在且未软删，返回 (id, project_id)；失败统一映射为 NotFound
 fn task_active_or_err(conn: &rusqlite::Connection, task_id: &str) -> Result<ActiveTask, AppError> {
     conn.query_row(
         "SELECT id, project_id FROM tasks WHERE id=?1 AND deleted_at IS NULL",

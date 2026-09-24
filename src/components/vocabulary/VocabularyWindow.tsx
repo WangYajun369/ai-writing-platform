@@ -35,6 +35,7 @@ import ToastContainer from '@/components/common/ToastContainer'
 
 type TabKey = 'book' | 'review' | 'stats'
 
+/** Tab 配置表：key 驱动内容区切换，label/icon 渲染按钮；复习页由 dueCount 附加角标 */
 const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'review', label: '今日复习', icon: <PlayCircleIcon className="h-4 w-4" /> },
   { key: 'book', label: '生词本', icon: <BookOpenIcon className="h-4 w-4" /> },
@@ -105,6 +106,7 @@ export default function VocabularyWindow() {
     }
   }
 
+  // 今日到期数：同时驱动顶栏摘要、复习 Tab 红色角标与「有待复习自动切到复习页」
   const dueCount = stats?.dueToday ?? 0
 
   return (

@@ -101,6 +101,7 @@ pub fn delete_volume(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppErr
         line!(),
     );
     volume_repo::soft_delete(&conn, id, &ts)?;
+    // 章节解绑已在 volume_repo::soft_delete 内部的事务中执行；此日志为该次 UPDATE 的审计镜像
     emit_sql_log(
         app,
         "UPDATE",

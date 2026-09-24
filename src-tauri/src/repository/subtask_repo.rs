@@ -89,6 +89,7 @@ pub fn delete(conn: &Connection, id: &str) -> Result<usize> {
 
 /// 取某任务下末尾下一个 sort_order（追加到底部，已完成区之后也不影响手动重排）
 pub fn next_sort_order(conn: &Connection, task_id: &str) -> Result<i64> {
+    // 无子任务时 MAX 为 NULL，以 -1 兜底使首个 sort_order 从 0 开始
     conn.query_row(
         "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM task_subtasks WHERE task_id=?1",
         params![task_id],

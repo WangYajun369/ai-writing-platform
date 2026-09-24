@@ -1,6 +1,10 @@
 //! 卷数据访问层
 //!
 //! 提供 volumes 表的 CRUD SQL 操作。
+//!
+//! 约定：软删除卷须在同一事务内清空其下属章节 volume_id（见 soft_delete），
+//! 避免后续硬删除卷时 ON DELETE SET NULL 级联更新触发 FTS 大字段重分词的 SQL 错误；
+//! restore 仅清除 deleted_at，不会把章节重新挂回卷（原从属关系在软删时已被解除）。
 
 use crate::models::Volume;
 use rusqlite::{params, Connection, Result};

@@ -352,6 +352,7 @@ pub async fn trigger_embedding(
     api_key: &str,
     embedding_model: &str,
 ) -> Result<EmbeddingProgress, AppError> {
+    // 待向量化文档统一结构：章节与世界观卡片归一为同一批处理单元
     struct SourceItem {
         source_type: String,
         source_id: String,
@@ -414,6 +415,7 @@ pub async fn trigger_embedding(
         });
     }
 
+    // 每批 20 条调用一次 Embedding API，控制单次请求体量
     const BATCH_SIZE: usize = 20;
     let mut chapters_embedded = 0usize;
     let mut world_cards_embedded = 0usize;

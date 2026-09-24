@@ -51,6 +51,7 @@ pub fn create_snapshot(
 
     let id = Uuid::new_v4().to_string();
     let ts = now();
+    // 带标签 = 里程碑快照（用户手动打点）；无标签 = 自动快照（常规保存时触发）
     let snap_type = if label.is_some() { "milestone" } else { "auto" };
 
     emit_sql_log(
@@ -138,6 +139,7 @@ pub fn restore_snapshot(
         file!(),
         line!(),
     );
+    // 快照 wc 为该版本创建时的字数：恢复后章节字数回到版本值，再同步书籍聚合
     chapter_repo::save_content(&tx, &chapter_id, &content_html, wc, &ts)?;
 
     book_repo::update_word_count_by_chapter(&tx, &chapter_id, &ts)?;

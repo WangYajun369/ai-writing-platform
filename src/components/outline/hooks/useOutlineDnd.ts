@@ -23,6 +23,7 @@ import type { Chapter, Volume } from '@/types'
 import type { FlatItem } from '../types'
 import { chapterGroup, dndId } from '../utils'
 
+/** 插入指示线数据：目标项 id + 插入位置（before = 之前 / after = 之后） */
 export interface DndDropIndicator {
   id: string
   position: 'before' | 'after'
@@ -46,6 +47,7 @@ export function useOutlineDnd({ flatItems, volumes, chapters }: UseOutlineDndOpt
   const [activeId, setActiveId] = useState<string | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
   const [dropIndicator, setDropIndicator] = useState<DndDropIndicator | null>(null)
+  // ref 镜像指示线：dragEnd 时 state 可能尚未 flush，必须从 ref 读取最终落点
   const dropIndicatorRef = useRef<DndDropIndicator | null>(null)
   const dragStartPos = useRef<{ x: number; y: number } | null>(null)
 

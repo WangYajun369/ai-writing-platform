@@ -123,6 +123,7 @@ fn ensure_project_active(conn: &rusqlite::Connection, project_id: &str) -> Resul
 
 // ── 参数 DTO ──
 
+/// 新建任务参数：必填 project_id 与 title，其余字段均带默认值
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateTaskParams {
@@ -151,6 +152,7 @@ pub struct CreateTaskParams {
     pub recurrence: String,
 }
 
+/// 任务部分更新参数：None 表示不修改该字段；各字段对 Some 值的语义见字段注释
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateTaskParams {

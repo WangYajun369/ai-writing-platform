@@ -14,6 +14,7 @@ pub const MAX_TAG_NAME: usize = 50;
 /// 标签状态合法取值
 const VALID_STATUS: [&str; 2] = ["enabled", "disabled"];
 
+/// 标签部分更新参数：None 表示不修改该字段；name 为空串会报校验错误
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateTagParams {

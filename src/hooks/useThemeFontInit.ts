@@ -1,3 +1,13 @@
+/**
+ * useThemeFontInit — 主题 / 护眼 / 字体偏好初始化与 DOM 应用
+ *
+ * 由应用根初始化（AppInit）挂载一次。启动时从 localStorage 恢复偏好到
+ * preferencesStore，随后四个 effect 分别把主题与护眼模式同步为
+ * <html> 的 class（dark / eyecare-warm / eyecare-green），把字体与字号
+ * 同步为 CSS 变量（--font-editor / --font-editor-size），并写回 localStorage。
+ * 偏好修改入口统一走 preferencesStore 的 setter（见其内部 savePreferences），
+ * 本 Hook 的存储键主要用于进程启动时的恢复与 DOM 应用。
+ */
 import { useEffect } from 'react'
 import { usePreferencesStore } from '@/stores/preferencesStore'
 

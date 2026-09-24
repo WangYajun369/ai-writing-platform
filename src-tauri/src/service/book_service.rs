@@ -100,6 +100,7 @@ pub fn create_book(
         &ts,
     )?;
 
+    // 输入与落库一致，直接内存构造返回值，避免再查一次库
     Ok(Book {
         id,
         title: title.to_string(),
@@ -154,6 +155,7 @@ pub fn update_book(
         }
 
         let fields = upd.field_count();
+        // build() 返回 None 表示无任何待更新字段：等价于一次回读，不执行 SQL
         if let Some((sql, values)) = upd.build(&id, &ts) {
             emit_sql_log(
                 app,
@@ -178,6 +180,7 @@ pub fn set_book_cover(
     id: &str,
     source_path: &str,
 ) -> Result<Book, AppError> {
+    // source_path 为空串 = 清除封面（而非报错）
     if source_path.trim().is_empty() {
         let ts = now();
         {

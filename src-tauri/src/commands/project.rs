@@ -1,6 +1,7 @@
 //! 项目 IPC 命令（任务卡模块）
 //!
 //! 业务逻辑集中在 `service::project_service`。
+//! 对应 tauri-bridge.ts 的 `taskCardApi`（listProjects / createProject / 回收站等）。
 
 use crate::db::AppDb;
 use crate::error::AppError;

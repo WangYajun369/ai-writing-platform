@@ -2,6 +2,7 @@
 //!
 //! 覆盖生词 CRUD、SM-2 复习提交、到期队列与统计。
 //! 业务逻辑集中在 `service::vocab_service`。
+//! 对应 tauri-bridge.ts 的 `vocabApi`（阅读取词收藏 / 生词本窗口）。
 
 use crate::db::AppDb;
 use crate::error::AppError;

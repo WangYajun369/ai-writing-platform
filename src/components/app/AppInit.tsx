@@ -42,6 +42,7 @@ function WindowShell({ children }: { children: React.ReactNode }) {
   )
 }
 
+// 组件：AppInit 应用初始化入口（按独立窗口 URL 参数路由，主窗口渲染插件宿主 + 主路由）
 export default function AppInit() {
   // 启动 hooks
   useAppVersion()

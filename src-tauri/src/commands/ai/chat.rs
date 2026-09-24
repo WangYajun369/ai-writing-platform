@@ -429,6 +429,8 @@ async fn sse_loop_inner(
                         );
                     }
 
+                    // 与 Agent 引擎推送 delta 增量不同：本事件 content 字段携带
+                    // 的是累积后的完整文本，前端应整段替换正文而不是追加。
                     if let Some(delta) = data["choices"][0]["delta"]["content"].as_str() {
                         accumulated.push_str(delta);
                         if phase == "thinking" {

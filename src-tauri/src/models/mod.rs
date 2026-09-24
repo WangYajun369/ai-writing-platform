@@ -57,6 +57,8 @@ pub struct Chapter {
     #[serde(rename = "volumeId")]
     pub volume_id: Option<String>,
     pub title: String,
+    // content_html 用 Option 而非 String：列表/概要查询刻意不 SELECT 正文字段，
+    // 解析时统一置 None（见 chapter_repo::list_by_book），仅在详情场景加载正文。
     #[serde(rename = "contentHtml")]
     pub content_html: Option<String>,
     #[serde(rename = "wordCount")]
@@ -485,6 +487,10 @@ pub struct TaskSubtask {
 /// 附件 — 对应 attachments 表（P2，PRD 12.4）
 /// 文件实体存放于应用数据目录 attachments/（与 time_write.db 同数据根），
 /// 记录仅存元数据与相对数据根的 local_path。
+///
+/// 注意：表中另有 local_path / deleted / deleted_at 后端内部字段，
+/// 出于不向前端暴露磁盘路径的考虑，本模型刻意不包含它们；
+/// repository 解析行时直接丢弃（见 attachment_repo::parse_attachment）。
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Attachment {
     pub id: String,

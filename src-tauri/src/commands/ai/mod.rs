@@ -158,6 +158,8 @@ pub fn floats_to_bytes(floats: &[f32]) -> Vec<u8> {
 /// 保守截断到 1800 字符以留有余量。
 pub const EMBEDDING_MAX_CHARS: usize = 1800;
 
+/// 按字符数截断文本：超过 EMBEDDING_MAX_CHARS 时取前 1800 字符，否则原样返回。
+/// 供 Embedding 批量向量化的前置处理调用，避免单条超限被 API 拒绝。
 pub fn truncate_for_embedding(text: &str) -> String {
     if text.chars().count() <= EMBEDDING_MAX_CHARS {
         text.to_string()

@@ -15,6 +15,8 @@ export const ResizableImage = Image.extend({
     return {
       ...this.parent?.(),
       width: {
+        // 默认 100%。解析优先取 data-width，其次兼容行内 style（仅接受合法百分比），
+        // 避免将脏样式/像素值误解析进文档状态
         default: '100%',
         parseHTML: (element) => {
           const dataWidth = element.getAttribute('data-width')
@@ -24,6 +26,7 @@ export const ResizableImage = Image.extend({
           return '100%'
         },
         renderHTML: ({ width }) => {
+          // 100% 为默认值时不再输出冗余属性；非默认宽度才以 data-width + style 序列化
           if (width === '100%') return {}
           return { 'data-width': width, style: `width: ${width}` }
         },

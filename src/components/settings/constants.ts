@@ -1,5 +1,10 @@
 /**
  * 设置页共享常量 —— 服务商默认值、模型列表等
+ *
+ * - provider key（bigmodel / deepseek）与 types.ts 中 Provider/RagProvider 一致，
+ *   设置区块按 key 读取对应默认值并随服务商切换整体套用
+ * - DeepSeek 不提供 Embeddings API，因此 RAG 侧仅维护 bigmodel（智谱）默认项
+ * - GITHUB_REPO 供「版本更新」区块通过 GitHub Releases API 做兜底检查
  */
 
 /** 智谱 BigModel 可选模型 */

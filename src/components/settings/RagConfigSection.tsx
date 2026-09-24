@@ -14,25 +14,31 @@ import { RAG_PROVIDER_DEFAULTS, RAG_BIGMODEL_MODELS } from './constants'
 import { ApiKeyField, ConnectionStatusBadge, ConnectionStatus } from './shared'
 
 interface RagConfigSectionProps {
+  /** 当前 RAG 连接配置（服务商 / endpoint / embedding 模型 / API Key） */
   config: RagConfig
+  /** 由父组件提供的部分更新回调，仅回传发生变化的字段 */
   onChange: (c: Partial<RagConfig>) => void
 }
 
 export function RagConfigSection({ config, onChange }: RagConfigSectionProps) {
+  // 连接测试为本地 UI 状态：idle 未测 / testing 测试中 / connected 通过 / error 失败
   const [ragTestStatus, setRagTestStatus] = useState<ConnectionStatus>('idle')
   const [ragTestDetail, setRagTestDetail] = useState('')
 
+  /** 切换服务商：同步填入该服务商的默认 endpoint 与 embedding 模型 */
   const handleProviderChange = (provider: RagProvider) => {
     const d = RAG_PROVIDER_DEFAULTS[provider]
     onChange({ provider, endpoint: d.endpoint, embeddingModel: d.embeddingModel })
   }
 
+  /** API Key 变更：留空时回退为 undefined，保证配置中不残留空串 */
   const handleApiKeyChange = (value: string) => {
     onChange({ bigmodelApiKey: value || undefined })
   }
 
   const currentRagApiKey = getRagApiKey(config)
 
+  /** 测试向量服务连通性：先校验 API Key，再调用后端 testRagConnection 并把结果写入状态 */
   const handleTestRag = async () => {
     if (!currentRagApiKey) {
       setRagTestStatus('error')

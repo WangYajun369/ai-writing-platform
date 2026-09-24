@@ -189,6 +189,7 @@ export default function CompleteSummaryModal({ task, onClose, onCompleted }: Pro
     )
 
   // 工具栏按钮定义：title / icon / isActive / can
+  //（相比任务描述编辑器多出：代码块 / 超链接 / 内嵌图片）
   const groups: {
     key: string
     title: string

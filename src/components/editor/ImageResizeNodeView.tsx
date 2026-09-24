@@ -125,6 +125,7 @@ export default function ImageResizeNodeView({
   }, [node.attrs.src, updateAttributes])
 
   return (
+    // data-drag-handle 使 ProseMirror 允许按住图片区域拖动调整文档内位置
     <NodeViewWrapper className="image-node-wrapper" data-drag-handle="">
       <div className="image-node-container" style={{ width: `${widthPct}%` }}>
         <img

@@ -145,6 +145,7 @@ export default function TaskCardsWindow() {
 
   const goProject = useCallback(
     async (projectId: string) => {
+      // 切到项目视图并拉取该项目任务；加载期间导航行内显示 pending 转圈
       setView({ type: 'project', projectId })
       setPendingNav(projectId)
       try {

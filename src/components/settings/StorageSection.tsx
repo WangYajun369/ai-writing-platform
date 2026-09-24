@@ -1,5 +1,8 @@
 /**
  * 存储信息区块
+ *
+ * 当前为静态说明占位页：仅提示“每部作品一个 .db 文件”的存储模型，
+ * 不读取任何 store / IPC，统计功能计划在后续版本接入。
  */
 export function StorageSection() {
   return (

@@ -1,5 +1,9 @@
 /**
- * Agent 模式输入区域
+ * AgentInputArea — Agent 模式输入区域（受控组件）
+ *
+ * 输入内容由 AiSidePanel 持有；流式进行（isStreaming）时发送按钮切换为
+ * 「停止」（onCancel 取消 Rust Agent 引擎的当前技能执行），
+ * 引擎状态非 running 时整体禁用。
  */
 import { memo } from 'react'
 import { SendIcon, Loader2Icon } from 'lucide-react'

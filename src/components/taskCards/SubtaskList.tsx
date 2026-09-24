@@ -93,6 +93,7 @@ export default function SubtaskList({ taskId }: Props) {
       .catch((e) => toast.error(errText(e)))
   }
 
+  /** 删除：本地乐观移除行；后端失败仅提示、不自动回滚（与 toggle 的回滚策略不同，重进/刷新后恢复一致） */
   const remove = (item: TaskSubtask) => {
     setItems((list) => list.filter((x) => x.id !== item.id))
     taskCardApi.deleteSubtask(item.id).catch((e) => toast.error(errText(e)))

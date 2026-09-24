@@ -16,8 +16,9 @@ import { useTtsConfigStore } from '@/stores/ttsConfig'
 interface Props {
   /** 要朗读的文本（单词 / 词组 / 句子） */
   text: string
+  /** 附加样式类（用于覆盖间距/尺寸等外观） */
   className?: string
-  /** 图标尺寸 */
+  /** 图标尺寸（px） */
   size?: number
   /** 自定义悬停提示（未配置朗读时覆盖） */
   title?: string
@@ -29,9 +30,12 @@ export default function SpeakButton({ text, className, size = 15, title }: Props
   const configured = useTtsConfigStore((s) => s.configured)
   const [synthing, setSynthing] = useState(false)
 
+  // 规范化朗读文本：去首尾空白；空文本时按钮自然禁用
   const content = text?.trim() ?? ''
+  // 可用条件：已配置 Key + 文本非空 + 当前不在合成中（防连点）
   const enabled = configured && content.length > 0 && !synthing
 
+  /** 请求合成并播放：结果音频交给共享播放器（单实例），可打断上一条朗读 */
   async function handleSpeak() {
     if (!configured || synthing || !content) return
     setSynthing(true)

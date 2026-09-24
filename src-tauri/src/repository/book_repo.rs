@@ -1,6 +1,10 @@
 //! 书籍数据访问层
 //!
 //! 提供 books 表的所有 CRUD SQL 操作，以及 row → Book 解析函数。
+//!
+//! 约定：日常查询默认过滤软删（deleted_at IS NULL），回收站单独列出；
+//! 硬删除 / 清空回收站依赖 books → volumes/chapters/snapshots/world_cards
+//! 的 ON DELETE CASCADE 外键，另有 cleanup_orphan_* 清理不再被源记录引用的 embeddings。
 
 use crate::models::Book;
 use crate::repository::embedding_repo;
@@ -149,6 +153,7 @@ pub fn clear_trash(conn: &Connection) -> Result<()> {
 
 /// 根据 chapter_id 重新聚合并更新对应书籍的总字数
 pub fn update_word_count_by_chapter(conn: &Connection, chapter_id: &str, ts: &str) -> Result<()> {
+    // 子查询：由章节反查所属 book_id，再聚合该书未删除章节的 word_count 总和（无章节时为 0）
     conn.execute(
         "UPDATE books SET word_count=(\
             SELECT COALESCE(SUM(word_count),0) FROM chapters \
@@ -181,6 +186,7 @@ pub fn word_count_by_book(conn: &Connection, book_id: &str) -> Result<i64> {
 
 /// 重新聚合并更新指定 book_id 的总字数
 pub fn recalc_word_count(conn: &Connection, book_id: &str, ts: &str) -> Result<()> {
+    // 子查询聚合该书未删除章节的字数总和（COALESCE 兜底空表为 0），并同步 updated_at
     conn.execute(
         "UPDATE books SET word_count=(SELECT COALESCE(SUM(word_count),0) FROM chapters WHERE book_id=?1 AND deleted_at IS NULL), updated_at=?2 WHERE id=?1",
         params![book_id, ts],

@@ -1,5 +1,10 @@
 /**
  * 外观配置区块 —— 主题 / 护眼模式 / 字体 / 字号 / 网格大小
+ *
+ * 偏好存取：全部为受控组件，值由 SettingsPage 从 usePreferencesStore 读取，
+ * 各 onChange 回调其 setter（内部 savePreferences 持久化）；
+ * preferencesStore 默认值：theme 'system'、eyeCareMode 'off'、
+ * fontFamily 'yahei'、fontSize 16、gridSize 'medium'。
  */
 import { MinusIcon, PlusIcon } from 'lucide-react'
 import { OptionGroup, type OptionItem } from './shared'

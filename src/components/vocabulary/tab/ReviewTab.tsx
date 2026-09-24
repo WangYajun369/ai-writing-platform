@@ -33,8 +33,10 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
   const [done, setDone] = useState(0)
   const [finished, setFinished] = useState(false)
   const [sessionLabel, setSessionLabel] = useState('今日复习')
+  // 本场会话四档自评计数（忘记/模糊/记得/轻松），完成页以分布卡片呈现
   const [counts, setCounts] = useState<Record<VocabRating, number>>({ 0: 0, 1: 0, 2: 0, 3: 0 })
 
+  // 队列头即当前复习的卡片；队列排空且非完成态时回到初始界面
   const current = queue[0]
 
   /** 需要首次学习的新词（今天收录/从未开始复习） */
@@ -52,6 +54,7 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
     return queue.length + done
   }, [queue.length, done])
 
+  /** 开启一轮复习/学习会话：重置队列、进度、计数与完成态，label 用于结果页标题 */
   const startSession = useCallback((items: VocabWord[], label: string) => {
     setQueue(items.map((w) => ({ word: w, revisit: 0 })))
     setSessionLabel(label)

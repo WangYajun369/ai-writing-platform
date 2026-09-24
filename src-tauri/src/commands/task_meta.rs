@@ -1,4 +1,7 @@
 //! 任务卡模块 key-value / 提醒偏好 IPC 命令
+//!
+//! 通用键值存储（task_meta 表）承载任务卡模块内部状态与提醒偏好 JSON。
+//! 对应 tauri-bridge.ts 的 `taskCardApi`（getMeta / setMeta / getReminderPrefs / setReminderPrefs）。
 
 use crate::db::AppDb;
 use crate::error::AppError;

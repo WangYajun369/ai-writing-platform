@@ -1,6 +1,10 @@
 /**
- * 任务卡片（看板 / 今日列表共用）
- * 左侧完成勾选，中部标题+标签+时间提示，点击卡片打开详情。
+ * 任务卡片（看板 / 今日 / 全部任务 / 回收站共用）
+ *
+ * 纯展示组件：任务与所属项目由父级经 props 传入（数据源 taskCardsStore / taskApi），
+ * 交互（onOpen 打开详情、onToggleDone 勾选完成、onPostpone 顺延到明天、
+ * draggable 拖拽）均由宿主实现并回调。卡内自渲染父任务层级、子任务数、项目、
+ * 优先级、重复规则、截止时间（含逾期标红）与标签等元信息。
  */
 import { ArrowRightIcon, CheckIcon, Clock3Icon, FlagIcon, GitBranchIcon, LayersIcon, MessageSquareIcon, NotebookPenIcon, RepeatIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'

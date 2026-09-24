@@ -1,6 +1,7 @@
 //! 日记管理 IPC 命令
 //!
 //! 对外暴露 Tauri 命令，内部委托给 Service 层处理。
+//! 对应 tauri-bridge.ts 的 `diaryApi`（书页式「看日记」浏览与日记编辑器）。
 
 use crate::db::AppDb;
 use crate::error::AppError;

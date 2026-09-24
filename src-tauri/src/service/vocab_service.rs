@@ -391,6 +391,7 @@ pub fn submit_review(
     let word = vocab_repo::find_by_id(&conn, word_id)?
         .ok_or_else(|| AppError::NotFound(format!("生词不存在: {word_id}")))?;
 
+    // 仅 learning 队列内的生词可提交复习反馈；mastered/suspended 需先切回学习状态
     if word.status != "learning" {
         return Err(AppError::Business(format!(
             "「{}」不在复习队列中（状态: {}）",

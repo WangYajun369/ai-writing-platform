@@ -18,6 +18,7 @@ import CompleteSummaryModal from './CompleteSummaryModal'
 
 export function useCompleteFlow() {
   const setStatus = useTaskCardsStore((s) => s.setStatus)
+  // 正在走「完成」流程的任务；非空时渲染 CompleteSummaryModal（弹窗以任务 id 为 key 防止串数据）
   const [completing, setCompleting] = useState<TaskCard | null>(null)
 
   const toggleDone = useCallback(

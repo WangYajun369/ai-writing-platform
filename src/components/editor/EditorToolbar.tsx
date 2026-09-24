@@ -420,6 +420,7 @@ export default function EditorToolbar() {
         <ToolbarBtn
           active={tablePickerOpen || isInTable}
           onClick={() => {
+            // 弹窗互斥：打开表格弹窗时同步关闭颜色弹窗
             setTablePickerOpen((v) => !v)
             setColorPickerOpen(false)
           }}

@@ -69,6 +69,7 @@ function matchDue(task: TaskCard, range: DueRange): boolean {
   }
 }
 
+/** 按排序策略排序（due/priority 升序靠前、无截止排最后；created 旧→新；updated 新→旧） */
 function sortList(
   list: { task: TaskCard; projectName: string }[],
   key: SortKey,
@@ -153,6 +154,7 @@ export default function AllTasksView() {
 
   const results = useMemo(() => {
     const list: { task: TaskCard; projectName: string }[] = []
+    // 跨项目遍历：逐项应用状态/标签/优先级/截止/关键词过滤，命中后再统一排序
     for (const [pid, arr] of Object.entries(tasksByProject)) {
       const pn = projectMap.get(pid)?.name ?? '未分类'
       for (const task of arr) {

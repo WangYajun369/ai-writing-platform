@@ -10,6 +10,7 @@ import { formatWordCount } from '@/lib/utils.ts'
 import { format } from 'date-fns'
 import WritingStatsPanel from './WritingStatsPanel'
 
+// 组件：StatusBar 编辑器底部状态栏（章节/全书字数、保存状态、写作统计）
 export default function StatusBar() {
   const [wordCount] = useAtom(wordCountAtom)
   const [isSaving] = useAtom(isSavingAtom)

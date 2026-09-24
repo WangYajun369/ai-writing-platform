@@ -101,6 +101,7 @@ pub fn update(
 ) -> Result<usize> {
     let mut set_clauses: Vec<String> = Vec::new();
     let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    // 动态拼装 SET 子句：仅把传入 Some 的字段纳入更新，无字段时直接返回 0
     macro_rules! push_set {
         ($col:expr, $val:expr) => {{
             set_clauses.push(format!("{} = ?{}", $col, set_clauses.len() + 1));

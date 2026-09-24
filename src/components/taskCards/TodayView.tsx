@@ -180,6 +180,7 @@ export default function TodayView({
     }
   }
 
+  /** 渲染单个分组（「今日已完成」默认折叠，可点击展开/收起） */
   function renderGroup(key: GroupKey) {
     const list = groups[key]
     if (list.length === 0) return null

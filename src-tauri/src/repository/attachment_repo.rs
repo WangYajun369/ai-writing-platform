@@ -2,6 +2,9 @@
 //!
 //! attachments 表存元数据与 local_path；文件实体放应用数据目录。
 //! 软删除（deleted=1）保留文件路径，供回收站还原与孤儿清理判断。
+//!
+//! 惯例：Attachment 模型仅承载返回给前端的展示字段（local_path/deleted
+//! 不出网），需要实际文件路径时走 find_active / all_paths 等专用入口。
 
 use crate::models::Attachment;
 use rusqlite::{params, Connection, Result};
@@ -84,6 +87,7 @@ pub fn soft_delete(conn: &Connection, id: &str, ts: &str) -> Result<usize> {
 /// 取全部附件的 local_path（含软删记录，孤儿文件清理对照用；
 /// 软删记录已无恢复入口，其文件同样视为可回收）
 pub fn all_paths(conn: &Connection) -> Result<Vec<String>> {
+    // 扫描全表仅取 local_path 一列，供启动清理在内存中做差集比对
     let mut stmt = conn.prepare("SELECT local_path FROM attachments")?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
     rows.collect()

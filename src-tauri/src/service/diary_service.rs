@@ -24,6 +24,7 @@ const MAX_KEYWORD_LEN: usize = 20;
 
 /// 轻量校验 YYYY-MM-DD 格式
 fn is_valid_date(date: &str) -> bool {
+    // 仅做字符结构校验，不校验真实日历（如 02-30）；非法日历日期由前端日期控件规避
     let bytes = date.as_bytes();
     if bytes.len() != 10 {
         return false;

@@ -1,6 +1,9 @@
 //! IPC 命令模块导出
 //!
 //! 将各子模块的 Tauri 命令统一导出，供 lib.rs 注册。
+//!
+//! 根目录 .rs 为通用业务命令组（书籍写作 / 任务卡 / 单词学习 / 系统检测等），
+//! agent/ ai/ io/ window/ 子目录承载独立功能模块（Agent、AI、导入导出、多窗口）。
 
 pub mod agent;
 pub mod ai;

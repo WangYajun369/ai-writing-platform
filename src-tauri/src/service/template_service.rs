@@ -49,6 +49,7 @@ pub struct CreateTemplateParams {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateTemplateParams {
     pub name: Option<String>,
+    /// 模板默认项目：Some(Some(id)) = 修改；Some(None) = 清除默认；None = 不改动
     pub project_id: Option<Option<String>>,
     pub title: Option<String>,
     pub description: Option<String>,
@@ -206,7 +207,7 @@ pub fn create_task_from_template(
             .map(|d| d + chrono::Duration::days(tmpl.due_offset_days))
             .map(|d| d.format("%Y-%m-%d").to_string())
             .unwrap_or_else(|_| local_today());
-        Some(format!("{day}T09:00:00"))
+        Some(format!("{day}T09:00:00")) // 偏移推算的截止时刻统一取当天 09:00
     } else {
         None
     };

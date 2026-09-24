@@ -47,6 +47,7 @@ const ymOfDate = (date: string) => date.slice(0, 7)
 /** 月份中文名（index 0 → 一月） */
 const zhMonths = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二']
 
+// 组件：DiaryBookPage 看日记独立窗口书页浏览器（只读翻书，无编辑入口）
 export default function DiaryBookPage() {
   /** 全部日记摘要（按日期升序，最早的在前） */
   const [metas, setMetas] = useState<DiaryMeta[] | null>(null)

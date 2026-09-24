@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 
+// 组件：应用退出遮罩（监听「closing」事件后全屏覆盖，阻止退出期间误操作）
 export default function AppClosingOverlay() {
   const [closing, setClosing] = useState(false)
 

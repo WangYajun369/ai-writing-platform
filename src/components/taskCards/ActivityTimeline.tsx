@@ -16,6 +16,7 @@ interface Props {
   limit?: number
 }
 
+/** 时间显示：当天仅给 HH:MM，更早的显示 M月D日 HH:MM */
 function fmtTime(s: string): string {
   const d = new Date(s)
   if (Number.isNaN(d.getTime())) return s
@@ -49,6 +50,7 @@ export default function ActivityTimeline({ taskId, limit = 20 }: Props) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // 请求完成前组件可能已卸载：用 alive 标志丢弃过期响应，避免卸载后 setState 告警
     let alive = true
     setLoading(true)
     taskCardApi

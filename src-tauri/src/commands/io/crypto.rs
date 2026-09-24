@@ -137,6 +137,7 @@ pub fn encrypt_bytes(plaintext: &[u8]) -> Result<Vec<u8>, String> {
 
 /// AES-256-GCM 解密：输入为 nonce[12] + ciphertext + tag[16]
 pub fn decrypt_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
+    // 最小合法长度 28 = nonce(12) + GCM tag(16)，对应空明文的密文体积；更短必为残缺数据
     if data.len() < 28 {
         return Err("数据块太短，无法解密".to_string());
     }

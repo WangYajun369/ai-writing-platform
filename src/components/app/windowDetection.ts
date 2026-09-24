@@ -95,6 +95,7 @@ export interface TasksWindowInfo {
   section?: 'today' | 'all'
 }
 
+/** 任务卡独立窗口检测：?taskswin=1（命令面板深链可携带 section=today|all） */
 export function detectTasksWindow(): TasksWindowInfo {
   const params = new URLSearchParams(window.location.search)
   if (params.get('taskswin') !== '1') return { isTasks: false }
@@ -107,6 +108,7 @@ export interface DiaryBookWindowInfo {
   isDiaryBook: boolean
 }
 
+/** 看日记独立窗口检测：?diarybookwin=1 */
 export function detectDiaryBookWindow(): DiaryBookWindowInfo {
   const params = new URLSearchParams(window.location.search)
   if (params.get('diarybookwin') === '1') return { isDiaryBook: true }

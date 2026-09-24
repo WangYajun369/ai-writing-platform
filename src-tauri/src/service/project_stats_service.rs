@@ -38,6 +38,7 @@ pub fn project_weekly_stats(
         line!(),
     );
     let mut stats = Vec::with_capacity(weeks as usize);
+    // (0..weeks).rev()：从最远一周写到本周，保证返回数组按周升序（oldest → newest）
     for w in (0..weeks).rev() {
         let start = this_monday - Duration::days((w * 7) as i64);
         let end = start + Duration::days(7);

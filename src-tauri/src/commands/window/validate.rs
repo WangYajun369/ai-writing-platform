@@ -127,6 +127,7 @@ pub async fn validate_database(app: AppHandle) -> Result<ValidationResult, AppEr
         ("snapshots", "chapter_id", "SELECT COUNT(*) FROM snapshots WHERE chapter_id NOT IN (SELECT id FROM chapters)"),
         ("world_cards", "book_id", "SELECT COUNT(*) FROM world_cards WHERE book_id NOT IN (SELECT id FROM books)"),
     ];
+    // 注意：此处仅覆盖主要父子表关系，为硬编码清单；后续新增表/外键时需在此同步补充
 
     for (table, column, sql) in orphan_checks {
         let count: i64 = conn.query_row(sql, [], |row| row.get(0)).unwrap_or(0);

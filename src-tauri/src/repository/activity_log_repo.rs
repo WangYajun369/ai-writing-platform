@@ -2,6 +2,9 @@
 //!
 //! task_activity_logs 表：任务与项目级动作时间线。task_id / project_id
 //! 至少一个非空；project_id 冗余冗余便于项目动态与周报统计。
+//!
+//! action 为固定枚举字符串（如 task.created / completed），由 service 层写入；
+//! 时间线统一按 created_at DESC、id DESC 排序，同一时刻的多条记录也能稳定排序。
 
 use crate::models::ActivityLog;
 use rusqlite::{params, Connection, Result};
@@ -64,6 +67,7 @@ pub fn list_by_project(
 }
 
 /// 某项目在时间区间内的完成（action='completed'）日志数量
+/// （区间为 [from, to) 半开区间，to 取次日零点的 UTC 文本便于按天统计）
 pub fn count_completed_between(
     conn: &Connection,
     project_id: &str,
@@ -79,6 +83,7 @@ pub fn count_completed_between(
 }
 
 /// 某项目在时间区间内的新增（action='task.created'）日志数量
+/// （区间为 [from, to) 半开区间，与 count_completed_between 保持一致）
 pub fn count_created_between(
     conn: &Connection,
     project_id: &str,

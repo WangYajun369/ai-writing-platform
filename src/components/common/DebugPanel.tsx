@@ -31,6 +31,7 @@ const FILTER_OPTIONS: { label: string; value: Filter }[] = [
   { label: '错误', value: 'error' },
 ]
 
+/** 组件：调试控制台面板（调试独立窗口核心；加载/实时监听日志并可校验数据库） */
 export default function DebugPanel() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [filter, setFilter] = useState<Filter>('all')

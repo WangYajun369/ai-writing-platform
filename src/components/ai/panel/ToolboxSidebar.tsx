@@ -23,6 +23,7 @@ export function ToolboxSidebar({
   generating,
 }: ToolboxSidebarProps) {
   return (
+    // 左栏固定 12rem 宽：顶部标题 + 下方可滚动的「分类 → 工具」两级列表
     <div className="w-48 shrink-0 border-r border-border flex flex-col min-h-0">
       <div className="px-3 py-2.5 border-b border-border shrink-0">
         <div className="flex items-center gap-1.5">
@@ -31,6 +32,7 @@ export function ToolboxSidebar({
         </div>
       </div>
       <div className="flex-1 overflow-y-auto py-1">
+        {/* 分类可折叠：折叠状态由父级传入的 Set 维护，点击分类头切换 */}
         {categories.map((cat) => {
           const isCollapsed = collapsedCategories.has(cat.id)
           return (

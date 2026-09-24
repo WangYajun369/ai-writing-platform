@@ -113,6 +113,7 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  /** 触发「已保存 ✓」的短暂提示（1.2s 后自动复位隐藏） */
   function flashSaved() {
     setSavedAt(Date.now())
     window.setTimeout(() => setSavedAt(0), 1200)

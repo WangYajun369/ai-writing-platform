@@ -1,6 +1,11 @@
 /**
  * DraggableVolume — 可拖拽的卷条目组件
- * 支持折叠/展开、行内重命名、新建章节、删除操作
+ *
+ * 交互与结构：
+ * - 单击行（非编辑态）折叠/展开该卷；双击进入行内重命名
+ * - 同一 DOM 注册 useDraggable 与 useDroppable：既能拖动卷自身排序，
+ *   也能作为章节的投放目标；isChapterOver 高亮表示章节即将落入该卷
+ * - hover 显示「新建章节」与「删除卷」按钮；前后 DropIndicator 指示排序落点
  */
 import { useState, useCallback, memo } from 'react'
 import {
@@ -46,6 +51,7 @@ export const DraggableVolume = memo(function DraggableVolume({
   const [editing, setEditing] = useState(false)
   const [editValue, setEditValue] = useState(item.volume.title)
 
+  // 合并拖拽与投放的 ref：同一节点既承载「拖起本卷」又承载「接收投放」逻辑
   const ref = useCallback(
     (node: HTMLDivElement | null) => {
       setDraggableRef(node)
@@ -54,6 +60,7 @@ export const DraggableVolume = memo(function DraggableVolume({
     [setDraggableRef, setDroppableRef],
   )
 
+  /** 提交行内重命名：非空且有变化才回调父级，随后退出编辑态 */
   async function handleRename() {
     if (editValue.trim() && editValue !== item.volume.title) {
       await onRename(editValue.trim())

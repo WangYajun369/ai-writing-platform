@@ -1,3 +1,13 @@
+/**
+ * 全局 UI 原子状态（Jotai）
+ *
+ * 集中定义跨组件、跨窗口共享的轻量 UI 状态（原子）：
+ * - 编辑器域：实例引用、聚焦、滚动/光标位置、保存态、字数、diff 模式、刷新计数；
+ * - 布局域：侧边栏 / AI 面板 / 版本历史面板 / 专注模式 / 搜索面板开关；
+ * - 模态栈与悬浮关键词；
+ * - 各独立子窗口「是否打开」标记（由窗口事件同步，供主窗口入口按钮高亮）。
+ * 用法：const [open, setOpen] = useAtom(aiPanelOpenAtom)。
+ */
 import { atom } from 'jotai'
 import type { Editor } from '@tiptap/react'
 import type { DiffViewMode } from '../types'

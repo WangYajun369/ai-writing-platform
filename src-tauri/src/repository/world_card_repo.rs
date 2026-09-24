@@ -108,6 +108,7 @@ pub fn search_fts5(
         .map(|c| format!("w.{c}"))
         .collect::<Vec<_>>()
         .join(",");
+    // 外部内容表 world_cards_fts 与主表按 rowid 关联；rank 越小相关度越高
     let sql = format!(
         "SELECT {fts_cols} FROM world_cards w INNER JOIN world_cards_fts fts ON w.rowid = fts.rowid \
          WHERE w.book_id=?1 AND world_cards_fts MATCH ?2 ORDER BY rank LIMIT ?3"

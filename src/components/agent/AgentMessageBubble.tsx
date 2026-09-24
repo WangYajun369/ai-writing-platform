@@ -19,6 +19,12 @@ interface AgentMessageBubbleProps {
   onDelete?: () => void
 }
 
+/**
+ * 组件：Agent 单条消息气泡
+ *
+ * 按角色区分排版：用户消息纯文本右对齐、助手消息 Markdown 左对齐，
+ * 支持思考中/流式/错误状态，以及 assistant 消息的复制与二次确认删除。
+ */
 export const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({ message, onCopy, onDelete }) => {
   const skillMeta = message.skill ? SKILLS.find((s) => s.type === message.skill) : null
 
@@ -30,6 +36,7 @@ export const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({ message,
   const [copied, setCopied] = React.useState(false)
   const [confirming, setConfirming] = React.useState(false)
 
+  /** 复制消息内容到剪贴板（成功后短暂显示「已复制」反馈） */
   const handleCopy = React.useCallback(() => {
     if (!message.content) return
     onCopy?.(message.content)
@@ -157,6 +164,7 @@ export const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({ message,
   )
 }
 
+/** 技能类型 → 展示图标（emoji，与 types.ts 中 SKILLS 的 color 搭配使用） */
 function getSkillIcon(skill: SkillType): string {
   switch (skill) {
     case 'writing':

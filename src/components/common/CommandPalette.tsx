@@ -17,6 +17,7 @@ import { errText } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { useShortcut } from '@/hooks/useShortcut'
 
+/** 组件：全局命令面板（订阅插件 command-palette 扩展点，Ctrl/⌘+Shift+P 唤起执行） */
 export default function CommandPalette() {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -58,6 +59,7 @@ export default function CommandPalette() {
     setActiveIdx(0)
   }, [q])
 
+  /** 执行插件命令：busy 互斥防重复触发；成功关闭面板，失败 toast 提示 */
   async function run(cmd: PluginCommand) {
     if (busyId) return
     setBusyId(cmd.id)

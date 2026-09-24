@@ -480,6 +480,8 @@ pub fn retrieve_memories(
     result
 }
 
+/// 计算单条记忆的最终得分 = 基础 relevance_score
+/// × (1 + 0.3 × 与用户关键词交集数) × 记忆类型权重
 fn score_memory(memory: &MemoryInfo, user_keywords: &std::collections::HashSet<String>) -> f64 {
     let mut score = memory.relevance_score;
     let mem_keywords: std::collections::HashSet<String> = memory

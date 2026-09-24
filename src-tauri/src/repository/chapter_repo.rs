@@ -1,6 +1,11 @@
 //! 章节数据访问层
 //!
 //! 提供 chapters 表的所有 CRUD SQL 操作。
+//!
+//! 约定：content_html 是可回写的大字段，列表 / 摘要类查询刻意不读取，
+//! 正文按需经 find_content / list_titles_and_content 等单独取；
+//! 章节软删除独立于书籍删除（deleted_at 可进回收站）；
+//! volume_id 外键为 ON DELETE SET NULL，所属卷被删后章节自动回落到无卷区。
 
 use crate::models::Chapter;
 use rusqlite::{params, Connection, Result};
@@ -383,6 +388,7 @@ pub fn search_fts5_plain(
     fts_query: &str,
     limit: i64,
 ) -> Result<Vec<(String, String, String)>> {
+    // FTS5 镜像与主表按 rowid 关联（外部内容表）；rank 越小相关度越高，故按 rank 升序截取
     let sql = "SELECT c.id, c.title, c.content_html FROM chapters c \
                INNER JOIN chapters_fts fts ON c.rowid = fts.rowid \
                WHERE c.book_id=?1 AND chapters_fts MATCH ?2 AND c.deleted_at IS NULL \

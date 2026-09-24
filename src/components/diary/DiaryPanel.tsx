@@ -52,6 +52,7 @@ function htmlToText(html: string): string {
   return (doc.body.innerText || doc.body.textContent || '').replace(/\s+/g, ' ').trim()
 }
 
+// 组件：DiaryPanel 首页右侧「日记 + 当日任务」模块（按月日历联动切换）
 export default function DiaryPanel() {
   const [viewYear, setViewYear] = useState(() => new Date().getFullYear())
   const [viewMonth, setViewMonth] = useState(() => new Date().getMonth() + 1)

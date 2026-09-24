@@ -1,5 +1,8 @@
 /**
- * 快捷提示词组件
+ * QuickHints — 快捷提示词
+ *
+ * 仅在 AI 聊天空对话（AiSidePanel 判断 messages.length === 0）时展示；
+ * 点击仅将 QUICK_HINTS 预设提示词写入输入框，不直接发送。
  */
 import { memo } from 'react'
 import { QUICK_HINTS } from '../useAiChat'

@@ -1,3 +1,15 @@
+/**
+ * 通用前端工具库
+ *
+ * 汇集组件/页面共用的纯函数与常量（不含 IPC 调用）：
+ * - cn：Tailwind 类名合并（clsx 封装），供各组件动态拼接 class；
+ * - 字数统计（formatWordCount / countWordsFromHtml / calcBookWordCount）；
+ * - 时间格式化（formatRelativeTime）；
+ * - HTML ⇄ 纯文本及旧纯文本数据兼容转换（htmlToPlainText / legacyTextToHtml）；
+ * - createStorage：带默认值合并的 localStorage 持久化包装（appTypes 各存储实例基于此）；
+ * - 章节状态 / 世界观卡片类型展示配置常量；
+ * - markdownToHtml：把 AI 回复的 Markdown 转为 TipTap insertContent 可解析的 HTML。
+ */
 import { clsx, type ClassValue } from 'clsx'
 import type { Chapter } from '@/types'
 

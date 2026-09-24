@@ -145,6 +145,7 @@ export default function AiSidePanel() {
     const trimmed = input.trim()
     if (!trimmed || !book?.id || agentStreaming) return
     setInput('')
+    // 仅保留最近 20 条 user/assistant 消息作为多轮上下文（过滤 system/记忆类内容）
     const history = agentMessages
       .filter((m) => m.role !== 'system')
       .slice(-20)

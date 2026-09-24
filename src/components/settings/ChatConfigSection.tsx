@@ -1,6 +1,11 @@
 /**
  * Chat 配置子区块 —— DeepSeek 服务商 / 模型 / Temperature / API Key / 连接测试
  * 当前仅支持 DeepSeek，后期扩展其他服务商时重新开放服务商选择器
+ *
+ * 偏好存取：config 由父级传入（SettingsPage ← useAiStore.aiConfig.chat），
+ * onChange 仅回传局部变更；aiStore 侧默认值见 aiStore（provider deepseek、
+ * model deepseek-v4-flash、temperature 0.7、maxTokens 131072、thinkingEnabled、
+ * contextWindowSize 10）。连接测试回调由 SettingsPage 动态 import aiApi.testConnection。
  */
 import { ZapIcon } from 'lucide-react'
 import type { AiChatConfig } from '@/types'

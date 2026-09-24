@@ -141,6 +141,7 @@ pub fn update_review_state(
     last_review_at: &str,
     correct: bool,
 ) -> Result<()> {
+    // correct 以 0/1 整数落入 correct_count 累加（答对 +1、答错 +0）
     conn.execute(
         "UPDATE vocab_words SET repetition = ?2, interval_days = ?3, ease_factor = ?4, \
          status = ?5, next_review_at = ?6, last_review_at = ?7, \

@@ -1,6 +1,9 @@
 /**
- * 回收站 — 项目与任务的软删除管理
- * 支持：恢复、彻底删除、清空
+ * 回收站 — 项目与任务的软删除管理（任务卡左侧导航进入）
+ *
+ * 数据：taskCardApi.listDeletedProjects / listDeletedTasks 按需加载（不经 store）；
+ * 操作：恢复（成功后同时 refreshAll 让任务回到主视图）、彻底删除（confirm 后不可恢复）、
+ * 按当前 Tab 清空整个回收站；任务 Tab 中可点击卡片打开只读详情（TaskModal）。
  */
 import { useCallback, useEffect, useState } from 'react'
 import {

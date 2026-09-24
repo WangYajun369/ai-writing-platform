@@ -1,5 +1,9 @@
 /**
  * 生词本 Tab — 检索、筛选、收录、查看生词
+ *
+ * 数据来源：words / stats 来自 useVocabStore；新增、删除、暂停/恢复、
+ * 标记掌握等写操作走 vocabApi（IPC）后 refreshAll 刷新。
+ * 弹层：AddWordDialog（收录/编辑）、WordDetailDialog（详情：SM-2 参数与复习历史）。
  */
 import { useMemo, useState } from 'react'
 import {

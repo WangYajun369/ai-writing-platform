@@ -1,6 +1,7 @@
 //! 子任务 IPC 命令（任务卡 P2）
 //!
 //! 业务逻辑集中在 `service::subtask_service`。
+//! 对应 tauri-bridge.ts 的 `taskCardApi`（listSubtasks / createSubtask / reorder 等）。
 
 use crate::db::AppDb;
 use crate::error::AppError;

@@ -1,6 +1,9 @@
 //! 快照数据访问层
 //!
 //! 提供 snapshots 表的 CRUD SQL 操作。
+//!
+//! 约定：列表查询不读取 content_html 大字段（按需经 find_content / find_full 单独取）；
+//! 无软删除，删除即物理删除；所属章节被硬删时快照随 ON DELETE CASCADE 级联清理。
 
 use crate::models::Snapshot;
 use rusqlite::{params, Connection, Result};

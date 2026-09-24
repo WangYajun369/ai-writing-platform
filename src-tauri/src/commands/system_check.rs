@@ -4,6 +4,8 @@
 //! - 系统类型与版本
 //! - Agent 引擎 / Node / Rust 状态
 //! - 安装路径信息
+//!
+//! 对应 tauri-bridge.ts 的 `systemApi.check`（全局设置 → 系统信息面板）。
 
 use std::process::Command;
 

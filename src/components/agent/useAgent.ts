@@ -26,6 +26,19 @@ function generateId(): string {
   return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
 }
 
+/**
+ * Agent 技能对话 Hook（Rust 原生引擎，无外部进程需要启停）
+ *
+ * @returns
+ * - status：引擎运行状态（恒为 'running'，保留字段兼容面板语义）
+ * - messages：会话消息列表（含 user / assistant / system）
+ * - isStreaming：是否有流式生成正在进行
+ * - error：最近一次错误文本（无错误时为 null）
+ * - activeSkill：当前执行中的技能（空闲时为 null）
+ * - executeSkill(skill, bookId, message, history?)：发起一次技能对话
+ * - cancelSkill()：取消当前生成任务
+ * - clearMessages()：清空会话消息与错误
+ */
 export function useAgent() {
   // Agent 为 Rust 原生实现，状态恒为 running（无外部进程需要管理）
   const status = 'running' as const

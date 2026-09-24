@@ -1,6 +1,13 @@
 /**
  * DraggableChapter — 可拖拽的章节条目组件
- * 支持选中高亮、行内重命名、状态切换、删除操作
+ *
+ * 交互与结构：
+ * - 同一 DOM 同时注册 useDraggable 与 useDroppable，dndId 由 utils.dndId 生成，
+ *   供 useOutlineDnd 做碰撞检测（跨卷置入/同级排序均落在同一 id 上）
+ * - 单击选中、双击进入行内重命名（Enter 提交 / Esc 放弃）
+ * - 状态标签可点击循环切换：大纲 → 草稿 → 精修 → 定稿
+ * - 拖拽手柄与删除按钮 hover 时浮现；isOver / isCrossGroupOver 用于区分
+ *   普通悬停与跨卷悬停，配合前后 DropIndicator 精确指示插入落点
  */
 import { useState, useCallback, memo } from 'react'
 import {
@@ -57,6 +64,7 @@ export const DraggableChapter = memo(function DraggableChapter({
     await onStatusChange(nextStatus)
   }
 
+  // 合并拖拽与投放的 ref，让同一节点同时扮演「可拖」与「可落」两种角色
   const ref = useCallback(
     (node: HTMLDivElement | null) => {
       setDraggableRef(node)
@@ -65,6 +73,7 @@ export const DraggableChapter = memo(function DraggableChapter({
     [setDraggableRef, setDroppableRef],
   )
 
+  /** 提交行内重命名：内容非空且有变化才回调父级，随后无论成功与否退出编辑态 */
   async function handleRename() {
     if (editValue.trim() && editValue !== item.chapter.title) {
       await onRename(editValue.trim())

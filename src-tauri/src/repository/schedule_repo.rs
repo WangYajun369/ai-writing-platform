@@ -77,6 +77,7 @@ pub fn save(
         "UPDATE schedules SET content = ?1, done = ?2, updated_at = ?3 WHERE id = ?4",
         params![content, done, ts, id],
     )?;
+    // 先 UPDATE：影响行数为 0 说明该 id 不存在，回退为 INSERT（幂等 upsert）
     if conn.changes() == 0 {
         conn.execute(
             "INSERT INTO schedules (id, schedule_date, content, done, created_at, updated_at) \

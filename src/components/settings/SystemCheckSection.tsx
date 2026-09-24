@@ -1,10 +1,16 @@
 /**
  * 系统检查区块 —— 检测运行环境（Agent 引擎/Node/Rust、系统信息、安装路径）
+ *
+ * 数据来源：Tauri 命令 system_check（后端聚合各工具链状态后一次性返回）。
+ * 行为：挂载后自动执行一次；「重新检查」可手动刷新。
+ * 界面分四态：idle（初始）/ loading（骨架屏占位）/ done（整体状态卡 + 逐项列表）/
+ * error（检查执行失败提示）。
  */
 import { useState, useEffect } from 'react'
 import { errText } from '@/lib/errors'
 import { RefreshCwIcon, CheckCircleIcon, AlertTriangleIcon, XCircleIcon } from 'lucide-react'
 
+/** 单条检查项：name 检查名、value 版本/路径等主值、status 结论、detail 补充说明 */
 interface CheckItem {
   name: string
   value: string
@@ -12,13 +18,16 @@ interface CheckItem {
   detail?: string | null
 }
 
+/** system_check 命令的完整返回：items 为逐项明细，ok 表示是否全部正常 */
 interface SystemCheckResult {
   items: CheckItem[]
   ok: boolean
 }
 
+/** 本区块加载/结果状态机 */
 type LoadingState = 'idle' | 'loading' | 'done' | 'error'
 
+/** 结论 → 图标与配色映射表，供整体状态与逐项列表复用 */
 const statusConfig: Record<string, { icon: React.FC<{ className?: string }>; color: string; bg: string }> = {
   ok: { icon: CheckCircleIcon, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-50 dark:bg-green-900/20' },
   warning: { icon: AlertTriangleIcon, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/20' },

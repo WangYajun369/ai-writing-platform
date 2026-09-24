@@ -1,3 +1,15 @@
+/**
+ * useConsoleInterceptor — 前端日志拦截器
+ *
+ * 在非调试窗口（主窗口/编辑器/独立业务窗口）中，将 console.log/warn/error
+ * 拦截为结构化日志，按 500ms 批量经 debugApi.logMessage 汇入后端日志系统，
+ * 供「调试控制台」窗口统一查看；调用处同时保留原始 console 输出。
+ *
+ * 职责边界：
+ * - 调试窗口自身传 disabled=true（避免重复/自递归），仅在主窗口侧运行；
+ * - 每次批量上报前使用 Error.stack 提取调用源文件与行号（跳过 App.tsx 外壳）；
+ * - 组件卸载时恢复原生 console 并冲刷剩余缓冲日志。
+ */
 import { useEffect, useRef } from 'react'
 import { debugApi } from '@/lib/tauri-bridge'
 

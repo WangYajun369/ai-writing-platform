@@ -501,6 +501,8 @@ async fn react_loop(
                 }
             };
 
+            // 竞态兜底：若取消信号恰在 select 选中 chunk 分支之后到达，
+            // 此复查保证在解析该批 buffer 前立即中断退出，无需等下一轮循环。
             if cancel_token.is_cancelled() {
                 let _ = emit_event(&app, "cancelled", "任务已被用户取消", request_id);
                 return Ok(());
@@ -617,6 +619,12 @@ fn clamp_text(s: &str, max: usize) -> String {
 
 // ─── SSE 行解析 ───
 
+/// 解析单行 SSE `data:` JSON（收到 `[DONE]` 前的内容行）：
+/// - 正文增量：追加到本轮 round_content 与全局 full_response，并即时向前端
+///   推送 chunk 事件（多工具轮中模型夹带的中间正文同样会被转发与累积）；
+/// - 工具调用增量：按 index 槽位累积（id/name 仅在首次非空时写入，
+///   arguments 跨多个 chunk 片段直接拼接），供本轮结束后的工具循环使用；
+/// - 解析失败或字段缺失时静默跳过，不中断整轮 SSE 流的收尾处理。
 #[allow(clippy::too_many_arguments)]
 fn parse_sse_data(
     json_str: &str,

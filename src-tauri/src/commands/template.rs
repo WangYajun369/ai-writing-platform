@@ -1,6 +1,7 @@
 //! 任务模板 IPC 命令（任务卡 P2）
 //!
 //! 模板管理 + 一键套用创建任务，业务逻辑集中在 `service::template_service`。
+//! 对应 tauri-bridge.ts 的 `taskCardApi`（listTemplates / createTaskFromTemplate 等）。
 
 use crate::db::AppDb;
 use crate::error::AppError;

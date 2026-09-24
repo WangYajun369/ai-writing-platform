@@ -25,11 +25,13 @@ pub async fn log_message(app: AppHandle, entries: Vec<LogEntryInput>) -> Result<
             line: input.line,
         };
 
+        // 滚动缓冲上限 1000 条：超出时丢弃最旧一条，避免内存无限增长
         if buffer.len() >= 1000 {
             buffer.remove(0);
         }
         buffer.push(entry.clone());
 
+        // 实时转发给调试窗口；无窗口监听 debug-log 时该 emit 为空操作
         let _ = app.emit("debug-log", &entry);
     }
 

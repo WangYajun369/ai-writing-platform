@@ -156,6 +156,7 @@ pub fn run_once(app: &AppHandle) -> Result<usize, AppError> {
                         .collect();
                     if !items.is_empty() {
                         items.sort_by_key(|t| {
+                            // 无截止日期的任务排到最后（以超大日期占位参与升序排序）
                             t.due_time.clone().unwrap_or_else(|| "9999-99-99".into())
                         });
                         let names: Vec<&str> = items.iter().map(|t| t.title.as_str()).collect();
@@ -195,6 +196,7 @@ pub fn run_once(app: &AppHandle) -> Result<usize, AppError> {
                 continue;
             };
             let ra = ra_raw.trim();
+            // remind_at 与 now_str 均为定长 ISO 字符串，字典序比较等价于时间先后比较
             if ra.is_empty() || ra > now_str.as_str() {
                 continue;
             }

@@ -60,10 +60,14 @@ impl ManageConnection for SqliteConnectionManager {
         Ok(conn)
     }
 
+    // r2d2 借用给调用方前的健康检查：执行一次廉价的探活查询，
+    // 连接失效（如文件被外部删除、句柄损坏）在此被拦截，避免把坏连接借出。
     fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
         conn.execute_batch("SELECT 1").map(|_| ())
     }
 
+    // 保守策略：不主动预判连接是否损坏（SQLite 连接本身无自毁机制），
+    // 统一交由 is_valid 探活判定，故此处恒返回 false。
     fn has_broken(&self, _conn: &mut Self::Connection) -> bool {
         false
     }
@@ -106,6 +110,9 @@ impl AppDb {
         register_sqlite_vec_extension();
 
         let manager = SqliteConnectionManager::new(db_path.to_string());
+        // 连接池参数：上限 10 条并发连接（覆盖多窗口 IPC、后台提醒循环等并发读写）；
+        // 获取连接的等待上限 10s，超时报错而非无限挂起；空闲 5 分钟回收、
+        // 单条连接最长存活 30 分钟，避免 WAL 模式下长期闲置连接持有过旧读视图。
         let pool = Pool::builder()
             .max_size(10)
             .connection_timeout(std::time::Duration::from_secs(10))

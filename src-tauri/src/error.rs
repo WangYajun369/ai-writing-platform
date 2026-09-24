@@ -39,6 +39,8 @@ pub enum AppError {
     #[error("未找到: {0}")]
     NotFound(String),
 
+    // 业务错误与兜底错误的分工：Business 消息通常自带 `E_` 前缀稳定码（code()
+    // 会自动提取）；General 用于无法归类的兜底场景（如 anyhow 错误透传）。
     #[error("业务逻辑错误: {0}")]
     Business(String),
 
@@ -94,6 +96,10 @@ impl Serialize for AppError {
     }
 }
 
+// 以下 From 转换让下层错误可通过 `?` 快捷传播到 AppError：
+// 各类库错误（rusqlite / serde_json / std::io）由 #[from] 属性自动生成转换。
+// 自定义转换：anyhow → General（兜底）；r2d2 连接池 → DbPool；String → Business（调用约定见下）。
+
 impl From<AppError> for String {
     fn from(e: AppError) -> Self {
         e.to_string()
@@ -112,6 +118,8 @@ impl From<r2d2::Error> for AppError {
     }
 }
 
+// 调用约定：凡以 String 直接转 AppError 的地方默认归为业务错误；
+// 若要携带稳定错误码供前端归类，文本应以 `E_XXX：` 前缀开头（code() 会提取）。
 impl From<String> for AppError {
     fn from(s: String) -> Self {
         AppError::Business(s)

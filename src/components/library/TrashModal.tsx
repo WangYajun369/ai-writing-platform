@@ -19,6 +19,7 @@ interface TrashModalProps {
   onChanged: () => void
 }
 
+// 组件：TrashModal 回收站弹窗（软删除作品可恢复 / 彻底删除 / 一键清空）
 export default function TrashModal({ onClose, onChanged }: TrashModalProps) {
   const [deletedBooks, setDeletedBooks] = useState<Book[]>([])
   const [loading, setLoading] = useState(true)

@@ -159,6 +159,12 @@ export default function EditorPage() {
     }
   }, [])
 
+  /**
+   * 加载指定书籍的卷/章节树（含回收站数据）
+   *
+   * 并行拉取卷与章节（含已删除）合并展示；首次打开无章节时自动创建
+   * 「第一章」，否则按保存过的编辑位置恢复，无记录时选中第一章。
+   */
   async function loadBookTree(id: string) {
     setLoadingChapters(true)
     try {

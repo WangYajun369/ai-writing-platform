@@ -31,6 +31,7 @@ interface BookCardProps {
   onRefresh: () => void
 }
 
+// 组件：BookCard 书库网格中的单本作品卡片（封面 + 日更进度环 + 右键菜单）
 export default function BookCard({ book, onOpen, onRefresh }: BookCardProps) {
   const [coverChanging, setCoverChanging] = useState(false)
   const [coverSrc, setCoverSrc] = useState<string | undefined>(undefined)

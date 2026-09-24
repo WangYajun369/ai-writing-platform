@@ -41,6 +41,7 @@ function dueCls(dueTime?: string, done = false): { text: string; cls: string } {
 /** 优先级排序权重（高 > 中 > 低） */
 const PRIORITY_W: Record<string, number> = { high: 0, medium: 1, low: 2 }
 
+// 组件：DayTasksPanel 首页右侧「当日任务」面板（仅展示与勾选，数据由 DiaryPanel 注入）
 export default function DayTasksPanel({ date, tasks, projectMap, loading, onToggleDone, onOpenTasks }: Props) {
   const doneCount = useMemo(() => tasks.filter((t) => t.status === 'done').length, [tasks])
   const isToday = date === localToday()

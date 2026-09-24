@@ -7,6 +7,11 @@
  * - 工具展开显示名称 + 描述 + System Prompt 编辑器
  * - 支持新增/编辑/删除分类和工具
  * - 所有变更自动持久化
+ *
+ * 实现要点：
+ * - 折叠/展开为纯 UI 状态（useState<Set>），不落库
+ * - 工具名称/描述/System Prompt 是受控输入，改动即经 updateAiToolPrompt 写回 store
+ * - 展开的工具以 `categoryId:promptId` 为 key 记录，避免跨分类同名工具冲突
  */
 import { useState } from 'react'
 import {
@@ -36,6 +41,7 @@ const COLOR_OPTIONS = [
 
 /**
  * -------- 新增工具表单 --------
+ * 本地受控 name/desc；回车提交、Esc 取消；id 由 crypto.randomUUID 生成后交给上层
  */
 function AddToolForm({
   onAdd,
@@ -212,12 +218,14 @@ export function AiToolboxSection() {
     })
   }
 
+  /** 提交工具：新增后关闭表单并展开新工具（key 为 categoryId:promptId） */
   const handleAddTool = (categoryId: string, tool: AiToolPrompt) => {
     addAiToolPrompt(categoryId, tool)
     setAddingToolFor(null)
     setExpandedTools((prev) => new Set(prev).add(`${categoryId}:${tool.id}`))
   }
 
+  /** 删除工具：先经原生 confirm 确认，再从 store 删除并清理展开集合 */
   const handleDeleteTool = (categoryId: string, promptId: string, name: string) => {
     if (!window.confirm(`确定要删除「${name}」吗？此操作不可撤销。`)) return
     deleteAiToolPrompt(categoryId, promptId)
@@ -238,6 +246,7 @@ export function AiToolboxSection() {
     deleteAiToolCategory(categoryId)
   }
 
+  /** 分类行内重命名：双击/笔图标进入编辑，Enter 或失焦保存，Esc 放弃 */
   const startEditCategory = (categoryId: string, name: string) => {
     setEditingCategoryId(categoryId)
     setEditingCategoryName(name)

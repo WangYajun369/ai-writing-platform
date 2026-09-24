@@ -7,6 +7,12 @@
  * - 编辑（编辑器显示宽度）
  * - 存储（占位，后续版本推出统计功能）
  * - 版本（当前版本 / 检查更新）
+ * （注：上方列表为早期说明；实际标签页见下方 TABS，共七个，另有
+ * 「AI 工具箱」「系统检查」两项。）
+ *
+ * 数据来源：AI 配置与连接状态来自 useAiStore；外观/编辑偏好来自
+ * usePreferencesStore（各 setter 内部 savePreferences 持久化）；
+ * 「AI 配置」的测试连接由本页动态 import aiApi.testConnection 执行。
  */
 import { useState } from 'react'
 import { errText } from '@/lib/errors'

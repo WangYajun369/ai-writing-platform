@@ -91,7 +91,9 @@ pub fn migrate_schedules(app: &AppHandle, db: &AppDb) -> Result<MigrateResult, A
     for s in &schedules {
         let id = Uuid::new_v4().to_string();
         let status = if s.done { "done" } else { "todo" };
+        // 截止取当天最后一刻（23:59:59）：保留日程「当天内完成」语义，且与任务卡 due_time 的 ISO 时间格式一致
         let due = format!("{}T23:59:59", s.schedule_date);
+        // 仅在迁移当日把「今天到期」的日程标为计划今日，迁移后即可出现在今日任务页
         let planned = if s.schedule_date == today { 1 } else { 0 };
         let sort_order = task_repo::next_sort_order(&tx, &pid, status)?;
         task_repo::insert(
@@ -111,6 +113,7 @@ pub fn migrate_schedules(app: &AppHandle, db: &AppDb) -> Result<MigrateResult, A
             &ts,
         )?;
         if s.done {
+            // 已完成的日程补记完成时间：insert 阶段不落 completed_time，此处回填本地当前时间
             task_repo::update_status(&tx, &id, "done", Some(now_local.as_str()), &ts)?;
         }
         migrated += 1;
