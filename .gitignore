@@ -51,3 +51,6 @@ uv.lock
 CLAUDE.md
 # WorkBuddy 工作区记忆（本地）
 .workbuddy/
+
+# pnpm 工作区内 store（沙箱受限环境的临时产物）
+.pnpm-store/
