@@ -157,7 +157,7 @@ pub fn set_subtask_done(
     Ok(item)
 }
 
-/// 子任务重排：`ordered_ids` 为完整顺序（须含全部现存子任务 id）
+/// 子任务重排：`ordered_ids` 为完整顺序（须含全部现存子任务 id，且全部属于该任务）
 pub fn reorder_subtasks(
     app: &AppHandle,
     db: &AppDb,
@@ -166,6 +166,16 @@ pub fn reorder_subtasks(
 ) -> Result<(), AppError> {
     let mut conn = db.pool.get()?;
     let tx = conn.transaction()?;
+    // 归属校验：重排列表只允许包含该任务现存的子任务，防止越权改写无关行排序
+    let existing: std::collections::HashSet<String> = subtask_repo::list_by_task(&tx, task_id)?
+        .into_iter()
+        .map(|s| s.id)
+        .collect();
+    if ordered_ids.iter().any(|sid| !existing.contains(sid)) {
+        return Err(AppError::Validation(
+            "重排序列表包含不属于该任务的子任务".into(),
+        ));
+    }
     let ts = now();
     for (i, sid) in ordered_ids.iter().enumerate() {
         subtask_repo::set_sort_order(&tx, sid, i as i64, &ts)?;

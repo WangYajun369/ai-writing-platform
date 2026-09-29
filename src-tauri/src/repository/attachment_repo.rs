@@ -1,7 +1,8 @@
 //! 附件数据访问层（任务卡 P2，PRD 12.4）
 //!
 //! attachments 表存元数据与 local_path；文件实体放应用数据目录。
-//! 软删除（deleted=1）保留文件路径，供回收站还原与孤儿清理判断。
+//! 删除附件采用硬删（记录与文件同步移除，无恢复入口）；历史软删记录
+//! （deleted=1）由孤儿清理随文件回收。
 //!
 //! 惯例：Attachment 模型仅承载返回给前端的展示字段（local_path/deleted
 //! 不出网），需要实际文件路径时走 find_active / all_paths 等专用入口。
@@ -76,12 +77,10 @@ pub fn insert(
     Ok(())
 }
 
-/// 软删除附件（回收站场景由任务级联清理；此处用于「删除附件」）
-pub fn soft_delete(conn: &Connection, id: &str, ts: &str) -> Result<usize> {
-    conn.execute(
-        "UPDATE attachments SET deleted=1, deleted_at=?1 WHERE id=?2 AND deleted=0",
-        params![ts, id],
-    )
+/// 硬删除附件记录（「删除附件」语义 = 记录与文件一并移除，无恢复入口，
+/// 故不产生软删记录；回收站场景由任务级联清理）
+pub fn hard_delete(conn: &Connection, id: &str) -> Result<usize> {
+    conn.execute("DELETE FROM attachments WHERE id=?1", params![id])
 }
 
 /// 取全部附件的 local_path（含软删记录，孤儿文件清理对照用；

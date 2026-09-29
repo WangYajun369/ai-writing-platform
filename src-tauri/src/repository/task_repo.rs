@@ -5,13 +5,61 @@
 //! 包裹，repo 仅提供聚焦的单条 SQL 操作。
 
 use crate::models::TaskCard;
-use rusqlite::{params, Connection, Result};
+use rusqlite::{params, Connection, OptionalExtension, Result};
 
 /// 完整 SELECT 列名（不含 tags；tags 由 service 聚合）。用于无 JOIN 的单表查询。
 pub const TASK_SELECT: &str = "id,project_id,parent_id,title,description,status,priority,plan_start_time,due_time,planned_today,completed_time,note,completion_summary,remind_at,remind_type,recurrence,note_html,started_at,work_seconds,sort_order,deleted_at,created_at,updated_at";
 
 /// 带 `t.` 前缀的列名版本，用于 JOIN projects 的查询，避免列名歧义。
 pub const TASK_SELECT_T: &str = "t.id,t.project_id,t.parent_id,t.title,t.description,t.status,t.priority,t.plan_start_time,t.due_time,t.planned_today,t.completed_time,t.note,t.completion_summary,t.remind_at,t.remind_type,t.recurrence,t.note_html,t.started_at,t.work_seconds,t.sort_order,t.deleted_at,t.created_at,t.updated_at";
+
+/// 未删除任务的所属项目 id（轻量存在性/归属查询，避免解析整行 TaskCard）
+pub fn project_id_of_active(conn: &Connection, task_id: &str) -> Result<Option<String>> {
+    conn.query_row(
+        "SELECT project_id FROM tasks WHERE id=?1 AND deleted_at IS NULL",
+        params![task_id],
+        |row| row.get::<_, Option<String>>(0),
+    )
+    .optional()
+    .map(|opt| opt.flatten())
+}
+
+/// 校验任务存在且未软删，返回 (id, project_id)；失败返回 QueryReturnedNoRows
+pub fn find_active_id_project(
+    conn: &Connection,
+    task_id: &str,
+) -> Result<(String, Option<String>)> {
+    conn.query_row(
+        "SELECT id, project_id FROM tasks WHERE id=?1 AND deleted_at IS NULL",
+        params![task_id],
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+    )
+}
+
+/// 统计给定 id 集合中「属于该项目且未删除」的任务数（拖拽重排归属校验用）
+pub fn count_active_ids_in_project(
+    conn: &Connection,
+    project_id: &str,
+    ids: &[String],
+) -> Result<usize> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let placeholders: Vec<String> = (2..=ids.len() + 1).map(|i| format!("?{i}")).collect();
+    let sql = format!(
+        "SELECT COUNT(*) FROM tasks WHERE project_id=?1 AND deleted_at IS NULL \
+         AND id IN ({})",
+        placeholders.join(",")
+    );
+    let mut values: Vec<Box<dyn rusqlite::types::ToSql>> =
+        vec![Box::new(project_id.to_string())];
+    for id in ids {
+        values.push(Box::new(id.clone()));
+    }
+    let refs: Vec<&dyn rusqlite::types::ToSql> = values.iter().map(|p| p.as_ref()).collect();
+    let n: i64 = conn.query_row(&sql, refs.as_slice(), |row| row.get(0))?;
+    Ok(n as usize)
+}
 
 /// 从 rusqlite Row 解析 TaskCard（按列名取值，tags 初始为空）
 pub fn parse_task(row: &rusqlite::Row) -> Result<TaskCard> {
@@ -147,10 +195,12 @@ pub fn restore(conn: &Connection, id: &str, ts: &str) -> Result<usize> {
     )
 }
 
-/// 硬删除任务（task_tags 由外键级联删除）
-pub fn hard_delete(conn: &Connection, id: &str) -> Result<()> {
-    conn.execute("DELETE FROM tasks WHERE id=?1", params![id])?;
-    Ok(())
+/// 硬删除任务（task_tags 由外键级联删除；仅限回收站中的任务，返回影响行数）
+pub fn hard_delete(conn: &Connection, id: &str) -> Result<usize> {
+    Ok(conn.execute(
+        "DELETE FROM tasks WHERE id=?1 AND deleted_at IS NOT NULL",
+        params![id],
+    )?)
 }
 
 /// 统计回收站中的任务数量
@@ -169,7 +219,8 @@ pub fn clear_trash(conn: &Connection) -> Result<()> {
 }
 
 /// 回收站自动清理：硬删除删除时间早于 cutoff 的任务（PRD 9.12.2 保留 30 天）。
-/// task_tags / task_subtasks / attachments / task_activity_logs 由外键级联删除。
+/// task_tags / task_subtasks / attachments 由外键级联删除；
+/// task_activity_logs 无外键，由 service 层在同事务内显式清理。
 /// deleted_at 为 UTC RFC3339 字符串（与 cutoff 同格式，可字典序比较）。
 pub fn purge_expired(conn: &Connection, cutoff: &str) -> Result<usize> {
     conn.execute(
@@ -228,37 +279,23 @@ pub fn update_ext(
     work_seconds: Option<i64>,
     ts: &str,
 ) -> Result<()> {
-    // 动态拼装 SET 子句：仅把传入 Some 的列纳入更新，避免覆盖未修改字段
-    let mut set_clauses: Vec<String> = Vec::new();
-    let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-    macro_rules! push_set {
-        ($col:expr, $val:expr) => {{
-            set_clauses.push(format!("{} = ?{}", $col, set_clauses.len() + 1));
-            param_values.push(Box::new($val) as Box<dyn rusqlite::types::ToSql>);
-        }};
-    }
+    // 动态 UPDATE 由统一的 DynamicUpdate 构建器生成：仅把传入 Some 的列纳入更新
+    let mut upd = crate::utils::DynamicUpdate::new("tasks");
     if let Some(v) = recurrence {
-        push_set!("recurrence", v.to_string());
+        upd.push("recurrence", v.to_string());
     }
     if let Some(v) = note_html {
-        push_set!("note_html", v.to_string());
+        upd.push("note_html", v.to_string());
     }
     if let Some(v) = started_at {
-        push_set!("started_at", v.to_string());
+        upd.push("started_at", v.to_string());
     }
     if let Some(v) = work_seconds {
-        push_set!("work_seconds", v);
+        upd.push("work_seconds", v);
     }
-    if !set_clauses.is_empty() {
-        push_set!("updated_at", ts.to_string());
-        let sql = format!(
-            "UPDATE tasks SET {} WHERE id=?{}",
-            set_clauses.join(", "),
-            set_clauses.len() + 1
-        );
-        param_values.push(Box::new(id.to_string()) as Box<dyn rusqlite::types::ToSql>);
+    if let Some((sql, values)) = upd.build(id, ts) {
         let params_refs: Vec<&dyn rusqlite::types::ToSql> =
-            param_values.iter().map(|p| p.as_ref()).collect();
+            values.iter().map(|p| p.as_ref()).collect();
         conn.execute(&sql, params_refs.as_slice())?;
     }
     Ok(())
@@ -355,22 +392,55 @@ pub fn project_counts(
     )
 }
 
+/// 全量项目任务统计（一次 GROUP BY 聚合，替代逐项目查询的 N+1）：
+/// 返回 project_id -> (total, todo, doing, done, overdue)
+pub fn project_counts_all(
+    conn: &Connection,
+    now_local: &str,
+) -> Result<std::collections::HashMap<String, (i64, i64, i64, i64, i64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT project_id, \
+            COUNT(*) AS total, \
+            COALESCE(SUM(CASE WHEN status='todo' THEN 1 ELSE 0 END),0) AS todo, \
+            COALESCE(SUM(CASE WHEN status='doing' THEN 1 ELSE 0 END),0) AS doing, \
+            COALESCE(SUM(CASE WHEN status='done' THEN 1 ELSE 0 END),0) AS done, \
+            COALESCE(SUM(CASE WHEN status!='done' AND due_time IS NOT NULL AND due_time<?1 THEN 1 ELSE 0 END),0) AS overdue \
+         FROM tasks WHERE deleted_at IS NULL GROUP BY project_id",
+    )?;
+    let rows = stmt.query_map(params![now_local], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            (
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+            ),
+        ))
+    })?;
+    rows.collect()
+}
+
 /// 今日任务概览计数（跨项目，所属项目未删）：
 /// 返回 (未完成欠账数, 今日已完成数, 逾期未完成数)
 /// 欠账 = 未完成 且（今天到期 | 计划今日 | 已逾期）
+/// today_start / next_day_start 为本地日期零点文本（YYYY-MM-DD 前缀比较），
+/// 用范围比较替代 substr()，使 idx_tasks_due / completed_time 索引保持有效
 pub fn today_overview_counts(
     conn: &Connection,
-    today: &str,
+    today_start: &str,
+    next_day_start: &str,
     now_local: &str,
 ) -> Result<(i64, i64, i64)> {
     conn.query_row(
         "SELECT \
-            COALESCE(SUM(CASE WHEN t.status!='done' AND (substr(t.due_time,1,10)=?1 OR t.planned_today=1 OR (t.due_time IS NOT NULL AND t.due_time<?2)) THEN 1 ELSE 0 END),0) AS undone_due, \
-            COALESCE(SUM(CASE WHEN t.status='done' AND substr(t.completed_time,1,10)=?1 THEN 1 ELSE 0 END),0) AS done_today, \
-            COALESCE(SUM(CASE WHEN t.status!='done' AND t.due_time IS NOT NULL AND t.due_time<?2 THEN 1 ELSE 0 END),0) AS overdue \
+            COALESCE(SUM(CASE WHEN t.status!='done' AND ((t.due_time>=?1 AND t.due_time<?2) OR t.planned_today=1 OR (t.due_time IS NOT NULL AND t.due_time<?3)) THEN 1 ELSE 0 END),0) AS undone_due, \
+            COALESCE(SUM(CASE WHEN t.status='done' AND t.completed_time>=?1 AND t.completed_time<?2 THEN 1 ELSE 0 END),0) AS done_today, \
+            COALESCE(SUM(CASE WHEN t.status!='done' AND t.due_time IS NOT NULL AND t.due_time<?3 THEN 1 ELSE 0 END),0) AS overdue \
          FROM tasks t JOIN projects p ON p.id=t.project_id AND p.deleted_at IS NULL \
          WHERE t.deleted_at IS NULL",
-        params![today, now_local],
+        params![today_start, next_day_start, now_local],
         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     )
 }
@@ -417,13 +487,16 @@ pub fn chain_hits_self(conn: &Connection, parent_id: &str, self_id: &str) -> Res
         if pid == self_id {
             return Ok(true);
         }
+        // 行不存在（链尾）→ None 正常结束；真正的 DB 错误必须传播，
+        // 否则防环校验会在 DB 异常时静默失效
         cur = conn
             .query_row(
                 "SELECT parent_id FROM tasks WHERE id=?1",
                 params![pid],
                 |row| row.get::<_, Option<String>>(0),
             )
-            .unwrap_or(None);
+            .optional()?
+            .flatten();
     }
     Ok(false)
 }

@@ -620,6 +620,8 @@ impl AppDb {
             CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id, status, sort_order);
             CREATE INDEX IF NOT EXISTS idx_tasks_deleted_at ON tasks(deleted_at);
             CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_time);
+            -- 父子任务层级查询（subtree 递归 CTE / 防环逐级上溯均按 parent_id 查找）
+            CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id);
             CREATE INDEX IF NOT EXISTS idx_task_tags_tag_id ON task_tags(tag_id);
             -- 任务卡 P2 扩展索引
             CREATE INDEX IF NOT EXISTS idx_task_subtasks_task ON task_subtasks(task_id, sort_order);

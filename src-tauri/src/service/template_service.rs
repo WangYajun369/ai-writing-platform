@@ -259,8 +259,10 @@ pub fn create_task_from_template(
     let mut task = task_repo::find_active(&conn, &id)
         .map_err(|_| AppError::NotFound("任务创建失败".into()))?;
     let ids = vec![task.id.clone()];
-    if let Ok(pairs) = task_repo::tags_of_tasks(&conn, &ids) {
-        task.tags = pairs.into_iter().map(|(_, t)| t).collect();
+    // 标签回填失败留痕（只读路径不阻断，但问题可感知）
+    match task_repo::tags_of_tasks(&conn, &ids) {
+        Ok(pairs) => task.tags = pairs.into_iter().map(|(_, t)| t).collect(),
+        Err(e) => crate::app_log!("[模板] 查询新建任务 {id} 标签失败: {e}"),
     }
     Ok(task)
 }

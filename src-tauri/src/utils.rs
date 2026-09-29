@@ -243,6 +243,18 @@ impl DynamicUpdate {
         values.push(Box::new(id.to_string()));
         Some((sql, values))
     }
+
+    /// 生成带附加 WHERE 条件的 SQL（条件须为代码字面量，如软删守卫
+    /// `AND deleted_at IS NULL`）。无任何可更新字段时返回 `None`。
+    pub fn build_guarded(
+        self,
+        id: &str,
+        updated_at: &str,
+        extra_where: &'static str,
+    ) -> Option<(String, Vec<Box<dyn rusqlite::types::ToSql>>)> {
+        let (sql, values) = self.build(id, updated_at)?;
+        Some((format!("{sql} {extra_where}"), values))
+    }
 }
 
 // ---- 输入校验 ----

@@ -7,8 +7,7 @@ use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::{ActivityLog, ProjectWeeklyStat};
-use crate::repository::activity_log_repo;
-use crate::service::project_stats_service;
+use crate::service::{activity_log_service, project_stats_service};
 use tauri::{AppHandle, State};
 
 /// 某任务的动态时间线（最新在前；limit 默认 30，最大 200）
@@ -28,8 +27,7 @@ pub fn activity_list_task(
         file!(),
         line!(),
     );
-    let conn = state.pool.get()?;
-    Ok(activity_log_repo::list_by_task(&conn, &task_id, limit)?)
+    activity_log_service::list_by_task(&state, &task_id, limit)
 }
 
 /// 某项目的动态时间线（最新在前；limit 默认 30，最大 200）
@@ -49,12 +47,7 @@ pub fn activity_list_project(
         file!(),
         line!(),
     );
-    let conn = state.pool.get()?;
-    Ok(activity_log_repo::list_by_project(
-        &conn,
-        &project_id,
-        limit,
-    )?)
+    activity_log_service::list_by_project(&state, &project_id, limit)
 }
 
 /// 项目近 N 周新增 / 完成统计（周报用；默认 8 周，最大 26）

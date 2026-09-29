@@ -7,7 +7,7 @@ use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::{Project, ProjectStats, ProjectView};
-use crate::repository::{project_repo, task_repo};
+use crate::repository::{activity_log_repo, project_repo, task_repo};
 use crate::utils::{local_now, now, validate_len};
 use tauri::AppHandle;
 use uuid::Uuid;
@@ -92,10 +92,20 @@ pub fn list_projects(
     );
     let conn = db.pool.get()?;
     let projects = project_repo::list(&conn, status.as_deref())?;
+    // 一次 GROUP BY 聚合取全量统计，避免逐项目查询的 N+1
+    let stats_map = task_repo::project_counts_all(&conn, &now_local)?;
     let mut views = Vec::with_capacity(projects.len());
     for p in projects {
+        let (total, todo, doing, done, overdue) =
+            stats_map.get(&p.id).copied().unwrap_or_default();
         views.push(ProjectView {
-            stats: fetch_stats(&conn, &p.id, &now_local)?,
+            stats: ProjectStats {
+                total,
+                todo,
+                doing,
+                done,
+                overdue,
+            },
             project: p,
         });
     }
@@ -171,11 +181,7 @@ pub fn create_project(
     let conn = db.pool.get()?;
 
     // 默认颜色：按现有项目总数轮询色板
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM projects WHERE deleted_at IS NULL",
-        [],
-        |r| r.get(0),
-    )?;
+    let count = project_repo::count_active(&conn)?;
     let color = if color.trim().is_empty() {
         DEFAULT_COLORS[(count as usize) % DEFAULT_COLORS.len()].to_string()
     } else {
@@ -229,54 +235,55 @@ pub fn update_project(
     let has_end = params.plan_end_date.is_some();
     let new_start = normalize_opt(params.plan_start_date);
     let new_end = normalize_opt(params.plan_end_date);
-    check_date_range(&new_start, &new_end)?;
+    // 日期范围校验以「更新后的最终值」为准：未传字段回退到现有值，
+    // 只校验两个新值会在部分更新时绕过校验（如只把开始日期改到结束日期之后）。
+    let conn = db.pool.get()?;
+    let current = project_repo::find_active(&conn, id)
+        .map_err(|_| AppError::NotFound("未找到该项目或项目已删除".into()))?;
+    let eff_start = if has_start {
+        new_start.clone()
+    } else {
+        current.plan_start_date.clone()
+    };
+    let eff_end = if has_end {
+        new_end.clone()
+    } else {
+        current.plan_end_date.clone()
+    };
+    check_date_range(&eff_start, &eff_end)?;
 
-    let mut set_clauses: Vec<String> = Vec::new();
-    let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-    // 局部宏：拼接 `col=?n` 并收集参数值
-    macro_rules! push_set {
-        ($col:expr, $val:expr) => {{
-            set_clauses.push(format!("{} = ?{}", $col, set_clauses.len() + 1));
-            param_values.push(Box::new($val) as Box<dyn rusqlite::types::ToSql>);
-        }};
-    }
+    // 动态 UPDATE 由统一的 DynamicUpdate 构建器生成（列名均为代码字面量）
+    let mut upd = crate::utils::DynamicUpdate::new("projects");
 
     if let Some(v) = params.name {
-        push_set!("name", v.trim().to_string());
+        upd.push("name", v.trim().to_string());
     }
     if let Some(v) = params.description {
-        push_set!("description", v);
+        upd.push("description", v);
     }
     if let Some(v) = params.color {
-        push_set!("color", v.trim().to_string());
+        upd.push("color", v.trim().to_string());
     }
     if let Some(v) = params.icon {
-        push_set!("icon", v);
+        upd.push("icon", v);
     }
     if let Some(v) = params.status {
-        push_set!("status", v);
+        upd.push("status", v);
     }
     if has_start {
-        push_set!("plan_start_date", new_start);
+        upd.push("plan_start_date", new_start);
     }
     if has_end {
-        push_set!("plan_end_date", new_end);
+        upd.push("plan_end_date", new_end);
     }
     if let Some(v) = params.pinned {
-        push_set!("pinned", if v { 1 } else { 0 });
+        upd.push("pinned", if v { 1 } else { 0 });
     }
 
-    if set_clauses.is_empty() {
-        return Err(AppError::Validation("没有需要更新的字段".into()));
-    }
     let ts = now();
-    push_set!("updated_at", ts.clone());
-    let sql = format!(
-        "UPDATE projects SET {} WHERE id=?{} AND deleted_at IS NULL",
-        set_clauses.join(", "),
-        set_clauses.len() + 1
-    );
-    param_values.push(Box::new(id.to_string()));
+    let Some((sql, values)) = upd.build_guarded(id, &ts, "AND deleted_at IS NULL") else {
+        return Err(AppError::Validation("没有需要更新的字段".into()));
+    };
 
     emit_sql_log(
         app,
@@ -286,9 +293,8 @@ pub fn update_project(
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
     let params_refs: Vec<&dyn rusqlite::types::ToSql> =
-        param_values.iter().map(|p| p.as_ref()).collect();
+        values.iter().map(|p| p.as_ref()).collect();
     let affected = conn.execute(&sql, params_refs.as_slice())?;
     if affected == 0 {
         return Err(AppError::NotFound("未找到该项目或项目已删除".into()));
@@ -319,10 +325,16 @@ pub fn delete_project(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppEr
     Ok(())
 }
 
-/// 恢复项目（连同其下任务一并恢复，事务保证）
+/// 恢复项目（仅连带恢复「随项目一并删除」的任务，事务保证）
+///
+/// 删除项目前已单独进回收站的任务（deleted_at 与项目不同）保持原状，
+/// 由用户在任务回收站自行决定是否恢复。
 pub fn restore_project(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
     let mut conn = db.pool.get()?;
     let tx = conn.transaction()?;
+    // restore 前置读取项目的删除时间戳（restore 后 deleted_at 置空），
+    // 用它精确匹配「随项目一并删除」的任务子集
+    let project_deleted_at = project_repo::find_by_id(&tx, id)?.deleted_at;
     let ts = now();
     emit_sql_log(
         app,
@@ -336,14 +348,18 @@ pub fn restore_project(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppE
     if affected == 0 {
         return Err(AppError::NotFound("未找到该项目或该项目不在回收站".into()));
     }
-    let _ = project_repo::restore_tasks(&tx, id, &ts)?;
+    if let Some(ref pd) = project_deleted_at {
+        let _ = project_repo::restore_tasks(&tx, id, pd, &ts)?;
+    }
     tx.commit()?;
     Ok(())
 }
 
-/// 彻底删除项目（CASCADE 删除其下任务与任务-标签关联）
+/// 彻底删除项目（仅限回收站中的项目；CASCADE 删除其下任务与任务-标签关联，
+/// 同事务显式清理操作日志）
 pub fn hard_delete_project(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
-    let conn = db.pool.get()?;
+    let mut conn = db.pool.get()?;
+    let tx = conn.transaction()?;
     emit_sql_log(
         app,
         "DELETE",
@@ -352,7 +368,13 @@ pub fn hard_delete_project(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), 
         file!(),
         line!(),
     );
-    project_repo::hard_delete(&conn, id)?;
+    let affected = project_repo::hard_delete(&tx, id)?;
+    if affected == 0 {
+        return Err(AppError::Business("仅回收站中的项目可彻底删除".into()));
+    }
+    // task_activity_logs 无外键，硬删后需显式清理日志避免孤儿化
+    activity_log_repo::delete_by_project(&tx, id)?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -370,11 +392,15 @@ pub fn list_deleted_projects(app: &AppHandle, db: &AppDb) -> Result<Vec<Project>
     Ok(project_repo::list_deleted(&conn)?)
 }
 
-/// 清空项目回收站
+/// 清空项目回收站（同事务清理已删项目的操作日志）
 pub fn clear_project_trash(app: &AppHandle, db: &AppDb) -> Result<u32, AppError> {
-    let conn = db.pool.get()?;
+    let mut conn = db.pool.get()?;
+    let tx = conn.transaction()?;
     emit_sql_log(app, "DELETE", "projects", "clear trash", file!(), line!());
-    let count = project_repo::count_deleted(&conn)?;
-    project_repo::clear_trash(&conn)?;
+    let count = project_repo::count_deleted(&tx)?;
+    // task_activity_logs 无外键，先清理已删项目的日志再删项目
+    activity_log_repo::delete_logs_of_deleted_projects(&tx)?;
+    project_repo::clear_trash(&tx)?;
+    tx.commit()?;
     Ok(count)
 }

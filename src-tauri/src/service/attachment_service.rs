@@ -12,7 +12,7 @@ use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::Attachment;
-use crate::repository::attachment_repo;
+use crate::repository::{attachment_repo, task_repo};
 use crate::service::activity_log_service;
 use crate::utils::now;
 use std::collections::HashSet;
@@ -170,12 +170,8 @@ pub fn pick_and_add(
 ) -> Result<Option<Attachment>, AppError> {
     {
         let conn = db.pool.get()?;
-        conn.query_row(
-            "SELECT id FROM tasks WHERE id=?1 AND deleted_at IS NULL",
-            rusqlite::params![task_id],
-            |_| Ok(()),
-        )
-        .map_err(|_| AppError::NotFound("任务不存在或已删除".into()))?;
+        task_repo::find_active_id_project(&conn, task_id)
+            .map_err(|_| AppError::NotFound("任务不存在或已删除".into()))?;
     }
     // 注意：不要在 macOS 上使用 `add_filter(name, &["*"])` 全类型过滤器——
     // 通配符会被映射成无效 UTType，导致面板内所有文件灰置不可选。
@@ -295,7 +291,7 @@ pub fn open_attachment(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppE
     Ok(())
 }
 
-/// 删除附件：移除记录并删除文件
+/// 删除附件：硬删记录并删除文件（记录与文件同步移除，不产生无法还原的软删占位）
 pub fn delete_attachment(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
     let conn = db.pool.get()?;
     let (att, stored) = attachment_repo::find_active(&conn, id)
@@ -309,7 +305,7 @@ pub fn delete_attachment(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), Ap
         file!(),
         line!(),
     );
-    attachment_repo::soft_delete(&conn, id, &now())?;
+    attachment_repo::hard_delete(&conn, id)?;
     if let Ok(p) = resolve_local(app, &stored) {
         let _ = std::fs::remove_file(&p); // 记录已删，文件尽力清理
     }
@@ -361,10 +357,6 @@ pub fn cleanup_orphan_files(app: &AppHandle, db: &AppDb) -> Result<usize, AppErr
 type ActiveTask = (String, Option<String>);
 /// 校验任务存在且未软删，返回 (id, project_id)；失败统一映射为 NotFound
 fn task_active_or_err(conn: &rusqlite::Connection, task_id: &str) -> Result<ActiveTask, AppError> {
-    conn.query_row(
-        "SELECT id, project_id FROM tasks WHERE id=?1 AND deleted_at IS NULL",
-        rusqlite::params![task_id],
-        |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
-    )
-    .map_err(|_| AppError::NotFound("任务不存在或已删除".into()))
+    task_repo::find_active_id_project(conn, task_id)
+        .map_err(|_| AppError::NotFound("任务不存在或已删除".into()))
 }
