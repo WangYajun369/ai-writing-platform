@@ -157,6 +157,8 @@ jobs:
           fi
 
       - name: Commit and push to Wiki
+        env:
+          HEAD_COMMIT_MSG: ${{ github.event.head_commit.message || 'workflow_dispatch' }}
         run: |
           set -euo pipefail
           cd wiki-repo
@@ -177,8 +179,8 @@ jobs:
             COMMIT_MSG="docs: sync wiki from main (${{ github.sha }})
 
           Source: ${{ github.repository }}@${{ github.ref_name }}
-          Triggered by: ${{ github.event.head_commit.message }}"
-            git commit -m "$COMMIT_MSG"
+          Triggered by: ${HEAD_COMMIT_MSG}"
+            printf '%s\n' "$COMMIT_MSG" | git commit -F -
           fi
 
           # 强制推送确保 wiki 与 docs 一致
