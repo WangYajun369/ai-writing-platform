@@ -1,5 +1,23 @@
 # 更新日志
 
+## v1.8.1 (2026-09-29) — 任务卡数据一致性修复与 Agent IPC 收口
+
+### 修复
+- **周报统计恒为 0**：`project_weekly_stats` 原按 `'completed'` 短名匹配日志 action，与写入的 `task.created` / `task.completed` 全名不匹配；且逐周用本地日期文本 `COUNT BETWEEN` 与 UTC 的 `created_at` 跨时钟域比较，UTC+8 用户周归属错位。改为单条区间查询 + Rust 侧按「本地周一」分桶（`list_weekly_actions_since` / `bucket_by_local_week` / `local_midnight_utc`），2N 次串行查询降为 1 次，并补 2 项时区换算单测
+- **回收站硬删无守卫**：`hard_delete` 未校验记录是否已软删，存在绕过回收站直接抹除有效数据的风险；已加 `deleted_at` 守卫（仅对已软删记录生效），任务 / 项目两侧均补齐
+- **删除路径非事务化**：任务 / 项目硬删与关联数据（附件、子任务、活动日志）清理分散在多次独立写入，中途失败会留下半删状态；改为单事务内完成
+- **活动日志孤儿残留**：`task_activity_logs` 表无外键，硬删与回收站过期清理后日志仍滞留（周报 / 时间线脏数据）。`activity_log_repo` 新增 `delete_by_task` / `delete_by_project` / `delete_logs_of_deleted_tasks` / `delete_logs_of_deleted_projects` / `delete_logs_of_expired_*` / `delete_orphan_logs`，由 service 显式调用清理
+- **回收站预览可编辑**：`TaskModal` 新增 `readOnly` 模式（回收站预览已删任务）——编辑控件禁用 + `patch` 兜底拒绝，此前会对已软删任务发起必然失败的更新请求
+- **监听器竞态**：`TaskCardsWindow` 的 `tasks-nav` 事件 `listen` 未 resolve 即卸载时 `unlisten` 仍为 undefined，造成监听器泄漏；加 `disposed` 标记，resolve 后立即自行注销
+- **过期快照误报**：命令面板跳转后 `await` 之间复用旧 store 引用，缓存未命中时误报「任务已不存在」；改为 `getState()` 重取最新快照
+- **刷新广播与加载态**：`taskCardsStore.refreshAll` 成功路径补 `notifyChanged()`（修复首页角标不更新），失败路径补 `set({ loaded: true })` + toast（修复视图永久卡在加载态）
+
+### 优化
+- **Agent IPC 收编**：新增 `agentApi`（executeSkill / cancelSkill / listMemories / updateMemory / deleteMemory / clearMemories）与契约类型，Agent 6 个命令此前绕过 `tauri-bridge` 直接 `invoke`，违反「唯一 IPC 入口」约定；`useAgent` / `AgentMemoryPanel` / `useAiChat` 共 7 处调用迁移收编，`agent/types.ts` 改为 re-export 消除双份契约漂移（bridge API 对象 18 → 19）
+- **共享工具收敛**：新增 `lib/taskCardsFilters.ts`（`PRIORITY_RANK` / `NO_DUE_SENTINEL` / `matchDue` / 日期工具）与 `lib/taskCardsHierarchy.ts`（`collectParentRows`），消除任务卡各视图重复的筛选与父任务树计算逻辑；`TaskModal` 「已保存 ✓」定时器改为 ref 管理并在卸载时清理
+- **测试**：新增 `src/test/taskCardsHierarchy.test.ts`（层次构建 62 项断言）
+- **仓库卫生**：移除误入库的 `vite.config.js` / `vite.config.d.ts`（`tsc` 编译产物）并加入 `.gitignore`；宣传页与文档版本号同步 v1.8.0
+
 ## v1.8.0 (2026-09-24) — 工程质量强化：DB 版本化、测试体系与 Agent 记忆修复
 
 ### 修复
