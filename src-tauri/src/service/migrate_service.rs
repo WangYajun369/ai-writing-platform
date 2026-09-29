@@ -9,7 +9,6 @@ use crate::error::AppError;
 use crate::models::MigrateResult;
 use crate::repository::{project_repo, schedule_repo, task_meta_repo, task_repo};
 use crate::utils::{local_now, local_today, now};
-use rusqlite::OptionalExtension;
 use tauri::AppHandle;
 use uuid::Uuid;
 
@@ -47,13 +46,7 @@ pub fn migrate_schedules(app: &AppHandle, db: &AppDb) -> Result<MigrateResult, A
     let already = task_meta_repo::get(&tx, MIGRATION_META_KEY)?.as_deref() == Some("1");
 
     // 默认项目：优先复用「个人事务」，否则新建
-    let project_id: Option<String> = tx
-        .query_row(
-            "SELECT id FROM projects WHERE name=?1 AND deleted_at IS NULL LIMIT 1",
-            rusqlite::params![DEFAULT_PROJECT_NAME],
-            |r| r.get(0),
-        )
-        .optional()?;
+    let project_id = project_repo::find_id_by_name(&tx, DEFAULT_PROJECT_NAME)?;
 
     if already {
         return Ok(MigrateResult {

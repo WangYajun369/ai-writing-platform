@@ -8,6 +8,8 @@ import { Activity, BarChart3, Loader2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 import { taskCardApi } from '@/lib/tauri-bridge'
+import { ACTIVITY_DOT } from '@/lib/taskCardsFilters'
+import { fmtTime } from '@/lib/taskCardsTime'
 import type { ActivityLog, ProjectView, ProjectWeeklyStat } from '@/types'
 
 interface Props {
@@ -16,32 +18,6 @@ interface Props {
 }
 
 const WEEKS = 8
-
-/** 动作 → 动态圆点颜色 */
-const DOT: Record<string, string> = {
-  'task.created': 'bg-sky-400',
-  'task.completed': 'bg-emerald-400',
-  'task.reopened': 'bg-amber-400',
-  'task.updated': 'bg-zinc-400',
-  'task.deleted': 'bg-rose-400',
-  'task.restored': 'bg-teal-400',
-  'task.moved': 'bg-indigo-400',
-  'task.archived': 'bg-zinc-500',
-  'subtask.done': 'bg-emerald-400',
-  'subtask.removed': 'bg-rose-400',
-  'attachment.added': 'bg-violet-400',
-  'attachment.removed': 'bg-rose-400',
-}
-
-/** 动态时间：当天仅给 HH:MM，更早显示 M月D日 HH:MM */
-function fmtTime(s: string): string {
-  const d = new Date(s)
-  if (Number.isNaN(d.getTime())) return s
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mm = String(d.getMinutes()).padStart(2, '0')
-  if (d.toDateString() === new Date().toDateString()) return `${hh}:${mm}`
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${hh}:${mm}`
-}
 
 /** 周起始日 'YYYY-MM-DD' → 柱状图轴标签「M月D日」 */
 function weekLabel(ws: string): string {
@@ -223,7 +199,7 @@ export default function ProjectReportModal({ project, onClose }: Props) {
                         <span
                           className={cn(
                             'absolute top-[4px] left-[-3.5px] h-[7px] w-[7px] rounded-full ring-2 ring-[#1a1a1f]',
-                            DOT[l.action] ?? 'bg-zinc-500',
+                            ACTIVITY_DOT[l.action] ?? 'bg-zinc-500',
                           )}
                         />
                         <p className="min-w-0 flex-1 text-[11.5px] leading-4 text-zinc-300">

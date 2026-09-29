@@ -12,10 +12,9 @@
  */
 import { useCallback, useRef, useState } from 'react'
 import { errText } from '@/lib/errors'
-import { invoke } from '@tauri-apps/api/core'
 import { useCurrentChapter, useCurrentAiMessages } from '@/stores/appStore'
 import { useAiStore } from '@/stores/aiStore'
-import { bookApi, chapterApi } from '@/lib/tauri-bridge'
+import { agentApi, bookApi, chapterApi } from '@/lib/tauri-bridge'
 import { getChatApiKey } from '@/types'
 import { toast } from '@/lib/toast'
 import type { AiMessage, AiConfig, Chapter } from '@/types'
@@ -233,7 +232,7 @@ export function useAiChat(options: UseAiChatOptions): UseAiChatReturn {
           },
         })
 
-        await invoke<string>('execute_agent_skill', {
+        await agentApi.executeSkill({
           skill: currentSkill,
           bookId,
           message: input.trim(),

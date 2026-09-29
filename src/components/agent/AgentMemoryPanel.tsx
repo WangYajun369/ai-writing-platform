@@ -5,9 +5,9 @@
  */
 import React, { useState, useCallback, useEffect } from 'react'
 import { XIcon, Trash2Icon, PencilIcon, SaveIcon, RotateCcwIcon, BrainIcon } from 'lucide-react'
-import { invoke } from '@tauri-apps/api/core'
+import { agentApi } from '@/lib/tauri-bridge'
 import { errText } from '@/lib/errors'
-import type { MemoryInfo, MemoryListResponse } from './types'
+import type { MemoryInfo } from './types'
 import { MEMORY_TYPE_LABELS, MEMORY_TYPE_COLORS } from './types'
 
 interface AgentMemoryPanelProps {
@@ -18,8 +18,8 @@ interface AgentMemoryPanelProps {
 /**
  * 组件：Agent 记忆管理面板
  *
- * 数据来源：list_agent_memories / update_agent_memory / delete_agent_memory /
- * clear_agent_memories 系列 IPC；交互：加载列表 → 编辑/删除单条 → 二次确认清空全部。
+ * 数据来源：agentApi（tauri-bridge）——listMemories / updateMemory / deleteMemory /
+ * clearMemories 系列 IPC；交互：加载列表 → 编辑/删除单条 → 二次确认清空全部。
  */
 export const AgentMemoryPanel: React.FC<AgentMemoryPanelProps> = ({ bookId, onClose }) => {
   const [memories, setMemories] = useState<MemoryInfo[]>([])
@@ -36,10 +36,7 @@ export const AgentMemoryPanel: React.FC<AgentMemoryPanelProps> = ({ bookId, onCl
     setLoading(true)
     setError(null)
     try {
-      const resp = await invoke<MemoryListResponse>('list_agent_memories', {
-        bookId,
-        skillType: null,
-      })
+      const resp = await agentApi.listMemories(bookId)
       setMemories(resp.memories)
     } catch (e) {
       setError(errText(e))
@@ -69,12 +66,7 @@ export const AgentMemoryPanel: React.FC<AgentMemoryPanelProps> = ({ bookId, onCl
   // 保存编辑
   const saveEdit = async (memoryId: number) => {
     try {
-      await invoke('update_agent_memory', {
-        memoryId,
-        content: editContent.trim() || null,
-        keywords: editKeywords.trim() || null,
-        memoryType: null,
-      })
+      await agentApi.updateMemory(memoryId, editContent.trim() || null, editKeywords.trim() || null)
       // IPC 成功后乐观更新本地列表（避免整表重拉）；字段填空时后端视为不修改、本地沿用原值
       setMemories((prev) =>
         prev.map((m) =>
@@ -92,7 +84,7 @@ export const AgentMemoryPanel: React.FC<AgentMemoryPanelProps> = ({ bookId, onCl
   // 删除单条记忆
   const deleteMemory = async (memoryId: number) => {
     try {
-      await invoke('delete_agent_memory', { memoryId })
+      await agentApi.deleteMemory(memoryId)
       setMemories((prev) => prev.filter((m) => m.id !== memoryId))
       if (editingId === memoryId) cancelEdit()
     } catch (e) {
@@ -104,7 +96,7 @@ export const AgentMemoryPanel: React.FC<AgentMemoryPanelProps> = ({ bookId, onCl
   const clearAllMemories = async () => {
     if (!bookId) return
     try {
-      await invoke<number>('clear_agent_memories', { bookId })
+      await agentApi.clearMemories(bookId)
       setMemories([])
       setConfirmClear(false)
     } catch (e) {

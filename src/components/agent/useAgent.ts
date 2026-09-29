@@ -9,7 +9,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { invoke } from '@tauri-apps/api/core'
+import { agentApi } from '@/lib/tauri-bridge'
 import { errText } from '@/lib/errors'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useAiStore } from '@/stores/aiStore'
@@ -234,7 +234,7 @@ export function useAgent() {
         const aiConfig = useAiStore.getState().aiConfig
         const chatApiKey = getChatApiKey(aiConfig.chat)
 
-        await invoke<string>('execute_agent_skill', {
+        await agentApi.executeSkill({
           skill,
           bookId,
           message,
@@ -279,7 +279,7 @@ export function useAgent() {
   // 取消当前任务
   const cancelSkill = useCallback(async () => {
     try {
-      await invoke('cancel_agent_skill')
+      await agentApi.cancelSkill()
       setIsStreaming(false)
       if (streamRafRef.current) {
         cancelAnimationFrame(streamRafRef.current)

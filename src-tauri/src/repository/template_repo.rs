@@ -99,54 +99,40 @@ pub fn update(
     subtask_titles: Option<&[String]>,
     ts: &str,
 ) -> Result<usize> {
-    let mut set_clauses: Vec<String> = Vec::new();
-    let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-    // 动态拼装 SET 子句：仅把传入 Some 的字段纳入更新，无字段时直接返回 0
-    macro_rules! push_set {
-        ($col:expr, $val:expr) => {{
-            set_clauses.push(format!("{} = ?{}", $col, set_clauses.len() + 1));
-            param_values.push(Box::new($val) as Box<dyn rusqlite::types::ToSql>);
-        }};
-    }
+    // 动态 UPDATE 由统一的 DynamicUpdate 构建器生成：仅把传入 Some 的字段纳入更新
+    let mut upd = crate::utils::DynamicUpdate::new("task_templates");
     if let Some(v) = name {
-        push_set!("name", v.to_string());
+        upd.push("name", v.to_string());
     }
     if let Some(v) = project_id {
-        push_set!("project_id", v.map(|s| s.to_string()));
+        upd.push("project_id", v.map(|s| s.to_string()));
     }
     if let Some(v) = title {
-        push_set!("title", v.to_string());
+        upd.push("title", v.to_string());
     }
     if let Some(v) = description {
-        push_set!("description", v.to_string());
+        upd.push("description", v.to_string());
     }
     if let Some(v) = priority {
-        push_set!("priority", v.to_string());
+        upd.push("priority", v.to_string());
     }
     if let Some(v) = note {
-        push_set!("note", v.to_string());
+        upd.push("note", v.to_string());
     }
     if let Some(v) = due_offset_days {
-        push_set!("due_offset_days", v);
+        upd.push("due_offset_days", v);
     }
     if let Some(v) = tag_ids {
-        push_set!("tag_ids", to_json_array(v));
+        upd.push("tag_ids", to_json_array(v));
     }
     if let Some(v) = subtask_titles {
-        push_set!("subtask_titles", to_json_array(v));
+        upd.push("subtask_titles", to_json_array(v));
     }
-    if set_clauses.is_empty() {
+    let Some((sql, values)) = upd.build(id, ts) else {
         return Ok(0);
-    }
-    push_set!("updated_at", ts.to_string());
-    let sql = format!(
-        "UPDATE task_templates SET {} WHERE id=?{}",
-        set_clauses.join(", "),
-        set_clauses.len() + 1
-    );
-    param_values.push(Box::new(id.to_string()) as Box<dyn rusqlite::types::ToSql>);
+    };
     let params_refs: Vec<&dyn rusqlite::types::ToSql> =
-        param_values.iter().map(|p| p.as_ref()).collect();
+        values.iter().map(|p| p.as_ref()).collect();
     conn.execute(&sql, params_refs.as_slice())
 }
 

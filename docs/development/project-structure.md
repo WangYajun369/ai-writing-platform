@@ -98,7 +98,11 @@ src/
 
 | 文件 | 说明 |
 |------|------|
-| `tauri-bridge.ts` | **全项目唯一允许调用 `invoke` 的模块**，17 个类型安全 API 对象 |
+| `tauri-bridge.ts` | **全项目唯一允许调用 `invoke` 的模块**，19 个类型安全 API 对象 |
+| `taskCardsTime.ts` | 任务卡时间工具：本地日期/逾期判断、datetime-local 值转换、截止展示文案、动态时间 fmtTime |
+| `taskCardsFilters.ts` | 任务卡筛选/排序公共工具：优先级权重、due 范围匹配（week 不含逾期）、动态圆点色表 |
+| `taskCardsHierarchy.ts` | 任务卡层级工具：父任务候选树序展开 + 后代防环排除（collectParentRows） |
+| `taskCardsMeta.ts` | 任务卡展示元信息：状态/优先级徽标样式 |
 | `tts-player.ts` | 豆包语音合成：合成请求封装与 `playAudioFile` 本地播放 |
 | `utils.ts` | `cn()` 类名合并、字数统计、HTML 清洗、日期格式化 |
 | `image-utils.ts` | 图片压缩、Base64 转换、尺寸获取 |

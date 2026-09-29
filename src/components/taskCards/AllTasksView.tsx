@@ -22,13 +22,18 @@ import { useTaskCardsStore } from '@/stores/taskCardsStore'
 import type { TaskCard, TaskPriority } from '@/types'
 import { STATUS_META } from '@/lib/taskCardsMeta'
 import { fmtDueText } from '@/lib/taskCardsTime'
+import {
+  matchDue,
+  NO_DUE_SENTINEL,
+  PRIORITY_RANK,
+  type DueRange,
+} from '@/lib/taskCardsFilters'
 import { describeRule } from '@/lib/recurrence'
 import TaskModal from './TaskModal'
 import { useCompleteFlow } from './useCompleteFlow'
 
 type StatusFilter = 'all' | TaskCard['status']
 type PriorityFilter = 'all' | TaskPriority
-type DueRange = 'all' | 'overdue' | 'today' | 'week' | 'month'
 type SortKey = 'due' | 'priority' | 'created' | 'updated'
 
 const STATUS_OPTIONS: { key: StatusFilter; label: string }[] = [
@@ -37,37 +42,6 @@ const STATUS_OPTIONS: { key: StatusFilter; label: string }[] = [
   { key: 'doing', label: '进行中' },
   { key: 'done', label: '已完成' },
 ]
-
-const PRIORITY_RANK: Record<TaskPriority, number> = { high: 0, medium: 1, low: 2 }
-
-function pad2(n: number) {
-  return String(n).padStart(2, '0')
-}
-
-/** 截止范围匹配（已完成任务不参与逾期/截止筛选） */
-function matchDue(task: TaskCard, range: DueRange): boolean {
-  if (!task.dueTime) return range === 'all'
-  if (task.status === 'done') return range === 'all'
-  const d = task.dueTime.slice(0, 10)
-  const now = new Date()
-  const todayStr = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`
-  switch (range) {
-    case 'today':
-      return d === todayStr
-    case 'overdue':
-      return d < todayStr
-    case 'week': {
-      const end = new Date(now)
-      end.setDate(now.getDate() + (6 - now.getDay()))
-      const endStr = `${end.getFullYear()}-${pad2(end.getMonth() + 1)}-${pad2(end.getDate())}`
-      return d >= todayStr && d <= endStr
-    }
-    case 'month':
-      return d.slice(0, 7) === todayStr.slice(0, 7)
-    default:
-      return true
-  }
-}
 
 /** 按排序策略排序（due/priority 升序靠前、无截止排最后；created 旧→新；updated 新→旧） */
 function sortList(
@@ -80,7 +54,7 @@ function sortList(
       arr.sort(
         (a, b) =>
           PRIORITY_RANK[a.task.priority] - PRIORITY_RANK[b.task.priority] ||
-          (a.task.dueTime ?? '9999-99-99').localeCompare(b.task.dueTime ?? '9999-99-99'),
+          (a.task.dueTime ?? NO_DUE_SENTINEL).localeCompare(b.task.dueTime ?? NO_DUE_SENTINEL),
       )
       break
     case 'created':
@@ -91,7 +65,7 @@ function sortList(
       break
     default:
       arr.sort((a, b) =>
-        (a.task.dueTime ?? '9999-99-99').localeCompare(b.task.dueTime ?? '9999-99-99'),
+        (a.task.dueTime ?? NO_DUE_SENTINEL).localeCompare(b.task.dueTime ?? NO_DUE_SENTINEL),
       )
   }
   return arr

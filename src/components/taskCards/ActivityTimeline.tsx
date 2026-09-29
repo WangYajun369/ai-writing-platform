@@ -10,39 +10,12 @@ import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 import { taskCardApi } from '@/lib/tauri-bridge'
 import type { ActivityLog } from '@/types'
+import { ACTIVITY_DOT } from '@/lib/taskCardsFilters'
+import { fmtTime } from '@/lib/taskCardsTime'
 
 interface Props {
   taskId: string
   limit?: number
-}
-
-/** 时间显示：当天仅给 HH:MM，更早的显示 M月D日 HH:MM */
-function fmtTime(s: string): string {
-  const d = new Date(s)
-  if (Number.isNaN(d.getTime())) return s
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mm = String(d.getMinutes()).padStart(2, '0')
-  if (d.toDateString() === new Date().toDateString()) return `${hh}:${mm}`
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${hh}:${mm}`
-}
-
-/** 动作 → 时间线圆点颜色 */
-const DOT: Record<string, string> = {
-  'task.created': 'bg-sky-400',
-  'task.completed': 'bg-emerald-400',
-  'task.reopened': 'bg-amber-400',
-  'task.updated': 'bg-zinc-400',
-  'task.deleted': 'bg-rose-400',
-  'task.restored': 'bg-teal-400',
-  'task.moved': 'bg-indigo-400',
-  'task.archived': 'bg-zinc-500',
-  'subtask.added': 'bg-lime-400',
-  'subtask.done': 'bg-emerald-400',
-  'subtask.redone': 'bg-zinc-400',
-  'subtask.updated': 'bg-zinc-400',
-  'subtask.removed': 'bg-rose-400',
-  'attachment.added': 'bg-violet-400',
-  'attachment.removed': 'bg-rose-400',
 }
 
 export default function ActivityTimeline({ taskId, limit = 20 }: Props) {
@@ -90,7 +63,7 @@ export default function ActivityTimeline({ taskId, limit = 20 }: Props) {
                 <span
                   className={cn(
                     'absolute top-[3px] left-[-3.5px] h-[7px] w-[7px] rounded-full ring-2 ring-[#18181b]',
-                    DOT[l.action] ?? 'bg-zinc-500',
+                    ACTIVITY_DOT[l.action] ?? 'bg-zinc-500',
                   )}
                 />
                 <p className="min-w-0 flex-1 text-[11.5px] leading-4 text-zinc-300">{l.summary}</p>

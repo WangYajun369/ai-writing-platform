@@ -1,8 +1,8 @@
 # IPC 命令速查
 
-> **适用版本**：`1.7.0`　|　**最后核对**：2026-09-05
+> **适用版本**：`1.8.0`　|　**最后核对**：2026-09-29
 
-TimeWrite 共注册 **173 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用（Agent 命令为例外，见文末说明）。桥接层导出 **18 个 API 对象**（`bookApi` `volumeApi` `chapterApi` `snapshotApi` `worldCardApi` `diaryApi` `scheduleApi` `windowApi` `aiApi` `imageApi` `importExportApi` `debugApi` `systemApi` `vocabApi` `ttsApi` `dictApi` `taskCardApi` `writingApi`）。
+TimeWrite 共注册 **173 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用。桥接层导出 **19 个 API 对象**（`bookApi` `volumeApi` `chapterApi` `snapshotApi` `worldCardApi` `diaryApi` `scheduleApi` `windowApi` `aiApi` `agentApi` `imageApi` `importExportApi` `debugApi` `systemApi` `vocabApi` `ttsApi` `dictApi` `taskCardApi` `writingApi`）。
 
 > **架构约定**：`tauri-bridge.ts` 是全项目**唯一**允许调用 `invoke` 的模块。禁止在其他文件中直接 import `@tauri-apps/api` 的 `invoke`。
 
@@ -440,7 +440,7 @@ io 目录定义的业务码：
 
 ## 前端桥接层 API 模块
 
-`src/lib/tauri-bridge.ts` 中对应的 17 个 API 对象：
+`src/lib/tauri-bridge.ts` 中对应的 19 个 API 对象：
 
 | API 对象 | 覆盖命令数 |
 |----------|:---:|
@@ -455,16 +455,20 @@ io 目录定义的业务码：
 | `dictApi` | 5 |
 | `ttsApi` | 1 |
 | `aiApi` | 8 |
+| `agentApi` | 6 |
 | `importExportApi` | 5 |
 | `imageApi` | 2 |
 | `windowApi` | 16 |
 | `debugApi` | 6 |
 | `systemApi` | 1 |
 | `taskCardApi` | 55 |
+| `writingApi` | 1 |
 
-> **例外说明**：Agent 命令（`execute_agent_skill` / `cancel_agent_skill` / 记忆管理）**未封装进
-> `tauri-bridge.ts`**（无 `agentApi` 对象），由 `components/agent/useAgent.ts`、`AgentMemoryPanel.tsx`
-> 与 `useAiChat.ts` 直接 `invoke`——与「唯一 IPC 入口」约定不一致，列为待重构项。
+> **收编说明（2026-09-29）**：Agent 命令（`execute_agent_skill` / `cancel_agent_skill` / 记忆
+> 管理）此前未封装进 `tauri-bridge.ts`，由 `useAgent.ts` / `AgentMemoryPanel.tsx` /
+> `useAiChat.ts` 直接 `invoke`。现已新增 `agentApi`（executeSkill / cancelSkill /
+> listMemories / updateMemory / deleteMemory / clearMemories）统一收编，三个调用方已全部
+> 迁移，「唯一 IPC 入口」约定恢复全量覆盖。
 
 ---
 

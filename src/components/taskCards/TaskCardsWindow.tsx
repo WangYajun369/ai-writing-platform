@@ -127,18 +127,25 @@ export default function TaskCardsWindow() {
   // 命令面板导航事件：窗口已打开时收到 tasks-nav → 切换视图（today / all）
   useEffect(() => {
     let unlisten: (() => void) | undefined
+    // 竞态防护：listen 的 Promise 未 resolve 时组件已卸载，unlisten 仍为 undefined
+    // 会造成监听器泄漏。disposed 标记下，resolve 后立即自行注销。
+    let disposed = false
     listen<string>('tasks-nav', (e) => {
       const s = e.payload
       if (s === 'all') setView({ type: 'all' })
       else if (s === 'today') setView({ type: 'today' })
     })
       .then((fn) => {
-        unlisten = fn
+        if (disposed) fn()
+        else unlisten = fn
       })
       .catch(() => {
         /* 忽略 */
       })
-    return () => unlisten?.()
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
   }, [])
 
   const activeProject = view.type === 'project' ? projects.find((p) => p.id === view.projectId) : undefined
@@ -184,7 +191,9 @@ export default function TaskCardsWindow() {
         } catch {
           /* 忽略 */
         }
-        task = store.tasksByProject[pid]?.find((t) => t.id === entry.taskId)
+        // await 后必须重新取最新快照：旧 store 引用的 tasksByProject 已过期，
+        // 缓存未命中场景会误报「任务已不存在」
+        task = useTaskCardsStore.getState().tasksByProject[pid]?.find((t) => t.id === entry.taskId)
       }
       if (!task) {
         toast.info('任务已不存在')

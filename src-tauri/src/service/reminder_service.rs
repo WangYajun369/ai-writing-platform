@@ -115,7 +115,10 @@ pub fn run_once(app: &AppHandle) -> Result<usize, AppError> {
     // 1. 偏好：总开关未启用则全部跳过（含任务级自定义）
     let raw_prefs = task_meta_repo::get(&conn, task_meta_service::KEY_REMINDER_PREFS)?;
     let prefs: ReminderPrefs = match raw_prefs {
-        Some(raw) => serde_json::from_str(&raw).unwrap_or_default(),
+        Some(raw) => serde_json::from_str(&raw).unwrap_or_else(|e| {
+            crate::app_log!("[提醒] 提醒偏好 JSON 损坏，按默认值处理: {e}");
+            ReminderPrefs::default()
+        }),
         None => ReminderPrefs::default(),
     };
     if !prefs.enabled {
@@ -318,10 +321,14 @@ pub fn run_once(app: &AppHandle) -> Result<usize, AppError> {
 /// 发送系统通知；权限不可用或失败时返回 false（不中断扫描）
 fn send_notification(app: &AppHandle, title: &str, body: &str) -> bool {
     use tauri_plugin_notification::NotificationExt;
-    if !PERMISSION_REQUESTED.swap(true, Ordering::SeqCst) {
-        if let Err(e) = app.notification().request_permission() {
-            crate::app_log!("[提醒] 请求通知权限失败: {e}");
-            return false;
+    // 权限只请求一次；请求失败不置位，下次发送时重试（避免一次失败永久静默）
+    if !PERMISSION_REQUESTED.load(Ordering::SeqCst) {
+        match app.notification().request_permission() {
+            Ok(_) => PERMISSION_REQUESTED.store(true, Ordering::SeqCst),
+            Err(e) => {
+                crate::app_log!("[提醒] 请求通知权限失败（下次发送时重试）: {e}");
+                return false;
+            }
         }
     }
     let result = app.notification().builder().title(title).body(body).show();

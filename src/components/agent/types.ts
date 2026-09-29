@@ -4,6 +4,8 @@
  * 与 Rust/Python 侧保持一致的接口定义。
  */
 
+import type { AgentMemoryInfo, AgentMemoryListResponse, AgentMemoryType } from '@/lib/tauri-bridge'
+
 /** 技能类型枚举 */
 export type SkillType = 'writing' | 'analysis' | 'research' | 'polish'
 
@@ -81,9 +83,10 @@ export const SKILLS: SkillMeta[] = [
 ]
 
 // ─── 记忆管理类型 ───
+// 后端契约类型已统一收敛至 tauri-bridge（单一 IPC 契约源），此处 re-export 保持旧引用兼容
 
 /** 记忆类型 */
-export type MemoryType = 'preference' | 'decision' | 'lesson'
+export type MemoryType = AgentMemoryType
 
 /** 记忆类型中文标签 */
 export const MEMORY_TYPE_LABELS: Record<MemoryType, string> = {
@@ -100,22 +103,7 @@ export const MEMORY_TYPE_COLORS: Record<MemoryType, string> = {
 }
 
 /** 单条记忆信息（来自后端） */
-export interface MemoryInfo {
-  id: number
-  book_id: string
-  skill_type: string
-  memory_type: MemoryType
-  content: string
-  keywords: string
-  relevance_score: number
-  created_at: string
-  updated_at: string
-  /** 最近一次被检索命中并注入的时间（可为空：从未命中） */
-  last_hit_at?: string | null
-}
+export type MemoryInfo = AgentMemoryInfo
 
 /** 记忆列表响应 */
-export interface MemoryListResponse {
-  memories: MemoryInfo[]
-  total: number
-}
+export type MemoryListResponse = AgentMemoryListResponse

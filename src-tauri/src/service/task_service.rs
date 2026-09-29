@@ -7,7 +7,7 @@ use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::{Tag, TaskCard, TodayOverview};
-use crate::repository::{project_repo, subtask_repo, task_meta_repo, task_repo};
+use crate::repository::{activity_log_repo, project_repo, subtask_repo, task_meta_repo, task_repo};
 use crate::service::activity_log_service;
 use crate::utils::{local_now, local_today, now, validate_len};
 use chrono::Datelike;
@@ -229,8 +229,10 @@ pub fn get_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<TaskCard, AppEr
     let mut task = task_repo::find_active(&conn, id)
         .map_err(|_| AppError::NotFound("未找到该任务或任务已删除".into()))?;
     let ids = vec![task.id.clone()];
-    if let Ok(pairs) = task_repo::tags_of_tasks(&conn, &ids) {
-        task.tags = pairs.into_iter().map(|(_, t)| t).collect();
+    // 标签查询失败不留空：记录错误日志，返回无标签任务（详情可读但标签缺失可感知）
+    match task_repo::tags_of_tasks(&conn, &ids) {
+        Ok(pairs) => task.tags = pairs.into_iter().map(|(_, t)| t).collect(),
+        Err(e) => crate::app_log!("[任务] 查询任务 {id} 标签失败: {e}"),
     }
     Ok(task)
 }
@@ -311,13 +313,19 @@ pub fn create_task(
     get_task(app, db, &id)
 }
 
-/// 整体替换任务标签（先清后加，幂等）
+/// 整体替换任务标签（先清后加，幂等；数量受 MAX_TAGS_COUNT 限制）
 fn replace_tags(
     conn: &rusqlite::Connection,
     task_id: &str,
     tag_ids: &[String],
     ts: &str,
 ) -> Result<(), AppError> {
+    if tag_ids.len() > crate::utils::MAX_TAGS_COUNT {
+        return Err(AppError::Validation(format!(
+            "任务标签数量超出上限（最多 {} 个）",
+            crate::utils::MAX_TAGS_COUNT
+        )));
+    }
     task_repo::clear_task_tags(conn, task_id)?;
     for tid in tag_ids {
         task_repo::add_task_tag(conn, task_id, tid, ts)?;
@@ -357,7 +365,19 @@ pub fn update_task(
     let has_due = params.due_time.is_some();
     let new_start = norm_opt(params.plan_start_time)?;
     let new_due = norm_opt(params.due_time)?;
-    check_time_range(&new_start, &new_due)?;
+    // 时间范围校验以「更新后的最终值」为准：未传字段回退到现有值，Some("") 视为清除。
+    // 只校验两个新值会在部分更新时绕过校验（如只把开始时间改到截止时间之后）。
+    let eff_start = if has_start {
+        new_start.clone()
+    } else {
+        current.plan_start_time.clone()
+    };
+    let eff_due = if has_due {
+        new_due.clone()
+    } else {
+        current.due_time.clone()
+    };
+    check_time_range(&eff_start, &eff_due)?;
 
     let ts = now();
     let now_local = local_now();
@@ -369,56 +389,49 @@ pub fn update_task(
         ensure_all_subtasks_done(&tx, id, "done")?;
     }
 
-    let mut set_clauses: Vec<String> = Vec::new();
-    let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-    // 局部宏：拼接 `col=?n` 并收集参数值（支持 String / Option<String> / i64）
-    macro_rules! push_set {
-        ($col:expr, $val:expr) => {{
-            set_clauses.push(format!("{} = ?{}", $col, set_clauses.len() + 1));
-            param_values.push(Box::new($val) as Box<dyn rusqlite::types::ToSql>);
-        }};
-    }
+    // 动态 UPDATE 由统一的 DynamicUpdate 构建器生成（列名均为代码字面量）
+    let mut upd = crate::utils::DynamicUpdate::new("tasks");
 
     if let Some(v) = params.title {
-        push_set!("title", v.trim().to_string());
+        upd.push("title", v.trim().to_string());
     }
     if let Some(v) = params.description {
-        push_set!("description", v);
+        upd.push("description", v);
     }
     if let Some(v) = params.priority {
-        push_set!("priority", v);
+        upd.push("priority", v);
     }
     // 父任务：Some(空) 解除关联成顶层；Some(id) 校验后关联（同项目、防环）
     if let Some(v) = params.parent_id {
         let resolved = resolve_parent_id(&tx, Some(id), &current.project_id, Some(v))?;
-        push_set!("parent_id", resolved);
+        upd.push("parent_id", resolved);
     }
     if let Some(s) = new_status {
-        push_set!("status", s.clone());
+        upd.push("status", s.clone());
         // 状态变更联动完成时间：进入 done 记录，离开 done 清空
         if status_changed {
             if s == "done" {
-                push_set!("completed_time", now_local);
+                upd.push("completed_time", now_local);
             } else if current.status == "done" {
-                push_set!("completed_time", Option::<String>::None);
+                upd.push("completed_time", Option::<String>::None);
             }
         }
     }
     if has_start {
-        push_set!("plan_start_time", new_start);
+        upd.push("plan_start_time", new_start);
     }
     if has_due {
-        push_set!("due_time", new_due);
+        upd.push("due_time", new_due);
     }
     if let Some(v) = params.planned_today {
-        push_set!("planned_today", if v { 1 } else { 0 });
+        upd.push("planned_today", if v { 1 } else { 0 });
     }
     if let Some(v) = params.note {
-        push_set!("note", v);
+        upd.push("note", v);
     }
     // 重复规则（P2）：传 Some("") 表示取消
     if let Some(v) = params.recurrence {
-        push_set!("recurrence", v.trim().to_string());
+        upd.push("recurrence", v.trim().to_string());
     }
     // 任务级提醒：'' / off 等清除 remind_at；custom 需携带具体时间
     if let Some(v) = params.remind_type {
@@ -426,22 +439,15 @@ pub fn update_task(
         if vt == "custom" {
             let ra = norm_opt(params.remind_at)?
                 .ok_or_else(|| AppError::Validation("自定义提醒需设置提醒时间".into()))?;
-            push_set!("remind_at", Some(ra));
-            push_set!("remind_type", vt);
+            upd.push("remind_at", Some(ra));
+            upd.push("remind_type", vt);
         } else {
-            push_set!("remind_at", Option::<String>::None);
-            push_set!("remind_type", vt);
+            upd.push("remind_at", Option::<String>::None);
+            upd.push("remind_type", vt);
         }
     }
 
-    if !set_clauses.is_empty() {
-        push_set!("updated_at", ts.clone());
-        let sql = format!(
-            "UPDATE tasks SET {} WHERE id=?{}",
-            set_clauses.join(", "),
-            set_clauses.len() + 1
-        );
-        param_values.push(Box::new(id.to_string()));
+    if let Some((sql, values)) = upd.build(id, &ts) {
         emit_sql_log(
             app,
             "UPDATE",
@@ -451,7 +457,7 @@ pub fn update_task(
             line!(),
         );
         let params_refs: Vec<&dyn rusqlite::types::ToSql> =
-            param_values.iter().map(|p| p.as_ref()).collect();
+            values.iter().map(|p| p.as_ref()).collect();
         tx.execute(&sql, params_refs.as_slice())?;
     }
     if let Some(ids) = params.tag_ids {
@@ -647,6 +653,19 @@ pub fn drag_task(
         task_repo::update_status(&tx, task_id, to_status, comp, &ts)?;
     }
     // 按目标列最终顺序重排（事务内，失败自动回滚）
+    // 归属校验：列表须包含被拖拽任务本身，且全部为本项目未删除任务，
+    // 防止越权改写其他项目/回收站任务的排序
+    if !ordered_ids.iter().any(|tid| tid == task_id) {
+        return Err(AppError::Validation(
+            "重排序列表必须包含被拖拽的任务".into(),
+        ));
+    }
+    let owned = task_repo::count_active_ids_in_project(&tx, &current.project_id, &ordered_ids)?;
+    if owned != ordered_ids.len() {
+        return Err(AppError::Validation(
+            "重排序列表包含不属于本项目或已删除的任务".into(),
+        ));
+    }
     for (i, tid) in ordered_ids.iter().enumerate() {
         task_repo::set_sort_order(&tx, tid, i as i64, &ts)?;
     }
@@ -696,6 +715,11 @@ fn roll_recurrence(
     let Some(next) = next_recur_date(rule, &anchor) else {
         return Ok(None);
     };
+    // 防重：同一锚点已生成过实例则跳过（任务「重开后再次完成」不重复生成下一期）
+    let spawn_key = format!("taskcard:recurrence:spawned:{}:{anchor}", current.id);
+    if task_meta_repo::get(tx, &spawn_key)?.is_some() {
+        return Ok(None);
+    }
     // 结束日期拦截：next 超出 endDate → 不再生成
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(rule) {
         if let Some(ed) = v
@@ -754,11 +778,13 @@ fn roll_recurrence(
         ts,
     )?;
     let ids = vec![current.id.clone()];
-    if let Ok(pairs) = task_repo::tags_of_tasks(tx, &ids) {
-        for (_, tag) in pairs {
-            task_repo::add_task_tag(tx, &new_id, &tag.id, ts)?;
-        }
+    // 事务内标签复制失败必须传播（回滚），否则新实例会静默丢标签
+    let pairs = task_repo::tags_of_tasks(tx, &ids)?;
+    for (_, tag) in pairs {
+        task_repo::add_task_tag(tx, &new_id, &tag.id, ts)?;
     }
+    // 写入防重标记：同锚点重复完成（重开后再完成）不再生成实例
+    task_meta_repo::set(tx, &spawn_key, &new_id, ts)?;
     Ok(Some(new_id))
 }
 
@@ -899,12 +925,11 @@ pub fn copy_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<TaskCard, AppE
         sort_order,
         &ts,
     )?;
-    // 复制标签
+    // 复制标签（事务内失败必须传播回滚，避免副本静默丢标签）
     let ids = vec![src.id.clone()];
-    if let Ok(pairs) = task_repo::tags_of_tasks(&tx, &ids) {
-        for (_, tag) in pairs {
-            task_repo::add_task_tag(&tx, &new_id, &tag.id, &ts)?;
-        }
+    let pairs = task_repo::tags_of_tasks(&tx, &ids)?;
+    for (_, tag) in pairs {
+        task_repo::add_task_tag(&tx, &new_id, &tag.id, &ts)?;
     }
     tx.commit()?;
     activity_log_service::try_task_log(
@@ -976,10 +1001,11 @@ pub fn move_task_to_project(
 
 // ── 删除与回收站 ──
 
-/// 软删除任务（其后代任务的父引用由孤儿清理自动解除，变成独立顶层任务）
+/// 软删除任务（其后代任务的父引用由孤儿清理自动解除，变成独立顶层任务；事务保证）
 pub fn delete_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
-    let conn = db.pool.get()?;
-    let title = task_repo::find_by_id(&conn, id)
+    let mut conn = db.pool.get()?;
+    let tx = conn.transaction()?;
+    let title = task_repo::find_by_id(&tx, id)
         .map_err(|_| AppError::NotFound("未找到该任务".into()))?
         .title;
     let ts = now();
@@ -991,21 +1017,23 @@ pub fn delete_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError
         file!(),
         line!(),
     );
-    task_repo::soft_delete(&conn, id, &ts)?;
-    task_repo::clean_orphan_parents(&conn, &ts)?;
+    task_repo::soft_delete(&tx, id, &ts)?;
+    task_repo::clean_orphan_parents(&tx, &ts)?;
+    tx.commit()?;
     activity_log_service::try_task_log(db, id, "task.deleted", &format!("删除任务「{title}」"));
     Ok(())
 }
 
-/// 恢复任务（所属项目必须未删除，否则引导先恢复项目）
+/// 恢复任务（所属项目必须未删除，否则引导先恢复项目；事务保证）
 pub fn restore_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
-    let conn = db.pool.get()?;
+    let mut conn = db.pool.get()?;
+    let tx = conn.transaction()?;
     let deleted =
-        task_repo::find_by_id(&conn, id).map_err(|_| AppError::NotFound("未找到该任务".into()))?;
+        task_repo::find_by_id(&tx, id).map_err(|_| AppError::NotFound("未找到该任务".into()))?;
     if deleted.deleted_at.is_none() {
         return Err(AppError::Business("该任务不在回收站中".into()));
     }
-    project_repo::find_active(&conn, &deleted.project_id)
+    project_repo::find_active(&tx, &deleted.project_id)
         .map_err(|_| AppError::Business("所属项目已删除，请先在回收站恢复项目".into()))?;
     let ts = now();
     emit_sql_log(
@@ -1016,12 +1044,13 @@ pub fn restore_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppErro
         file!(),
         line!(),
     );
-    let affected = task_repo::restore(&conn, id, &ts)?;
+    let affected = task_repo::restore(&tx, id, &ts)?;
     if affected == 0 {
         return Err(AppError::NotFound("未找到该任务或任务不在回收站".into()));
     }
     // 恢复任务的父引用可能已悬空（父被删/被迁移），执行孤儿清理保持层级有效
-    task_repo::clean_orphan_parents(&conn, &ts)?;
+    task_repo::clean_orphan_parents(&tx, &ts)?;
+    tx.commit()?;
     activity_log_service::try_task_log(
         db,
         id,
@@ -1031,9 +1060,10 @@ pub fn restore_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppErro
     Ok(())
 }
 
-/// 彻底删除任务（完成后清理因删除产生的孤儿父引用）
+/// 彻底删除任务（仅限回收站中的任务；同事务清理操作日志与孤儿父引用）
 pub fn hard_delete_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
-    let conn = db.pool.get()?;
+    let mut conn = db.pool.get()?;
+    let tx = conn.transaction()?;
     emit_sql_log(
         app,
         "DELETE",
@@ -1042,9 +1072,15 @@ pub fn hard_delete_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), App
         file!(),
         line!(),
     );
-    task_repo::hard_delete(&conn, id)?;
+    let affected = task_repo::hard_delete(&tx, id)?;
+    if affected == 0 {
+        return Err(AppError::Business("仅回收站中的任务可彻底删除".into()));
+    }
+    // task_activity_logs 无外键，硬删后需显式清理日志避免孤儿化
+    activity_log_repo::delete_by_task(&tx, id)?;
     let ts = now();
-    task_repo::clean_orphan_parents(&conn, &ts)?;
+    task_repo::clean_orphan_parents(&tx, &ts)?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -1069,14 +1105,18 @@ pub fn list_deleted_tasks(app: &AppHandle, db: &AppDb) -> Result<Vec<DeletedTask
         .collect())
 }
 
-/// 清空任务回收站
+/// 清空任务回收站（同事务清理操作日志与孤儿父引用）
 pub fn clear_task_trash(app: &AppHandle, db: &AppDb) -> Result<u32, AppError> {
-    let conn = db.pool.get()?;
+    let mut conn = db.pool.get()?;
+    let tx = conn.transaction()?;
     emit_sql_log(app, "DELETE", "tasks", "clear trash", file!(), line!());
-    let count = task_repo::count_deleted(&conn)?;
-    task_repo::clear_trash(&conn)?;
+    let count = task_repo::count_deleted(&tx)?;
+    // task_activity_logs 无外键，先清理已删任务的日志再删任务
+    activity_log_repo::delete_logs_of_deleted_tasks(&tx)?;
+    task_repo::clear_trash(&tx)?;
     let ts = now();
-    task_repo::clean_orphan_parents(&conn, &ts)?;
+    task_repo::clean_orphan_parents(&tx, &ts)?;
+    tx.commit()?;
     Ok(count)
 }
 
@@ -1089,9 +1129,10 @@ pub const TRASH_RETENTION_DAYS: i64 = 30;
 /// 项目与任务。由 lib.rs 后台循环每日调用一次（task_meta 日期守卫，同日内
 /// 重复调用直接返回 0）。返回本次实际清理的条目数（任务 + 项目）。
 pub fn purge_expired_trash(app: &AppHandle, db: &AppDb) -> Result<u32, AppError> {
-    let conn = db.pool.get()?;
+    let mut conn = db.pool.get()?;
+    let tx = conn.transaction()?;
     let today = local_today();
-    if task_meta_repo::get(&conn, KEY_TRASH_PURGE_DATE)?.as_deref() == Some(today.as_str()) {
+    if task_meta_repo::get(&tx, KEY_TRASH_PURGE_DATE)?.as_deref() == Some(today.as_str()) {
         return Ok(0);
     }
     // 截止线 = 当前 UTC 时间 - 保留期（deleted_at 为 UTC RFC3339，字典序可比较）
@@ -1105,10 +1146,19 @@ pub fn purge_expired_trash(app: &AppHandle, db: &AppDb) -> Result<u32, AppError>
         file!(),
         line!(),
     );
-    let task_n = task_repo::purge_expired(&conn, &cutoff)?;
-    let project_n = project_repo::purge_expired(&conn, &cutoff)?;
-    task_meta_repo::set(&conn, KEY_TRASH_PURGE_DATE, &today, &ts)?;
-    task_repo::clean_orphan_parents(&conn, &ts)?;
+    // task_activity_logs 无外键：先清理即将硬删数据的日志，再执行硬删（同一事务）
+    activity_log_repo::delete_logs_of_expired_tasks(&tx, &cutoff)?;
+    activity_log_repo::delete_logs_of_expired_projects(&tx, &cutoff)?;
+    let task_n = task_repo::purge_expired(&tx, &cutoff)?;
+    let project_n = project_repo::purge_expired(&tx, &cutoff)?;
+    task_meta_repo::set(&tx, KEY_TRASH_PURGE_DATE, &today, &ts)?;
+    task_repo::clean_orphan_parents(&tx, &ts)?;
+    // 兜底清理历史遗留孤儿日志（无外键时代的存量泄漏）
+    let orphan_logs = activity_log_repo::delete_orphan_logs(&tx)?;
+    if orphan_logs > 0 {
+        crate::app_log!("[回收站] 清理历史孤儿操作日志 {orphan_logs} 条");
+    }
+    tx.commit()?;
     let total = (task_n + project_n) as u32;
     if total > 0 {
         crate::app_log!("[回收站] 自动清理 {total} 条过期数据（任务 {task_n}，项目 {project_n}）");
@@ -1126,11 +1176,12 @@ pub fn purge_expired_trash(app: &AppHandle, db: &AppDb) -> Result<u32, AppError>
 
 /// 「计划今日」滚动清理（PRD 7.4）：自然日切换后由前端触发
 pub fn roll_planned_today(app: &AppHandle, db: &AppDb) -> Result<u32, AppError> {
-    let conn = db.pool.get()?;
+    let mut conn = db.pool.get()?;
+    let tx = conn.transaction()?;
     let today = local_today();
     // 自然日守卫：仅跨天后的首次调用才清理（记录上次滚动日期），
     // 避免每次打开窗口都清掉当天新设的「计划今日」任务。
-    if task_meta_repo::get(&conn, KEY_ROLL_PLANNED_DATE)?.as_deref() == Some(today.as_str()) {
+    if task_meta_repo::get(&tx, KEY_ROLL_PLANNED_DATE)?.as_deref() == Some(today.as_str()) {
         return Ok(0);
     }
     let ts = now();
@@ -1142,8 +1193,9 @@ pub fn roll_planned_today(app: &AppHandle, db: &AppDb) -> Result<u32, AppError> 
         file!(),
         line!(),
     );
-    let n = task_repo::roll_planned_today(&conn, &ts)?;
-    task_meta_repo::set(&conn, KEY_ROLL_PLANNED_DATE, &today, &ts)?;
+    let n = task_repo::roll_planned_today(&tx, &ts)?;
+    task_meta_repo::set(&tx, KEY_ROLL_PLANNED_DATE, &today, &ts)?;
+    tx.commit()?;
     Ok(n as u32)
 }
 
@@ -1151,10 +1203,16 @@ pub fn roll_planned_today(app: &AppHandle, db: &AppDb) -> Result<u32, AppError> 
 pub fn get_today_overview(app: &AppHandle, db: &AppDb) -> Result<TodayOverview, AppError> {
     let today = crate::utils::local_today();
     let now_local = local_now();
+    // 明日零点（本地）：与 today 组成 [today, tomorrow) 半开区间，
+    // 供 repo 用范围比较替代 substr()，保持索引有效
+    let tomorrow = chrono::NaiveDate::parse_from_str(&today, "%Y-%m-%d")
+        .map(|d| d + chrono::Duration::days(1))
+        .map(|d| d.format("%Y-%m-%d").to_string())
+        .map_err(|_| AppError::Business("日期解析失败".into()))?;
     emit_sql_log(app, "SELECT", "tasks", "today overview", file!(), line!());
     let conn = db.pool.get()?;
     let (undone_due, done_today, overdue) =
-        task_repo::today_overview_counts(&conn, &today, &now_local)?;
+        task_repo::today_overview_counts(&conn, &today, &tomorrow, &now_local)?;
     Ok(TodayOverview {
         due_today: undone_due + done_today,
         done_today,

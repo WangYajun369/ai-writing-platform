@@ -9,6 +9,8 @@
 import { create } from 'zustand'
 import { emit } from '@tauri-apps/api/event'
 import { taskCardApi } from '@/lib/tauri-bridge'
+import { errText } from '@/lib/errors'
+import { toast } from '@/lib/toast'
 import type {
   CreateProjectArgs,
   CreateTaskArgs,
@@ -47,8 +49,7 @@ interface TaskCardsState {
   createProject: (args: CreateProjectArgs) => Promise<TaskProject>
   updateProject: (id: string, args: UpdateProjectArgs) => Promise<TaskProject>
   deleteProject: (id: string) => Promise<void>
-  restoreProject: (id: string) => Promise<void>
-  hardDeleteProject: (id: string) => Promise<void>
+  // 注：回收站相关操作（restore/hardDelete）不经 store，TrashView 直连 taskCardApi 后 refreshAll
 
   /** 任务变更后：刷新指定项目（或全部）任务缓存 + 项目统计 + 今日概览 + 广播 */
   refreshTaskArea: (projectId?: string) => Promise<void>
@@ -61,8 +62,6 @@ interface TaskCardsState {
   copyTask: (id: string) => Promise<void>
   moveTaskToProject: (id: string, toProjectId: string) => Promise<void>
   deleteTask: (id: string) => Promise<void>
-  restoreTask: (id: string) => Promise<void>
-  hardDeleteTask: (id: string) => Promise<void>
 }
 
 export const useTaskCardsStore = create<TaskCardsState>((set, get) => ({
@@ -113,8 +112,14 @@ export const useTaskCardsStore = create<TaskCardsState>((set, get) => ({
         }),
       )
       set({ projects, tags, overview, tasksByProject, loaded: true })
+      // 广播统一收口在此：恢复/硬删/迁移/模板建任务等经 refreshAll 刷新的
+      // 变更路径无需各自记得 notifyChanged（历史漏广播导致首页角标过期）
+      notifyChanged()
     } catch (err) {
+      // 失败也必须结束加载态，否则视图永久卡在「加载中…」
       console.error('刷新任务卡数据失败', err)
+      set({ loaded: true })
+      toast.error(errText(err, '刷新任务卡数据失败'))
     } finally {
       set({ loading: false })
     }
@@ -142,19 +147,6 @@ export const useTaskCardsStore = create<TaskCardsState>((set, get) => ({
     set({ tasksByProject })
     await get().fetchProjects()
     await get().fetchOverview()
-    notifyChanged()
-  },
-
-  restoreProject: async (id) => {
-    await taskCardApi.restoreProject(id)
-    await get().fetchProjects()
-    await get().fetchOverview()
-    notifyChanged()
-  },
-
-  hardDeleteProject: async (id) => {
-    await taskCardApi.hardDeleteProject(id)
-    await get().fetchProjects()
     notifyChanged()
   },
 
@@ -208,18 +200,5 @@ export const useTaskCardsStore = create<TaskCardsState>((set, get) => ({
     const srcProject = Object.keys(cur).find((pid) => cur[pid].some((t) => t.id === id))
     await taskCardApi.deleteTask(id)
     if (srcProject) await get().refreshTaskArea(srcProject)
-  },
-
-  restoreTask: async (id) => {
-    await taskCardApi.restoreTask(id)
-    await get().fetchProjects()
-    await get().fetchOverview()
-    notifyChanged()
-  },
-
-  hardDeleteTask: async (id) => {
-    await taskCardApi.hardDeleteTask(id)
-    await get().fetchOverview()
-    notifyChanged()
   },
 }))

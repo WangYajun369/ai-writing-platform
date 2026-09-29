@@ -6,6 +6,7 @@
  * draggable 拖拽）均由宿主实现并回调。卡内自渲染父任务层级、子任务数、项目、
  * 优先级、重复规则、截止时间（含逾期标红）与标签等元信息。
  */
+import { memo } from 'react'
 import { ArrowRightIcon, CheckIcon, Clock3Icon, FlagIcon, GitBranchIcon, LayersIcon, MessageSquareIcon, NotebookPenIcon, RepeatIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { TaskCard, TaskProject } from '@/types'
@@ -14,7 +15,12 @@ import { PRIORITY_META } from '@/lib/taskCardsMeta'
 import { describeRule } from '@/lib/recurrence'
 import { useTaskCardsStore } from '@/stores/taskCardsStore'
 
-export default function TaskCardView({
+/**
+ * 回调统一为「接收 task 参数」的稳定引用（宿主 useCallback 一次创建），
+ * 配合外层 memo：列表局部状态变化（搜索输入/折叠等）不再触发全部卡片重渲染。
+ * 卡片自身对 store 的订阅（tasksByProject[projectId]）不受 memo 影响，数据更新仍即时。
+ */
+const TaskCardView = memo(function TaskCardView({
   task,
   project,
   onOpen,
@@ -25,12 +31,12 @@ export default function TaskCardView({
 }: {
   task: TaskCard
   project?: TaskProject
-  onOpen: () => void
-  onToggleDone: () => void
+  onOpen: (task: TaskCard) => void
+  onToggleDone: (task: TaskCard) => void
   draggable?: boolean
   onDragStart?: (e: React.DragEvent) => void
   /** 顺延到明天（今日页操作，9.8.2） */
-  onPostpone?: () => void
+  onPostpone?: (task: TaskCard) => void
 }) {
   const done = task.status === 'done'
   const overdue = isOverdue(task.dueTime, task.status)
@@ -48,7 +54,7 @@ export default function TaskCardView({
     <div
       draggable={draggable}
       onDragStart={onDragStart}
-      onClick={onOpen}
+      onClick={() => onOpen(task)}
       className={cn(
         'group rounded-xl border bg-white/[0.035] transition hover:bg-white/[0.07] cursor-pointer',
         done ? 'border-white/6 opacity-70' : 'border-white/10',
@@ -60,7 +66,7 @@ export default function TaskCardView({
         <button
           onClick={(e) => {
             e.stopPropagation()
-            onToggleDone()
+            onToggleDone(task)
           }}
           title={done ? '重新打开' : '标记完成'}
           className={cn(
@@ -88,7 +94,7 @@ export default function TaskCardView({
               <button
                 onClick={(e) => {
                   e.stopPropagation()
-                  onPostpone()
+                  onPostpone(task)
                 }}
                 title="顺延到明天（改截止时间为明天）"
                 className="mt-0.5 hidden shrink-0 items-center gap-0.5 rounded-md px-1 py-0.5 text-[10.5px] text-zinc-500 transition hover:bg-amber-500/15 hover:text-amber-300 group-hover:flex"
@@ -202,4 +208,6 @@ export default function TaskCardView({
       </div>
     </div>
   )
-}
+})
+
+export default TaskCardView

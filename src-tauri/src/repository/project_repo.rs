@@ -4,10 +4,29 @@
 //! 项目软删除时连带其下任务一并软删（由 service 在同一事务内调用）。
 
 use crate::models::Project;
-use rusqlite::{params, Connection, Result};
+use rusqlite::{params, Connection, OptionalExtension, Result};
 
 /// 完整 SELECT 列名
 pub const PROJECT_SELECT: &str = "id,name,description,color,icon,status,plan_start_date,plan_end_date,pinned,sort_order,deleted_at,created_at,updated_at";
+
+/// 未删除项目总数（默认颜色轮询等场景）
+pub fn count_active(conn: &Connection) -> Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM projects WHERE deleted_at IS NULL",
+        [],
+        |row| row.get(0),
+    )
+}
+
+/// 按名称查找未删除项目 id（迁移默认项目复用等场景），不存在返回 None
+pub fn find_id_by_name(conn: &Connection, name: &str) -> Result<Option<String>> {
+    conn.query_row(
+        "SELECT id FROM projects WHERE name=?1 AND deleted_at IS NULL LIMIT 1",
+        params![name],
+        |r| r.get(0),
+    )
+    .optional()
+}
 
 /// 从 rusqlite Row 解析 Project（按列名取值）
 pub fn parse_project(row: &rusqlite::Row) -> Result<Project> {
@@ -132,18 +151,28 @@ pub fn restore(conn: &Connection, id: &str, ts: &str) -> Result<usize> {
     )
 }
 
-/// 连带恢复某项目下全部已删除任务（service 事务内调用）
-pub fn restore_tasks(conn: &Connection, project_id: &str, ts: &str) -> Result<usize> {
+/// 连带恢复「随项目一并删除」的任务（deleted_at 与项目删除时间戳一致者）。
+/// 项目删除前已单独进回收站的任务保持原状，由用户自行决定是否恢复。
+pub fn restore_tasks(
+    conn: &Connection,
+    project_id: &str,
+    project_deleted_at: &str,
+    ts: &str,
+) -> Result<usize> {
     conn.execute(
-        "UPDATE tasks SET deleted_at=NULL, updated_at=?1 WHERE project_id=?2 AND deleted_at IS NOT NULL",
-        params![ts, project_id],
+        "UPDATE tasks SET deleted_at=NULL, updated_at=?1 \
+         WHERE project_id=?2 AND deleted_at IS NOT NULL AND deleted_at=?3",
+        params![ts, project_id, project_deleted_at],
     )
 }
 
-/// 硬删除项目（ON DELETE CASCADE 会级联删除其下任务与任务标签关联）
-pub fn hard_delete(conn: &Connection, id: &str) -> Result<()> {
-    conn.execute("DELETE FROM projects WHERE id=?1", params![id])?;
-    Ok(())
+/// 硬删除项目（ON DELETE CASCADE 级联删除其下任务与任务标签关联；
+/// 仅限回收站中的项目，返回影响行数）
+pub fn hard_delete(conn: &Connection, id: &str) -> Result<usize> {
+    Ok(conn.execute(
+        "DELETE FROM projects WHERE id=?1 AND deleted_at IS NOT NULL",
+        params![id],
+    )?)
 }
 
 /// 统计回收站中的项目数量
@@ -169,4 +198,106 @@ pub fn purge_expired(conn: &Connection, cutoff: &str) -> Result<usize> {
         "DELETE FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < ?1",
         params![cutoff],
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 最小 projects + tasks 表（与 db/mod.rs DDL 等价，仅保留本测试用到的列）
+    fn test_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE projects (
+                id         TEXT PRIMARY KEY,
+                name       TEXT NOT NULL,
+                status     TEXT NOT NULL DEFAULT 'active',
+                deleted_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE tasks (
+                id         TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                title      TEXT NOT NULL,
+                deleted_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn insert_task(conn: &Connection, id: &str, pid: &str, deleted_at: Option<&str>) {
+        conn.execute(
+            "INSERT INTO tasks (id, project_id, title, deleted_at, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            params![id, pid, id, deleted_at],
+        )
+        .unwrap();
+    }
+
+    fn task_deleted(conn: &Connection, id: &str) -> bool {
+        conn.query_row(
+            "SELECT deleted_at IS NOT NULL FROM tasks WHERE id=?1",
+            params![id],
+            |r| r.get::<_, bool>(0),
+        )
+        .unwrap()
+    }
+
+    /// P1-3 回归：级联恢复只还原「随项目同一时刻删除」的任务——
+    /// 先于项目单独删除的任务（deleted_at 不同）必须仍留在回收站。
+    #[test]
+    fn restore_tasks_only_cascades_same_batch() {
+        let conn = test_db();
+        conn.execute(
+            "INSERT INTO projects (id, name, deleted_at, created_at, updated_at)
+             VALUES ('p1', '项目', '2026-09-28T10:00:00Z', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        // 随项目同一时刻软删（应恢复）
+        insert_task(&conn, "t1", "p1", Some("2026-09-28T10:00:00Z"));
+        insert_task(&conn, "t2", "p1", Some("2026-09-28T10:00:00Z"));
+        // 更早单独删除的任务（不应恢复）
+        insert_task(&conn, "t3", "p1", Some("2026-09-01T08:00:00Z"));
+        // 未删除的活跃任务（restore_tasks 不应误伤）
+        insert_task(&conn, "t4", "p1", None);
+
+        let n = restore_tasks(&conn, "p1", "2026-09-28T10:00:00Z", "2026-09-29T00:00:00Z").unwrap();
+        assert_eq!(n, 2, "只应恢复随项目同批删除的 2 条");
+        assert!(!task_deleted(&conn, "t1"));
+        assert!(!task_deleted(&conn, "t2"));
+        assert!(task_deleted(&conn, "t3"), "更早单独删除的任务应保持软删");
+        assert!(!task_deleted(&conn, "t4"), "活跃任务不受影响");
+    }
+
+    /// P0-1 回归：hard_delete 只作用于回收站中的项目（活跃项目不可硬删）
+    #[test]
+    fn hard_delete_only_touches_trashed() {
+        let conn = test_db();
+        conn.execute(
+            "INSERT INTO projects (id, name, deleted_at, created_at, updated_at)
+             VALUES ('live', '活跃', NULL, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO projects (id, name, deleted_at, created_at, updated_at)
+             VALUES ('dead', '已删', '2026-09-28T10:00:00Z', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+
+        let n = hard_delete(&conn, "live").unwrap();
+        assert_eq!(n, 0, "活跃项目硬删应影响 0 行");
+        let n = hard_delete(&conn, "dead").unwrap();
+        assert_eq!(n, 1, "回收站项目硬删应影响 1 行");
+        let count: u32 = conn
+            .query_row("SELECT COUNT(*) FROM projects", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1, "只剩活跃项目");
+    }
 }

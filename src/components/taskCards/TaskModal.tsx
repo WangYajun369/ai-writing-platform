@@ -4,6 +4,8 @@
  * 新建模式：填写完整字段后创建。
  * 详情模式：字段即时保存（文本 onBlur、选择项即时），并提供
  * 移动项目 / 复制 / 删除 / 完成任务 等操作。
+ * 只读模式（readOnly）：回收站预览已删任务，所有编辑控件禁用、操作栏隐藏，
+ * 防止对已软删任务发起必然失败的更新请求。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -24,6 +26,7 @@ import TaskDescriptionEditor from './TaskDescriptionEditor'
 import CompleteSummaryModal from './CompleteSummaryModal'
 import { useTaskCardsStore } from '@/stores/taskCardsStore'
 import { fromInputValue, toInputValue } from '@/lib/taskCardsTime'
+import { collectParentRows } from '@/lib/taskCardsHierarchy'
 import { PRIORITY_META, STATUS_META, STATUS_ORDER } from '@/lib/taskCardsMeta'
 import SubtaskList from './SubtaskList'
 import AttachmentsBox from './AttachmentsBox'
@@ -38,10 +41,12 @@ interface Props {
   projectId?: string
   /** 新建默认「计划今日」 */
   defaultPlannedToday?: boolean
+  /** 只读预览（回收站已删任务）：禁用一切编辑与操作 */
+  readOnly?: boolean
   onClose: () => void
 }
 
-export default function TaskModal({ task, projectId, defaultPlannedToday, onClose }: Props) {
+export default function TaskModal({ task, projectId, defaultPlannedToday, readOnly = false, onClose }: Props) {
   const projects = useTaskCardsStore((s) => s.projects)
   const tags = useTaskCardsStore((s) => s.tags)
   const tasksByProject = useTaskCardsStore((s) => s.tasksByProject)
@@ -60,6 +65,8 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
   const [tagName, setTagName] = useState('')
 
   const isEdit = !!task
+  // 只读模式下一切变更入口必须哑掉（patch 兜底 + 控件禁用双保险）
+  const editable = isEdit && !readOnly
   const project = projects.find((p) => p.id === task?.projectId || p.id === projectId)
 
   // ── 表单状态 ──
@@ -113,15 +120,27 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  // 「已保存 ✓」提示定时器：重复触发时重置，卸载时清理（避免卸载后 setState 警告）
+  const savedTimer = useRef<number | null>(null)
+  useEffect(() => {
+    return () => {
+      if (savedTimer.current !== null) window.clearTimeout(savedTimer.current)
+    }
+  }, [])
+
   /** 触发「已保存 ✓」的短暂提示（1.2s 后自动复位隐藏） */
   function flashSaved() {
     setSavedAt(Date.now())
-    window.setTimeout(() => setSavedAt(0), 1200)
+    if (savedTimer.current !== null) window.clearTimeout(savedTimer.current)
+    savedTimer.current = window.setTimeout(() => {
+      savedTimer.current = null
+      setSavedAt(0)
+    }, 1200)
   }
 
-  /** 详情模式：单字段即时保存 */
+  /** 详情模式：单字段即时保存（只读模式直接拒绝） */
   async function patch(patch: Parameters<typeof updateTask>[1]) {
-    if (!task) return
+    if (!task || readOnly) return
     setBusy(true)
     try {
       await updateTask(task.id, patch)
@@ -134,9 +153,10 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
   }
 
   function toggleTag(tag: TaskTag) {
+    if (readOnly) return
     const next = tagIds.includes(tag.id) ? tagIds.filter((x) => x !== tag.id) : [...tagIds, tag.id]
     setTagIds(next)
-    if (isEdit) void patch({ tagIds: next })
+    if (editable) void patch({ tagIds: next })
   }
 
   /** 标签即时新建：创建成功后自动选中（9.5.2「可即时新建标签」） */
@@ -168,16 +188,17 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
 
   /** 任务级提醒：切换选项即时保存（自定义需先有时间） */
   function chooseRemind(next: 'global' | 'off' | 'custom') {
-    if (!isEdit) return
+    if (!editable) return
     setRemindChoice(next)
-    if (next === 'global') void patch({ remindType: '', remindAt: undefined })
-    else if (next === 'off') void patch({ remindType: 'off', remindAt: undefined })
+    if (next === 'global') void patch({ remindType: '', remindAt: '' })
+    else if (next === 'off') void patch({ remindType: 'off', remindAt: '' })
   }
 
   function saveCustomRemindTime(v: string) {
+    if (!editable) return
     setRemindTime(v)
     const norm = fromInputValue(v)
-    if (isEdit && norm) void patch({ remindType: 'custom', remindAt: norm })
+    if (norm) void patch({ remindType: 'custom', remindAt: norm })
   }
 
   async function handleCreate() {
@@ -192,7 +213,8 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
     }
     setBusy(true)
     try {
-      const created = await createTask({
+      // createTask 内部已 refreshTaskArea(projectId)（含任务缓存/统计/概览/广播），无需再手动刷新
+      await createTask({
         projectId: selProjectId,
         parentId: parentId || undefined,
         title: t,
@@ -208,7 +230,6 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
       })
       toast.success('任务已创建')
       onClose()
-      void useTaskCardsStore.getState().fetchProjectTasks(created.projectId)
     } catch (err) {
       toast.error(errText(err, '创建失败'))
     } finally {
@@ -275,6 +296,11 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
         <div className="flex items-center gap-2 border-b border-white/8 px-5 py-3.5">
           <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: accent }} />
           <span className="text-[13px] font-medium text-zinc-200">{project?.icon ?? '📁'} {project?.name ?? '未选择项目'}</span>
+          {readOnly && (
+            <span className="rounded border border-amber-500/25 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300">
+              只读
+            </span>
+          )}
           <div className="flex-1" />
           {isEdit && savedAt > 0 && !busy && <span className="text-[11px] text-emerald-400">已保存 ✓</span>}
           {busy && <Loader2Icon className="h-4 w-4 animate-spin text-rose-400" />}
@@ -288,10 +314,11 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
           <input
             autoFocus={!isEdit}
             value={title}
+            readOnly={readOnly}
             onChange={(e) => setTitle(e.target.value)}
             onBlur={() => {
               const t = title.trim()
-              if (isEdit && t && t !== firstTitle.current) {
+              if (editable && t && t !== firstTitle.current) {
                 void patch({ title: t })
                 firstTitle.current = t
               }
@@ -305,8 +332,9 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
             {STATUS_ORDER.map((st) => (
               <button
                 key={st}
+                disabled={readOnly}
                 onClick={() => {
-                  if (!isEdit || st === status) return
+                  if (!editable || st === status) return
                   // 勾选完成 → 弹出总结对话框（总结随完成一并保存）
                   if (st === 'done') {
                     setCompleting(true)
@@ -318,6 +346,7 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
                 className={cn(
                   'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] transition',
                   status === st ? STATUS_META[st].badge : 'border-white/10 text-zinc-400 hover:bg-white/5',
+                  readOnly && 'cursor-default opacity-80',
                 )}
               >
                 <span className={cn('h-1.5 w-1.5 rounded-full', status === st ? STATUS_META[st].dot : 'bg-zinc-500')} />
@@ -351,14 +380,16 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
             {(Object.keys(PRIORITY_META) as TaskPriority[]).map((pr) => (
               <button
                 key={pr}
+                disabled={readOnly}
                 onClick={() => {
-                  if (pr === priority) return
+                  if (readOnly || pr === priority) return
                   setPriority(pr)
-                  if (isEdit) void patch({ priority: pr })
+                  if (editable) void patch({ priority: pr })
                 }}
                 className={cn(
                   'flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[12px] transition',
                   priority === pr ? PRIORITY_META[pr].badge : 'border-white/10 text-zinc-400 hover:bg-white/5',
+                  readOnly && 'cursor-default opacity-80',
                 )}
               >
                 <FlagIcon className="h-3 w-3" />
@@ -372,10 +403,11 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
             <span className="w-14 shrink-0 text-[11.5px] text-zinc-500">父任务</span>
             <select
               value={parentId}
+              disabled={readOnly}
               onChange={(e) => {
                 const v = e.target.value
                 setParentId(v)
-                if (isEdit && v !== (task?.parentId ?? '')) void patch({ parentId: v || '' })
+                if (editable && v !== (task?.parentId ?? '')) void patch({ parentId: v || '' })
               }}
               className="flex-1 rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5 text-[12.5px] text-zinc-300 outline-none scheme-dark"
             >
@@ -386,7 +418,7 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
                 </option>
               ))}
             </select>
-            {isEdit && parentId && (
+            {editable && parentId && (
               <button
                 onClick={() => {
                   setParentId('')
@@ -406,19 +438,21 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
               <input
                 type="datetime-local"
                 value={dueTime}
+                disabled={readOnly}
                 onChange={(e) => setDueTime(e.target.value)}
                 onBlur={() => {
-                  if (!isEdit) return
-                  const next = fromInputValue(dueTime)
-                  if (next !== (task?.dueTime ?? undefined)) void patch({ dueTime: next })
+                  if (!editable) return
+                  // 清除语义为空串：undefined 在 IPC 序列化时键被省略，后端视为「不修改」
+                  const next = fromInputValue(dueTime) ?? ''
+                  if (next !== (task?.dueTime ?? '')) void patch({ dueTime: next })
                 }}
                 className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5 text-[12.5px] outline-none focus:border-rose-400/60 scheme-dark"
               />
-              {dueTime && (
+              {dueTime && editable && (
                 <button
                   onClick={() => {
                     setDueTime('')
-                    if (isEdit) void patch({ dueTime: undefined })
+                    if (isEdit) void patch({ dueTime: '' })
                   }}
                   className="text-[11px] text-zinc-500 hover:text-rose-300"
                 >
@@ -431,19 +465,21 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
               <input
                 type="datetime-local"
                 value={startTime}
+                disabled={readOnly}
                 onChange={(e) => setStartTime(e.target.value)}
                 onBlur={() => {
-                  if (!isEdit) return
-                  const next = fromInputValue(startTime)
-                  if (next !== (task?.planStartTime ?? undefined)) void patch({ planStartTime: next })
+                  if (!editable) return
+                  // 清除语义为空串（同截止时间，undefined 会被序列化省略）
+                  const next = fromInputValue(startTime) ?? ''
+                  if (next !== (task?.planStartTime ?? '')) void patch({ planStartTime: next })
                 }}
                 className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5 text-[12.5px] outline-none focus:border-rose-400/60 scheme-dark"
               />
-              {startTime && (
+              {startTime && editable && (
                 <button
                   onClick={() => {
                     setStartTime('')
-                    if (isEdit) void patch({ planStartTime: undefined })
+                    if (isEdit) void patch({ planStartTime: '' })
                   }}
                   className="text-[11px] text-zinc-500 hover:text-rose-300"
                 >
@@ -453,17 +489,28 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
             </div>
           </div>
 
-          {/* 描述（TipTap 富文本；编辑框右下角可拖拽调整高度） */}
+          {/* 描述（TipTap 富文本；编辑框右下角可拖拽调整高度；只读时退化为纯展示） */}
           <div>
             <label className="mb-1.5 block text-[11.5px] font-medium text-zinc-500">任务描述</label>
-            <TaskDescriptionEditor
-              value={description}
-              onChange={(html) => setDescription(html)}
-              onSave={(html) => {
-                if (isEdit && html !== task.description) void patch({ description: html })
-              }}
-              placeholder="补充任务内容或验收标准…"
-            />
+            {readOnly ? (
+              description && htmlToPlainText(description) ? (
+                <div
+                  className="task-desc-prose max-h-[30vh] overflow-y-auto rounded-lg border border-white/8 bg-white/3 px-3 py-2 pr-1"
+                  dangerouslySetInnerHTML={{ __html: description }}
+                />
+              ) : (
+                <div className="text-[12px] text-zinc-600">无描述</div>
+              )
+            ) : (
+              <TaskDescriptionEditor
+                value={description}
+                onChange={(html) => setDescription(html)}
+                onSave={(html) => {
+                  if (editable && html !== task.description) void patch({ description: html })
+                }}
+                placeholder="补充任务内容或验收标准…"
+              />
+            )}
           </div>
 
           {/* 标签 */}
@@ -480,8 +527,9 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
                 return (
                   <button
                     key={t.id}
+                    disabled={readOnly}
                     onClick={() => toggleTag(t)}
-                    className="rounded-lg border px-2 py-1 text-[11.5px] transition"
+                    className={cn('rounded-lg border px-2 py-1 text-[11.5px] transition', readOnly && 'cursor-default')}
                     style={
                       active
                         ? { color: t.color, borderColor: t.color + '66', background: t.color + '1f' }
@@ -493,7 +541,7 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
                   </button>
                 )
               })}
-              {tagCreating ? (
+              {readOnly ? null : tagCreating ? (
                 <input
                   autoFocus
                   value={tagName}
@@ -536,14 +584,16 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
               计划今日（今日任务页优先显示）
             </div>
             <button
+              disabled={readOnly}
               onClick={() => {
                 const next = !plannedToday
                 setPlannedToday(next)
-                if (isEdit) void patch({ plannedToday: next })
+                if (editable) void patch({ plannedToday: next })
               }}
               className={cn(
                 'relative h-5 w-9 rounded-full transition',
                 plannedToday ? 'bg-linear-to-r from-rose-500 to-orange-500' : 'bg-zinc-600',
+                readOnly && 'cursor-default opacity-80',
               )}
             >
               <span
@@ -555,19 +605,19 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
                   </button>
                   </div>
 
-                  {/* 重复（P2；详情模式即时保存） */}
-                  <div>
+                  {/* 重复（P2；详情模式即时保存；只读时仅展示不可改） */}
+                  <div className={readOnly ? 'pointer-events-none opacity-80' : undefined}>
                     <RecurrencePicker
                       value={recurrence}
                       onChange={(json) => {
                         setRecurrence(json)
-                        if (isEdit) void patch({ recurrence: json })
+                        if (editable) void patch({ recurrence: json })
                       }}
                     />
                   </div>
 
-                  {/* 提醒（任务级，9.5.2 / 9.11.2；仅详情模式） */}
-                  {isEdit && (
+                  {/* 提醒（任务级，9.5.2 / 9.11.2；仅详情编辑模式，只读时隐藏） */}
+                  {editable && (
                   <div className="rounded-lg border border-white/8 bg-white/3 px-3 py-2.5">
                   <div className="mb-2 flex items-center gap-2 text-[12.5px] text-zinc-300">
                   <BellIcon className="h-4 w-4 text-amber-300" />
@@ -611,15 +661,15 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
                   </div>
                   )}
 
-                  {/* 任务清单（子任务，P2；仅详情模式） */}
-                  {isEdit && (
+                  {/* 任务清单（子任务，P2；仅详情编辑模式。子任务组件直连 IPC，只读时整体隐藏防误改） */}
+                  {editable && (
                     <div className="rounded-lg border border-white/8 bg-white/3 px-3 py-2.5">
                       <SubtaskList taskId={task.id} />
                     </div>
                   )}
 
-                  {/* 附件（P2；仅详情模式） */}
-                  {isEdit && (
+                  {/* 附件（P2；仅详情编辑模式。附件组件直连 IPC，只读时整体隐藏防误删） */}
+                  {editable && (
                     <div className="rounded-lg border border-white/8 bg-white/3 px-3 py-2.5">
                       <AttachmentsBox taskId={task.id} />
                     </div>
@@ -633,9 +683,10 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
             <label className="mb-1.5 block text-[11.5px] font-medium text-zinc-500">个人备注</label>
             <textarea
               value={note}
+              readOnly={readOnly}
               onChange={(e) => setNote(e.target.value)}
               onBlur={() => {
-                if (isEdit && note !== task.note) void patch({ note })
+                if (editable && note !== task.note) void patch({ note })
               }}
               rows={1}
               placeholder="只给自己看的小纸条…"
@@ -654,7 +705,11 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
 
         {/* 底部 */}
         <div className="flex items-center gap-2 border-t border-white/8 px-5 py-3">
-          {isEdit ? (
+          {readOnly ? (
+            <div className="flex-1 text-center text-[11.5px] text-zinc-500">
+              回收站中的任务为只读预览，恢复后可继续编辑
+            </div>
+          ) : isEdit ? (
             <>
               <select
                 value={selProjectId}
@@ -720,51 +775,6 @@ export default function TaskModal({ task, projectId, defaultPlannedToday, onClos
       </div>
     </div>
   )
-}
-
-/**
- * 父任务树形候选：按「父在前」层级展开，子任务以全角空格缩进示意层级。
- * excludeId 非空时（详情模式）排除该任务及其全部后代，避免形成循环引用。
- */
-function collectParentRows(list: TaskCard[], excludeId: string | null): { id: string; title: string; prefix: string }[] {
-  const byId = new Map(list.map((t) => [t.id, t]))
-  const childrenOf = new Map<string, TaskCard[]>()
-  for (const t of list) {
-    if (t.parentId && byId.has(t.parentId)) {
-      const arr = childrenOf.get(t.parentId) ?? []
-      arr.push(t)
-      childrenOf.set(t.parentId, arr)
-    }
-  }
-  // 排除集 = 自己 + 全部后代（防环）
-  const blocked = new Set<string>()
-  if (excludeId) {
-    const stack = [excludeId]
-    while (stack.length) {
-      const cur = stack.pop()!
-      if (blocked.has(cur)) continue
-      blocked.add(cur)
-      for (const c of childrenOf.get(cur) ?? []) stack.push(c.id)
-    }
-  }
-  const rows: { id: string; title: string; prefix: string }[] = []
-  const seen = new Set<string>()
-  const walk = (id: string, prefix: string) => {
-    if (blocked.has(id) || seen.has(id)) return
-    seen.add(id)
-    const t = byId.get(id)
-    if (t) rows.push({ id, title: t.title, prefix })
-    for (const c of childrenOf.get(id) ?? []) walk(c.id, prefix + '　')
-  }
-  // 顶层任务（无父或父不在列表）按列表原序展开其整棵子树
-  for (const t of list) {
-    if (!t.parentId || !byId.has(t.parentId)) walk(t.id, '')
-  }
-  // 兜底：仍在排除集外且未出现过的（异常孤儿）也作为候选
-  for (const t of list) {
-    if (!blocked.has(t.id) && !seen.has(t.id)) rows.push({ id: t.id, title: t.title, prefix: '' })
-  }
-  return rows
 }
 
 /** 标签即时新建的候选色盘（自动挑未使用的颜色） */
