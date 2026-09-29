@@ -532,6 +532,112 @@ export const aiApi = {
   },
 }
 
+// ==================== Agent 引擎 ====================
+
+/** Agent 对话历史项（execute_agent_skill 入参，与后端 SkillHistoryItem 对齐） */
+export interface AgentHistoryItem {
+  role: string
+  content: string
+}
+
+/** Agent 调用 AI 配置（与后端 AiConfigParams 对齐，camelCase） */
+export interface AgentAiConfig {
+  provider: string
+  endpoint: string
+  model: string
+  apiKey?: string | null
+  temperature?: number | null
+  maxTokens?: number | null
+  thinkingEnabled?: boolean | null
+  /** DeepSeek 思考强度：high（默认）或 max（Agent 场景推荐） */
+  reasoningEffort?: string | null
+}
+
+/** execute_agent_skill 完整参数（事件流经 `agent-stream-chunk` 推送） */
+export interface AgentSkillArgs {
+  skill: string
+  bookId: string
+  message: string
+  /** 最近对话历史；Skill 独立任务轮次可传 null */
+  conversationHistory?: AgentHistoryItem[] | null
+  aiConfig?: AgentAiConfig | null
+  requestId?: string
+  /** 会话滑动窗口摘要（聊天模式传入；Skill 模式传 null） */
+  conversationSummary?: string | null
+}
+
+/** 记忆类型（三层记忆体） */
+export type AgentMemoryType = 'preference' | 'decision' | 'lesson'
+
+/** 单条 Agent 记忆（字段 snake_case 与后端 MemoryInfo 对齐） */
+export interface AgentMemoryInfo {
+  id: number
+  book_id: string
+  skill_type: string
+  memory_type: AgentMemoryType
+  content: string
+  keywords: string
+  relevance_score: number
+  created_at: string
+  updated_at: string
+  /** 最近一次被检索命中并注入对话的时间（null = 从未命中） */
+  last_hit_at?: string | null
+}
+
+/** Agent 记忆列表响应 */
+export interface AgentMemoryListResponse {
+  memories: AgentMemoryInfo[]
+  total: number
+}
+
+export const agentApi = {
+  /**
+   * 执行 Agent Skill（SSE 流式）
+   * 流式事件经 `agent-stream-chunk` 推送（携带 requestId），返回值为最终累积的完整文本
+   */
+  async executeSkill(args: AgentSkillArgs): Promise<string> {
+    return invoke<string>('execute_agent_skill', { ...args })
+  },
+
+  /** 取消当前正在执行的 Agent 任务（CancelToken 即时中断） */
+  async cancelSkill(): Promise<void> {
+    return invoke('cancel_agent_skill')
+  },
+
+  /** 列出指定书籍的 Agent 记忆（skillType 可选过滤，null = 全部） */
+  async listMemories(bookId: string, skillType?: string | null): Promise<AgentMemoryListResponse> {
+    return invoke<AgentMemoryListResponse>('list_agent_memories', {
+      bookId,
+      skillType: skillType ?? null,
+    })
+  },
+
+  /** 更新单条记忆（字段传 null 表示不修改） */
+  async updateMemory(
+    memoryId: number,
+    content?: string | null,
+    keywords?: string | null,
+    memoryType?: string | null,
+  ): Promise<void> {
+    return invoke('update_agent_memory', {
+      memoryId,
+      content: content ?? null,
+      keywords: keywords ?? null,
+      memoryType: memoryType ?? null,
+    })
+  },
+
+  /** 删除单条记忆 */
+  async deleteMemory(memoryId: number): Promise<void> {
+    return invoke('delete_agent_memory', { memoryId })
+  },
+
+  /** 清空指定书籍全部记忆，返回删除条数 */
+  async clearMemories(bookId: string): Promise<number> {
+    return invoke<number>('clear_agent_memories', { bookId })
+  },
+}
+
 // ==================== 图片处理 ====================
 
 export const imageApi = {
