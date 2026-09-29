@@ -25,7 +25,7 @@
 | **包管理** | pnpm >= 11，Node >= 22 |
 | **深度链接** | com.ukcoder.timewrite 协议（`com.ukcoder.timewrite://`），支持外部应用唤起与参数传递 |
 
-> **规模速览**：173 个 IPC 命令 · 18 个 `tauri-bridge` API 对象 · 24 张数据表 + 2 个 FTS5 虚拟表 + 1 个 sqlite-vec 镜像表 · 8 个独立窗口 · 2 个内置插件 · 7 个插件扩展点。
+> **规模速览**：173 个 IPC 命令 · 19 个 `tauri-bridge` API 对象 · 24 张数据表 + 2 个 FTS5 虚拟表 + 1 个 sqlite-vec 镜像表 · 8 个独立窗口 · 2 个内置插件 · 7 个插件扩展点。
 
 ## 功能特性
 

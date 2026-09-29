@@ -42,7 +42,7 @@
 | 后端 | Rust 2021 + SQLite（WAL 模式 + FTS5 全文索引 + sqlite-vec KNN 向量检索） |
 | AI 通信 | Rust `reqwest` SSE 流式对话（智谱 / DeepSeek / OpenAI 兼容端点） |
 | Agent 引擎 | Rust 原生 ReAct 引擎（流式输出、4 大技能、长期记忆、6 个只读工具） |
-| IPC 规模 | 173 个命令 / 18 个 `tauri-bridge` API 对象 / 24 张表 / 8 个独立窗口 |
+| IPC 规模 | 173 个命令 / 19 个 `tauri-bridge` API 对象 / 24 张表 / 8 个独立窗口 |
 
 ### 双进程架构
 

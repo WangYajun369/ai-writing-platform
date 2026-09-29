@@ -38,6 +38,9 @@ src-tauri/target/
 
 # TypeScript
 *.tsbuildinfo
+# vite.config.ts 的 tsc 编译产物（不入库，源文件为准）
+vite.config.js
+vite.config.d.ts
 
 # Python / uv
 __pycache__/
