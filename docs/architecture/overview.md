@@ -19,7 +19,7 @@ TimeWrite 运行时包含 **2 个进程**。Rust 是**唯一的数据拥有者**
 │  │ pages/        components/       stores/                │  │
 │  │ 书库/编辑器/设置  业务域组件        Zustand + Jotai      │  │
 │  │        └──────────────┼──────────────┘                 │  │
-│  │        lib/tauri-bridge.ts（唯一 IPC 入口，17 个 API）  │  │
+│  │        lib/tauri-bridge.ts（唯一 IPC 入口，19 个 API）  │  │
 │  └───────────────────────┼───────────────────────────────┘  │
 └──────────────────────────┼──────────────────────────────────┘
                            │ Tauri IPC（invoke / event）
@@ -162,7 +162,7 @@ db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发�
 
 ## IPC 模块映射
 
-前端 `tauri-bridge.ts` 暴露 17 个 API 对象，完整命令清单见 [IPC 命令速查](development/ipc-api)。
+前端 `tauri-bridge.ts` 暴露 19 个 API 对象，完整命令清单见 [IPC 命令速查](development/ipc-api)。
 
 | API 模块 | Rust 源文件 | 功能 |
 |---------|------------|------|

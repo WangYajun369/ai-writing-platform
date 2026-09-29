@@ -440,7 +440,7 @@ io 目录定义的业务码：
 
 ## 前端桥接层 API 模块
 
-`src/lib/tauri-bridge.ts` 中对应的 17 个 API 对象：
+`src/lib/tauri-bridge.ts` 中对应的 19 个 API 对象：
 
 | API 对象 | 覆盖命令数 |
 |----------|:---:|
@@ -462,6 +462,7 @@ io 目录定义的业务码：
 | `debugApi` | 6 |
 | `systemApi` | 1 |
 | `taskCardApi` | 55 |
+| `writingApi` | 1 |
 
 > **收编说明（2026-09-29）**：Agent 命令（`execute_agent_skill` / `cancel_agent_skill` / 记忆
 > 管理）此前未封装进 `tauri-bridge.ts`，由 `useAgent.ts` / `AgentMemoryPanel.tsx` /

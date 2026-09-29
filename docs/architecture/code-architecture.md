@@ -20,7 +20,7 @@
 │  │ components/ (按业务域分组的 UI 组件)                                │  │
 │  │ stores/ (Zustand 业务状态 + Jotai UI 原子状态)                      │  │
 │  │ plugins/ (PluginManager 扩展点系统 + 2 个内置插件)                   │  │
-│  │ lib/tauri-bridge.ts (唯一 IPC 调用入口，17 个 API 模块)              │  │
+│  │ lib/tauri-bridge.ts (唯一 IPC 调用入口，19 个 API 模块)              │  │
 │  └───────────────────────────┬──────────────────────────────────────┘  │
 │                              │ Tauri IPC (invoke / event)              │
 ├──────────────────────────────┼─────────────────────────────────────────┤
