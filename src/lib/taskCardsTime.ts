@@ -73,3 +73,13 @@ export function fmtDueText(dueTime?: string | null, done = false): { text: strin
   if (isToday(dueTime)) return { text: fmtDateTime(dueTime), cls: 'text-amber-300' }
   return { text: fmtDateTime(dueTime), cls: 'text-zinc-500' }
 }
+
+/** 动态时间显示：当天仅给 HH:MM，更早的显示 M月D日 HH:MM（动态/时间线组件共用） */
+export function fmtTime(s: string): string {
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return s
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  if (d.toDateString() === new Date().toDateString()) return `${hh}:${mm}`
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${hh}:${mm}`
+}

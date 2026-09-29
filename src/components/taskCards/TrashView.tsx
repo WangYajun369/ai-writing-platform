@@ -26,6 +26,9 @@ import TaskModal from './TaskModal'
 
 type Tab = 'projects' | 'tasks'
 
+/** 已删任务无完成切换语义的占位回调（模块级稳定引用，配合 memo） */
+const noopTaskHandler = () => {}
+
 export default function TrashView({ onBack }: { onBack: () => void }) {
   const [tab, setTab] = useState<Tab>('tasks')
   const [projects, setProjects] = useState<TaskProject[]>([])
@@ -35,6 +38,8 @@ export default function TrashView({ onBack }: { onBack: () => void }) {
   const [openTask, setOpenTask] = useState<DeletedTaskItem | null>(null)
 
   const refreshAll = useTaskCardsStore((s) => s.refreshAll)
+  // 稳定回调（配合 TaskCardView memo）：打开已删任务只读详情
+  const handleOpenTask = useCallback((t: DeletedTaskItem) => setOpenTask(t), [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -225,8 +230,8 @@ export default function TrashView({ onBack }: { onBack: () => void }) {
                   <TaskCardView
                     task={t}
                     project={undefined}
-                    onOpen={() => setOpenTask(t)}
-                    onToggleDone={() => {}}
+                    onOpen={handleOpenTask}
+                    onToggleDone={noopTaskHandler}
                   />
                 </div>
                 <div className="flex flex-col gap-1">
@@ -253,7 +258,7 @@ export default function TrashView({ onBack }: { onBack: () => void }) {
         )}
       </div>
 
-      {openTask && <TaskModal task={openTask} onClose={() => setOpenTask(null)} />}
+      {openTask && <TaskModal task={openTask} readOnly onClose={() => setOpenTask(null)} />}
     </div>
   )
 }

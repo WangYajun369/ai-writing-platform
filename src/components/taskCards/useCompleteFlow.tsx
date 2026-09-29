@@ -6,12 +6,13 @@
  *
  * 用法：
  *   const { toggleDone, completeModal } = useCompleteFlow()
- *   <TaskCardView onToggleDone={() => toggleDone(task)} ... />
+ *   <TaskCardView onToggleDone={toggleDone} ... />   // 回调签名 (task)，可直接透传
  *   {completeModal}   // 渲染在视图根部
  */
 import { useCallback, useState } from 'react'
 import { useTaskCardsStore } from '@/stores/taskCardsStore'
 import { toast } from '@/lib/toast'
+import { errText } from '@/lib/errors'
 import { countUnfinishedSubtasks } from '@/lib/subtaskGuard'
 import type { TaskCard } from '@/types'
 import CompleteSummaryModal from './CompleteSummaryModal'
@@ -24,8 +25,10 @@ export function useCompleteFlow() {
   const toggleDone = useCallback(
     async (task: TaskCard) => {
       if (task.status === 'done') {
-        // 已完成 → 重新打开（不弹总结）
-        void setStatus(task.id, 'todo').catch(() => {})
+        // 已完成 → 重新打开（不弹总结）；失败需提示，否则用户误以为应用无响应
+        void setStatus(task.id, 'todo').catch((err) =>
+          toast.error(errText(err, '重新打开失败')),
+        )
         return
       }
       // 未完成 → 先校验子任务是否全部完成；有未完成项则不允许完成

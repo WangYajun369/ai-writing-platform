@@ -5,7 +5,7 @@
  * 顶部：今日应完成概览（含完成率进度条）+ 快速添加任务
  * 卡片行尾可「顺延到明天」（9.8.2）
  */
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   AlertCircleIcon,
   CalendarDaysIcon,
@@ -21,6 +21,7 @@ import { toast } from '@/lib/toast'
 import { errText } from '@/lib/errors'
 import { useTaskCardsStore } from '@/stores/taskCardsStore'
 import { isOverdue, isToday } from '@/lib/taskCardsTime'
+import { PRIORITY_RANK } from '@/lib/taskCardsFilters'
 import type { TaskCard } from '@/types'
 import TaskCardView from './TaskCardView'
 import TaskModal from './TaskModal'
@@ -127,8 +128,8 @@ export default function TodayView({
       }
     }
     const sortBy = (a: TaskCard, b: TaskCard) => {
-      const p = { high: 0, medium: 1, low: 2 }
-      if (p[a.priority] !== p[b.priority]) return p[a.priority] - p[b.priority]
+      if (PRIORITY_RANK[a.priority] !== PRIORITY_RANK[b.priority])
+        return PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]
       return (a.dueTime ?? '9999').localeCompare(b.dueTime ?? '9999')
     }
     for (const key of Object.keys(result) as GroupKey[]) result[key].sort(sortBy)
@@ -146,14 +147,19 @@ export default function TodayView({
   const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
   const dateLabel = `${now.getMonth() + 1}月${now.getDate()}日 · ${weekdays[now.getDay()]}`
 
-  async function postpone(task: TaskCard) {
-    try {
-      await updateTask(task.id, { dueTime: tomorrowDue(task), plannedToday: false })
-      toast.success('已顺延到明天')
-    } catch (err) {
-      toast.error(errText(err, '顺延失败'))
-    }
-  }
+  // 稳定回调（配合 TaskCardView memo）：打开详情 / 顺延到明天
+  const handleOpenTask = useCallback((task: TaskCard) => setOpenTask(task), [])
+  const postpone = useCallback(
+    async (task: TaskCard) => {
+      try {
+        await updateTask(task.id, { dueTime: tomorrowDue(task), plannedToday: false })
+        toast.success('已顺延到明天')
+      } catch (err) {
+        toast.error(errText(err, '顺延失败'))
+      }
+    },
+    [updateTask],
+  )
 
   /** 行内快速添加（9.8.1）：默认计划今日 */
   async function quickCreate() {
@@ -214,9 +220,9 @@ export default function TodayView({
                 key={task.id}
                 task={task}
                 project={projectMap.get(task.projectId)}
-                onOpen={() => setOpenTask(task)}
-                onToggleDone={() => void toggleDone(task)}
-                onPostpone={key === 'done' ? undefined : () => void postpone(task)}
+                onOpen={handleOpenTask}
+                onToggleDone={toggleDone}
+                onPostpone={key === 'done' ? undefined : postpone}
               />
             ))}
           </div>

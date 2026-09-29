@@ -21,7 +21,11 @@ function fmtSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`
 }
 
-/** 附件时间：今天显示「今天 HH:MM」，更早显示「M月D日 HH:MM」 */
+/**
+ * 附件时间：今天显示「今天 HH:MM」，更早显示「M月D日 HH:MM」。
+ * 注意：刻意不使用 lib/taskCardsTime 的共享 fmtTime——共享版今天不显示「今天」前缀，
+ * 附件列表需要更显式的「今天」提示，属有意差异，勿合并。
+ */
 function fmtTime(s: string): string {
   const d = new Date(s)
   if (Number.isNaN(d.getTime())) return s

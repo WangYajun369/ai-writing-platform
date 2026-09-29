@@ -7,7 +7,7 @@
  * 筛选：关键词 / 优先级 / 标签 / 截止（今天·本周·已逾期）。
  * 排序：手动（列内拖拽）/ 截止时间 / 优先级 / 创建时间 / 更新时间（本地记忆）。
  */
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -29,13 +29,13 @@ import {
   BarChart3 as BarChart3Icon,
   XIcon,
 } from 'lucide-react'
-import { cn, htmlToPlainText } from '@/lib/utils'
+import { cn, createStorage, htmlToPlainText } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 import { errText } from '@/lib/errors'
 import { useTaskCardsStore } from '@/stores/taskCardsStore'
 import type { ProjectView, TaskCard, TaskPriority, TaskStatus } from '@/types'
 import { STATUS_META, STATUS_ORDER } from '@/lib/taskCardsMeta'
-import { isOverdue, isToday } from '@/lib/taskCardsTime'
+import { matchDue, NO_DUE_SENTINEL, PRIORITY_RANK } from '@/lib/taskCardsFilters'
 import TaskCardView from './TaskCardView'
 import TaskModal from './TaskModal'
 import ProjectReportModal from './ProjectReportModal'
@@ -47,6 +47,9 @@ const COLUMN_HINT: Record<TaskStatus, string> = {
   doing: '正在推进的任务',
   done: '已办结的任务',
 }
+
+/** 拖拽浮层等无交互场景的占位回调（模块级稳定引用，配合 memo） */
+const noopTaskHandler = () => {}
 
 /** 排序策略（9.4.4-3 / 9.7.2）：手动为默认；规则排序时禁用同列手动拖拽 */
 export type SortMode = 'manual' | 'due' | 'priority' | 'created' | 'updated'
@@ -61,15 +64,15 @@ const SORT_OPTIONS: { key: SortMode; label: string }[] = [
 
 const SORT_STORAGE_KEY = 'taskcard:sortMode'
 
+/** 排序策略本地记忆（统一走 createStorage；旧裸字符串格式解析失败自动回退默认） */
+const sortStorage = createStorage<{ mode: SortMode }>(SORT_STORAGE_KEY, { mode: 'manual' })
+
 /** 读取本地记忆的排序策略；非法值回退为手动排序 */
 function loadSortMode(): SortMode {
-  const v = localStorage.getItem(SORT_STORAGE_KEY) as SortMode | null
-  return v && SORT_OPTIONS.some((o) => o.key === v) ? v : 'manual'
+  const v = sortStorage.load().mode
+  return SORT_OPTIONS.some((o) => o.key === v) ? v : 'manual'
 }
 
-const PRIORITY_RANK: Record<TaskPriority, number> = { high: 0, medium: 1, low: 2 }
-
-/** 按排序策略对单列任务排序 */
 /** 按排序策略对单列任务排序（manual 保持 sortOrder 存储序；其余规则排序时禁用同列手动拖拽） */
 function sortColumn(list: TaskCard[], mode: SortMode): TaskCard[] {
   const arr = [...list]
@@ -77,7 +80,7 @@ function sortColumn(list: TaskCard[], mode: SortMode): TaskCard[] {
     case 'due':
       arr.sort(
         (a, b) =>
-          (a.dueTime ?? '9999-99-99').localeCompare(b.dueTime ?? '9999-99-99') ||
+          (a.dueTime ?? NO_DUE_SENTINEL).localeCompare(b.dueTime ?? NO_DUE_SENTINEL) ||
           a.sortOrder - b.sortOrder,
       )
       break
@@ -85,7 +88,7 @@ function sortColumn(list: TaskCard[], mode: SortMode): TaskCard[] {
       arr.sort(
         (a, b) =>
           PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] ||
-          (a.dueTime ?? '9999-99-99').localeCompare(b.dueTime ?? '9999-99-99') ||
+          (a.dueTime ?? NO_DUE_SENTINEL).localeCompare(b.dueTime ?? NO_DUE_SENTINEL) ||
           a.sortOrder - b.sortOrder,
       )
       break
@@ -102,27 +105,6 @@ function sortColumn(list: TaskCard[], mode: SortMode): TaskCard[] {
 }
 
 type DueFilter = 'all' | 'today' | 'week' | 'overdue'
-
-/** 截止范围筛选：today/week/overdue；已完成与无截止任务只匹配 all */
-function matchDue(task: TaskCard, due: DueFilter): boolean {
-  if (!task.dueTime || task.status === 'done') return due === 'all'
-  switch (due) {
-    case 'today':
-      return isToday(task.dueTime)
-    case 'overdue':
-      return isOverdue(task.dueTime, task.status)
-    case 'week': {
-      const d = new Date(task.dueTime.slice(0, 10) + 'T00:00:00')
-      const t = new Date()
-      const weekEnd = new Date(t)
-      weekEnd.setDate(t.getDate() + (6 - t.getDay()))
-      weekEnd.setHours(23, 59, 59, 999)
-      return d <= weekEnd
-    }
-    default:
-      return true
-  }
-}
 
 export default function ProjectDetailView({
   project,
@@ -143,6 +125,8 @@ export default function ProjectDetailView({
   const deleteProject = useTaskCardsStore((s) => s.deleteProject)
   const createTask = useTaskCardsStore((s) => s.createTask)
   const { toggleDone, completeModal } = useCompleteFlow()
+  // 稳定回调（配合 TaskCardView memo）
+  const handleOpenTask = useCallback((task: TaskCard) => setOpenTask(task), [])
 
   const [openTask, setOpenTask] = useState<TaskCard | null>(null)
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
@@ -190,7 +174,7 @@ export default function ProjectDetailView({
 
   function changeSort(mode: SortMode) {
     setSortMode(mode)
-    localStorage.setItem(SORT_STORAGE_KEY, mode)
+    sortStorage.save({ mode })
   }
 
   function clearFilters() {
@@ -259,14 +243,14 @@ export default function ProjectDetailView({
     if (!t) return
     setQuickBusy(true)
     try {
-      const created = await createTask({
+      // createTask 内部已 refreshTaskArea（含任务缓存/统计/概览/广播），无需再手动刷新
+      await createTask({
         projectId: project.id,
         title: t.slice(0, 100),
         status,
         priority: 'medium',
       })
       toast.success('任务已创建')
-      void useTaskCardsStore.getState().fetchProjectTasks(created.projectId)
     } catch (err) {
       toast.error(errText(err, '创建失败'))
     } finally {
@@ -512,8 +496,8 @@ export default function ProjectDetailView({
                         project={project}
                         manual={sortMode === 'manual'}
                         dragDisabled={filtering}
-                        onOpen={() => setOpenTask(task)}
-                        onToggleDone={() => void toggleDone(task)}
+                        onOpen={handleOpenTask}
+                        onToggleDone={toggleDone}
                       />
                     ))}
                     {canAdd && (
@@ -530,8 +514,8 @@ export default function ProjectDetailView({
                   <TaskCardView
                     task={activeDragTask}
                     project={project}
-                    onOpen={() => {}}
-                    onToggleDone={() => {}}
+                    onOpen={noopTaskHandler}
+                    onToggleDone={noopTaskHandler}
                   />
                 </div>
               ) : null}
@@ -567,8 +551,8 @@ export default function ProjectDetailView({
                           key={task.id}
                           task={task}
                           project={project}
-                          onOpen={() => setOpenTask(task)}
-                          onToggleDone={() => void toggleDone(task)}
+                          onOpen={handleOpenTask}
+                          onToggleDone={toggleDone}
                         />
                       ))}
                     </div>
@@ -717,8 +701,8 @@ function BoardCard({
   project: ProjectView
   manual: boolean
   dragDisabled: boolean
-  onOpen: () => void
-  onToggleDone: () => void
+  onOpen: (task: TaskCard) => void
+  onToggleDone: (task: TaskCard) => void
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: task.id,
