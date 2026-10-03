@@ -471,6 +471,55 @@ check('活文档无 uvicorn 残留 (README / ipc-api / FAQ)',
   !fileContains('docs/development/ipc-api.md', 'uvicorn') &&
   !fileContains('docs/FAQ.md', 'uvicorn'))
 
+// ── 版本号一致性（10 个引用点，防漂移） ──────────────────────
+// 单一真源：package.json 的 version。其余 9 处由 bump 脚本同步
+// （.codebuddy/skills/version-release/scripts/bump_version.py），此处断言全部一致。
+// 任一处遗漏 → 本项目检查失败，从机制上杜绝「发版后部分文档版本号停留在旧版」。
+console.log('\n  ── 版本号一致性 ──')
+
+function readJsonVersion(relPath) {
+  try { return JSON.parse(readFileSync(join(ROOT, relPath), 'utf-8')).version ?? null } catch { return null }
+}
+
+function matchVersion(relPath, pattern) {
+  try {
+    const m = readFileSync(join(ROOT, relPath), 'utf-8').match(pattern)
+    return m?.[1] ?? null
+  } catch { return null }
+}
+
+const pkgVersion = readJsonVersion('package.json')
+check('package.json 可读取版本号', !!pkgVersion)
+
+if (pkgVersion) {
+  const versionPoints = [
+    ['src-tauri/tauri.conf.json', readJsonVersion('src-tauri/tauri.conf.json')],
+    ['src-tauri/Cargo.toml', matchVersion('src-tauri/Cargo.toml', /^version\s*=\s*"([^"]+)"/m)],
+    ['README.md（表格版本）', matchVersion('README.md', /\| 版本 \| (\d+\.\d+\.\d+) \|/)],
+    ['README.md（当前版本行）', matchVersion('README.md', /\*\*当前版本：`(\d+\.\d+\.\d+)`\*\*/)],
+    ['README.md（亮点行）', matchVersion('README.md', /> \*\*v(\d+\.\d+\.\d+) 亮点\*\*/)],
+    ['docs/Home.md（当前版本）', matchVersion('docs/Home.md', /\| 当前版本 \| (\d+\.\d+\.\d+) \|/)],
+    ['product/landing-page.html（Hero 徽章）', matchVersion('product/landing-page.html', /v(\d+\.\d+\.\d+) 已发布/)],
+    ['product/landing-page.html（页脚）', matchVersion('product/landing-page.html', /TimeWrite<\/strong> &nbsp;·&nbsp; v(\d+\.\d+\.\d+)/)],
+    ['.github/workflows/release.yml（默认版本）', matchVersion('.github/workflows/release.yml', /default:\s*'(\d+\.\d+\.\d+)'/)],
+  ]
+
+  for (const [label, v] of versionPoints) {
+    const ok = v === pkgVersion
+    check(`版本号一致 · ${label}：${v ?? '未匹配到版本'}${ok ? '' : ` ≠ ${pkgVersion}`}`, ok)
+  }
+}
+
+// ── 窗口能力（capability）覆盖：防「权限缺失 → 功能静默失效」 ──
+// 历史问题：debug/diary-book 未纳入任何 capability，调试控制台 listen 被拒；
+// 主窗口缺 updater:default，导致「应用内更新」路径始终失败、静默降级到 GitHub 兜底。
+console.log('\n  ── 窗口能力覆盖 ──')
+check('capabilities/updater.json 存在（应用内更新权限）', fileExists('src-tauri/capabilities/updater.json'))
+check('updater 能力授予 updater:default', fileContains('src-tauri/capabilities/updater.json', 'updater:default'))
+check('updater 能力仅限主窗口（最小权限）', fileContains('src-tauri/capabilities/updater.json', '"main"'))
+check('sub-windows 能力覆盖 debug / diary-book', fileContains('src-tauri/capabilities/sub-windows.json', '"debug"', '"diary-book"'))
+check('lib.rs 注册 updater 插件', fileContains('src-tauri/src/lib.rs', 'tauri_plugin_updater'))
+
 // ── 汇总 ────────────────────────────────────────────────────
 console.log('\n' + '='.repeat(50))
 const total = passed + failed

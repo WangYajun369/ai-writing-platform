@@ -4,9 +4,9 @@
 
 面向网络小说作者和文学创作者，提供从书库管理、章节编辑到 AI 辅助创作的完整写作工作流。
 
-**当前版本：`1.8.0`**　|　🌐 **项目介绍**：[https://wangyajun369.github.io/ai-writing-platform/](https://wangyajun369.github.io/ai-writing-platform/)　|　📦 **下载**：[GitHub Releases](https://github.com/WangYajun369/ai-writing-platform/releases)
+**当前版本：`1.8.1`**　|　🌐 **项目介绍**：[https://wangyajun369.github.io/ai-writing-platform/](https://wangyajun369.github.io/ai-writing-platform/)　|　📦 **下载**：[GitHub Releases](https://github.com/WangYajun369/ai-writing-platform/releases)
 
-> **v1.8.0 亮点**：工程质量强化 —— DB 结构版本化（`PRAGMA user_version` 防降级）、backup 模块 2911 行单文件拆分为 7 文件目录、修复 Agent 记忆检索静默失效缺陷、测试体系建立（Rust 32→80 项 + 前端 Vitest 首批 19 项）。详见 [更新日志](./docs/CHANGELOG.md)。
+> **v1.8.1 亮点**：任务卡数据一致性修复 —— 周报统计口径修正（日志 action 全名匹配 + 按本地时区分桶）、回收站硬删守卫与删除路径事务化、活动日志孤儿清理；Agent 6 个命令收编至唯一 IPC 入口（bridge API 对象 18 → 19）。详见 [更新日志](./docs/CHANGELOG.md)。
 
 ## 技术栈
 

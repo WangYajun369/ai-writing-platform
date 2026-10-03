@@ -10,7 +10,7 @@
  */
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 import { PlusIcon, SearchIcon, SettingsIcon, BookOpenIcon, Trash2Icon, WrenchIcon, UploadIcon, DownloadIcon, BugIcon } from 'lucide-react'
 import { listen } from '@tauri-apps/api/event'
 import { save, open } from '@tauri-apps/plugin-dialog'
@@ -18,6 +18,7 @@ import { useBooksStore } from '@/stores/booksStore'
 import { useAiStore } from '@/stores/aiStore'
 import { usePreferencesStore } from '@/stores/preferencesStore'
 import { aiToolboxWindowOpenAtom, debugWindowOpenAtom } from '@/stores/uiAtoms'
+import { availableUpdateAtom } from '@/stores/updateAtoms'
 import { bookApi, importExportApi, windowApi, debugApi } from '@/lib/tauri-bridge'
 import type { BackupInspectReport, ImportStrategy } from '@/lib/tauri-bridge'
 import { cn, formatWordCount } from '@/lib/utils'
@@ -71,6 +72,7 @@ export default function LibraryPage() {
     trashCount, setTrashCount,
   } = useBooksStore()
   const { appVersion } = useAiStore()
+  const availableUpdate = useAtomValue(availableUpdateAtom)
   const { gridSize, librarySortBy, setLibrarySortBy } = usePreferencesStore()
   const sortBy = librarySortBy
   const [searchQuery, setSearchQuery] = useState('')
@@ -602,6 +604,17 @@ export default function LibraryPage() {
         <span>{books.length} 部作品</span>
         <span>总字数 {formatWordCount(books.reduce((s, b) => s + b.wordCount, 0))}</span>
         <div className="flex-1" />
+        {/* 发现新版本时提示（启动静默检查写入；点击进设置页更新） */}
+        {availableUpdate && (
+          <button
+            onClick={() => navigate('/settings')}
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+            title={`发现新版本 v${availableUpdate.version}，点击前往设置更新`}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+            新版本 v{availableUpdate.version}
+          </button>
+        )}
         <span>智写时光 TimeWrite v{appVersion}</span>
       </footer>
 

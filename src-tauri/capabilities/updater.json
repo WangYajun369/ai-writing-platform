@@ -1,0 +1,6 @@
+{
+  "identifier": "updater-main-only",
+  "description": "Tauri updater permission for the main window only (settings page checks/downloads/installs updates). Feature windows never expose update UI, so they must not receive download-and-install rights.",
+  "windows": ["main"],
+  "permissions": ["updater:default"]
+}

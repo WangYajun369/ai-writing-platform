@@ -64,7 +64,7 @@ WebView 前端  ──Tauri IPC──►  Rust Core（SQLite 独占 + 内置 Age
 |------|-----|
 | 应用名称 | TimeWrite（智写时光） |
 | 应用标识 | `com.ukcoder.timewrite` |
-| 当前版本 | 1.7.0 |
+| 当前版本 | 1.8.1 |
 | 许可证 | MIT |
 | 仓库地址 | [github.com/WangYajun369/ai-writing-platform](https://github.com/WangYajun369/ai-writing-platform) |
 

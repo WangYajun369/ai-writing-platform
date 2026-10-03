@@ -133,7 +133,7 @@ git branch --merged main | grep dev    # 如果 dev 在列表中，说明已完�
 
 > 📍 **执行分支**：`main`
 
-使用 `scripts/bump_version.py` 脚本自动更新所有 **5 个文件**中的版本号，并自动在 `docs/CHANGELOG.md` 中插入新版本条目头部：
+使用 `scripts/bump_version.py` 脚本自动更新所有 **10 个版本引用点（分布于 7 个文件）** 中的版本号，并自动在 `docs/CHANGELOG.md` 中插入新版本条目头部：
 
 ```bash
 # 项目根目录下执行（支持 --dry-run 预览模式）
@@ -144,18 +144,31 @@ python3 .codebuddy/skills/version-release/scripts/bump_version.py set 0.5.0 # �
 
 # 预览模式：仅显示将更新哪些文件，不实际写入
 python3 .codebuddy/skills/version-release/scripts/bump_version.py patch --dry-run
+
+# 按 git log（自上一 Tag）自动生成更新日志正文草稿（Step 2 的人工环节可省一半）
+python3 .codebuddy/skills/version-release/scripts/bump_version.py minor --auto-changelog
 ```
 
-该脚本自动更新的 5 个文件：
-- `package.json`（JSON 字段 `version`）
-- `src-tauri/Cargo.toml`（TOML 字段 `package.version`）
-- `src-tauri/tauri.conf.json`（JSON 字段 `version`，**前端运行时唯一版本来源**）
-- `README.md`（应用信息表格中的版本号）
-- `.github/workflows/release.yml`（workflow_dispatch 默认值）
+该脚本自动更新的 **10 个版本引用点**（`package.json` 为唯一真源）：
+
+| # | 文件 | 引用点 |
+|---|------|--------|
+| 1 | `package.json` | JSON 字段 `version`（**唯一真源**） |
+| 2 | `src-tauri/Cargo.toml` | TOML 字段 `package.version` |
+| 3 | `src-tauri/tauri.conf.json` | JSON 字段 `version`（**前端运行时版本来源**） |
+| 4 | `README.md` | 应用信息表格「版本」行 |
+| 5 | `README.md` | 头部「**当前版本：`X.Y.Z`**」行 |
+| 6 | `README.md` | 头部「> **vX.Y.Z 亮点**」行（仅改版本号，亮点正文需人工改写） |
+| 7 | `docs/Home.md` | 应用信息表格「当前版本」行 |
+| 8 | `product/landing-page.html` | Hero 徽章「vX.Y.Z 已发布」（仅改版本号，卖点文案需人工改写） |
+| 9 | `product/landing-page.html` | 页脚版本号 |
+| 10 | `.github/workflows/release.yml` | `workflow_dispatch` 默认值 |
 
 额外操作：
-- **bump（major/minor/patch）**：自动在 `docs/CHANGELOG.md` 的 `# 更新日志` 后插入 `## vX.Y.Z (YYYY-MM-DD)` 新版本条目头部
+- **bump（major/minor/patch）**：自动在 `docs/CHANGELOG.md` 的 `# 更新日志` 后插入 `## vX.Y.Z (YYYY-MM-DD)` 新版本条目头部；加 `--auto-changelog` 时同时按 git log 分类生成正文草稿（带注释提示，需人工精炼）
 - **set（重置版本）**：自动同步 `docs/CHANGELOG.md` 中已存在的对应版本标题
+
+> 🛡️ **防漂移**：`scripts/check.mjs` 内置「版本号一致性」断言（10 项），以 `package.json` 为基准逐一比对上述引用点，任一处遗漏即 `pnpm check` 失败。**发版后请务必跑一次 `pnpm check`。**
 
 > **注意**：更新日志的具体内容（新增/修复/优化条目）由 Step 2 基于 git log 生成填充，`bump_version.py` 仅插入版本标题头部。
 
@@ -615,19 +628,30 @@ git push origin dev
 
 ## 重要规则
 
-1. **绝不跳过版本号同步**：版本号在 **5 个文件**中硬编码，任一遗漏会导致更新检测失效或版本显示不一致。
+1. **绝不跳过版本号同步**：版本号硬编码在 **10 个引用点 / 7 个文件**中（见 Step 1 表格），任一遗漏会导致更新检测失效或版本显示不一致。`pnpm check` 的版本一致性断言会兜住遗漏。
 2. **Tag 格式**：使用 `vX.Y.Z` 格式（带 `v` 前缀），这是 GitHub Actions 工作流的触发条件。
-3. **先更新版本号再打 Tag**：确保 Tag 指向的 commit 已包含版本号更新。
-4. **release.yml 的 workflow_dispatch 默认值**：此值仅影响手动触发时的预填值，不影响自动触发流程，但仍建议保持同步。
+3. **先更新版本号再打 Tag**：确保 Tag 指向的 commit 已包含版本号更新。workflow 中有「tag 与 tauri.conf.json 版本一致性」校验，不一致会直接构建失败。
+4. **release.yml 的 workflow_dispatch 默认值**：此值仅影响手动触发时的预填值，不影响自动触发流程，但仍建议保持同步（已被一致性断言覆盖）。
 5. **`Cargo.lock` 不需要手动修改**：`cargo build` 时会自动同步版本号。
-6. **CHANGELOG 格式统一**：使用 `## vX.Y.Z (YYYY-MM-DD)` 格式（与现有条目一致），`bump_version.py` 会自动插入。
+6. **CHANGELOG 格式统一**：使用 `## vX.Y.Z (YYYY-MM-DD)` 格式（与现有条目一致），`bump_version.py` 会自动插入；`--auto-changelog` 可生成分类草稿。
 7. **版本号运行时动态读取**：前端页面通过 `getVersion()` 从 `tauri.conf.json` 自动获取，无需手动更新前端代码。
 8. **发版永远在 `main` 分支**：版本号更新、CHANGELOG 生成、打 Tag 等操作严禁在 `dev` 分支执行。
 9. **发版后同步 dev**：`main` 发版完成后，执行 `git checkout dev && git merge main` 将版本号更新同步回 dev。
 10. **`dev` 分支不包含版本号更新和 Tag**：dev 上的版本号可能与 main 不同步（main 发版后 version 更新了），这是正常的——下次发版 merge 时会自动对齐。
+    > ⚠️ 但要注意：`product/landing-page.html` 的版本号在 dev 上是**旧值**时，`pnpm check` 在 dev 上可能因版本一致性断言失败。若 dev 出现该失败，说明 main 已发版而 dev 未合并 main，执行 `git merge main` 即可对齐。
 11. **Stash 迁移必须使用 `-u` 参数**：`git stash push -u` 能同时暂存未跟踪的新文件，避免文件遗漏。
 12. **新分支命名规范**：使用 `<type>/<简短描述>` 格式（如 `feat/article-export`、`fix/login-crash`），type 遵循 Conventional Commits 前缀。
 13. **Stash 迁移后必须清理**：`stash pop` 成功后 stash 队列应为空；如有冲突残留，需手动 `git stash drop` 清理。
+14. **docs 专题文档的「适用版本」是基线快照，不跟随当前版本**：`docs/**/*.md` 头部的 `> **适用版本**：\`X.Y.Z\`　|　**最后核对**：YYYY-MM-DD` 表示「该文档核对时的基线版本」，**不是**应用当前版本。需要批量刷新核对日期时使用：
+
+```bash
+node scripts/refresh-doc-versions.mjs                # 预览（列出各文档基线与落后情况）
+node scripts/refresh-doc-versions.mjs --write        # 仅刷新「最后核对」为今天
+node scripts/refresh-doc-versions.mjs --write --version 1.9.0   # 已按新版本复核的文档才加 --version
+node scripts/refresh-doc-versions.mjs --stale        # 仅列出落后于当前应用版本的文档
+```
+
+> 强制跟随应用版本的只有 3 处「当前版本」展示位：`README.md` 头部、`docs/Home.md` 表格、`product/landing-page.html`（已被一致性断言守护）。
 
 ## 参考文档
 
