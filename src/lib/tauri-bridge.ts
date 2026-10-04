@@ -6,60 +6,74 @@
  * 所有 IPC 调用必须通过此模块的 API 对象进行。
  */
 import { invoke } from '@tauri-apps/api/core'
+import type { IpcCommand } from '@/types/ipc-commands'
 import type { Book, Chapter, Volume, Snapshot, WorldCard, Diary, DiaryMeta, CreateBookParams, UpdateBookParams, SaveDiaryParams, Schedule, SaveScheduleParams, VocabWord, VocabStats, VocabReviewLog, AddVocabWordArgs, UpdateVocabWordArgs, DictStatus, DictLookupResult, AiWordExplain, ExplainWordArgs, WordCheckResult, TtsSpeakResult, TaskProject, ProjectView, TaskCard, TaskSubtask, TaskTag, TaskStatus, TaskTemplate, TodayOverview, MigrateResult, DeletedTaskItem, ProjectStatus, CreateProjectArgs, UpdateProjectArgs, CreateTaskArgs, UpdateTaskArgs, CreateTemplateArgs, UpdateTemplateArgs, Attachment, ActivityLog, ProjectWeeklyStat, UpdateTagArgs } from '@/types'
+
+/**
+ * 类型化 invoke：命令名接受 IpcCommand 联合类型约束。
+ *
+ * 收益：Rust 端重命名命令而忘记同步时，前端 invoke 会立即编译报错
+ * （字符串字面量不再是 IpcCommand 成员），无需运行时才发现 not found。
+ *
+ * 用法：typedInvoke<Book[]>('list_books')
+ *       typedInvoke<Book>('create_book', { params })
+ */
+function typedInvoke<T>(cmd: IpcCommand, args?: Record<string, unknown>): Promise<T> {
+  return args === undefined ? invoke<T>(cmd) : invoke<T>(cmd, args)
+}
 
 // ==================== 书籍管理 ====================
 
 export const bookApi = {
   async list(): Promise<Book[]> {
-    return invoke<Book[]>('list_books')
+    return typedInvoke<Book[]>('list_books')
   },
 
   async create(params: CreateBookParams): Promise<Book> {
-    return invoke<Book>('create_book', { params })
+    return typedInvoke<Book>('create_book', { params })
   },
 
   async update(id: string, params: UpdateBookParams): Promise<Book> {
-    return invoke<Book>('update_book', { id, params })
+    return typedInvoke<Book>('update_book', { id, params })
   },
 
   /** 软删除：移入回收站，数据完整保留 */
   async delete(id: string): Promise<void> {
-    return invoke<void>('delete_book', { id })
+    return typedInvoke<void>('delete_book', { id })
   },
 
   async getById(id: string): Promise<Book> {
-    return invoke<Book>('get_book', { id })
+    return typedInvoke<Book>('get_book', { id })
   },
 
   /** 设置书籍封面：传入本地文件路径，后端复制到应用数据目录并更新数据库 */
   async setCover(id: string, sourcePath: string): Promise<Book> {
-    return invoke<Book>('set_book_cover', { id, sourcePath })
+    return typedInvoke<Book>('set_book_cover', { id, sourcePath })
   },
 
   /** 直接保存已处理的 Base64 data URL 作为封面（前端已完成裁剪/压缩） */
   async setCoverData(id: string, dataUrl: string): Promise<Book> {
-    return invoke<Book>('set_book_cover_data', { id, dataUrl })
+    return typedInvoke<Book>('set_book_cover_data', { id, dataUrl })
   },
 
   /** 列出回收站中已删除的作品 */
   async listDeleted(): Promise<Book[]> {
-    return invoke<Book[]>('list_deleted_books')
+    return typedInvoke<Book[]>('list_deleted_books')
   },
 
   /** 从回收站恢复作品 */
   async restore(id: string): Promise<void> {
-    return invoke<void>('restore_book', { id })
+    return typedInvoke<void>('restore_book', { id })
   },
 
   /** 彻底删除作品及其全部数据 */
   async hardDelete(id: string): Promise<void> {
-    return invoke<void>('hard_delete_book', { id })
+    return typedInvoke<void>('hard_delete_book', { id })
   },
 
   /** 一键清空回收站 */
   async clearTrash(): Promise<number> {
-    return invoke<number>('clear_book_trash')
+    return typedInvoke<number>('clear_book_trash')
   },
 }
 
@@ -67,35 +81,35 @@ export const bookApi = {
 
 export const volumeApi = {
   async listByBook(bookId: string): Promise<Volume[]> {
-    return invoke<Volume[]>('list_volumes', { bookId })
+    return typedInvoke<Volume[]>('list_volumes', { bookId })
   },
 
   async listDeleted(bookId: string): Promise<Volume[]> {
-    return invoke<Volume[]>('list_deleted_volumes', { bookId })
+    return typedInvoke<Volume[]>('list_deleted_volumes', { bookId })
   },
 
   async create(bookId: string, title: string, sortOrder: number): Promise<Volume> {
-    return invoke<Volume>('create_volume', { bookId, title, sortOrder })
+    return typedInvoke<Volume>('create_volume', { bookId, title, sortOrder })
   },
 
   async update(id: string, title: string): Promise<void> {
-    return invoke<void>('update_volume', { id, title })
+    return typedInvoke<void>('update_volume', { id, title })
   },
 
   async delete(id: string): Promise<void> {
-    return invoke<void>('delete_volume', { id })
+    return typedInvoke<void>('delete_volume', { id })
   },
 
   async restore(id: string): Promise<void> {
-    return invoke<void>('restore_volume', { id })
+    return typedInvoke<void>('restore_volume', { id })
   },
 
   async hardDelete(id: string): Promise<void> {
-    return invoke<void>('hard_delete_volume', { id })
+    return typedInvoke<void>('hard_delete_volume', { id })
   },
 
   async reorder(ids: string[]): Promise<void> {
-    return invoke<void>('reorder_volumes', { ids })
+    return typedInvoke<void>('reorder_volumes', { ids })
   },
 }
 
@@ -103,24 +117,24 @@ export const volumeApi = {
 
 export const chapterApi = {
   async listByBook(bookId: string): Promise<Chapter[]> {
-    return invoke<Chapter[]>('list_chapters', { bookId })
+    return typedInvoke<Chapter[]>('list_chapters', { bookId })
   },
 
   async listDeleted(bookId: string): Promise<Chapter[]> {
-    return invoke<Chapter[]>('list_deleted_chapters', { bookId })
+    return typedInvoke<Chapter[]>('list_deleted_chapters', { bookId })
   },
 
   async restore(chapterId: string): Promise<{ volumeId: string | null; bookWordCount: number }> {
-    return invoke<{ volumeId: string | null; bookWordCount: number }>('restore_chapter', { chapterId })
+    return typedInvoke<{ volumeId: string | null; bookWordCount: number }>('restore_chapter', { chapterId })
   },
 
   /** 彻底删除章节，返回更新后的全书字数 */
   async hardDelete(chapterId: string): Promise<{ bookWordCount: number }> {
-    return invoke<{ bookWordCount: number }>('hard_delete_chapter', { chapterId })
+    return typedInvoke<{ bookWordCount: number }>('hard_delete_chapter', { chapterId })
   },
 
   async getContent(chapterId: string): Promise<string> {
-    return invoke<string>('get_chapter_content', { chapterId })
+    return typedInvoke<string>('get_chapter_content', { chapterId })
   },
 
   async create(params: {
@@ -129,53 +143,53 @@ export const chapterApi = {
     title: string
     sortOrder: number
   }): Promise<Chapter> {
-    return invoke<Chapter>('create_chapter', { params })
+    return typedInvoke<Chapter>('create_chapter', { params })
   },
 
   async save(chapterId: string, contentHtml: string, wordCount: number): Promise<{ wordCount: number; bookWordCount: number }> {
-    return invoke<{ wordCount: number; bookWordCount: number }>('save_chapter', { chapterId, contentHtml, wordCount })
+    return typedInvoke<{ wordCount: number; bookWordCount: number }>('save_chapter', { chapterId, contentHtml, wordCount })
   },
 
   async updateStatus(chapterId: string, status: Chapter['status']): Promise<void> {
-    return invoke<void>('update_chapter_status', { chapterId, status })
+    return typedInvoke<void>('update_chapter_status', { chapterId, status })
   },
 
   async rename(chapterId: string, title: string): Promise<void> {
-    return invoke<void>('rename_chapter', { chapterId, title })
+    return typedInvoke<void>('rename_chapter', { chapterId, title })
   },
 
   /** 软删除章节，返回更新后的全书字数 */
   async delete(chapterId: string): Promise<{ bookWordCount: number }> {
-    return invoke<{ bookWordCount: number }>('delete_chapter', { chapterId })
+    return typedInvoke<{ bookWordCount: number }>('delete_chapter', { chapterId })
   },
 
   async reorder(chapterIds: string[]): Promise<void> {
-    return invoke<void>('reorder_chapters', { chapterIds })
+    return typedInvoke<void>('reorder_chapters', { chapterIds })
   },
 
   /** 移动章节到指定卷（或根目录） */
   async moveToVolume(chapterId: string, volumeId: string | null): Promise<void> {
-    return invoke<void>('move_chapter_to_volume', { chapterId, volumeId })
+    return typedInvoke<void>('move_chapter_to_volume', { chapterId, volumeId })
   },
 
   /** 保存章节的 AI 总结内容 */
   async saveSummary(chapterId: string, summary: string): Promise<void> {
-    return invoke<void>('save_chapter_summary', { chapterId, summary })
+    return typedInvoke<void>('save_chapter_summary', { chapterId, summary })
   },
 
   /** 清除章节的 AI 总结内容 */
   async clearSummary(chapterId: string): Promise<void> {
-    return invoke<void>('clear_chapter_summary', { chapterId })
+    return typedInvoke<void>('clear_chapter_summary', { chapterId })
   },
 
   /** 获取章节的总结信息 */
   async getSummary(chapterId: string): Promise<{ summary: string | null; summaryAt: string | null }> {
-    return invoke<{ summary: string | null; summaryAt: string | null }>('get_chapter_summary', { chapterId })
+    return typedInvoke<{ summary: string | null; summaryAt: string | null }>('get_chapter_summary', { chapterId })
   },
 
   /** 保存章节大纲 */
   async saveOutline(chapterId: string, outline: string): Promise<void> {
-    return invoke<void>('save_chapter_outline', { chapterId, outline })
+    return typedInvoke<void>('save_chapter_outline', { chapterId, outline })
   },
 }
 
@@ -183,23 +197,23 @@ export const chapterApi = {
 
 export const snapshotApi = {
   async list(chapterId: string): Promise<Snapshot[]> {
-    return invoke<Snapshot[]>('list_snapshots', { chapterId })
+    return typedInvoke<Snapshot[]>('list_snapshots', { chapterId })
   },
 
   async create(chapterId: string, label?: string): Promise<Snapshot> {
-    return invoke<Snapshot>('create_snapshot', { chapterId, label })
+    return typedInvoke<Snapshot>('create_snapshot', { chapterId, label })
   },
 
   async getContent(snapshotId: string): Promise<string> {
-    return invoke<string>('get_snapshot_content', { snapshotId })
+    return typedInvoke<string>('get_snapshot_content', { snapshotId })
   },
 
   async restore(snapshotId: string): Promise<{ wordCount: number; bookWordCount: number }> {
-    return invoke<{ wordCount: number; bookWordCount: number }>('restore_snapshot', { snapshotId })
+    return typedInvoke<{ wordCount: number; bookWordCount: number }>('restore_snapshot', { snapshotId })
   },
 
   async delete(snapshotId: string): Promise<void> {
-    return invoke<void>('delete_snapshot', { snapshotId })
+    return typedInvoke<void>('delete_snapshot', { snapshotId })
   },
 }
 
@@ -207,24 +221,24 @@ export const snapshotApi = {
 
 export const worldCardApi = {
   async listByBook(bookId: string): Promise<WorldCard[]> {
-    return invoke<WorldCard[]>('list_world_cards', { bookId })
+    return typedInvoke<WorldCard[]>('list_world_cards', { bookId })
   },
 
   async create(params: Omit<WorldCard, 'id' | 'createdAt' | 'updatedAt' | 'vectorized'>): Promise<WorldCard> {
-    return invoke<WorldCard>('create_world_card', { params })
+    return typedInvoke<WorldCard>('create_world_card', { params })
   },
 
   async update(id: string, params: Partial<WorldCard>): Promise<WorldCard> {
-    return invoke<WorldCard>('update_world_card', { id, params })
+    return typedInvoke<WorldCard>('update_world_card', { id, params })
   },
 
   async delete(id: string): Promise<void> {
-    return invoke<void>('delete_world_card', { id })
+    return typedInvoke<void>('delete_world_card', { id })
   },
 
   /** FTS5 全文搜索世界观卡片 */
   async search(bookId: string, query: string): Promise<WorldCard[]> {
-    return invoke<WorldCard[]>('search_world_cards', { bookId, query })
+    return typedInvoke<WorldCard[]>('search_world_cards', { bookId, query })
   },
 }
 
@@ -233,27 +247,27 @@ export const worldCardApi = {
 export const diaryApi = {
   /** 列出指定年月（1-12）的日记摘要，按日期升序 */
   async listMonth(year: number, month: number): Promise<DiaryMeta[]> {
-    return invoke<DiaryMeta[]>('list_month_diaries', { year, month })
+    return typedInvoke<DiaryMeta[]>('list_month_diaries', { year, month })
   },
 
   /** 列出全部日记摘要（不含正文），按日期升序（书页式「看日记」浏览用） */
   async listAll(): Promise<DiaryMeta[]> {
-    return invoke<DiaryMeta[]>('list_all_diaries')
+    return typedInvoke<DiaryMeta[]>('list_all_diaries')
   },
 
   /** 按日期（YYYY-MM-DD）获取日记全文，不存在时返回 null */
   async get(date: string): Promise<Diary | null> {
-    return invoke<Diary | null>('get_diary', { date })
+    return typedInvoke<Diary | null>('get_diary', { date })
   },
 
   /** 保存日记（该日期已存在则覆盖，否则新建） */
   async save(params: SaveDiaryParams): Promise<Diary> {
-    return invoke<Diary>('save_diary', { params })
+    return typedInvoke<Diary>('save_diary', { params })
   },
 
   /** 按日期删除日记 */
   async delete(date: string): Promise<void> {
-    return invoke<void>('delete_diary', { date })
+    return typedInvoke<void>('delete_diary', { date })
   },
 }
 
@@ -262,22 +276,22 @@ export const diaryApi = {
 export const scheduleApi = {
   /** 列出某日期下的全部日程 */
   async listByDate(date: string): Promise<Schedule[]> {
-    return invoke<Schedule[]>('list_schedules_by_date', { date })
+    return typedInvoke<Schedule[]>('list_schedules_by_date', { date })
   },
 
   /** 列出某年某月下的全部日程（日历状态点用） */
   async listMonth(year: number, month: number): Promise<Schedule[]> {
-    return invoke<Schedule[]>('list_schedules_by_month', { year, month })
+    return typedInvoke<Schedule[]>('list_schedules_by_month', { year, month })
   },
 
   /** 保存日程（id 存在则更新，否则新建） */
   async save(params: SaveScheduleParams): Promise<Schedule> {
-    return invoke<Schedule>('save_schedule', { params })
+    return typedInvoke<Schedule>('save_schedule', { params })
   },
 
   /** 按 id 删除日程 */
   async delete(id: string): Promise<void> {
-    return invoke<void>('delete_schedule', { id })
+    return typedInvoke<void>('delete_schedule', { id })
   },
 }
 
@@ -295,82 +309,82 @@ export interface WindowOpenOptions {
 export const windowApi = {
   /** 打开世界观资料库独立窗口 */
   async openWorld(bookId: string, tab?: string): Promise<void> {
-    return invoke<void>('open_world_window', { bookId, tab: tab ?? null })
+    return typedInvoke<void>('open_world_window', { bookId, tab: tab ?? null })
   },
 
   /** 关闭世界观资料库独立窗口 */
   async closeWorld(): Promise<void> {
-    return invoke<void>('close_world_window')
+    return typedInvoke<void>('close_world_window')
   },
 
   /** 打开版本历史独立窗口 */
   async openHistory(chapterId: string, bookId: string, chapterTitle: string): Promise<void> {
-    return invoke<void>('open_history_window', { chapterId, bookId, chapterTitle })
+    return typedInvoke<void>('open_history_window', { chapterId, bookId, chapterTitle })
   },
 
   /** 关闭版本历史独立窗口 */
   async closeHistory(): Promise<void> {
-    return invoke<void>('close_history_window')
+    return typedInvoke<void>('close_history_window')
   },
 
   /** 打开章节总结独立窗口 */
   async openSummary(chapterId: string, bookId: string, chapterTitle: string): Promise<void> {
-    return invoke<void>('open_summary_window', { chapterId, bookId, chapterTitle })
+    return typedInvoke<void>('open_summary_window', { chapterId, bookId, chapterTitle })
   },
 
   /** 关闭章节总结独立窗口 */
   async closeSummary(): Promise<void> {
-    return invoke<void>('close_summary_window')
+    return typedInvoke<void>('close_summary_window')
   },
 
   /** 打开 AI 工具箱独立窗口 */
   async openAiToolbox(): Promise<void> {
-    return invoke<void>('open_ai_toolbox_window')
+    return typedInvoke<void>('open_ai_toolbox_window')
   },
 
   /** 关闭 AI 工具箱独立窗口 */
   async closeAiToolbox(): Promise<void> {
-    return invoke<void>('close_ai_toolbox_window')
+    return typedInvoke<void>('close_ai_toolbox_window')
   },
 
   /** 打开英语字典（生词本）独立窗口（已打开则关闭，即 toggle） */
   async openVocab(): Promise<void> {
-    return invoke<void>('open_vocab_window')
+    return typedInvoke<void>('open_vocab_window')
   },
 
   /** 关闭英语字典独立窗口 */
   async closeVocab(): Promise<void> {
-    return invoke<void>('close_vocab_window')
+    return typedInvoke<void>('close_vocab_window')
   },
 
   /** 英语字典窗口当前是否打开 */
   async isVocabOpen(): Promise<boolean> {
-    return invoke<boolean>('is_vocab_window_open')
+    return typedInvoke<boolean>('is_vocab_window_open')
   },
 
   /** 打开任务卡（项目管理）独立窗口；传 section 时窗口已开则直接导航到该区段 */
   async openTasks(section?: 'today' | 'all'): Promise<void> {
-    return invoke<void>('open_tasks_window', { section: section ?? null })
+    return typedInvoke<void>('open_tasks_window', { section: section ?? null })
   },
 
   /** 关闭任务卡独立窗口 */
   async closeTasks(): Promise<void> {
-    return invoke<void>('close_tasks_window')
+    return typedInvoke<void>('close_tasks_window')
   },
 
   /** 任务卡窗口当前是否打开 */
   async isTasksOpen(): Promise<boolean> {
-    return invoke<boolean>('is_tasks_window_open')
+    return typedInvoke<boolean>('is_tasks_window_open')
   },
 
   /** 打开/切换「看日记」书页浏览独立窗口（已打开则关闭，未打开则创建） */
   async openDiaryBook(): Promise<void> {
-    return invoke<void>('open_diary_book_window')
+    return typedInvoke<void>('open_diary_book_window')
   },
 
   /** 关闭「看日记」书页浏览独立窗口 */
   async closeDiaryBook(): Promise<void> {
-    return invoke<void>('close_diary_book_window')
+    return typedInvoke<void>('close_diary_book_window')
   },
 }
 
@@ -490,7 +504,7 @@ export const aiApi = {
     apiKey?: string,
     embeddingModel?: string,
   ) {
-    return invoke<RagResultItem[]>(
+    return typedInvoke<RagResultItem[]>(
       'rag_search',
       { bookId, query, topN, endpoint: endpoint ?? null, apiKey: apiKey ?? null, embeddingModel: embeddingModel ?? null }
     )
@@ -498,37 +512,37 @@ export const aiApi = {
 
   /** 检查指定书籍的 Embedding 索引状态（是否过期） */
   async checkEmbeddingStatus(bookId: string): Promise<EmbeddingStatus> {
-    return invoke<EmbeddingStatus>('check_embedding_status', { bookId })
+    return typedInvoke<EmbeddingStatus>('check_embedding_status', { bookId })
   },
 
   /** 为指定书籍的所有章节和世界观卡片生成 Embedding 向量 */
   async triggerEmbedding(bookId: string, endpoint: string, apiKey: string, embeddingModel: string): Promise<EmbeddingProgress> {
-    return invoke<EmbeddingProgress>('trigger_embedding', { bookId, endpoint, apiKey, embeddingModel })
+    return typedInvoke<EmbeddingProgress>('trigger_embedding', { bookId, endpoint, apiKey, embeddingModel })
   },
 
   /** 流式 AI 对话（Rust 侧处理 HTTP 流式请求，前端通过事件接收） */
   async streamChat(args: StreamChatArgs): Promise<string> {
-    return invoke<string>('stream_ai_chat', { args })
+    return typedInvoke<string>('stream_ai_chat', { args })
   },
 
   /** 测试 AI 服务连接 */
   async testConnection(provider: string, endpoint: string, apiKey?: string): Promise<ConnectionTestResult> {
-    return invoke<ConnectionTestResult>('test_ai_connection', { provider, endpoint, apiKey })
+    return typedInvoke<ConnectionTestResult>('test_ai_connection', { provider, endpoint, apiKey })
   },
 
   /** 测试 RAG Embedding 服务连接 */
   async testRagConnection(endpoint: string, apiKey: string, embeddingModel: string): Promise<ConnectionTestResult> {
-    return invoke<ConnectionTestResult>('test_rag_connection', { endpoint, apiKey, embeddingModel })
+    return typedInvoke<ConnectionTestResult>('test_rag_connection', { endpoint, apiKey, embeddingModel })
   },
 
   /** 总结章节内容（非流式） */
   async summarizeChapter(args: SummarizeArgs): Promise<ChapterSummary> {
-    return invoke<ChapterSummary>('summarize_chapter', { args })
+    return typedInvoke<ChapterSummary>('summarize_chapter', { args })
   },
 
   /** 总结历史对话（用于滑动窗口 context 压缩） */
   async summarizeConversation(args: SummarizeConversationArgs): Promise<ConversationSummary> {
-    return invoke<ConversationSummary>('summarize_conversation', { args })
+    return typedInvoke<ConversationSummary>('summarize_conversation', { args })
   },
 }
 
@@ -596,7 +610,7 @@ export const agentApi = {
    * 流式事件经 `agent-stream-chunk` 推送（携带 requestId），返回值为最终累积的完整文本
    */
   async executeSkill(args: AgentSkillArgs): Promise<string> {
-    return invoke<string>('execute_agent_skill', { ...args })
+    return typedInvoke<string>('execute_agent_skill', { ...args })
   },
 
   /** 取消当前正在执行的 Agent 任务（CancelToken 即时中断） */
@@ -606,7 +620,7 @@ export const agentApi = {
 
   /** 列出指定书籍的 Agent 记忆（skillType 可选过滤，null = 全部） */
   async listMemories(bookId: string, skillType?: string | null): Promise<AgentMemoryListResponse> {
-    return invoke<AgentMemoryListResponse>('list_agent_memories', {
+    return typedInvoke<AgentMemoryListResponse>('list_agent_memories', {
       bookId,
       skillType: skillType ?? null,
     })
@@ -634,7 +648,7 @@ export const agentApi = {
 
   /** 清空指定书籍全部记忆，返回删除条数 */
   async clearMemories(bookId: string): Promise<number> {
-    return invoke<number>('clear_agent_memories', { bookId })
+    return typedInvoke<number>('clear_agent_memories', { bookId })
   },
 }
 
@@ -643,7 +657,7 @@ export const agentApi = {
 export const imageApi = {
   /** 处理图片：压缩 + 缩放 + Base64 编码，返回 data: URL */
   async process(sourcePath: string, maxWidth = 1200, quality = 80): Promise<string> {
-    return invoke<string>('process_image', { sourcePath, maxWidth, quality })
+    return typedInvoke<string>('process_image', { sourcePath, maxWidth, quality })
   },
 
   /** 裁剪图片：裁剪 + 压缩 + 缩放 + Base64 编码，返回 data: URL */
@@ -656,7 +670,7 @@ export const imageApi = {
     maxWidth = 1200,
     quality = 80,
   ): Promise<string> {
-    return invoke<string>('process_image_cropped', {
+    return typedInvoke<string>('process_image_cropped', {
       sourcePath,
       cropX: Math.round(cropX),
       cropY: Math.round(cropY),
@@ -743,12 +757,12 @@ export interface ExportProgress {
 
 export const importExportApi = {
   async exportBook(bookId: string, format: 'txt' | 'md' | 'html', outputPath: string): Promise<void> {
-    return invoke<void>('export_book', { bookId, format, outputPath })
+    return typedInvoke<void>('export_book', { bookId, format, outputPath })
   },
 
   /** 取消进行中的格式导出（幂等，无导出时无副作用） */
   async cancelBookExport(): Promise<void> {
-    return invoke<void>('cancel_book_export')
+    return typedInvoke<void>('cancel_book_export')
   },
 
   /** TXT 导入结果（Spec §6.3：去重后计数，前端据此提示） */
@@ -756,7 +770,7 @@ export const importExportApi = {
     bookId: string,
     filePath: string,
   ): Promise<{ chaptersCreated: number; chaptersSkipped: number; chaptersRenamed: number }> {
-    return invoke<{ chaptersCreated: number; chaptersSkipped: number; chaptersRenamed: number }>(
+    return typedInvoke<{ chaptersCreated: number; chaptersSkipped: number; chaptersRenamed: number }>(
       'import_txt',
       { bookId, filePath },
     )
@@ -764,12 +778,12 @@ export const importExportApi = {
 
   /** 导出全部数据（数据库 + localStorage 缓存）到 JSON 文件 */
   async exportAllData(outputPath: string, cacheJson: string): Promise<void> {
-    return invoke<void>('export_all_data', { outputPath, cacheJson })
+    return typedInvoke<void>('export_all_data', { outputPath, cacheJson })
   },
 
   /** 导出单个作品的完整数据（数据库 + localStorage 缓存）到加密 .tw 文件 */
   async exportSingleBook(bookId: string, outputPath: string, cacheJson: string): Promise<void> {
-    return invoke<void>('export_single_book', { bookId, outputPath, cacheJson })
+    return typedInvoke<void>('export_single_book', { bookId, outputPath, cacheJson })
   },
 
   /**
@@ -778,12 +792,12 @@ export const importExportApi = {
    * fill-gaps（仅补缺）。merge / fill-gaps 返回 stats。
    */
   async importBackup(filePath: string, strategy?: ImportStrategy): Promise<ImportBackupResult> {
-    return invoke<ImportBackupResult>('import_backup', { filePath, strategy })
+    return typedInvoke<ImportBackupResult>('import_backup', { filePath, strategy })
   },
 
   /** 只读预检备份文件（结构/行数/引用完整性，不写库），返回报告 */
   async inspectBackup(filePath: string): Promise<BackupInspectReport> {
-    return invoke<BackupInspectReport>('inspect_backup', { filePath })
+    return typedInvoke<BackupInspectReport>('inspect_backup', { filePath })
   },
 
   /** 撤销一次导入：把数据库恢复至该回退点快照（导入前状态，24h 内有效，执行后回退点即消费） */
@@ -827,32 +841,32 @@ export interface ValidationResult {
 export const debugApi = {
   /** 打开调试控制台窗口 */
   async open(): Promise<void> {
-    return invoke<void>('open_debug_window')
+    return typedInvoke<void>('open_debug_window')
   },
 
   /** 关闭调试控制台窗口 */
   async close(): Promise<void> {
-    return invoke<void>('close_debug_window')
+    return typedInvoke<void>('close_debug_window')
   },
 
   /** 获取所有已缓存的日志（调试窗口启动时调用） */
   async getLogs(): Promise<LogEntry[]> {
-    return invoke<LogEntry[]>('get_debug_logs')
+    return typedInvoke<LogEntry[]>('get_debug_logs')
   },
 
   /** 清空所有日志 */
   async clear(): Promise<void> {
-    return invoke<void>('clear_debug_logs')
+    return typedInvoke<void>('clear_debug_logs')
   },
 
   /** 校验本地 SQLite 数据库表结构和数据完整性 */
   async validateDatabase(): Promise<ValidationResult> {
-    return invoke<ValidationResult>('validate_database')
+    return typedInvoke<ValidationResult>('validate_database')
   },
 
   /** 将前端日志汇入后端日志系统 */
   async logMessage(entries: { level: string; message: string; file?: string | null; fileName?: string | null; line?: number | null }[]): Promise<void> {
-    return invoke<void>('log_message', { entries })
+    return typedInvoke<void>('log_message', { entries })
   },
 }
 
@@ -873,7 +887,7 @@ export interface SystemCheckResult {
 export const systemApi = {
   /** 执行系统环境检查（Python/Node/Rust 版本、系统信息、安装路径） */
   async check(): Promise<SystemCheckResult> {
-    return invoke<SystemCheckResult>('system_check')
+    return typedInvoke<SystemCheckResult>('system_check')
   },
 }
 
@@ -882,52 +896,52 @@ export const systemApi = {
 export const vocabApi = {
   /** 收录生词（同词已存在时更新释义并返回） */
   async add(args: AddVocabWordArgs): Promise<VocabWord> {
-    return invoke<VocabWord>('vocab_add', { args })
+    return typedInvoke<VocabWord>('vocab_add', { args })
   },
 
   /** 编辑生词音标/释义/例句 */
   async update(args: UpdateVocabWordArgs): Promise<VocabWord> {
-    return invoke<VocabWord>('vocab_update', { args })
+    return typedInvoke<VocabWord>('vocab_update', { args })
   },
 
   /** 切换状态（learning / mastered / suspended） */
   async setStatus(id: string, status: VocabWord['status']): Promise<VocabWord> {
-    return invoke<VocabWord>('vocab_set_status', { id, status })
+    return typedInvoke<VocabWord>('vocab_set_status', { id, status })
   },
 
   /** 删除生词（复习记录级联删除） */
   async delete(id: string): Promise<void> {
-    return invoke<void>('vocab_delete', { id })
+    return typedInvoke<void>('vocab_delete', { id })
   },
 
   /** 列表（status: all/learning/mastered/suspended；query 单词模糊搜索） */
   async list(status?: string, query?: string): Promise<VocabWord[]> {
-    return invoke<VocabWord[]>('vocab_list', { status: status ?? null, query: query ?? null })
+    return typedInvoke<VocabWord[]>('vocab_list', { status: status ?? null, query: query ?? null })
   },
 
   /** 今日到期复习队列 */
   async due(): Promise<VocabWord[]> {
-    return invoke<VocabWord[]>('vocab_due')
+    return typedInvoke<VocabWord[]>('vocab_due')
   },
 
   /** 单条详情 */
   async get(id: string): Promise<VocabWord> {
-    return invoke<VocabWord>('vocab_get', { id })
+    return typedInvoke<VocabWord>('vocab_get', { id })
   },
 
   /** 提交复习反馈（0 忘记 / 1 模糊 / 2 记得 / 3 轻松），返回更新后的词条 */
   async review(wordId: string, rating: 0 | 1 | 2 | 3): Promise<VocabWord> {
-    return invoke<VocabWord>('vocab_review', { wordId, rating })
+    return typedInvoke<VocabWord>('vocab_review', { wordId, rating })
   },
 
   /** 某生词的复习历史 */
   async logs(wordId: string): Promise<VocabReviewLog[]> {
-    return invoke<VocabReviewLog[]>('vocab_logs', { wordId })
+    return typedInvoke<VocabReviewLog[]>('vocab_logs', { wordId })
   },
 
   /** 生词本统计 */
   async stats(): Promise<VocabStats> {
-    return invoke<VocabStats>('vocab_stats')
+    return typedInvoke<VocabStats>('vocab_stats')
   },
 }
 
@@ -938,7 +952,7 @@ export const ttsApi = {
    * 朗读文本：后端调用豆包语音合成（seed-tts）合成 MP3 并缓存到本地（幂等），返回文件路径
    */
   async speak(text: string, apiKey: string, speaker?: string): Promise<TtsSpeakResult> {
-    return invoke<TtsSpeakResult>('tts_speak', {
+    return typedInvoke<TtsSpeakResult>('tts_speak', {
       args: {
         text,
         apiKey,
@@ -953,27 +967,27 @@ export const ttsApi = {
 export const dictApi = {
   /** 离线词典状态（是否已安装 ECDICT 词库） */
   async status(): Promise<DictStatus> {
-    return invoke<DictStatus>('dict_status')
+    return typedInvoke<DictStatus>('dict_status')
   },
 
   /** 导入离线词典文件（ECDICT sqlite） */
   async import(sourcePath: string): Promise<DictStatus> {
-    return invoke<DictStatus>('dict_import', { sourcePath })
+    return typedInvoke<DictStatus>('dict_import', { sourcePath })
   },
 
   /** 离线查词（精确命中 + 前缀建议） */
   async lookup(word: string): Promise<DictLookupResult> {
-    return invoke<DictLookupResult>('dict_lookup', { word })
+    return typedInvoke<DictLookupResult>('dict_lookup', { word })
   },
 
   /** AI 兜底释义（DeepSeek，需已配置 AI） */
   async explainAi(args: ExplainWordArgs): Promise<AiWordExplain> {
-    return invoke<AiWordExplain>('dict_explain_ai', { args })
+    return typedInvoke<AiWordExplain>('dict_explain_ai', { args })
   },
 
   /** AI 单词形态检查（轻量模型判定：完整单词 / 简写 / 缩写 / 不存在） */
   async checkWord(args: ExplainWordArgs): Promise<WordCheckResult> {
-    return invoke<WordCheckResult>('check_word_ai', { args })
+    return typedInvoke<WordCheckResult>('check_word_ai', { args })
   },
 }
 
@@ -983,141 +997,141 @@ export const taskCardApi = {
   // ── 项目 ──
   /** 列出项目（可按状态过滤），含实时统计 */
   async listProjects(status?: ProjectStatus | null): Promise<ProjectView[]> {
-    return invoke<ProjectView[]>('project_list', { status: status ?? null })
+    return typedInvoke<ProjectView[]>('project_list', { status: status ?? null })
   },
   /** 获取单个项目（含统计） */
   async getProject(id: string): Promise<ProjectView> {
-    return invoke<ProjectView>('project_get', { id })
+    return typedInvoke<ProjectView>('project_get', { id })
   },
   /** 创建项目 */
   async createProject(args: CreateProjectArgs): Promise<TaskProject> {
-    return invoke<TaskProject>('project_create', { args })
+    return typedInvoke<TaskProject>('project_create', { args })
   },
   /** 更新项目（部分更新） */
   async updateProject(id: string, args: UpdateProjectArgs): Promise<TaskProject> {
-    return invoke<TaskProject>('project_update', { id, args })
+    return typedInvoke<TaskProject>('project_update', { id, args })
   },
   /** 软删除项目（连带任务进入回收站） */
   async deleteProject(id: string): Promise<void> {
-    return invoke<void>('project_delete', { id })
+    return typedInvoke<void>('project_delete', { id })
   },
   /** 恢复项目（连带任务） */
   async restoreProject(id: string): Promise<void> {
-    return invoke<void>('project_restore', { id })
+    return typedInvoke<void>('project_restore', { id })
   },
   /** 彻底删除项目 */
   async hardDeleteProject(id: string): Promise<void> {
-    return invoke<void>('project_hard_delete', { id })
+    return typedInvoke<void>('project_hard_delete', { id })
   },
   /** 列出回收站中的项目 */
   async listDeletedProjects(): Promise<TaskProject[]> {
-    return invoke<TaskProject[]>('project_list_deleted')
+    return typedInvoke<TaskProject[]>('project_list_deleted')
   },
   /** 清空项目回收站 */
   async clearProjectTrash(): Promise<number> {
-    return invoke<number>('project_clear_trash')
+    return typedInvoke<number>('project_clear_trash')
   },
 
   // ── 任务 ──
   /** 列出某项目全部任务（含标签） */
   async listTasks(projectId: string): Promise<TaskCard[]> {
-    return invoke<TaskCard[]>('task_list', { projectId })
+    return typedInvoke<TaskCard[]>('task_list', { projectId })
   },
   /** 列出全部未删除任务（跨项目） */
   async listAllTasks(): Promise<TaskCard[]> {
-    return invoke<TaskCard[]>('task_list_all')
+    return typedInvoke<TaskCard[]>('task_list_all')
   },
   /** 获取单个任务 */
   async getTask(id: string): Promise<TaskCard> {
-    return invoke<TaskCard>('task_get', { id })
+    return typedInvoke<TaskCard>('task_get', { id })
   },
   /** 创建任务 */
   async createTask(args: CreateTaskArgs): Promise<TaskCard> {
-    return invoke<TaskCard>('task_create', { args })
+    return typedInvoke<TaskCard>('task_create', { args })
   },
   /** 更新任务（部分更新） */
   async updateTask(id: string, args: UpdateTaskArgs): Promise<TaskCard> {
-    return invoke<TaskCard>('task_update', { id, args })
+    return typedInvoke<TaskCard>('task_update', { id, args })
   },
   /** 状态切换 / 勾选完成 / 重新打开；勾选完成可携带富文本总结（HTML，空串=清空，null=不改动） */
   async setTaskStatus(id: string, status: TaskStatus, completionSummary: string | null = null): Promise<TaskCard> {
-    return invoke<TaskCard>('task_set_status', { id, status, completionSummary })
+    return typedInvoke<TaskCard>('task_set_status', { id, status, completionSummary })
   },
   /** 看板拖拽：跨列改状态 + 按目标列最终顺序重排 */
   async dragTask(id: string, toStatus: TaskStatus, orderedIds: string[]): Promise<void> {
-    return invoke<void>('task_drag', { id, toStatus, orderedIds })
+    return typedInvoke<void>('task_drag', { id, toStatus, orderedIds })
   },
   /** 复制任务 */
   async copyTask(id: string): Promise<TaskCard> {
-    return invoke<TaskCard>('task_copy', { id })
+    return typedInvoke<TaskCard>('task_copy', { id })
   },
   /** 移动任务到其他项目 */
   async moveTaskToProject(id: string, toProjectId: string): Promise<TaskCard> {
-    return invoke<TaskCard>('task_move_to_project', { id, toProjectId })
+    return typedInvoke<TaskCard>('task_move_to_project', { id, toProjectId })
   },
   /** 软删除任务 */
   async deleteTask(id: string): Promise<void> {
-    return invoke<void>('task_delete', { id })
+    return typedInvoke<void>('task_delete', { id })
   },
   /** 恢复任务 */
   async restoreTask(id: string): Promise<void> {
-    return invoke<void>('task_restore', { id })
+    return typedInvoke<void>('task_restore', { id })
   },
   /** 彻底删除任务 */
   async hardDeleteTask(id: string): Promise<void> {
-    return invoke<void>('task_hard_delete', { id })
+    return typedInvoke<void>('task_hard_delete', { id })
   },
   /** 列出回收站中的任务（含所属项目名） */
   async listDeletedTasks(): Promise<DeletedTaskItem[]> {
-    return invoke<DeletedTaskItem[]>('task_list_deleted')
+    return typedInvoke<DeletedTaskItem[]>('task_list_deleted')
   },
   /** 清空任务回收站 */
   async clearTaskTrash(): Promise<number> {
-    return invoke<number>('task_clear_trash')
+    return typedInvoke<number>('task_clear_trash')
   },
   /** 回收站自动清理（硬删删除超 30 天的任务与项目），返回清理条数 */
   async purgeExpiredTrash(): Promise<number> {
-    return invoke<number>('task_purge_expired_trash')
+    return typedInvoke<number>('task_purge_expired_trash')
   },
 
   // ── 子任务 ──
   /** 列出某任务全部子任务 */
   async listSubtasks(taskId: string): Promise<TaskSubtask[]> {
-    return invoke<TaskSubtask[]>('subtask_list', { taskId })
+    return typedInvoke<TaskSubtask[]>('subtask_list', { taskId })
   },
   /** 创建子任务 */
   async createSubtask(taskId: string, title: string): Promise<TaskSubtask> {
-    return invoke<TaskSubtask>('subtask_create', { taskId, title })
+    return typedInvoke<TaskSubtask>('subtask_create', { taskId, title })
   },
   /** 重命名子任务 */
   async updateSubtask(id: string, title: string): Promise<TaskSubtask> {
-    return invoke<TaskSubtask>('subtask_update', { id, title })
+    return typedInvoke<TaskSubtask>('subtask_update', { id, title })
   },
   /** 勾选 / 取消完成 */
   async setSubtaskDone(id: string, done: boolean): Promise<TaskSubtask> {
-    return invoke<TaskSubtask>('subtask_set_done', { id, done })
+    return typedInvoke<TaskSubtask>('subtask_set_done', { id, done })
   },
   /** 删除子任务 */
   async deleteSubtask(id: string): Promise<void> {
-    return invoke<void>('subtask_delete', { id })
+    return typedInvoke<void>('subtask_delete', { id })
   },
 
   // ── 任务模板 ──
   /** 列出全部模板 */
   async listTemplates(): Promise<TaskTemplate[]> {
-    return invoke<TaskTemplate[]>('template_list')
+    return typedInvoke<TaskTemplate[]>('template_list')
   },
   /** 创建模板 */
   async createTemplate(args: CreateTemplateArgs): Promise<TaskTemplate> {
-    return invoke<TaskTemplate>('template_create', { args })
+    return typedInvoke<TaskTemplate>('template_create', { args })
   },
   /** 更新模板 */
   async updateTemplate(id: string, args: UpdateTemplateArgs): Promise<TaskTemplate> {
-    return invoke<TaskTemplate>('template_update', { id, args })
+    return typedInvoke<TaskTemplate>('template_update', { id, args })
   },
   /** 删除模板 */
   async deleteTemplate(id: string): Promise<void> {
-    return invoke<void>('template_delete', { id })
+    return typedInvoke<void>('template_delete', { id })
   },
   /** 一键套用模板创建任务 */
   async createTaskFromTemplate(
@@ -1125,95 +1139,95 @@ export const taskCardApi = {
     projectId: string,
     dueTime?: string,
   ): Promise<TaskCard> {
-    return invoke<TaskCard>('task_create_from_template', { templateId, projectId, dueTime })
+    return typedInvoke<TaskCard>('task_create_from_template', { templateId, projectId, dueTime })
   },
 
   // ── 附件 ──
   /** 列出某任务的附件 */
   async listAttachments(taskId: string): Promise<Attachment[]> {
-    return invoke<Attachment[]>('attachment_list', { taskId })
+    return typedInvoke<Attachment[]>('attachment_list', { taskId })
   },
   /** 系统对话框选择文件并添加为附件；取消返回 null */
   async pickAndAddAttachment(taskId: string): Promise<Attachment | null> {
-    return invoke<Attachment | null>('attachment_pick_and_add', { taskId })
+    return typedInvoke<Attachment | null>('attachment_pick_and_add', { taskId })
   },
   /** 用系统默认应用打开附件 */
   async openAttachment(id: string): Promise<void> {
-    return invoke<void>('attachment_open', { id })
+    return typedInvoke<void>('attachment_open', { id })
   },
   /** 删除附件（记录 + 文件） */
   async deleteAttachment(id: string): Promise<void> {
-    return invoke<void>('attachment_delete', { id })
+    return typedInvoke<void>('attachment_delete', { id })
   },
 
   // ── 操作日志 ──
   /** 某任务的动态时间线（最新在前） */
   async listTaskActivity(taskId: string, limit?: number): Promise<ActivityLog[]> {
-    return invoke<ActivityLog[]>('activity_list_task', { taskId, limit })
+    return typedInvoke<ActivityLog[]>('activity_list_task', { taskId, limit })
   },
   /** 某项目的动态时间线（最新在前） */
   async listProjectActivity(projectId: string, limit?: number): Promise<ActivityLog[]> {
-    return invoke<ActivityLog[]>('activity_list_project', { projectId, limit })
+    return typedInvoke<ActivityLog[]>('activity_list_project', { projectId, limit })
   },
   /** 项目近 N 周新增/完成统计（默认 8 周） */
   async projectWeeklyStats(projectId: string, weeks?: number): Promise<ProjectWeeklyStat[]> {
-    return invoke<ProjectWeeklyStat[]>('project_weekly_stats', { projectId, weeks })
+    return typedInvoke<ProjectWeeklyStat[]>('project_weekly_stats', { projectId, weeks })
   },
 
   // ── 今日任务 ──
   /** 「计划今日」滚动清理（自然日切换后调用） */
   async rollPlannedToday(): Promise<number> {
-    return invoke<number>('task_roll_planned_today')
+    return typedInvoke<number>('task_roll_planned_today')
   },
   /** 今日任务概览 */
   async todayOverview(): Promise<TodayOverview> {
-    return invoke<TodayOverview>('task_today_overview')
+    return typedInvoke<TodayOverview>('task_today_overview')
   },
 
   // ── 标签 ──
   /** 列出全部标签 */
   async listTags(): Promise<TaskTag[]> {
-    return invoke<TaskTag[]>('tag_list')
+    return typedInvoke<TaskTag[]>('tag_list')
   },
   /** 创建标签 */
   async createTag(name: string, color: string): Promise<TaskTag> {
-    return invoke<TaskTag>('tag_create', { name, color })
+    return typedInvoke<TaskTag>('tag_create', { name, color })
   },
   /** 更新标签 */
   async updateTag(id: string, args: UpdateTagArgs): Promise<TaskTag> {
-    return invoke<TaskTag>('tag_update', { id, args })
+    return typedInvoke<TaskTag>('tag_update', { id, args })
   },
   /** 删除标签（返回被移除的关联数） */
   async deleteTag(id: string): Promise<number> {
-    return invoke<number>('tag_delete', { id })
+    return typedInvoke<number>('tag_delete', { id })
   },
 
   // ── 设置（key-value / 提醒偏好） ──
   /** 读取任意 key */
   async getMeta(key: string): Promise<string | null> {
-    return invoke<string | null>('task_meta_get', { key })
+    return typedInvoke<string | null>('task_meta_get', { key })
   },
   /** 写入任意 key */
   async setMeta(key: string, value: string): Promise<void> {
-    return invoke<void>('task_meta_set', { key, value })
+    return typedInvoke<void>('task_meta_set', { key, value })
   },
   /** 读取提醒偏好（JSON） */
   async getReminderPrefs(): Promise<string | null> {
-    return invoke<string | null>('reminder_prefs_get')
+    return typedInvoke<string | null>('reminder_prefs_get')
   },
   /** 保存提醒偏好（JSON 整体覆盖） */
   async setReminderPrefs(json: string): Promise<void> {
-    return invoke<void>('reminder_prefs_set', { json })
+    return typedInvoke<void>('reminder_prefs_set', { json })
   },
   /** 手动触发一次到期/逾期提醒扫描（调试用），返回发送条数 */
   async reminderCheck(): Promise<number> {
-    return invoke<number>('reminder_check')
+    return typedInvoke<number>('reminder_check')
   },
 
   // ── 个人日程迁移 ──
   /** 执行个人日程 → 任务卡迁移（幂等） */
   async migrateSchedules(): Promise<MigrateResult> {
-    return invoke<MigrateResult>('migrate_schedules')
+    return typedInvoke<MigrateResult>('migrate_schedules')
   },
 }
 
@@ -1236,6 +1250,6 @@ export interface WritingStatsPayload {
 export const writingApi = {
   /** 获取书籍写作统计（今日字数 / 连续天数 / 近 30 日曲线） */
   async getWritingStats(bookId: string): Promise<WritingStatsPayload> {
-    return invoke<WritingStatsPayload>('get_writing_stats', { bookId })
+    return typedInvoke<WritingStatsPayload>('get_writing_stats', { bookId })
   },
 }

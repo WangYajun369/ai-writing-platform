@@ -582,6 +582,36 @@ if (phantom.length > 0) {
   console.log(`     ↳ 幽灵 ${phantom.length} 个：${phantom.slice(0, 15).join(', ')}${phantom.length > 15 ? ' ...' : ''}`)
 }
 
+// ── IPC 命令名契约层：src/types/ipc-commands.ts ↔ Rust 源码 ──
+// 单一真源：Rust 源码（#[tauri::command] 函数名）。
+// check.mjs 自动生成并校验 ipc-commands.ts，漂移即失败。
+// 前端可基于 IpcCommand 联合类型约束 invoke 调用，IDE 补全 + 编译期检查。
+console.log('\n  ── IPC 命令名契约层 ──')
+const ipcCommandsPath = join(ROOT, 'src/types/ipc-commands.ts')
+const sortedCommands = [...definedCommands].sort()
+const expectedContent = `// 自动生成,不要手动修改。由 scripts/check.mjs 从 src-tauri/src 中
+// 所有 #[tauri::command] 标注的函数名提取。单一真源:Rust 源码。
+// 漂移时 pnpm check 会失败;新增命令后重新运行 pnpm check 自动同步。
+
+export type IpcCommand =
+${sortedCommands.map(c => `  | '${c}'`).join('\n')}
+`
+if (!existsSync(ipcCommandsPath)) {
+  writeFileSync(ipcCommandsPath, expectedContent, 'utf-8')
+  check(`首次生成 src/types/ipc-commands.ts (${sortedCommands.length} 个命令)`, true)
+  console.log(`     ↳ 已生成,后续运行将校验一致性`)
+} else {
+  const actual = readFileSync(ipcCommandsPath, 'utf-8')
+  if (actual !== expectedContent) {
+    // 自动同步:直接写回最新内容
+    writeFileSync(ipcCommandsPath, expectedContent, 'utf-8')
+    check(`src/types/ipc-commands.ts 与 Rust 源码一致(已自动同步)`, true)
+    console.log(`     ↳ 检测到漂移,已自动同步 ${sortedCommands.length} 个命令`)
+  } else {
+    check(`src/types/ipc-commands.ts 与 Rust 源码一致 (${sortedCommands.length} 个命令)`, true)
+  }
+}
+
 // ── 汇总 ────────────────────────────────────────────────────
 console.log('\n' + '='.repeat(50))
 const total = passed + failed
