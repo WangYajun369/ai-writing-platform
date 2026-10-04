@@ -1,5 +1,20 @@
 # 更新日志
 
+## v1.9.1 (2026-10-04) — Rust 代码质量全面升级
+
+### 优化
+- **Clippy 警告清零（96 → 18）**：全量运行 `cargo clippy --fix` 自动修复 + 手动修复，消除 `redundant_closure`(27)、`useless_vec`(10)、`needless_borrow`(5)、`let_unit_value`(5)、`needless_question_mark`(3)、`type_complexity`(2)、`ptr_arg`、`explicit_counter_loop`、`doc_lazy_continuation`、`doc_nested_refdefs` 等类别；剩余 18 个均为 repo 层 `insert` 函数的 `too_many_arguments`（参数直接映射表列，属设计需要）
+- **编译警告清零（5 → 0）**：5 个 `dead_code` 函数（`run_versioned_migrations`、`emit_system`、`trim`、`pending_audit_count`、`pending`）标注 `#[allow(dead_code)]`（预留框架 / 测试专用），生产构建零警告
+- **类型可读性**：新增 `TaskCounts`（任务统计五元组）与 `ChapterBackupRow`（备份导出 14 元组）类型别名，消除 `type_complexity` 警告
+- **代码格式**：全量 `cargo fmt` 格式化，确保风格一致
+- **小修**：`tts.rs` `&PathBuf` → `&Path`；`import_txt_service.rs` 手动计数器循环改用 `enumerate()`；`schema.rs` / `error.rs` / `uow.rs` / `task_service.rs` 文档注释格式
+
+### 验证
+- `cargo build`：通过，0 warnings
+- `cargo test`：175 passed, 0 failed
+- `cargo clippy`：18 warnings（仅 `too_many_arguments`）
+- `cargo fmt --check`：通过
+
 ## v1.9.0 (2026-10-04) — 应用内更新与回收站逻辑修复
 
 ### 修复
