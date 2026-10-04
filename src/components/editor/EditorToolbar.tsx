@@ -16,7 +16,8 @@
 import { useAtom, useAtomValue } from 'jotai'
 import { useNavigate } from 'react-router-dom'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { listen } from '@tauri-apps/api/event'
+import { WindowEvent } from '@/lib/window-events'
+import { useTauriEvent } from '@/hooks/useTauriEvent'
 import { open } from '@tauri-apps/plugin-dialog'
 import {
   ArrowLeftIcon,
@@ -335,17 +336,11 @@ export default function EditorToolbar() {
   }, [currentChapter?.id])
 
   // 监听窗口被用户手动关闭（点 X），同步按钮状态
-  useEffect(() => {
-    const listeners: Promise<() => void>[] = [
-      listen('world-window-closed', () => setWorldWindowOpen(false)),
-      listen('history-window-closed', () => setHistoryWindowOpen(false)),
-      listen('summary-window-closed', () => setSummaryWindowOpen(false)),
-      listen('ai-toolbox-window-closed', () => setAiToolboxWindowOpen(false)),
-    ]
-    return () => {
-      listeners.forEach((p) => p.then((fn) => fn()).catch(() => {}))
-    }
-  }, [])
+  // v1.9：迁移到 useTauriEvent hook，自动管理 unlisten + 竞态安全。
+  useTauriEvent(WindowEvent.WORLD_WINDOW_CLOSED, () => setWorldWindowOpen(false))
+  useTauriEvent(WindowEvent.HISTORY_WINDOW_CLOSED, () => setHistoryWindowOpen(false))
+  useTauriEvent(WindowEvent.SUMMARY_WINDOW_CLOSED, () => setSummaryWindowOpen(false))
+  useTauriEvent(WindowEvent.AI_TOOLBOX_WINDOW_CLOSED, () => setAiToolboxWindowOpen(false))
 
   return (
     <header className="toolbar border-b bg-card px-4 py-2 flex items-center gap-2 shrink-0 h-12 overflow-x-auto scrollbar-hide">

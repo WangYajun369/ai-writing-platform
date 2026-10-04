@@ -21,7 +21,9 @@ import {
   NotebookPenIcon,
   PenLineIcon,
 } from 'lucide-react'
-import { emit, listen } from '@tauri-apps/api/event'
+import { emit } from '@tauri-apps/api/event'
+import { WindowEvent } from '@/lib/window-events'
+import { useTauriEvent } from '@/hooks/useTauriEvent'
 import { diaryApi, taskCardApi, windowApi } from '@/lib/tauri-bridge'
 import { toast } from '@/lib/toast'
 import { errText } from '@/lib/errors'
@@ -128,15 +130,12 @@ export default function DiaryPanel() {
   }, [viewYear, viewMonth, loadEntries])
 
   // 挂载加载任务数据 + 监听任务卡数据变更 / 窗口关闭（跨窗口操作后日历与当日任务同步）
+  // v1.9：监听迁移到 useTauriEvent hook，自动管理 unlisten + 竞态安全。
   useEffect(() => {
     void loadTaskData()
-    const unTasksData = listen('tasks-data-updated', () => void loadTaskData())
-    const unTasksClosed = listen('tasks-window-closed', () => void loadTaskData())
-    return () => {
-      void unTasksData.then((fn) => fn())
-      void unTasksClosed.then((fn) => fn())
-    }
   }, [loadTaskData])
+  useTauriEvent(WindowEvent.TASKS_DATA_UPDATED, () => void loadTaskData())
+  useTauriEvent(WindowEvent.TASKS_WINDOW_CLOSED, () => void loadTaskData())
 
   // 选中日期变化后加载该日日记
   useEffect(() => {
@@ -174,7 +173,7 @@ export default function DiaryPanel() {
           .setTaskStatus(task.id, 'todo')
           .then(async () => {
             await loadTaskData()
-            void emit('tasks-data-updated')
+            void emit(WindowEvent.TASKS_DATA_UPDATED)
           })
           .catch((err) => {
             console.error('重新打开任务失败', err)
@@ -198,7 +197,7 @@ export default function DiaryPanel() {
   /** 总结对话框保存完成后：重拉数据 + 广播（角标/任务卡窗口同步） */
   const handleTaskCompleted = useCallback(() => {
     void loadTaskData()
-    void emit('tasks-data-updated')
+    void emit(WindowEvent.TASKS_DATA_UPDATED)
   }, [loadTaskData])
 
   const goPrevMonth = () => {

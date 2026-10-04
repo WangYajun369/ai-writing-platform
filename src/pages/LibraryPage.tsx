@@ -12,7 +12,8 @@ import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAtom, useAtomValue } from 'jotai'
 import { PlusIcon, SearchIcon, SettingsIcon, BookOpenIcon, Trash2Icon, WrenchIcon, UploadIcon, DownloadIcon, BugIcon } from 'lucide-react'
-import { listen } from '@tauri-apps/api/event'
+import { WindowEvent } from '@/lib/window-events'
+import { useTauriEvent } from '@/hooks/useTauriEvent'
 import { save, open } from '@tauri-apps/plugin-dialog'
 import { useBooksStore } from '@/stores/booksStore'
 import { useAiStore } from '@/stores/aiStore'
@@ -338,40 +339,11 @@ export default function LibraryPage() {
   }, [])
 
   // 监听 AI 工具箱窗口关闭事件
-  useEffect(() => {
-    let cancelled = false
-    let unlistenFn: (() => void) | undefined
-
-    listen('ai-toolbox-window-closed', () => {
-      if (!cancelled) setAiToolboxWindowOpen(false)
-    }).then((fn) => {
-      if (cancelled) fn()
-      else unlistenFn = fn
-    })
-
-    return () => {
-      cancelled = true
-      unlistenFn?.()
-    }
-  }, [])
+  // v1.9：迁移到 useTauriEvent hook，自动管理 unlisten + 竞态安全。
+  useTauriEvent(WindowEvent.AI_TOOLBOX_WINDOW_CLOSED, () => setAiToolboxWindowOpen(false))
 
   // 监听调试控制台窗口关闭事件
-  useEffect(() => {
-    let cancelled = false
-    let unlistenFn: (() => void) | undefined
-
-    listen('debug-window-closed', () => {
-      if (!cancelled) setDebugWindowOpen(false)
-    }).then((fn) => {
-      if (cancelled) fn()
-      else unlistenFn = fn
-    })
-
-    return () => {
-      cancelled = true
-      unlistenFn?.()
-    }
-  }, [])
+  useTauriEvent(WindowEvent.DEBUG_WINDOW_CLOSED, () => setDebugWindowOpen(false))
 
   // 动态计算网格行高：基于实际列宽计算，而非固定预估值
   const gridRowHeight = useMemo(() => {
