@@ -8,11 +8,11 @@
 //! 每次影响"今日待复习数"的写操作都会向主窗口广播 `vocab-due-updated`，
 //! 驱动首页头部徽标实时刷新。
 
-use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::{StatsDay, VocabKnowledge, VocabMeaning, VocabStats, VocabWord};
 use crate::repository::vocab_repo;
+use crate::service::uow::UnitOfWork;
 use crate::utils::{now, validate_len};
 use chrono::{Duration, Local, NaiveDate};
 use tauri::{AppHandle, Emitter};
@@ -167,20 +167,21 @@ pub fn add_word(
     let ts = now();
     let meanings_json = serde_json::to_string(meanings)?;
     let ai_details = serde_json::to_string(&knowledge).unwrap_or_default();
-    let conn = db.pool.get()?;
+    let pooled = db.pool.get()?;
 
     // 已存在：更新释义/音标/例句（不重置复习进度）
-    if let Some(existing) = vocab_repo::find_by_word(&conn, &word)? {
-        emit_sql_log(
-            app,
+    if let Some(existing) = vocab_repo::find_by_word(&pooled, &word)? {
+        // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+        let mut uow = UnitOfWork::new(&pooled, Some(app));
+        uow.audit(
             "UPDATE",
             "vocab_words",
-            &format!("word={word}（已存在，更新释义）"),
+            format!("word={word}（已存在，更新释义）"),
             file!(),
             line!(),
         );
         vocab_repo::update_content_fields(
-            &conn,
+            uow.conn(),
             &existing.id,
             phonetic,
             &meanings_json,
@@ -189,17 +190,19 @@ pub fn add_word(
             &ai_details,
             &ts,
         )?;
+        uow.commit()?;
         emit_due_updated(app);
-        return vocab_repo::find_by_id(&conn, &existing.id)?
+        return vocab_repo::find_by_id(&pooled, &existing.id)?
             .ok_or_else(|| AppError::Business("更新后回读失败".to_string()));
     }
 
     let id = Uuid::new_v4().to_string();
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "INSERT",
         "vocab_words",
-        &format!("word={word}, source={source}"),
+        format!("word={word}, source={source}"),
         file!(),
         line!(),
     );
@@ -207,7 +210,7 @@ pub fn add_word(
     let today = today_str();
     let first_review = date_plus_days(&today, 1).unwrap_or_else(|| today.clone());
     vocab_repo::create_word(
-        &conn,
+        uow.conn(),
         &id,
         &word,
         phonetic,
@@ -219,8 +222,9 @@ pub fn add_word(
         Some(&first_review),
         &ts,
     )?;
+    uow.commit()?;
     emit_due_updated(app);
-    vocab_repo::find_by_id(&conn, &id)?
+    vocab_repo::find_by_id(&pooled, &id)?
         .ok_or_else(|| AppError::Business("收录后回读失败".to_string()))
 }
 
@@ -243,20 +247,21 @@ pub fn update_word(
     let ts = now();
     let meanings_json = serde_json::to_string(meanings)?;
     let ai_details = serde_json::to_string(&knowledge).unwrap_or_default();
-    let conn = db.pool.get()?;
-    if vocab_repo::find_by_id(&conn, id)?.is_none() {
+    let pooled = db.pool.get()?;
+    if vocab_repo::find_by_id(&pooled, id)?.is_none() {
         return Err(AppError::NotFound(format!("生词不存在: {id}")));
     }
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "UPDATE",
         "vocab_words",
-        &format!("id={id} 释义编辑"),
+        format!("id={id} 释义编辑"),
         file!(),
         line!(),
     );
     vocab_repo::update_content_fields(
-        &conn,
+        uow.conn(),
         id,
         phonetic,
         &meanings_json,
@@ -265,7 +270,8 @@ pub fn update_word(
         &ai_details,
         &ts,
     )?;
-    vocab_repo::find_by_id(&conn, id)?
+    uow.commit()?;
+    vocab_repo::find_by_id(&pooled, id)?
         .ok_or_else(|| AppError::Business("更新后回读失败".to_string()))
 }
 
@@ -278,39 +284,37 @@ pub fn set_status(
 ) -> Result<VocabWord, AppError> {
     validate_status(status)?;
     let ts = now();
-    let conn = db.pool.get()?;
-    if vocab_repo::find_by_id(&conn, id)?.is_none() {
+    let pooled = db.pool.get()?;
+    if vocab_repo::find_by_id(&pooled, id)?.is_none() {
         return Err(AppError::NotFound(format!("生词不存在: {id}")));
     }
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "UPDATE",
         "vocab_words",
-        &format!("id={id} → status={status}"),
+        format!("id={id} → status={status}"),
         file!(),
         line!(),
     );
-    vocab_repo::set_status(&conn, id, status, &ts)?;
+    vocab_repo::set_status(uow.conn(), id, status, &ts)?;
+    uow.commit()?;
     emit_due_updated(app);
-    vocab_repo::find_by_id(&conn, id)?
+    vocab_repo::find_by_id(&pooled, id)?
         .ok_or_else(|| AppError::Business("更新后回读失败".to_string()))
 }
 
 /// 删除生词
 pub fn delete_word(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
-    let conn = db.pool.get()?;
-    if vocab_repo::find_by_id(&conn, id)?.is_none() {
+    let pooled = db.pool.get()?;
+    if vocab_repo::find_by_id(&pooled, id)?.is_none() {
         return Err(AppError::NotFound(format!("生词不存在: {id}")));
     }
-    emit_sql_log(
-        app,
-        "DELETE",
-        "vocab_words",
-        &format!("id={id}"),
-        file!(),
-        line!(),
-    );
-    vocab_repo::delete_word(&conn, id)?;
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("DELETE", "vocab_words", format!("id={id}"), file!(), line!());
+    vocab_repo::delete_word(uow.conn(), id)?;
+    uow.commit()?;
     emit_due_updated(app);
     Ok(())
 }
@@ -329,31 +333,31 @@ pub fn list_words(
             validate_status(st)?;
         }
     }
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "SELECT",
         "vocab_words",
-        &format!("status={status:?}, query={query:?}"),
+        format!("status={status:?}, query={query:?}"),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
-    Ok(vocab_repo::list_words(&conn, status, query)?)
+    let words = vocab_repo::list_words(uow.conn(), status, query)?;
+    uow.commit()?;
+    Ok(words)
 }
 
 /// 今日到期队列（含逾期未复习）
 pub fn list_due(app: &AppHandle, db: &AppDb) -> Result<Vec<VocabWord>, AppError> {
     let today = today_str();
-    emit_sql_log(
-        app,
-        "SELECT",
-        "vocab_words",
-        &format!("due <= {today}"),
-        file!(),
-        line!(),
-    );
-    let conn = db.pool.get()?;
-    Ok(vocab_repo::list_due(&conn, &today)?)
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("SELECT", "vocab_words", format!("due <= {today}"), file!(), line!());
+    let words = vocab_repo::list_due(uow.conn(), &today)?;
+    uow.commit()?;
+    Ok(words)
 }
 
 /// 某生词的复习历史（详情弹层展示）
@@ -470,17 +474,12 @@ pub fn get_stats(app: &AppHandle, db: &AppDb) -> Result<VocabStats, AppError> {
     let week_ago = date_plus_days(&today, -6).unwrap_or_else(|| today.clone());
     let month_ago = date_plus_days(&today, -29).unwrap_or_else(|| today.clone());
 
-    let conn = db.pool.get()?;
-    emit_sql_log(
-        app,
-        "SELECT",
-        "vocab_words",
-        "stats: 汇总计数",
-        file!(),
-        line!(),
-    );
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("SELECT", "vocab_words", "stats: 汇总计数", file!(), line!());
 
-    let mut review_history: Vec<StatsDay> = vocab_repo::review_history(&conn, &month_ago)?;
+    let mut review_history: Vec<StatsDay> = vocab_repo::review_history(uow.conn(), &month_ago)?;
     // 补全无记录日期为 0，保证前端可直接画连续 30 天曲线
     let mut expected = NaiveDate::parse_from_str(&month_ago, "%Y-%m-%d")
         .unwrap_or_else(|_| Local::now().date_naive() - Duration::days(29));
@@ -501,14 +500,16 @@ pub fn get_stats(app: &AppHandle, db: &AppDb) -> Result<VocabStats, AppError> {
     }
     review_history = filled;
 
-    Ok(VocabStats {
-        total: vocab_repo::count_total(&conn)?,
-        learning: vocab_repo::count_by_status(&conn, "learning")?,
-        mastered: vocab_repo::count_by_status(&conn, "mastered")?,
-        suspended: vocab_repo::count_by_status(&conn, "suspended")?,
-        due_today: vocab_repo::count_due(&conn, &today)?,
-        reviewed_today: vocab_repo::count_reviewed_on(&conn, &today)?,
-        new_this_week: vocab_repo::count_new_since(&conn, &week_ago)?,
+    let stats = VocabStats {
+        total: vocab_repo::count_total(uow.conn())?,
+        learning: vocab_repo::count_by_status(uow.conn(), "learning")?,
+        mastered: vocab_repo::count_by_status(uow.conn(), "mastered")?,
+        suspended: vocab_repo::count_by_status(uow.conn(), "suspended")?,
+        due_today: vocab_repo::count_due(uow.conn(), &today)?,
+        reviewed_today: vocab_repo::count_reviewed_on(uow.conn(), &today)?,
+        new_this_week: vocab_repo::count_new_since(uow.conn(), &week_ago)?,
         review_history,
-    })
+    };
+    uow.commit()?;
+    Ok(stats)
 }

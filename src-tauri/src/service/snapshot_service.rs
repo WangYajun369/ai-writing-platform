@@ -4,11 +4,11 @@
 //! 包含恢复后的事件通知。
 
 use crate::commands::chapter::SaveChapterResult;
-use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::Snapshot;
 use crate::repository::{book_repo, chapter_repo, snapshot_repo};
+use crate::service::uow::UnitOfWork;
 use crate::utils::now;
 use tauri::{AppHandle, Emitter, Manager};
 use uuid::Uuid;
@@ -19,16 +19,19 @@ pub fn list_snapshots(
     db: &AppDb,
     chapter_id: &str,
 ) -> Result<Vec<Snapshot>, AppError> {
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "SELECT",
         "snapshots",
-        &format!("chapter_id={chapter_id}"),
+        format!("chapter_id={chapter_id}"),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
-    Ok(snapshot_repo::list_by_chapter(&conn, chapter_id)?)
+    let snapshots = snapshot_repo::list_by_chapter(uow.conn(), chapter_id)?;
+    uow.commit()?;
+    Ok(snapshots)
 }
 
 /// 创建快照（auto/milestone）
@@ -38,32 +41,32 @@ pub fn create_snapshot(
     chapter_id: &str,
     label: &Option<String>,
 ) -> Result<Snapshot, AppError> {
-    let conn = db.pool.get()?;
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "SELECT",
         "chapters",
-        &format!("id={chapter_id}, for snapshot content"),
+        format!("id={chapter_id}, for snapshot content"),
         file!(),
         line!(),
     );
-    let (content_html, word_count) = chapter_repo::find_content_and_wc(&conn, chapter_id)?;
+    let (content_html, word_count) = chapter_repo::find_content_and_wc(uow.conn(), chapter_id)?;
 
     let id = Uuid::new_v4().to_string();
     let ts = now();
     // 带标签 = 里程碑快照（用户手动打点）；无标签 = 自动快照（常规保存时触发）
     let snap_type = if label.is_some() { "milestone" } else { "auto" };
 
-    emit_sql_log(
-        app,
+    uow.audit(
         "INSERT",
         "snapshots",
-        &format!("id={id}, chapter_id={chapter_id}, type={snap_type}"),
+        format!("id={id}, chapter_id={chapter_id}, type={snap_type}"),
         file!(),
         line!(),
     );
     snapshot_repo::insert(
-        &conn,
+        uow.conn(),
         &id,
         chapter_id,
         &content_html,
@@ -72,6 +75,7 @@ pub fn create_snapshot(
         label,
         &ts,
     )?;
+    uow.commit()?;
 
     Ok(Snapshot {
         id,
@@ -90,16 +94,19 @@ pub fn get_snapshot_content(
     db: &AppDb,
     snapshot_id: &str,
 ) -> Result<String, AppError> {
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "SELECT",
         "snapshots",
-        &format!("id={snapshot_id}, content_html"),
+        format!("id={snapshot_id}, content_html"),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
-    Ok(snapshot_repo::find_content(&conn, snapshot_id)?)
+    let content = snapshot_repo::find_content(uow.conn(), snapshot_id)?;
+    uow.commit()?;
+    Ok(content)
 }
 
 /// 从快照恢复章节内容
@@ -149,15 +156,11 @@ pub fn restore_snapshot(
 
 /// 删除快照
 pub fn delete_snapshot(app: &AppHandle, db: &AppDb, snapshot_id: &str) -> Result<(), AppError> {
-    emit_sql_log(
-        app,
-        "DELETE",
-        "snapshots",
-        &format!("id={snapshot_id}"),
-        file!(),
-        line!(),
-    );
-    let conn = db.pool.get()?;
-    snapshot_repo::delete(&conn, snapshot_id)?;
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("DELETE", "snapshots", format!("id={snapshot_id}"), file!(), line!());
+    snapshot_repo::delete(uow.conn(), snapshot_id)?;
+    uow.commit()?;
     Ok(())
 }

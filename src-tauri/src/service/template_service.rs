@@ -3,11 +3,11 @@
 //! 模板 = 「一键套用创建相似任务」：预设标题 / 描述 / 优先级 / 备注 / 标签 /
 //! 截止偏移天数 / 子任务标题清单。套用时可临时指定所属项目与截止时间。
 
-use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::{TaskCard, TaskTemplate};
 use crate::repository::{project_repo, subtask_repo, task_repo, template_repo};
+use crate::service::uow::UnitOfWork;
 use crate::utils::{local_today, now, validate_len};
 use tauri::AppHandle;
 use uuid::Uuid;
@@ -69,9 +69,13 @@ fn ensure_valid_priority(p: &str) -> Result<(), AppError> {
 
 /// 列出全部模板
 pub fn list_templates(app: &AppHandle, db: &AppDb) -> Result<Vec<TaskTemplate>, AppError> {
-    emit_sql_log(app, "SELECT", "task_templates", "all", file!(), line!());
-    let conn = db.pool.get()?;
-    Ok(template_repo::list_all(&conn)?)
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("SELECT", "task_templates", "all", file!(), line!());
+    let templates = template_repo::list_all(uow.conn())?;
+    uow.commit()?;
+    Ok(templates)
 }
 
 /// 创建模板

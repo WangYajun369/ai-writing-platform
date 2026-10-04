@@ -3,12 +3,12 @@
 //! 任务三态（todo / doing / done）流转、完成/重开时间记录、看板拖拽重排、
 //! 标签聚合、今日概览与「计划今日」滚动清理。
 
-use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::{Tag, TaskCard, TodayOverview};
 use crate::repository::{activity_log_repo, project_repo, subtask_repo, task_meta_repo, task_repo};
 use crate::service::activity_log_service;
+use crate::service::uow::UnitOfWork;
 use crate::utils::{local_now, local_today, now, validate_len};
 use chrono::Datelike;
 use serde::Serialize;
@@ -192,48 +192,43 @@ pub fn list_tasks(
     db: &AppDb,
     project_id: &str,
 ) -> Result<Vec<TaskCard>, AppError> {
-    emit_sql_log(
-        app,
-        "SELECT",
-        "tasks",
-        &format!("project_id={project_id}"),
-        file!(),
-        line!(),
-    );
-    let conn = db.pool.get()?;
-    let mut tasks = task_repo::list_by_project(&conn, project_id)?;
-    fill_tags(&conn, &mut tasks)?;
+    // v1.9：迁移到 UnitOfWork（只读查询，autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("SELECT", "tasks", format!("project_id={project_id}"), file!(), line!());
+    let mut tasks = task_repo::list_by_project(uow.conn(), project_id)?;
+    fill_tags(uow.conn(), &mut tasks)?;
+    uow.commit()?;
     Ok(tasks)
 }
 
 /// 列出全部未删除任务（跨项目，供今日任务页聚合；所属项目必须未删除）
 pub fn list_all_tasks(app: &AppHandle, db: &AppDb) -> Result<Vec<TaskCard>, AppError> {
-    emit_sql_log(app, "SELECT", "tasks", "all active", file!(), line!());
-    let conn = db.pool.get()?;
-    let mut tasks = task_repo::list_all(&conn)?;
-    fill_tags(&conn, &mut tasks)?;
+    // v1.9：迁移到 UnitOfWork（只读查询，autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("SELECT", "tasks", "all active".to_string(), file!(), line!());
+    let mut tasks = task_repo::list_all(uow.conn())?;
+    fill_tags(uow.conn(), &mut tasks)?;
+    uow.commit()?;
     Ok(tasks)
 }
 
 /// 获取单个任务（含标签）
 pub fn get_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<TaskCard, AppError> {
-    emit_sql_log(
-        app,
-        "SELECT",
-        "tasks",
-        &format!("id={id}"),
-        file!(),
-        line!(),
-    );
-    let conn = db.pool.get()?;
-    let mut task = task_repo::find_active(&conn, id)
+    // v1.9：迁移到 UnitOfWork（只读查询，autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("SELECT", "tasks", format!("id={id}"), file!(), line!());
+    let mut task = task_repo::find_active(uow.conn(), id)
         .map_err(|_| AppError::NotFound("未找到该任务或任务已删除".into()))?;
     let ids = vec![task.id.clone()];
     // 标签查询失败不留空：记录错误日志，返回无标签任务（详情可读但标签缺失可感知）
-    match task_repo::tags_of_tasks(&conn, &ids) {
+    match task_repo::tags_of_tasks(uow.conn(), &ids) {
         Ok(pairs) => task.tags = pairs.into_iter().map(|(_, t)| t).collect(),
         Err(e) => crate::app_log!("[任务] 查询任务 {id} 标签失败: {e}"),
     }
+    uow.commit()?;
     Ok(task)
 }
 
@@ -453,7 +448,7 @@ pub fn update_task(
     }
     // 完成时推进重复任务（P2）：由其他状态转为 done
     let spawned = if status_changed && params.status.as_deref() == Some("done") {
-        roll_recurrence(app, uow.conn(), &current, &ts)?
+        roll_recurrence(&mut uow, &current, &ts)?
     } else {
         None
     };
@@ -570,7 +565,7 @@ pub fn set_task_status(
     task_repo::set_sort_order(uow.conn(), id, next, &ts)?;
     // 完成时推进重复任务（P2）
     let spawned = if status == "done" {
-        roll_recurrence(app, uow.conn(), &current, &ts)?
+        roll_recurrence(&mut uow, &current, &ts)?
     } else {
         None
     };
@@ -658,7 +653,7 @@ pub fn drag_task(
     }
     // 拖拽完成时推进重复任务（P2）
     let spawned = if to_status == "done" && current.status != "done" {
-        roll_recurrence(app, uow.conn(), &current, &ts)?
+        roll_recurrence(&mut uow, &current, &ts)?
     } else {
         None
     };
@@ -691,8 +686,7 @@ pub fn drag_task(
 ///   保留原时刻，只替换日期；新实例状态 todo、不计划今日、提醒复位走全局规则
 /// - 到达 endDate 后不再生成（原任务保持已完成，规则自然失效）
 fn roll_recurrence(
-    app: &AppHandle,
-    conn: &rusqlite::Connection,
+    uow: &mut UnitOfWork,
     current: &TaskCard,
     ts: &str,
 ) -> Result<Option<String>, AppError> {
@@ -711,7 +705,7 @@ fn roll_recurrence(
     };
     // 防重：同一锚点已生成过实例则跳过（任务「重开后再次完成」不重复生成下一期）
     let spawn_key = format!("taskcard:recurrence:spawned:{}:{anchor}", current.id);
-    if task_meta_repo::get(conn, &spawn_key)?.is_some() {
+    if task_meta_repo::get(uow.conn(), &spawn_key)?.is_some() {
         return Ok(None);
     }
     // 结束日期拦截：next 超出 endDate → 不再生成
@@ -728,7 +722,7 @@ fn roll_recurrence(
         }
     }
     let new_id = Uuid::new_v4().to_string();
-    let sort_order = task_repo::next_sort_order(conn, &current.project_id, "todo")?;
+    let sort_order = task_repo::next_sort_order(uow.conn(), &current.project_id, "todo")?;
     // 只替换截止日期部分，保留原时刻
     let next_fmt = next.format("%Y-%m-%d").to_string();
     let new_due = current.due_time.as_deref().map(|d| {
@@ -738,16 +732,15 @@ fn roll_recurrence(
             next_fmt.clone()
         }
     });
-    emit_sql_log(
-        app,
+    uow.audit(
         "INSERT",
         "tasks",
-        &format!("recurrence: next of {}", current.id),
+        format!("recurrence: next of {}", current.id),
         file!(),
         line!(),
     );
     task_repo::insert(
-        conn,
+        uow.conn(),
         &new_id,
         &current.project_id,
         current.parent_id.as_deref(),
@@ -763,7 +756,7 @@ fn roll_recurrence(
         ts,
     )?;
     task_repo::update_ext(
-        conn,
+        uow.conn(),
         &new_id,
         Some(rule),
         Some(current.note_html.as_str()),
@@ -773,12 +766,12 @@ fn roll_recurrence(
     )?;
     let ids = vec![current.id.clone()];
     // 事务内标签复制失败必须传播（回滚），否则新实例会静默丢标签
-    let pairs = task_repo::tags_of_tasks(conn, &ids)?;
+    let pairs = task_repo::tags_of_tasks(uow.conn(), &ids)?;
     for (_, tag) in pairs {
-        task_repo::add_task_tag(conn, &new_id, &tag.id, ts)?;
+        task_repo::add_task_tag(uow.conn(), &new_id, &tag.id, ts)?;
     }
     // 写入防重标记：同锚点重复完成（重开后再完成）不再生成实例
-    task_meta_repo::set(conn, &spawn_key, &new_id, ts)?;
+    task_meta_repo::set(uow.conn(), &spawn_key, &new_id, ts)?;
     Ok(Some(new_id))
 }
 
@@ -1097,16 +1090,12 @@ pub fn hard_delete_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), App
 
 /// 列出回收站中的任务（含所属项目名）
 pub fn list_deleted_tasks(app: &AppHandle, db: &AppDb) -> Result<Vec<DeletedTaskItem>, AppError> {
-    emit_sql_log(
-        app,
-        "SELECT",
-        "tasks",
-        "deleted_at IS NOT NULL",
-        file!(),
-        line!(),
-    );
-    let conn = db.pool.get()?;
-    let rows = task_repo::list_deleted(&conn)?;
+    // v1.9：迁移到 UnitOfWork（只读查询，autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("SELECT", "tasks", "deleted_at IS NOT NULL".to_string(), file!(), line!());
+    let rows = task_repo::list_deleted(uow.conn())?;
+    uow.commit()?;
     Ok(rows
         .into_iter()
         .map(|r| DeletedTaskItem {
@@ -1211,10 +1200,13 @@ pub fn get_today_overview(app: &AppHandle, db: &AppDb) -> Result<TodayOverview, 
         .map(|d| d + chrono::Duration::days(1))
         .map(|d| d.format("%Y-%m-%d").to_string())
         .map_err(|_| AppError::Business("日期解析失败".into()))?;
-    emit_sql_log(app, "SELECT", "tasks", "today overview", file!(), line!());
-    let conn = db.pool.get()?;
+    // v1.9：迁移到 UnitOfWork（只读查询，autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("SELECT", "tasks", "today overview".to_string(), file!(), line!());
     let (undone_due, done_today, overdue) =
-        task_repo::today_overview_counts(&conn, &today, &tomorrow, &now_local)?;
+        task_repo::today_overview_counts(uow.conn(), &today, &tomorrow, &now_local)?;
+    uow.commit()?;
     Ok(TodayOverview {
         due_today: undone_due + done_today,
         done_today,

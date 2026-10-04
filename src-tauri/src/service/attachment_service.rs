@@ -8,12 +8,12 @@
 //! 提供：系统对话框选文件并复制入库、列表 / 系统默认应用打开 / 删除（同时清理文件）/
 //! 孤儿文件每日清理。
 
-use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::Attachment;
 use crate::repository::{attachment_repo, task_repo};
 use crate::service::activity_log_service;
+use crate::service::uow::UnitOfWork;
 use crate::utils::now;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -150,16 +150,19 @@ pub fn list_attachments(
     db: &AppDb,
     task_id: &str,
 ) -> Result<Vec<Attachment>, AppError> {
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "SELECT",
         "attachments",
-        &format!("task_id={task_id}"),
+        format!("task_id={task_id}"),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
-    Ok(attachment_repo::list_by_task(&conn, task_id)?)
+    let attachments = attachment_repo::list_by_task(uow.conn(), task_id)?;
+    uow.commit()?;
+    Ok(attachments)
 }
 
 /// 从系统文件对话框选择文件并复制入库；用户取消返回 Ok(None)。

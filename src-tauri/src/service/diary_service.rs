@@ -8,11 +8,11 @@
 //! - 日期格式在前端统一生成，后端做轻量格式校验，避免脏数据入库
 //! - 列表查询返回摘要（不含正文），编辑时再按日期加载全文
 
-use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::{Diary, DiaryMeta};
 use crate::repository::diary_repo;
+use crate::service::uow::UnitOfWork;
 use crate::utils::{now, validate_len, MAX_CHAPTER_CONTENT_LEN};
 use tauri::AppHandle;
 use uuid::Uuid;
@@ -56,23 +56,30 @@ pub fn list_month(
         return Err(AppError::Validation(format!("月份不合法: {month}")));
     }
     let (start, end) = month_range(year, month);
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "SELECT",
         "diaries",
-        &format!("{start} <= diary_date < {end}"),
+        format!("{start} <= diary_date < {end}"),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
-    Ok(diary_repo::list_in_range(&conn, &start, &end)?)
+    let diaries = diary_repo::list_in_range(uow.conn(), &start, &end)?;
+    uow.commit()?;
+    Ok(diaries)
 }
 
 /// 列出全部日记摘要（不含正文），按日期升序（书页式「看日记」浏览用）
 pub fn list_all(app: &AppHandle, db: &AppDb) -> Result<Vec<DiaryMeta>, AppError> {
-    emit_sql_log(app, "SELECT", "diaries", "全部日记摘要", file!(), line!());
-    let conn = db.pool.get()?;
-    Ok(diary_repo::list_all(&conn)?)
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("SELECT", "diaries", "全部日记摘要", file!(), line!());
+    let diaries = diary_repo::list_all(uow.conn())?;
+    uow.commit()?;
+    Ok(diaries)
 }
 
 /// 按日期获取日记全文，不存在时返回 None
@@ -82,16 +89,19 @@ pub fn get_by_date(app: &AppHandle, db: &AppDb, date: &str) -> Result<Option<Dia
             "日期格式不合法: {date}（应为 YYYY-MM-DD）"
         )));
     }
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "SELECT",
         "diaries",
-        &format!("diary_date={date}, content_html"),
+        format!("diary_date={date}, content_html"),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
-    Ok(diary_repo::find_by_date(&conn, date)?)
+    let diary = diary_repo::find_by_date(uow.conn(), date)?;
+    uow.commit()?;
+    Ok(diary)
 }
 
 /// 保存日记内容：该日期已有日记则覆盖（保留创建时间），否则新建
@@ -122,19 +132,20 @@ pub fn save_diary(
 
     let ts = now();
     let keywords_json = serde_json::to_string(keywords)?;
-    let conn = db.pool.get()?;
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
 
     // 已存在时沿用原 id 与 created_at，保证同一天日记记录的稳定
-    let existing = diary_repo::find_by_date(&conn, date)?;
+    let existing = diary_repo::find_by_date(&pooled, date)?;
     let (id, _created_at) = match &existing {
         Some(d) => (d.id.clone(), d.created_at.clone()),
         None => (Uuid::new_v4().to_string(), ts.clone()),
     };
-    emit_sql_log(
-        app,
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "UPSERT",
         "diaries",
-        &format!(
+        format!(
             "diary_date={date}, wc={word_count}, keywords={}",
             keywords_json.len()
         ),
@@ -142,7 +153,7 @@ pub fn save_diary(
         line!(),
     );
     diary_repo::upsert(
-        &conn,
+        uow.conn(),
         &id,
         date,
         content_html,
@@ -150,9 +161,10 @@ pub fn save_diary(
         &keywords_json,
         &ts,
     )?;
+    uow.commit()?;
 
     // 回读保存后的完整记录
-    diary_repo::find_by_date(&conn, date)?
+    diary_repo::find_by_date(&pooled, date)?
         .ok_or_else(|| AppError::Business("日记保存后回读失败".to_string()))
 }
 
@@ -163,14 +175,11 @@ pub fn delete_diary(app: &AppHandle, db: &AppDb, date: &str) -> Result<(), AppEr
             "日期格式不合法: {date}（应为 YYYY-MM-DD）"
         )));
     }
-    emit_sql_log(
-        app,
-        "DELETE",
-        "diaries",
-        &format!("diary_date={date}"),
-        file!(),
-        line!(),
-    );
-    let conn = db.pool.get()?;
-    Ok(diary_repo::delete_by_date(&conn, date)?)
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("DELETE", "diaries", format!("diary_date={date}"), file!(), line!());
+    diary_repo::delete_by_date(uow.conn(), date)?;
+    uow.commit()?;
+    Ok(())
 }

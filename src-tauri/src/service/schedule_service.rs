@@ -7,11 +7,11 @@
 //! - 同一日期下可存在多条日程
 //! - 日期格式在前端统一生成，后端做轻量格式校验
 
-use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::Schedule;
 use crate::repository::schedule_repo;
+use crate::service::uow::UnitOfWork;
 use crate::utils::now;
 use tauri::AppHandle;
 use uuid::Uuid;
@@ -52,16 +52,19 @@ pub fn list_by_date(app: &AppHandle, db: &AppDb, date: &str) -> Result<Vec<Sched
             "日期格式不合法: {date}（应为 YYYY-MM-DD）"
         )));
     }
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "SELECT",
         "schedules",
-        &format!("schedule_date={date}"),
+        format!("schedule_date={date}"),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
-    Ok(schedule_repo::list_by_date(&conn, date)?)
+    let schedules = schedule_repo::list_by_date(uow.conn(), date)?;
+    uow.commit()?;
+    Ok(schedules)
 }
 
 /// 列出某年（1-12 月）下的全部日程，按日期 + 创建时间升序
@@ -77,16 +80,19 @@ pub fn list_by_month(
         )));
     }
     let prefix = format!("{year:04}-{month:02}");
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "SELECT",
         "schedules",
-        &format!("schedule_date LIKE {prefix}-%"),
+        format!("schedule_date LIKE {prefix}-%"),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
-    Ok(schedule_repo::list_by_month(&conn, &prefix)?)
+    let schedules = schedule_repo::list_by_month(uow.conn(), &prefix)?;
+    uow.commit()?;
+    Ok(schedules)
 }
 
 /// 保存日程：id 存在则更新，否则新建；返回保存后的完整记录
@@ -110,36 +116,28 @@ pub fn save_schedule(
     let ts = now();
     let done_i64 = if done { 1 } else { 0 };
 
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "UPSERT",
         "schedules",
-        &format!("id={id}, schedule_date={date}, done={done_i64}"),
+        format!("id={id}, schedule_date={date}, done={done_i64}"),
         file!(),
         line!(),
     );
-
-    let conn = db.pool.get()?;
-    Ok(schedule_repo::save(
-        &conn,
-        &id,
-        date,
-        content.trim(),
-        done_i64,
-        &ts,
-    )?)
+    let schedule = schedule_repo::save(uow.conn(), &id, date, content.trim(), done_i64, &ts)?;
+    uow.commit()?;
+    Ok(schedule)
 }
 
 /// 按 id 删除日程（不存在时静默成功）
 pub fn delete_schedule(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
-    emit_sql_log(
-        app,
-        "DELETE",
-        "schedules",
-        &format!("id={id}"),
-        file!(),
-        line!(),
-    );
-    let conn = db.pool.get()?;
-    Ok(schedule_repo::delete_by_id(&conn, id)?)
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("DELETE", "schedules", format!("id={id}"), file!(), line!());
+    schedule_repo::delete_by_id(uow.conn(), id)?;
+    uow.commit()?;
+    Ok(())
 }

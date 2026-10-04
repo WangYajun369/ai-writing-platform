@@ -1,10 +1,10 @@
 //! 标签业务服务（任务卡模块）
 
-use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::Tag;
 use crate::repository::tag_repo;
+use crate::service::uow::UnitOfWork;
 use crate::utils::{now, validate_len};
 use tauri::AppHandle;
 use uuid::Uuid;
@@ -25,9 +25,13 @@ pub struct UpdateTagParams {
 
 /// 列出全部标签
 pub fn list_tags(app: &AppHandle, db: &AppDb) -> Result<Vec<Tag>, AppError> {
-    emit_sql_log(app, "SELECT", "tags", "all", file!(), line!());
-    let conn = db.pool.get()?;
-    Ok(tag_repo::list_all(&conn)?)
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("SELECT", "tags", "all".to_string(), file!(), line!());
+    let tags = tag_repo::list_all(uow.conn())?;
+    uow.commit()?;
+    Ok(tags)
 }
 
 /// 校验标签名：非空、长度合法、唯一（可排除自身）

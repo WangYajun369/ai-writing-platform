@@ -3,12 +3,12 @@
 //! 子任务/任务清单：属于某任务卡，随任务级联删除（无独立回收站）。
 //! 提供列表 / 创建 / 重命名 / 勾选 / 重排 / 删除；父任务状态不受子任务影响。
 
-use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::TaskSubtask;
 use crate::repository::{subtask_repo, task_repo};
 use crate::service::activity_log_service;
+use crate::service::uow::UnitOfWork;
 use crate::utils::{now, validate_len};
 use tauri::AppHandle;
 use uuid::Uuid;
@@ -29,16 +29,19 @@ pub fn list_subtasks(
     db: &AppDb,
     task_id: &str,
 ) -> Result<Vec<TaskSubtask>, AppError> {
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "SELECT",
         "task_subtasks",
-        &format!("task_id={task_id}"),
+        format!("task_id={task_id}"),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
-    Ok(subtask_repo::list_by_task(&conn, task_id)?)
+    let subtasks = subtask_repo::list_by_task(uow.conn(), task_id)?;
+    uow.commit()?;
+    Ok(subtasks)
 }
 
 /// 创建子任务（追加到列表末尾）

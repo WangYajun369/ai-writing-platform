@@ -18,11 +18,11 @@
 //! - 硬删除使用事务保证数据一致性（获取关联信息 → 删除 → 重算 → 提交）
 
 use crate::commands::chapter::{ChapterSummaryInfo, RestoreChapterResult, SaveChapterResult};
-use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::Chapter;
 use crate::repository::{book_repo, chapter_repo, volume_repo, writing_stats_repo};
+use crate::service::uow::UnitOfWork;
 use crate::utils::{local_today, now, validate_len, MAX_CHAPTER_CONTENT_LEN, MAX_TITLE_LEN};
 use tauri::AppHandle;
 use uuid::Uuid;
@@ -41,16 +41,13 @@ use uuid::Uuid;
 /// # Returns
 /// 按 `sort_order` 排序的章节列表，已逻辑删除的章节不包含在内
 pub fn list_chapters(app: &AppHandle, db: &AppDb, book_id: &str) -> Result<Vec<Chapter>, AppError> {
-    emit_sql_log(
-        app,
-        "SELECT",
-        "chapters",
-        &format!("book_id={book_id}"),
-        file!(),
-        line!(),
-    );
-    let conn = db.pool.get()?;
-    Ok(chapter_repo::list_by_book(&conn, book_id)?)
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("SELECT", "chapters", format!("book_id={book_id}"), file!(), line!());
+    let chapters = chapter_repo::list_by_book(uow.conn(), book_id)?;
+    uow.commit()?;
+    Ok(chapters)
 }
 
 /// 获取章节的 HTML 正文内容
@@ -67,16 +64,19 @@ pub fn get_chapter_content(
     db: &AppDb,
     chapter_id: &str,
 ) -> Result<String, AppError> {
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "SELECT",
         "chapters",
-        &format!("id={chapter_id}, content_html"),
+        format!("id={chapter_id}, content_html"),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
-    Ok(chapter_repo::find_content(&conn, chapter_id)?)
+    let content = chapter_repo::find_content(uow.conn(), chapter_id)?;
+    uow.commit()?;
+    Ok(content)
 }
 
 // ============================================================================
@@ -109,16 +109,18 @@ pub fn create_chapter(
 
     let id = Uuid::new_v4().to_string();
     let ts = now();
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "INSERT",
         "chapters",
-        &format!("id={id}, title={title}, book_id={book_id}"),
+        format!("id={id}, title={title}, book_id={book_id}"),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
-    chapter_repo::insert(&conn, &id, book_id, volume_id, title, sort_order, &ts)?;
+    chapter_repo::insert(uow.conn(), &id, book_id, volume_id, title, sort_order, &ts)?;
+    uow.commit()?;
 
     // 构造并返回内存中的 Chapter 对象，避免额外数据库查询
     Ok(Chapter {
@@ -227,21 +229,19 @@ pub fn update_chapter_status(
     chapter_id: &str,
     status: &str,
 ) -> Result<(), AppError> {
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "UPDATE",
         "chapters",
-        &format!("id={chapter_id}, status={status}"),
+        format!("id={chapter_id}, status={status}"),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
-    Ok(chapter_repo::update_status(
-        &conn,
-        chapter_id,
-        status,
-        &now(),
-    )?)
+    chapter_repo::update_status(uow.conn(), chapter_id, status, &now())?;
+    uow.commit()?;
+    Ok(())
 }
 
 /// 重命名章节标题
@@ -257,16 +257,19 @@ pub fn rename_chapter(
     chapter_id: &str,
     title: &str,
 ) -> Result<(), AppError> {
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "UPDATE",
         "chapters",
-        &format!("id={chapter_id}, rename to {title}"),
+        format!("id={chapter_id}, rename to {title}"),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
-    Ok(chapter_repo::rename(&conn, chapter_id, title, &now())?)
+    chapter_repo::rename(uow.conn(), chapter_id, title, &now())?;
+    uow.commit()?;
+    Ok(())
 }
 
 // ============================================================================
@@ -284,16 +287,19 @@ pub fn list_deleted_chapters(
     db: &AppDb,
     book_id: &str,
 ) -> Result<Vec<Chapter>, AppError> {
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "SELECT",
         "chapters",
-        &format!("book_id={book_id}, deleted"),
+        format!("book_id={book_id}, deleted"),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
-    Ok(chapter_repo::list_deleted_by_book(&conn, book_id)?)
+    let chapters = chapter_repo::list_deleted_by_book(uow.conn(), book_id)?;
+    uow.commit()?;
+    Ok(chapters)
 }
 
 /// 软删除章节：设置 `deleted_at` 时间戳并将字数从书籍聚合中扣除
@@ -469,16 +475,19 @@ pub fn reorder_chapters(
     db: &AppDb,
     chapter_ids: &[String],
 ) -> Result<(), AppError> {
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "UPDATE",
         "chapters",
-        &format!("reorder {} chapters", chapter_ids.len()),
+        format!("reorder {} chapters", chapter_ids.len()),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
-    Ok(chapter_repo::reorder(&conn, chapter_ids)?)
+    chapter_repo::reorder(uow.conn(), chapter_ids)?;
+    uow.commit()?;
+    Ok(())
 }
 
 /// 将章节移动到指定卷（或根目录）
@@ -497,32 +506,26 @@ pub fn move_chapter_to_volume(
     chapter_id: &str,
     volume_id: &Option<String>,
 ) -> Result<(), AppError> {
-    let conn = db.pool.get()?;
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
     let ts = now();
 
     // 查询目标卷/根目录下当前最大排序值（排除自身）
-    emit_sql_log(
-        app,
-        "SELECT",
-        "chapters",
-        "MAX(sort_order)",
-        file!(),
-        line!(),
-    );
-    let max_order = chapter_repo::max_sort_in_volume(&conn, volume_id, chapter_id)?;
+    uow.audit("SELECT", "chapters", "MAX(sort_order)", file!(), line!());
+    let max_order = chapter_repo::max_sort_in_volume(uow.conn(), volume_id, chapter_id)?;
     let new_sort = max_order + 1; // 追加到末尾
 
-    emit_sql_log(
-        app,
+    uow.audit(
         "UPDATE",
         "chapters",
-        &format!("id={chapter_id}, move to volume_id={volume_id:?}, sort={new_sort}"),
+        format!("id={chapter_id}, move to volume_id={volume_id:?}, sort={new_sort}"),
         file!(),
         line!(),
     );
-    Ok(chapter_repo::move_to_volume(
-        &conn, chapter_id, volume_id, new_sort, &ts,
-    )?)
+    chapter_repo::move_to_volume(uow.conn(), chapter_id, volume_id, new_sort, &ts)?;
+    uow.commit()?;
+    Ok(())
 }
 
 // ============================================================================
@@ -545,16 +548,19 @@ pub fn save_chapter_summary(
     summary: &str,
 ) -> Result<(), AppError> {
     let ts = now();
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "UPDATE",
         "chapters",
-        &format!("id={chapter_id}, save summary ({} chars)", summary.len()),
+        format!("id={chapter_id}, save summary ({} chars)", summary.len()),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
-    Ok(chapter_repo::save_summary(&conn, chapter_id, summary, &ts)?)
+    chapter_repo::save_summary(uow.conn(), chapter_id, summary, &ts)?;
+    uow.commit()?;
+    Ok(())
 }
 
 /// 清除章节的 AI 总结
@@ -565,16 +571,19 @@ pub fn clear_chapter_summary(
     db: &AppDb,
     chapter_id: &str,
 ) -> Result<(), AppError> {
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "UPDATE",
         "chapters",
-        &format!("id={chapter_id}, clear summary"),
+        format!("id={chapter_id}, clear summary"),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
-    Ok(chapter_repo::clear_summary(&conn, chapter_id)?)
+    chapter_repo::clear_summary(uow.conn(), chapter_id)?;
+    uow.commit()?;
+    Ok(())
 }
 
 /// 获取章节总结信息
@@ -586,16 +595,18 @@ pub fn get_chapter_summary(
     db: &AppDb,
     chapter_id: &str,
 ) -> Result<ChapterSummaryInfo, AppError> {
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "SELECT",
         "chapters",
-        &format!("id={chapter_id}, summary"),
+        format!("id={chapter_id}, summary"),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
-    let (summary, summary_at) = chapter_repo::find_summary_info(&conn, chapter_id)?;
+    let (summary, summary_at) = chapter_repo::find_summary_info(uow.conn(), chapter_id)?;
+    uow.commit()?;
     Ok(ChapterSummaryInfo {
         summary,
         summary_at,
@@ -622,14 +633,17 @@ pub fn save_chapter_outline(
     outline: &str,
 ) -> Result<(), AppError> {
     let ts = now();
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "UPDATE",
         "chapters",
-        &format!("id={chapter_id}, save outline ({} chars)", outline.len()),
+        format!("id={chapter_id}, save outline ({} chars)", outline.len()),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
-    Ok(chapter_repo::save_outline(&conn, chapter_id, outline, &ts)?)
+    chapter_repo::save_outline(uow.conn(), chapter_id, outline, &ts)?;
+    uow.commit()?;
+    Ok(())
 }

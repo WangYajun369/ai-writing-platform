@@ -3,11 +3,11 @@
 //! 聚合日更目标、今日字数、连续写作天数与近 30 日字数曲线。
 //! 数据来自 `writing_stats` 表（保存章节时随路写入净增字数）。
 
-use crate::commands::window::emit_sql_log;
 use crate::commands::writing_stats::{DailyWords, WritingStats};
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::repository::{book_repo, writing_stats_repo};
+use crate::service::uow::UnitOfWork;
 use chrono::{Duration, Local};
 use std::collections::HashMap;
 use tauri::AppHandle;
@@ -21,22 +21,24 @@ pub fn get_writing_stats(
     db: &AppDb,
     book_id: &str,
 ) -> Result<WritingStats, AppError> {
-    let conn = db.pool.get()?;
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "SELECT",
         "writing_stats",
-        &format!("book_id={book_id}, range={CURVE_DAYS}d"),
+        format!("book_id={book_id}, range={CURVE_DAYS}d"),
         file!(),
         line!(),
     );
 
-    let daily_target = book_repo::find_daily_target(&conn, book_id)?;
+    let daily_target = book_repo::find_daily_target(uow.conn(), book_id)?;
     let today = Local::now().date_naive();
     // 查询窗口含 today 在内共 CURVE_DAYS 天：起始日 = today - (CURVE_DAYS - 1)
     let since = today - Duration::days(CURVE_DAYS - 1);
 
-    let rows = writing_stats_repo::list_since(&conn, book_id, &since.to_string())?;
+    let rows = writing_stats_repo::list_since(uow.conn(), book_id, &since.to_string())?;
+    uow.commit()?;
     let words_by_date: HashMap<String, i64> = rows.into_iter().collect();
 
     // 近 CURVE_DAYS 天曲线（升序，含补 0）

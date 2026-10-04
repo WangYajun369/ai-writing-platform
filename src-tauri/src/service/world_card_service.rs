@@ -2,11 +2,11 @@
 //!
 //! 封装世界观卡片的 CRUD 与 FTS5/LIKE 全文搜索。
 
-use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::WorldCard;
 use crate::repository::world_card_repo;
+use crate::service::uow::UnitOfWork;
 use crate::utils::{
     escape_fts5_query, like_pattern, now, validate_len, DynamicUpdate, MAX_TAGS_COUNT, MAX_TAG_LEN,
     MAX_TITLE_LEN, SEARCH_DEFAULT_LIMIT,
@@ -31,16 +31,19 @@ pub fn list_world_cards(
     db: &AppDb,
     book_id: &str,
 ) -> Result<Vec<WorldCard>, AppError> {
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "SELECT",
         "world_cards",
-        &format!("book_id={book_id}"),
+        format!("book_id={book_id}"),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
-    Ok(world_card_repo::list_by_book(&conn, book_id)?)
+    let cards = world_card_repo::list_by_book(uow.conn(), book_id)?;
+    uow.commit()?;
+    Ok(cards)
 }
 
 /// 创建世界观卡片
@@ -78,17 +81,18 @@ pub fn create_world_card(
     let id = Uuid::new_v4().to_string();
     let ts = now();
     let tags_json = serde_json::to_string(tags).unwrap_or_else(|_| "[]".to_string());
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "INSERT",
         "world_cards",
-        &format!("id={id}, title={title}, type={card_type}"),
+        format!("id={id}, title={title}, type={card_type}"),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
     world_card_repo::insert(
-        &conn,
+        uow.conn(),
         &id,
         book_id,
         card_type,
@@ -98,6 +102,7 @@ pub fn create_world_card(
         &tags_json,
         &ts,
     )?;
+    uow.commit()?;
 
     Ok(WorldCard {
         id,
@@ -120,13 +125,14 @@ pub fn update_world_card(
     id: &str,
     params: UpdateWorldCardParams,
 ) -> Result<WorldCard, AppError> {
-    let conn = db.pool.get()?;
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
     let ts = now();
-    emit_sql_log(
-        app,
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "UPDATE",
         "world_cards",
-        &format!("id={id}, typed partial update"),
+        format!("id={id}, typed partial update"),
         file!(),
         line!(),
     );
@@ -170,32 +176,21 @@ pub fn update_world_card(
     if let Some((sql, values)) = upd.build(&id, &ts) {
         let params_refs: Vec<&dyn rusqlite::types::ToSql> =
             values.iter().map(|p| p.as_ref()).collect();
-        conn.execute(&sql, params_refs.as_slice())?;
+        uow.conn().execute(&sql, params_refs.as_slice())?;
     }
+    uow.commit()?;
 
-    emit_sql_log(
-        app,
-        "SELECT",
-        "world_cards",
-        &format!("id={id}, re-query after update"),
-        file!(),
-        line!(),
-    );
-    Ok(world_card_repo::find_by_id(&conn, id)?)
+    Ok(world_card_repo::find_by_id(&pooled, id)?)
 }
 
 /// 删除世界观卡片
 pub fn delete_world_card(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
-    emit_sql_log(
-        app,
-        "DELETE",
-        "world_cards",
-        &format!("id={id}"),
-        file!(),
-        line!(),
-    );
-    let conn = db.pool.get()?;
-    world_card_repo::delete(&conn, id)?;
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("DELETE", "world_cards", format!("id={id}"), file!(), line!());
+    world_card_repo::delete(uow.conn(), id)?;
+    uow.commit()?;
     Ok(())
 }
 
@@ -209,20 +204,22 @@ pub fn search_world_cards(
     book_id: &str,
     query: &str,
 ) -> Result<Vec<WorldCard>, AppError> {
-    let conn = db.pool.get()?;
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
     let fts_query = escape_fts5_query(query);
 
     if !fts_query.is_empty() {
-        emit_sql_log(
-            app,
+        uow.audit(
             "SELECT",
             "world_cards_fts",
-            &format!("book_id={book_id}, FTS5 MATCH '{query}'"),
+            format!("book_id={book_id}, FTS5 MATCH '{query}'"),
             file!(),
             line!(),
         );
-        let hits = world_card_repo::search_fts5(&conn, book_id, &fts_query, SEARCH_DEFAULT_LIMIT)?;
+        let hits = world_card_repo::search_fts5(uow.conn(), book_id, &fts_query, SEARCH_DEFAULT_LIMIT)?;
         if !hits.is_empty() {
+            uow.commit()?;
             return Ok(hits);
         }
         crate::app_log!(
@@ -230,19 +227,20 @@ pub fn search_world_cards(
         );
     }
 
-    emit_sql_log(
-        app,
+    uow.audit(
         "SELECT",
         "world_cards",
-        &format!("book_id={book_id}, LIKE fallback"),
+        format!("book_id={book_id}, LIKE fallback"),
         file!(),
         line!(),
     );
     let pattern = like_pattern(query, 100);
-    Ok(world_card_repo::search_like(
-        &conn,
+    let results = world_card_repo::search_like(
+        uow.conn(),
         book_id,
         &pattern,
         SEARCH_DEFAULT_LIMIT,
-    )?)
+    )?;
+    uow.commit()?;
+    Ok(results)
 }
