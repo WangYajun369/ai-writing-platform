@@ -144,8 +144,8 @@ pub fn create_chapter(
 /// # 执行流程（整体处于同一事务中，任一步失败自动回滚）
 ///
 /// 1. **保存内容**：将 `content_html` 写入 `chapters` 表，FTS5 触发器自动同步全文索引
-/// 2. **更新书籍字数**：调用 `book_repo::update_word_count_by_chapter` 重算并更新 `books.word_count`
-/// 3. **回读书籍字数**：重新查询最终字数，确保返回值准确
+/// 2. **更新书籍字数**：调用 `book_repo::apply_word_count_delta` 按 `word_count - old_wc` 增量更新 `books.word_count`
+/// 3. **回读书籍字数**：通过 `book_id` 查询最终字数，确保返回值准确
 ///
 /// # Arguments
 /// * `app` - Tauri 应用句柄
@@ -184,16 +184,17 @@ pub fn save_chapter(
     chapter_repo::save_content(uow.conn(), chapter_id, content_html, word_count, &ts)
         .map_err(|e| AppError::Business(format!("保存内容失败 [step1-save_content]: {}", e)))?;
 
-    // Step 2: 级联更新书籍总字数（基于所有未删除章节的字数求和）
-    book_repo::update_word_count_by_chapter(uow.conn(), chapter_id, &ts)
-        .map_err(|e| AppError::Business(format!("保存失败 [step2-update_book_wc]: {}", e)))?;
+    // Step 2: 按差值增量更新书籍总字数（O(1) delta 更新，避免全量 SUM 扫描所有章节）
+    let delta = word_count.saturating_sub(old_wc);
+    uow.audit("UPDATE", "books", format!("id={book_id}, apply_word_count_delta={delta}"), file!(), line!());
+    book_repo::apply_word_count_delta(uow.conn(), &book_id, delta, &ts)
+        .map_err(|e| AppError::Business(format!("保存失败 [step2-apply_delta]: {}", e)))?;
 
-    // Step 3: 回读更新后的书籍字数，确保调用方拿到最新值
-    let book_wc = book_repo::word_count_by_chapter(uow.conn(), chapter_id)
+    // Step 3: 通过 book_id 回读更新后的书籍字数（不再依赖 chapter_id 反查）
+    let book_wc = book_repo::word_count_by_book(uow.conn(), &book_id)
         .map_err(|e| AppError::Business(format!("保存失败 [step3-read_book_wc]: {}", e)))?;
 
     // Step 3.5: 写作统计——按当日净增字数（新字数 − 旧字数）落库，仅累计正增量
-    let delta = word_count.saturating_sub(old_wc);
     if delta > 0 {
         writing_stats_repo::record_delta(uow.conn(), &book_id, &local_today(), delta)
             .map_err(|e| AppError::Business(format!("保存失败 [step3.5-record_stats]: {}", e)))?;
@@ -309,13 +310,20 @@ pub fn delete_chapter(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Result<i
     let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
     uow.begin_transaction()?;
 
+    // 先取出章节归属书籍与字数（软删后仍可读，但语义上提前取更清晰）
+    uow.audit("SELECT", "chapters", format!("id={chapter_id}, find_book_and_wc"), file!(), line!());
+    let (book_id, chapter_wc) = chapter_repo::find_book_and_wc(uow.conn(), chapter_id)?;
+
     // 标记章节为已删除（设置 deleted_at 时间戳）
     uow.audit("UPDATE", "chapters", format!("id={chapter_id}, soft delete"), file!(), line!());
     chapter_repo::soft_delete(uow.conn(), chapter_id, &ts)?;
 
-    // 软删除后需将章节字数从书籍总字数中扣除
-    book_repo::update_word_count_by_chapter(uow.conn(), chapter_id, &ts)?;
-    let book_wc = book_repo::word_count_by_chapter(uow.conn(), chapter_id)?;
+    // 按章节字数 delta 扣减书籍总字数（O(1) 更新，避免全量 SUM）
+    uow.audit("UPDATE", "books", format!("id={book_id}, apply_word_count_delta={}", -chapter_wc), file!(), line!());
+    book_repo::apply_word_count_delta(uow.conn(), &book_id, -chapter_wc, &ts)?;
+
+    // 通过 book_id 回读更新后的书籍字数
+    let book_wc = book_repo::word_count_by_book(uow.conn(), &book_id)?;
 
     uow.audit("COMMIT", "transaction", "delete_chapter committed", file!(), line!());
     uow.commit()
@@ -361,13 +369,20 @@ pub fn restore_chapter(
         None // 原本就在根目录
     };
 
+    // 取出章节归属书籍与字数（用于 restore 后的 delta 加回）
+    uow.audit("SELECT", "chapters", format!("id={chapter_id}, find_book_and_wc"), file!(), line!());
+    let (book_id, chapter_wc) = chapter_repo::find_book_and_wc(uow.conn(), chapter_id)?;
+
     // 清除 deleted_at 并将章节恢复到有效卷
     uow.audit("UPDATE", "chapters", format!("id={chapter_id}, restore"), file!(), line!());
     chapter_repo::restore(uow.conn(), chapter_id, &effective_volume_id, &ts)?;
 
-    // 将恢复的章节字数重新计入书籍聚合
-    book_repo::update_word_count_by_chapter(uow.conn(), chapter_id, &ts)?;
-    let book_wc = book_repo::word_count_by_chapter(uow.conn(), chapter_id)?;
+    // 按章节字数 delta 加回书籍总字数（O(1) 更新，避免全量 SUM）
+    uow.audit("UPDATE", "books", format!("id={book_id}, apply_word_count_delta=+{chapter_wc}"), file!(), line!());
+    book_repo::apply_word_count_delta(uow.conn(), &book_id, chapter_wc, &ts)?;
+
+    // 通过 book_id 回读更新后的书籍字数
+    let book_wc = book_repo::word_count_by_book(uow.conn(), &book_id)?;
 
     uow.audit("COMMIT", "transaction", "restore_chapter committed", file!(), line!());
     uow.commit()
@@ -402,15 +417,14 @@ pub fn hard_delete_chapter(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Res
     let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
     uow.begin_transaction()?;
 
-    // 事务内先获取 book_id，避免硬删除后无法回溯关联书籍
+    // 事务内先获取 book_id 与章节字数，避免硬删除后无法回溯关联书籍与扣减量
     // 若章节已被级联删除或不存在，视为已完成，直接返回 0
-    uow.audit("SELECT", "chapters", format!("id={chapter_id}, get book_id"), file!(), line!());
-    let book_id: String = match uow.conn().query_row(
-        "SELECT book_id FROM chapters WHERE id=?1",
-        rusqlite::params![chapter_id],
-        |row| row.get(0),
+    uow.audit("SELECT", "chapters", format!("id={chapter_id}, find_book_and_wc"), file!(), line!());
+    let (book_id, chapter_wc): (String, i64) = match chapter_repo::find_book_and_wc(
+        uow.conn(),
+        chapter_id,
     ) {
-        Ok(id) => id,
+        Ok(v) => v,
         Err(rusqlite::Error::QueryReturnedNoRows) => {
             uow.audit("COMMIT", "transaction", "hard_delete_chapter skipped (chapter not found)", file!(), line!());
             uow.commit()
@@ -424,9 +438,9 @@ pub fn hard_delete_chapter(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Res
     uow.audit("DELETE", "chapters", format!("id={chapter_id}, hard delete"), file!(), line!());
     chapter_repo::hard_delete(uow.conn(), chapter_id)?;
 
-    // 硬删除后书籍字数不再包含此章节，需完全重算
-    uow.audit("UPDATE", "books", format!("recalc word_count for book_id={book_id}"), file!(), line!());
-    book_repo::recalc_word_count(uow.conn(), &book_id, &ts)?;
+    // 按章节字数 delta 扣减书籍总字数（O(1) 更新，避免全量 SUM 扫描剩余章节）
+    uow.audit("UPDATE", "books", format!("id={book_id}, apply_word_count_delta={}", -chapter_wc), file!(), line!());
+    book_repo::apply_word_count_delta(uow.conn(), &book_id, -chapter_wc, &ts)?;
 
     // 使用 book_id 查询（章节已不存在，无法通过 chapter_id 反查）
     let book_wc = book_repo::word_count_by_book(uow.conn(), &book_id)?;

@@ -151,31 +151,35 @@ pub fn clear_trash(conn: &Connection) -> Result<()> {
 
 // ---- 字数聚合 ----
 
-/// 根据 chapter_id 重新聚合并更新对应书籍的总字数
-pub fn update_word_count_by_chapter(conn: &Connection, chapter_id: &str, ts: &str) -> Result<()> {
-    // 子查询：由章节反查所属 book_id，再聚合该书未删除章节的 word_count 总和（无章节时为 0）
+/// 对指定书籍的 `word_count` 应用增量更新（delta 可正可负）
+///
+/// 与 `recalc_word_count` 的全量 SUM 不同，此函数直接 `books.word_count += delta`，
+/// 复杂度 O(1)，适合保存 / 删除 / 恢复路径的高频调用。
+///
+/// # 边界
+///
+/// - 使用 `MAX(0, word_count + ?)` 防止 delta 为负时出现负数字数
+/// - 同步刷新 `updated_at`
+///
+/// # Arguments
+/// * `conn` - 数据库连接
+/// * `book_id` - 书籍 ID
+/// * `delta` - 字数增量（正数表示增加，负数表示减少）
+/// * `ts` - 时间戳，用于更新 `books.updated_at`
+pub fn apply_word_count_delta(
+    conn: &Connection,
+    book_id: &str,
+    delta: i64,
+    ts: &str,
+) -> Result<()> {
     conn.execute(
-        "UPDATE books SET word_count=(\
-            SELECT COALESCE(SUM(word_count),0) FROM chapters \
-            WHERE book_id=(SELECT book_id FROM chapters WHERE id=?1) AND deleted_at IS NULL\
-         ), updated_at=?2 \
-         WHERE id=(SELECT book_id FROM chapters WHERE id=?1)",
-        params![chapter_id, ts],
+        "UPDATE books SET word_count = MAX(0, word_count + ?1), updated_at=?2 WHERE id=?3",
+        params![delta, ts, book_id],
     )?;
     Ok(())
 }
 
-/// 通过 chapter_id 读取对应书籍的总字数
-pub fn word_count_by_chapter(conn: &Connection, chapter_id: &str) -> Result<i64> {
-    conn.query_row(
-        "SELECT word_count FROM books WHERE id=(SELECT book_id FROM chapters WHERE id=?1)",
-        params![chapter_id],
-        |row| row.get(0),
-    )
-}
-
 /// 通过 book_id 读取书籍总字数
-#[allow(dead_code)]
 pub fn word_count_by_book(conn: &Connection, book_id: &str) -> Result<i64> {
     conn.query_row(
         "SELECT word_count FROM books WHERE id=?1",
@@ -249,4 +253,68 @@ pub fn find_daily_target(conn: &Connection, book_id: &str) -> Result<i64> {
         params![book_id],
         |row| row.get::<_, i64>(0),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 构造仅含 books 测试所需列的内存库（id, title, word_count, updated_at）
+    fn setup() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE books (
+                id          TEXT PRIMARY KEY,
+                title       TEXT NOT NULL DEFAULT '',
+                word_count  INTEGER NOT NULL DEFAULT 0,
+                updated_at  TEXT NOT NULL DEFAULT ''
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO books (id, title, word_count, updated_at) VALUES ('b1', 'Book1', 100, 't0')",
+            [],
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn apply_delta_positive_increases_word_count() {
+        let conn = setup();
+        apply_word_count_delta(&conn, "b1", 50, "t1").unwrap();
+        assert_eq!(word_count_by_book(&conn, "b1").unwrap(), 150);
+    }
+
+    #[test]
+    fn apply_delta_negative_decreases_word_count() {
+        let conn = setup();
+        apply_word_count_delta(&conn, "b1", -30, "t2").unwrap();
+        assert_eq!(word_count_by_book(&conn, "b1").unwrap(), 70);
+    }
+
+    #[test]
+    fn apply_delta_negative_clamped_to_zero() {
+        // delta 负数且绝对值大于当前 word_count：MAX(0, ...) 钳制为 0，避免负数
+        let conn = setup();
+        apply_word_count_delta(&conn, "b1", -200, "t3").unwrap();
+        assert_eq!(word_count_by_book(&conn, "b1").unwrap(), 0);
+    }
+
+    #[test]
+    fn apply_delta_zero_is_noop() {
+        let conn = setup();
+        apply_word_count_delta(&conn, "b1", 0, "t4").unwrap();
+        assert_eq!(word_count_by_book(&conn, "b1").unwrap(), 100);
+    }
+
+    #[test]
+    fn apply_delta_unknown_book_is_noop() {
+        // 未知 book_id：UPDATE 影响 0 行，不报错（与 recalc 行为一致）
+        let conn = setup();
+        apply_word_count_delta(&conn, "unknown", 50, "t5").unwrap();
+        // 原 book 不受影响
+        assert_eq!(word_count_by_book(&conn, "b1").unwrap(), 100);
+    }
 }
