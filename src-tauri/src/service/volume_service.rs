@@ -94,14 +94,6 @@ pub fn delete_volume(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppErr
     let mut uow = UnitOfWork::new(&pooled, Some(app));
     uow.audit("UPDATE", "volumes", format!("id={id}, soft delete"), file!(), line!());
     volume_repo::soft_delete(uow.conn(), id, &ts)?;
-    // 章节解绑已在 volume_repo::soft_delete 内部的事务中执行；此日志为该次 UPDATE 的审计镜像
-    uow.audit(
-        "UPDATE",
-        "chapters",
-        format!("set volume_id=NULL where volume_id={id}"),
-        file!(),
-        line!(),
-    );
     uow.commit()?;
     Ok(())
 }
