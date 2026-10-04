@@ -114,7 +114,13 @@ export interface PluginContext {
     /** 获取完整编辑器内容 (HTML) */
     getContent(): string
   }
-  /** 存储API - 每个插件独立的 key-value 存储 */
+  /**
+   * 存储API - 已按 pluginId 自动 namespace 隔离(v1.9 强化)。
+   *
+   * 插件用 `storage.get('foo')` 时,实际读写 localStorage 中的
+   * `tw:plugin:<pluginId>:foo` key。插件间数据互不可见,
+   * 插件无需关心 namespace 拼接。
+   */
   storage: {
     get<T = unknown>(key: string): Promise<T | undefined>
     set<T = unknown>(key: string, value: T): Promise<void>

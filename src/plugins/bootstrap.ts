@@ -15,9 +15,9 @@ import { toast } from '@/lib/toast'
 
 let bootstrapPromise: Promise<void> | null = null
 
-const STORAGE_PREFIX = 'tw:plugin:'
-
 function buildContext(): PluginContext {
+  // 注:storage 由 PluginManager.enable 内部按 pluginId 自动包装(namespace 隔离),
+  // bootstrap 仅提供 app / editor 基础能力。
   return {
     app: {
       getActiveBookId: () => undefined,
@@ -30,25 +30,16 @@ function buildContext(): PluginContext {
       insertText: () => {},
       getContent: () => '',
     },
+    // storage 字段保持兼容:pluginStore 等占位场景仍可调用,
+    // 但实际插件收到的 context.storage 已被 PluginManager 替换为 namespaced 版本
     storage: {
-      async get<T = unknown>(key: string): Promise<T | undefined> {
-        try {
-          const raw = localStorage.getItem(STORAGE_PREFIX + key)
-          return raw === null ? undefined : (JSON.parse(raw) as T)
-        } catch {
-          return undefined
-        }
+      async get<T = unknown>(): Promise<T | undefined> {
+        return undefined
       },
-      async set(key, value) {
-        localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value))
-      },
-      async remove(key) {
-        localStorage.removeItem(STORAGE_PREFIX + key)
-      },
-      async keys() {
-        return Object.keys(localStorage)
-          .filter((k) => k.startsWith(STORAGE_PREFIX))
-          .map((k) => k.slice(STORAGE_PREFIX.length))
+      async set(): Promise<void> {},
+      async remove(): Promise<void> {},
+      async keys(): Promise<string[]> {
+        return []
       },
     },
   }

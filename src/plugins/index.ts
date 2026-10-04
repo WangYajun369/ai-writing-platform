@@ -4,7 +4,9 @@
  * 模块入口，统一导出插件系统相关类型和管理器。
  */
 
-export { PluginManager } from './PluginManager'
+export { PluginManager, PluginManagerImpl } from './PluginManager'
+export { validateManifest, EXTENSION_POINTS } from './schema'
+export type { ManifestValidation } from './schema'
 export type {
   Plugin,
   PluginManifest,
