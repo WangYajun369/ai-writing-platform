@@ -7,7 +7,7 @@
  *       pnpm check --fast   # 快速模式：跳过 cargo check（约 10s 内完成）
  */
 
-import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'fs'
+import { existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { execSync } from 'child_process'
 import { fileURLToPath } from 'url'
@@ -342,11 +342,20 @@ check('lib.rs 注册所有模块命令', fileContains(
 
 // 数据库结构检查
 check('db/mod.rs 含 PRAGMA WAL', fileContains('src-tauri/src/db/mod.rs', 'WAL'))
-check('db/mod.rs 含完整表结构 (books/chapters/volumes/snapshots/world_cards)',
-  fileContains('src-tauri/src/db/mod.rs',
+// DDL 已按产品域拆分到 db/ddl/ 子目录；核心表结构由 ddl/core.rs 承载，
+// 任务卡表由 ddl/taskcard.rs 承载（详见 src-tauri/src/db/ddl/mod.rs 的拆分说明）。
+check('db/ddl/core.rs 含完整核心表结构 (books/chapters/volumes/snapshots/world_cards)',
+  fileContains('src-tauri/src/db/ddl/core.rs',
     'CREATE TABLE IF NOT EXISTS books',
     'CREATE TABLE IF NOT EXISTS chapters',
     'CREATE TABLE IF NOT EXISTS snapshots'))
+check('db/ddl/taskcard.rs 含任务卡核心表 (projects/tasks/tags/task_tags)',
+  fileContains('src-tauri/src/db/ddl/taskcard.rs',
+    'CREATE TABLE IF NOT EXISTS projects',
+    'CREATE TABLE IF NOT EXISTS tasks',
+    'CREATE TABLE IF NOT EXISTS task_tags'))
+check('db/ddl/mod.rs 提供 apply_all_ddl 编排入口',
+  fileContains('src-tauri/src/db/ddl/mod.rs', 'pub fn apply_all_ddl'))
 
 // 架构验证
 check('repository 层实现数据访问分离', fileContains('src-tauri/src/repository/book_repo.rs', 'rusqlite'))
@@ -519,6 +528,59 @@ check('updater 能力授予 updater:default', fileContains('src-tauri/capabiliti
 check('updater 能力仅限主窗口（最小权限）', fileContains('src-tauri/capabilities/updater.json', '"main"'))
 check('sub-windows 能力覆盖 debug / diary-book', fileContains('src-tauri/capabilities/sub-windows.json', '"debug"', '"diary-book"'))
 check('lib.rs 注册 updater 插件', fileContains('src-tauri/src/lib.rs', 'tauri_plugin_updater'))
+
+// ── IPC 注册一致性：#[tauri::command] 函数 ↔ invoke_handler! 注册项 ──
+// 反向校验：扫描全部 .rs 源文件中标注 #[tauri::command] 的函数名，
+// 与 lib.rs 中 invoke_handler! 实际注册的命令名双向比对。
+// 任一方向不一致即失败：漏注册会导致前端 invoke 报 not found（运行时才发现）；
+// 幽灵命令（注册了不存在的函数）通常源于重命名后遗漏，cargo 编译未必报错。
+console.log('\n  ── IPC 注册一致性 ──')
+
+function walkRsFiles(dir) {
+  const out = []
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name)
+    if (e.isDirectory()) out.push(...walkRsFiles(p))
+    else if (e.name.endsWith('.rs')) out.push(p)
+  }
+  return out
+}
+
+// 匹配 #[tauri::command] 标注的函数名（支持中间有 doc comment / pub async / pub fn）
+// 形如：  #[tauri::command]\n pub async fn list_books(...)
+const COMMAND_FN_RE = /#\[\s*tauri::command[^\]]*\]\s*(?:\/\/\/[^\n]*\n\s*)*(?:pub\s+)?(?:async\s+)?fn\s+(\w+)/g
+const definedCommands = new Set()
+for (const f of walkRsFiles(join(ROOT, 'src-tauri/src'))) {
+  const txt = readFileSync(f, 'utf-8')
+  let m
+  while ((m = COMMAND_FN_RE.exec(txt))) definedCommands.add(m[1])
+}
+
+// 从 lib.rs 的 generate_handler![...] 块中提取注册的命令名（取路径最后一段）
+const libRsContent = readFileSync(join(ROOT, 'src-tauri/src/lib.rs'), 'utf-8')
+// 同时兼容 generate_handler![...] 与 invoke_handler!(...) 两种调用形式
+const handlerBlockMatch = libRsContent.match(/(?:generate|invoke)_handler\s*!\s*[\(\[]([\s\S]*?)[\)\]]/)
+const registeredCommands = new Set()
+if (handlerBlockMatch) {
+  const re = /commands(?:::[\w_]+)+::(\w+)/g
+  let m
+  while ((m = re.exec(handlerBlockMatch[1]))) registeredCommands.add(m[1])
+}
+
+check(`扫描到 #[tauri::command] 函数 (${definedCommands.size} 个)`, definedCommands.size > 0)
+check(`lib.rs generate_handler! 注册命令 (${registeredCommands.size} 个)`, registeredCommands.size > 0)
+
+const unregistered = [...definedCommands].filter(c => !registeredCommands.has(c)).sort()
+check(`无漏注册命令（前端 invoke 会 not found）`, unregistered.length === 0)
+if (unregistered.length > 0) {
+  console.log(`     ↳ 漏注册 ${unregistered.length} 个：${unregistered.slice(0, 15).join(', ')}${unregistered.length > 15 ? ' ...' : ''}`)
+}
+
+const phantom = [...registeredCommands].filter(c => !definedCommands.has(c)).sort()
+check(`无幽灵命令（注册了不存在的函数，多为重命名后遗漏）`, phantom.length === 0)
+if (phantom.length > 0) {
+  console.log(`     ↳ 幽灵 ${phantom.length} 个：${phantom.slice(0, 15).join(', ')}${phantom.length > 15 ? ' ...' : ''}`)
+}
 
 // ── 汇总 ────────────────────────────────────────────────────
 console.log('\n' + '='.repeat(50))

@@ -24,6 +24,7 @@ pub mod migrate_service;
 pub mod project_service;
 pub mod project_stats_service;
 pub mod reminder_service;
+pub mod scheduler;
 pub mod subtask_service;
 pub mod tag_service;
 pub mod task_meta_service;

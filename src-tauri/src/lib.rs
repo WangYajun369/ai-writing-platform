@@ -168,39 +168,11 @@ pub fn run() {
                 });
             }
 
-            // ========== 3. 任务卡到期提醒后台循环 ==========
-            // 应用启动 20 秒后开始，每 60 秒扫描一次；偏好关闭时内部自动跳过。
-            // 注意：提醒需要应用保持运行，Tauri 窗口全部关闭后进程退出，循环随之停止。
-            {
-                use std::time::Duration;
-                let handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(Duration::from_secs(20)).await;
-                    loop {
-                        let app = handle.clone();
-                        match crate::service::reminder_service::run_once(&app) {
-                            Ok(sent) => {
-                                if sent > 0 {
-                                    crate::app_log!("[提醒] 本轮发出 {sent} 条到期提醒");
-                                }
-                            }
-                            Err(e) => {
-                                crate::app_log!("[提醒] 本轮扫描失败（自动忽略）: {e}");
-                            }
-                        }
-                        // 回收站 30 天自动清理（内部按自然日守卫，每天实际执行一次）
-                        {
-                            let db = app.state::<crate::db::AppDb>();
-                            if let Err(e) =
-                                crate::service::task_service::purge_expired_trash(&app, &db)
-                            {
-                                crate::app_log!("[回收站] 自动清理失败（自动忽略）: {e}");
-                            }
-                        }
-                        tokio::time::sleep(Duration::from_secs(60)).await;
-                    }
-                });
-            }
+            // ========== 3. 后台任务调度器 ==========
+            // 任务卡到期提醒 + 回收站 30 天自动清理。每个 job 独立 spawn，互不影响；
+            // 连续失败 N 次后自动退避（见 service::scheduler）。提醒需要应用保持运行，
+            // Tauri 窗口全部关闭后进程退出，调度器随之停止。
+            crate::service::scheduler::register_all(app.handle());
 
             Ok(())
         })
