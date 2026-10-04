@@ -216,17 +216,30 @@ jobs:
           echo "EXE: $EXE_NAME"
 
           # 使用 Tauri CLI 对安装包签名，获取签名
-          DMG_SIGNATURE=$(npx tauri signer sign -f "$DMG" 2>/dev/null | jq -r '.signature' || echo "")
-          EXE_SIGNATURE=$(npx tauri signer sign -f "$EXE" 2>/dev/null | jq -r '.signature' || echo "")
+          # 注意：`tauri signer sign <FILE>` 中 <FILE> 是位置参数（待签名文件），
+          # -f/--private-key-path 是指定私钥文件路径，不可混用。
+          # 私钥来自环境变量 TAURI_SIGNING_PRIVATE_KEY（已在 job env 中设置）。
+          # 输出为多行文本，签名在 "Public signature:" 之后的一行，需用 awk 提取。
+          DMG_SIGN_OUTPUT=$(npx tauri signer sign "$DMG" 2>&1)
+          DMG_SIGN_EXIT=$?
+          DMG_SIGNATURE=$(echo "$DMG_SIGN_OUTPUT" | awk '/Public signature:/{getline; print; exit}')
+          EXE_SIGN_OUTPUT=$(npx tauri signer sign "$EXE" 2>&1)
+          EXE_SIGN_EXIT=$?
+          EXE_SIGNATURE=$(echo "$EXE_SIGN_OUTPUT" | awk '/Public signature:/{getline; print; exit}')
 
           # 必须失败即停：tauri.conf.json 已配置 pubkey，无签名的 latest.json
           # 会让更新器在验签阶段拒绝更新（用户侧静默失效），必须阻断发布。
-          if [ -z "$DMG_SIGNATURE" ] || [ -z "$EXE_SIGNATURE" ]; then
+          if [ $DMG_SIGN_EXIT -ne 0 ] || [ $EXE_SIGN_EXIT -ne 0 ] || [ -z "$DMG_SIGNATURE" ] || [ -z "$EXE_SIGNATURE" ]; then
             echo "❌ 更新包签名生成失败"
             echo "   tauri.conf.json 的 updater.pubkey 已配置，缺少签名的 latest.json 将导致"
             echo "   所有客户端自动更新验签失败。请检查 Secrets："
             echo "   TAURI_PRIVATE_KEY / TAURI_PRIVATE_KEY_PASSWORD 是否与 pubkey 配对。"
-            echo "   DMG_SIGNATURE 长度=${#DMG_SIGNATURE}  EXE_SIGNATURE 长度=${#EXE_SIGNATURE}"
+            echo "   DMG exit=$DMG_SIGN_EXIT, signature 长度=${#DMG_SIGNATURE}"
+            echo "   EXE exit=$EXE_SIGN_EXIT, signature 长度=${#EXE_SIGNATURE}"
+            echo "   --- DMG 输出 ---"
+            echo "$DMG_SIGN_OUTPUT"
+            echo "   --- EXE 输出 ---"
+            echo "$EXE_SIGN_OUTPUT"
             exit 1
           fi
           echo "✅ 签名生成成功（DMG ${#DMG_SIGNATURE} 字节 / EXE ${#EXE_SIGNATURE} 字节）"
