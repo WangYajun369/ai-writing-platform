@@ -2,14 +2,14 @@
 //!
 //! 每个子模块封装对应实体的业务逻辑编排：
 //! - 从 `AppDb` 获取数据库连接
-//! - 调用 Repository 层完成数据操作
-//! - 通过 `emit_sql_log` 记录 SQL 审计日志
+//! - 调用 Repository 层完成数据操作（**禁止直接执行 SQL**）
+//! - 通过 [`uow::UnitOfWork::audit`] 记录 SQL 审计日志（commit 时统一 emit）
 //! - 处理事务边界和业务规则
 //!
 //! ## Unit of Work（v1.9 新增）
 //!
-//! [`uow::UnitOfWork`] 封装事务边界 + SQL 审计统一收口，新增跨多表操作
-//! 优先用 Uow。详见 [`uow`] 模块文档。
+//! [`uow::UnitOfWork`] 封装事务边界 + SQL 审计统一收口，所有写操作必须通过
+//! UoW 执行。详见 [`uow`] 模块文档。
 
 pub mod uow;
 
