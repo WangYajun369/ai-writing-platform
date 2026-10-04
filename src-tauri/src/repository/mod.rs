@@ -14,6 +14,15 @@
 //! 软删除 SQL 模式（`soft_delete` / `restore` / `hard_delete` / `count_deleted`
 //! / `clear_trash` / `purge_expired`），通过 [`soft_delete::Table`] trait 的
 //! 关联常量在编译期注入表名，monomorphization 后零运行时开销。
+//!
+//! ## 动态更新执行（v1.9 架构优化 #3）
+//!
+//! [`execute_update`] 为 service 层的 `DynamicUpdate` 构建器提供统一执行入口：
+//! service 负责决定更新哪些字段（业务语义），repository 负责执行 SQL（数据访问），
+//! 实现分层彻底分离。
+
+use rusqlite::Connection;
+use rusqlite::types::ToSql;
 
 pub mod book_repo;
 pub mod agent_trace_repo;
@@ -36,3 +45,17 @@ pub mod tag_repo;
 pub mod task_meta_repo;
 pub mod task_repo;
 pub mod template_repo;
+
+/// 执行一条动态构建的 UPDATE 语句（service 层 `DynamicUpdate` 构建器的统一执行入口）。
+///
+/// 分层职责：service 决定更新哪些字段（业务语义），repository 负责执行 SQL。
+/// `values` 为所有权参数（与 `DynamicUpdate::build` 返回类型一致），内部构造
+/// `&dyn ToSql` 引用切片后委托给 rusqlite。
+pub fn execute_update(
+    conn: &Connection,
+    sql: &str,
+    values: Vec<Box<dyn ToSql>>,
+) -> Result<usize, rusqlite::Error> {
+    let refs: Vec<&dyn ToSql> = values.iter().map(|p| p.as_ref()).collect();
+    conn.execute(sql, refs.as_slice())
+}

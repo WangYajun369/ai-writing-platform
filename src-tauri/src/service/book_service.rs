@@ -166,9 +166,7 @@ pub fn update_book(
                 file!(),
                 line!(),
             );
-            let params_refs: Vec<&dyn rusqlite::types::ToSql> =
-                values.iter().map(|p| p.as_ref()).collect();
-            uow.conn().execute(&sql, params_refs.as_slice())?;
+            crate::repository::execute_update(uow.conn(), &sql, values)?;
             uow.commit()?;
         }
     }

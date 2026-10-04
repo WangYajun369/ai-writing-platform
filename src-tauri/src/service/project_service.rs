@@ -288,9 +288,7 @@ pub fn update_project(
     // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
     let mut uow = UnitOfWork::new(&pooled, Some(app));
     uow.audit("UPDATE", "projects", format!("id={id}"), file!(), line!());
-    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
-        values.iter().map(|p| p.as_ref()).collect();
-    let affected = uow.conn().execute(&sql, params_refs.as_slice())?;
+    let affected = crate::repository::execute_update(uow.conn(), &sql, values)?;
     if affected == 0 {
         return Err(AppError::NotFound("未找到该项目或项目已删除".into()));
     }

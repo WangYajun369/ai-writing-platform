@@ -240,6 +240,33 @@ pub fn set_sort_order(conn: &Connection, id: &str, sort_order: i64, ts: &str) ->
     Ok(())
 }
 
+/// 将一整棵子树（多个任务 id）整体迁移到目标项目。
+///
+/// 使用动态 `IN (?, ?, ...)` 子句，参数由 `subtree_ids` 长度决定。
+/// 用于 `move_task_to_project`：根任务及其所有后代一并迁移，保证层级不被打散。
+pub fn move_subtree_to_project(
+    conn: &Connection,
+    subtree_ids: &[String],
+    to_project_id: &str,
+    ts: &str,
+) -> Result<usize> {
+    if subtree_ids.is_empty() {
+        return Ok(0);
+    }
+    let placeholders: Vec<&str> = vec!["?"; subtree_ids.len()];
+    let sql = format!(
+        "UPDATE tasks SET project_id=?1, updated_at=?2 WHERE id IN ({})",
+        placeholders.join(",")
+    );
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> =
+        vec![Box::new(to_project_id.to_string()), Box::new(ts.to_string())];
+    for tid in subtree_ids {
+        params.push(Box::new(tid.clone()));
+    }
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    conn.execute(&sql, params_refs.as_slice())
+}
+
 /// 更新任务状态，并按需设置/清空完成时间（拖拽与勾选完成共用）
 pub fn update_status(
     conn: &Connection,

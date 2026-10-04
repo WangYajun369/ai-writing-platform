@@ -439,9 +439,7 @@ pub fn update_task(
 
     if let Some((sql, values)) = upd.build(id, &ts) {
         uow.audit("UPDATE", "tasks", format!("id={id}"), file!(), line!());
-        let params_refs: Vec<&dyn rusqlite::types::ToSql> =
-            values.iter().map(|p| p.as_ref()).collect();
-        uow.conn().execute(&sql, params_refs.as_slice())?;
+        crate::repository::execute_update(uow.conn(), &sql, values)?;
     }
     if let Some(ids) = params.tag_ids {
         replace_tags(uow.conn(), id, &ids, &ts)?;
@@ -941,23 +939,9 @@ pub fn move_task_to_project(
     let subtree = task_repo::subtree_ids(uow.conn(), task_id)?;
     let next = task_repo::next_sort_order(uow.conn(), to_project_id, &current.status)?;
     // 整棵子树整体迁移（根任务追加到目标状态列尾，其余保持原列内排序）
-    let placeholders: Vec<&str> = vec!["?"; subtree.len()];
-    let sql = format!(
-        "UPDATE tasks SET project_id=?1, updated_at=?2 WHERE id IN ({})",
-        placeholders.join(",")
-    );
-    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> =
-        vec![Box::new(to_project_id.to_string()), Box::new(ts.clone())];
-    for tid in &subtree {
-        params.push(Box::new(tid.clone()));
-    }
-    let params_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-    uow.conn().execute(&sql, params_refs.as_slice())?;
+    task_repo::move_subtree_to_project(uow.conn(), &subtree, to_project_id, &ts)?;
     // 根任务移到目标状态列尾
-    uow.conn().execute(
-        "UPDATE tasks SET sort_order=?1, updated_at=?2 WHERE id=?3",
-        rusqlite::params![next, ts, task_id],
-    )?;
+    task_repo::set_sort_order(uow.conn(), task_id, next, &ts)?;
     // 解除因跨项目造成的悬空父引用
     task_repo::clean_orphan_parents(uow.conn(), &ts)?;
     uow.audit("UPDATE", "tasks", format!("id={task_id} (subtree {}) -> project {to_project_id}", subtree.len()), file!(), line!());

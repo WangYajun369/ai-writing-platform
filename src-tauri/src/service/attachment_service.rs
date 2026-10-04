@@ -84,10 +84,7 @@ pub fn ensure_store(app: &AppHandle, db: &AppDb) -> Result<(), AppError> {
         };
         let rel = format!("{ATTACHMENT_DIR}/{name}");
         if rel != stored {
-            uow.conn().execute(
-                "UPDATE attachments SET local_path=?1 WHERE id=?2",
-                rusqlite::params![rel, id],
-            )?;
+            attachment_repo::update_path(uow.conn(), &id, &rel)?;
             changed += 1;
         }
     }

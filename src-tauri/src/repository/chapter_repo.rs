@@ -255,6 +255,18 @@ pub fn next_sort_order_in_book(conn: &Connection, book_id: &str) -> Result<i64> 
     )
 }
 
+/// 将指定卷下所有章节的 volume_id 置空（解除卷与章节的关联）。
+///
+/// 用于硬删除卷前的预清理：必须先解除关联，否则 `DELETE volumes`
+/// 触发 `ON DELETE SET NULL` → `chapters_fts_au` 对大文本重新分词 →
+/// SQL logic error。
+pub fn clear_volume_id(conn: &Connection, volume_id: &str) -> Result<usize> {
+    conn.execute(
+        "UPDATE chapters SET volume_id=NULL WHERE volume_id=?1",
+        params![volume_id],
+    )
+}
+
 /// 保存章节总结
 pub fn save_summary(conn: &Connection, id: &str, summary: &str, ts: &str) -> Result<()> {
     conn.execute(

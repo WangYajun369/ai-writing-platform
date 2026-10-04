@@ -5,7 +5,7 @@
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::Volume;
-use crate::repository::volume_repo;
+use crate::repository::{chapter_repo, volume_repo};
 use crate::service::uow::UnitOfWork;
 use crate::utils::now;
 use tauri::AppHandle;
@@ -119,18 +119,14 @@ pub fn restore_volume(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppEr
 
 /// 硬删除卷（事务包装）：先解除关联章节的 volume_id，再删除卷
 ///
-/// 必须先 UPDATE chapters SET volume_id=NULL，否则 DELETE volumes 触发
+/// 必须先解除关联章节，否则 DELETE volumes 触发
 /// ON DELETE SET NULL → chapters_fts_au 对大文本重新分词 → SQL logic error。
 pub fn hard_delete_volume(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
     let pooled = db.pool.get()?;
     let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
     uow.begin_transaction()?;
     // 先将所有关联章节的 volume_id 置空（避免后续 DELETE 触发 ON DELETE SET NULL → FTS 分词）
-    uow.conn()
-        .execute(
-            "UPDATE chapters SET volume_id=NULL WHERE volume_id=?1",
-            rusqlite::params![id],
-        )
+    chapter_repo::clear_volume_id(uow.conn(), id)
         .map_err(|e| AppError::Business(format!("清除卷关联章节失败: {}", e)))?;
     uow.audit("UPDATE", "chapters", format!("clear volume_id for volume={id}"), file!(), line!());
     // 再硬删除卷
