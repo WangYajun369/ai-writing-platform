@@ -107,6 +107,8 @@ export default function RichTextEditor() {
   const [, setLastSaved] = useAtom(lastSavedAtom)
   const [, setWordCount] = useAtom(wordCountAtom)
   const [contentRefresh] = useAtom(contentRefreshAtom)
+  // 派生 nonce 作为 useEffect 依赖：只关心「信号变化」，不关心 source 值
+  const contentRefreshNonce = contentRefresh.nonce
   const [, setScrollPosition] = useAtom(editorScrollPositionAtom)
   const [, setCursorPosition] = useAtom(editorCursorPositionAtom)
   const autoSaveTimer = useRef<ReturnType<typeof setInterval>>(null)
@@ -285,7 +287,7 @@ export default function RichTextEditor() {
       }
     })()
     return () => { cancelled = true }
-  }, [editor, currentChapter?.id, contentRefresh]) // 章节切换或外部刷新时触发
+  }, [editor, currentChapter?.id, contentRefreshNonce]) // 章节切换或外部刷新时触发
 
   // 定时自动保存（3 分钟）
   useEffect(() => {

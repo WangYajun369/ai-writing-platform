@@ -367,7 +367,7 @@ export default function EditorToolbar() {
       {/* 目录树 */}
       <ToolbarBtn
         active={sidebarOpen}
-        onClick={() => setSidebarOpen((v) => !v)}
+        onClick={() => setSidebarOpen(!sidebarOpen)}
         title="目录树"
         icon={<SidebarIcon className="w-4 h-4" />}
       />
@@ -569,7 +569,7 @@ export default function EditorToolbar() {
       {/* 功能按钮组 */}
       <ToolbarBtn
         active={zenMode}
-        onClick={() => setZenMode((v) => !v)}
+        onClick={() => setZenMode(!zenMode)}
         title="专注模式"
         icon={<LayoutIcon className="w-4 h-4" />}
       />
@@ -610,7 +610,7 @@ export default function EditorToolbar() {
       <TooltipWrap title="AI 助手">
         <GradientButton
           active={aiPanelOpen}
-          onClick={() => setAiPanelOpen((v) => !v)}
+          onClick={() => setAiPanelOpen(!aiPanelOpen)}
           icon={<BotIcon className="w-3.5 h-3.5" />}
           label="AI 助手"
           showDot={false}

@@ -23,7 +23,7 @@ import {
   LoaderIcon,
 } from 'lucide-react'
 import { snapshotApi, windowApi } from '@/lib/tauri-bridge'
-import { contentRefreshAtom } from '@/stores/uiAtoms'
+import { triggerContentRefreshAtom } from '@/stores/uiAtoms'
 import { cn, formatWordCount, formatRelativeTime } from '@/lib/utils'
 import type { Snapshot } from '@/types'
 
@@ -37,7 +37,7 @@ interface SnapshotPanelProps {
 }
 
 export default function SnapshotPanel({ chapterId, chapterTitle }: SnapshotPanelProps) {
-  const [, setContentRefresh] = useAtom(contentRefreshAtom)
+  const [, triggerContentRefresh] = useAtom(triggerContentRefreshAtom)
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   const [loading, setLoading] = useState(false)
   const [restoring, setRestoring] = useState<string | null>(null)
@@ -87,7 +87,7 @@ export default function SnapshotPanel({ chapterId, chapterTitle }: SnapshotPanel
     try {
       await snapshotApi.restore(snap.id)
       // 通知主窗口刷新（Rust 端已 emit 事件）
-      setContentRefresh((v) => v + 1)
+      triggerContentRefresh('snapshot')
       // 关闭独立窗口
       windowApi.closeHistory().catch(() => {})
     } catch (err) {

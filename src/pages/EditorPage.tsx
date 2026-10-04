@@ -10,7 +10,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useAtom } from 'jotai'
 import { XIcon, AlertTriangleIcon, RefreshCwIcon } from 'lucide-react'
 import { listen } from '@tauri-apps/api/event'
-import { sidebarOpenAtom, zenModeAtom, aiPanelOpenAtom, contentRefreshAtom } from '@/stores/uiAtoms'
+import { sidebarOpenAtom, zenModeAtom, aiPanelOpenAtom, triggerContentRefreshAtom } from '@/stores/uiAtoms'
 import { useBooksStore } from '@/stores/booksStore'
 import { getEditorState } from '@/stores/appStore'
 import { chapterApi, volumeApi, windowApi } from '@/lib/tauri-bridge'
@@ -100,7 +100,7 @@ export default function EditorPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookId])
 
-  const [, setContentRefresh] = useAtom(contentRefreshAtom)
+  const [, triggerContentRefresh] = useAtom(triggerContentRefreshAtom)
 
   // 迁移旧版像素宽度 → 新版比例存储
   useEffect(() => {
@@ -143,12 +143,12 @@ export default function EditorPage() {
   // 监听版本历史窗口恢复快照后刷新编辑器内容
   useEffect(() => {
     const unlisten = listen<string>('history-snapshot-restored', () => {
-      setContentRefresh((v) => v + 1)
+      triggerContentRefresh('snapshot')
     })
     return () => {
       unlisten.then((fn) => fn())
     }
-  }, [setContentRefresh])
+  }, [triggerContentRefresh])
 
   // 组件卸载（离开编辑页返回书库）时关闭世界观、版本历史独立窗口
   // 注意：AI 工具箱不依赖当前作品/章节上下文，不在此自动关闭
