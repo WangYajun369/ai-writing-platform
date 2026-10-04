@@ -357,6 +357,10 @@ def main():
     print(f"版本 {current} → {new_version} 更新完成！")
     print(f"成功: {updated_count} 个文件, 失败: {failed_count} 个文件")
     print()
+    print("⚠️  下一步（强制）：同步 docs 文档版本")
+    print(f"   node scripts/refresh-doc-versions.mjs --write --version {new_version}")
+    print("   校验：node scripts/refresh-doc-versions.mjs   # 落后数应为 0")
+    print()
 
     # ========== 分支检测与提示 ==========
     current_branch = "main"
