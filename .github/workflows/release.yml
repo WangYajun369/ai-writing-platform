@@ -220,11 +220,14 @@ jobs:
           # -f/--private-key-path 是指定私钥文件路径，不可混用。
           # 私钥来自环境变量 TAURI_SIGNING_PRIVATE_KEY（已在 job env 中设置）。
           # 输出为多行文本，签名在 "Public signature:" 之后的一行，需用 awk 提取。
+          # 加 set +e 防止 set -e 在签名失败时直接终止脚本，交由下方统一报错。
+          set +e
           DMG_SIGN_OUTPUT=$(npx tauri signer sign "$DMG" 2>&1)
           DMG_SIGN_EXIT=$?
-          DMG_SIGNATURE=$(echo "$DMG_SIGN_OUTPUT" | awk '/Public signature:/{getline; print; exit}')
           EXE_SIGN_OUTPUT=$(npx tauri signer sign "$EXE" 2>&1)
           EXE_SIGN_EXIT=$?
+          set -e
+          DMG_SIGNATURE=$(echo "$DMG_SIGN_OUTPUT" | awk '/Public signature:/{getline; print; exit}')
           EXE_SIGNATURE=$(echo "$EXE_SIGN_OUTPUT" | awk '/Public signature:/{getline; print; exit}')
 
           # 必须失败即停：tauri.conf.json 已配置 pubkey，无签名的 latest.json
