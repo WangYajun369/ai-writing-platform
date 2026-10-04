@@ -9,6 +9,7 @@
 //! 常规模块；后半段（见下方「── 任务卡模块 ──」分隔之后）为任务卡模块。
 
 pub mod book_repo;
+pub mod agent_trace_repo;
 pub mod chapter_repo;
 pub mod diary_repo;
 pub mod embedding_repo;

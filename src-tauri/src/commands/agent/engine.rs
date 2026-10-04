@@ -54,12 +54,59 @@ pub struct HistoryMsg {
     pub content: String,
 }
 
-/// Agent 最大工具推理轮数（对齐 Python config.max_iterations）
+/// Agent 最大工具推理轮数（兜底默认值；优先使用 AgentBudget::for_skill 的自适应值）
 const MAX_ITERATIONS: usize = 15;
 /// 单轮 SSE 无数据读取超时（秒）
 const SSE_READ_TIMEOUT_SECS: u64 = 60;
 /// 整个 Agent 执行总超时（秒）
 const SSE_TOTAL_TIMEOUT_SECS: u64 = 600;
+
+/// Agent 执行预算：可控性与成本约束。
+///
+/// v1.9：取代硬编码 15 轮上限，按 Skill 自适应。
+/// - writing：创作场景，少工具调用，5 轮足够
+/// - analysis：分析场景，中等工具调用，10 轮
+/// - research：研究场景，多工具调用，20 轮
+/// - polish：润色场景，几乎不调工具，3 轮
+///
+/// 后续可由调用方（命令层）传入自定义预算覆盖 Skill 默认值。
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct AgentBudget {
+    /// 最大工具推理轮数
+    pub max_rounds: usize,
+    /// 单轮 SSE 无数据读取超时（秒）
+    pub sse_read_timeout_secs: u64,
+    /// 整个 Agent 执行总超时（秒）
+    pub sse_total_timeout_secs: u64,
+}
+
+impl AgentBudget {
+    /// 按 Skill 名返回自适应预算；未知 Skill 回退 MAX_ITERATIONS 兜底
+    pub fn for_skill(skill: &str) -> Self {
+        let (max_rounds, total) = match skill {
+            "writing" => (5, 300),
+            "analysis" => (10, 480),
+            "research" => (20, 600),
+            "polish" => (3, 240),
+            _ => (MAX_ITERATIONS, SSE_TOTAL_TIMEOUT_SECS),
+        };
+        Self {
+            max_rounds,
+            sse_read_timeout_secs: SSE_READ_TIMEOUT_SECS,
+            sse_total_timeout_secs: total,
+        }
+    }
+}
+
+impl Default for AgentBudget {
+    fn default() -> Self {
+        Self {
+            max_rounds: MAX_ITERATIONS,
+            sse_read_timeout_secs: SSE_READ_TIMEOUT_SECS,
+            sse_total_timeout_secs: SSE_TOTAL_TIMEOUT_SECS,
+        }
+    }
+}
 /// 历史消息最多保留条数（对齐 Python 的最近 10 条）
 const MAX_HISTORY_ITEMS: usize = 10;
 /// 单条历史消息最大字符数
@@ -226,6 +273,9 @@ async fn run_skill_inner(
         .map(|s| format!("\n## 历史对话摘要\n{s}\n"))
         .unwrap_or_default();
 
+    // v1.9：按 Skill 自适应预算（取代硬编码 15 轮上限）
+    let budget = AgentBudget::for_skill(skill);
+
     let now = chrono::Local::now().format("%Y年%m月%d日 %H:%M");
     let system_prompt = format!(
         "{dynamic_prompt}\n{memory_section}{summary_section}当前书籍 ID: {book_id}\n当前时间: {now}\n\n重要提示：\n- 使用工具读取数据时，务必传入正确的 book_id\n- 优先使用 read_chapter_summary 了解概况，只在需要细节时才用完整读取\n- 大章节（超过 2000 字）请使用 read_chapter_chunk 分段读取\n- 生成内容保持与原著风格一致\n"
@@ -304,6 +354,8 @@ async fn run_skill_inner(
             &mut tool_rounds,
             request_id,
             cancel_token,
+            &budget,
+            skill,
         ),
     )
     .await;
@@ -346,16 +398,18 @@ async fn react_loop(
     tool_rounds: &mut usize,
     request_id: &str,
     cancel_token: &Arc<CancelToken>,
+    budget: &AgentBudget,
+    skill: &str,
 ) -> Result<(), AppError> {
     loop {
         if cancel_token.is_cancelled() {
             let _ = emit_event(&app, "cancelled", "任务已被用户取消", request_id);
             return Ok(());
         }
-        if *tool_rounds >= MAX_ITERATIONS {
+        if *tool_rounds >= budget.max_rounds {
             crate::app_log!(
                 "[Agent] 达到最大推理轮数 ({}), 结束工具循环",
-                MAX_ITERATIONS
+                budget.max_rounds
             );
             break;
         }
@@ -580,6 +634,18 @@ async fn react_loop(
 
         // 逐个执行工具并回填 Tool 消息（连接在本回合内使用后即归还）
         let conn = pool.get().map_err(|e| AppError::DbPool(e.to_string()))?;
+        // v1.9：trace 持久化 — 记录本轮 assistant 响应（含 tool_calls 计划）
+        let _ = crate::repository::agent_trace_repo::insert_trace(
+            &conn,
+            request_id,
+            skill,
+            *tool_rounds,
+            "assistant",
+            &round_content,
+            None,
+            None,
+            None,
+        );
         for (_, tc) in &collected {
             if cancel_token.is_cancelled() {
                 let _ = emit_event(&app, "cancelled", "任务已被用户取消", request_id);
@@ -587,6 +653,18 @@ async fn react_loop(
             }
             let args_value: Value =
                 serde_json::from_str(&tc.arguments).unwrap_or(serde_json::json!({}));
+            // v1.9：trace 持久化 — 记录工具调用
+            let _ = crate::repository::agent_trace_repo::insert_trace(
+                &conn,
+                request_id,
+                skill,
+                *tool_rounds,
+                "tool_call",
+                &tc.name,
+                Some(&tc.name),
+                Some(&tc.arguments),
+                None,
+            );
             let result = match tools::execute_tool(&conn, &tc.name, &args_value) {
                 Ok(text) => text,
                 Err(e) => {
@@ -595,6 +673,18 @@ async fn react_loop(
                 }
             };
             let result = clamp_text(&result, MAX_TOOL_RESULT_CHARS);
+            // v1.9：trace 持久化 — 记录工具结果
+            let _ = crate::repository::agent_trace_repo::insert_trace(
+                &conn,
+                request_id,
+                skill,
+                *tool_rounds,
+                "tool_result",
+                &result,
+                Some(&tc.name),
+                None,
+                Some(&result),
+            );
             messages.push(serde_json::json!({
                 "role": "tool",
                 "tool_call_id": tc.id,
@@ -803,5 +893,41 @@ mod tests {
             .expect("取消唤醒应在 2s 内完成")
             .unwrap();
         assert_eq!(outcome, "cancelled");
+    }
+
+    #[test]
+    fn agent_budget_for_skill_writing_is_conservative() {
+        let b = AgentBudget::for_skill("writing");
+        assert_eq!(b.max_rounds, 5);
+        assert_eq!(b.sse_total_timeout_secs, 300);
+        assert_eq!(b.sse_read_timeout_secs, SSE_READ_TIMEOUT_SECS);
+    }
+
+    #[test]
+    fn agent_budget_for_skill_research_is_generous() {
+        let b = AgentBudget::for_skill("research");
+        assert_eq!(b.max_rounds, 20);
+        assert_eq!(b.sse_total_timeout_secs, 600);
+    }
+
+    #[test]
+    fn agent_budget_for_skill_analysis_and_polish() {
+        assert_eq!(AgentBudget::for_skill("analysis").max_rounds, 10);
+        assert_eq!(AgentBudget::for_skill("polish").max_rounds, 3);
+    }
+
+    #[test]
+    fn agent_budget_for_unknown_skill_falls_back_to_max_iterations() {
+        let b = AgentBudget::for_skill("unknown_skill");
+        assert_eq!(b.max_rounds, MAX_ITERATIONS);
+        assert_eq!(b.sse_total_timeout_secs, SSE_TOTAL_TIMEOUT_SECS);
+    }
+
+    #[test]
+    fn agent_budget_default_matches_constants() {
+        let b = AgentBudget::default();
+        assert_eq!(b.max_rounds, MAX_ITERATIONS);
+        assert_eq!(b.sse_read_timeout_secs, SSE_READ_TIMEOUT_SECS);
+        assert_eq!(b.sse_total_timeout_secs, SSE_TOTAL_TIMEOUT_SECS);
     }
 }

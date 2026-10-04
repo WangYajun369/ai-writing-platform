@@ -7,7 +7,7 @@
  */
 import { invoke } from '@tauri-apps/api/core'
 import type { IpcCommand } from '@/types/ipc-commands'
-import type { Book, Chapter, Volume, Snapshot, WorldCard, Diary, DiaryMeta, CreateBookParams, UpdateBookParams, SaveDiaryParams, Schedule, SaveScheduleParams, VocabWord, VocabStats, VocabReviewLog, AddVocabWordArgs, UpdateVocabWordArgs, DictStatus, DictLookupResult, AiWordExplain, ExplainWordArgs, WordCheckResult, TtsSpeakResult, TaskProject, ProjectView, TaskCard, TaskSubtask, TaskTag, TaskStatus, TaskTemplate, TodayOverview, MigrateResult, DeletedTaskItem, ProjectStatus, CreateProjectArgs, UpdateProjectArgs, CreateTaskArgs, UpdateTaskArgs, CreateTemplateArgs, UpdateTemplateArgs, Attachment, ActivityLog, ProjectWeeklyStat, UpdateTagArgs } from '@/types'
+import type { Book, Chapter, Volume, Snapshot, WorldCard, Diary, DiaryMeta, CreateBookParams, UpdateBookParams, SaveDiaryParams, Schedule, SaveScheduleParams, VocabWord, VocabStats, VocabReviewLog, AddVocabWordArgs, UpdateVocabWordArgs, DictStatus, DictLookupResult, AiWordExplain, ExplainWordArgs, WordCheckResult, TtsSpeakResult, TaskProject, ProjectView, TaskCard, TaskSubtask, TaskTag, TaskStatus, TaskTemplate, TodayOverview, MigrateResult, DeletedTaskItem, ProjectStatus, CreateProjectArgs, UpdateProjectArgs, CreateTaskArgs, UpdateTaskArgs, CreateTemplateArgs, UpdateTemplateArgs, Attachment, ActivityLog, ProjectWeeklyStat, UpdateTagArgs, AgentTrace } from '@/types'
 
 /**
  * 类型化 invoke：命令名接受 IpcCommand 联合类型约束。
@@ -643,12 +643,28 @@ export const agentApi = {
 
   /** 删除单条记忆 */
   async deleteMemory(memoryId: number): Promise<void> {
-    return invoke('delete_agent_memory', { memoryId })
+    return typedInvoke<void>('delete_agent_memory', { memoryId })
   },
 
   /** 清空指定书籍全部记忆，返回删除条数 */
   async clearMemories(bookId: string): Promise<number> {
     return typedInvoke<number>('clear_agent_memories', { bookId })
+  },
+
+  // ── Agent Trace 持久化（v1.9）──
+
+  /** 按 request_id 列出 Agent 推理轨迹（调试控制台回放） */
+  async listTraces(requestId: string): Promise<AgentTrace[]> {
+    return typedInvoke<AgentTrace[]>('list_agent_traces', { requestId })
+  },
+
+  /**
+   * 清理 Agent 轨迹
+   * @param requestId 传入则清指定会话，不传清全部
+   * @returns 删除条数
+   */
+  async clearTraces(requestId?: string): Promise<number> {
+    return typedInvoke<number>('clear_agent_traces', { requestId: requestId ?? null })
   },
 }
 

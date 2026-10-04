@@ -158,6 +158,23 @@ pub fn apply(conn: &Connection) -> anyhow::Result<()> {
                 ease_factor   REAL NOT NULL,
                 reviewed_at   TEXT NOT NULL
             );
+
+            -- Agent 推理轨迹（每轮 thought/action/observation，用于调试与复盘）
+            -- v1.9：AgentBudget 自适应预算 + trace 持久化
+            CREATE TABLE IF NOT EXISTS agent_traces (
+                id          TEXT PRIMARY KEY,
+                request_id  TEXT NOT NULL,
+                skill       TEXT NOT NULL,
+                round       INTEGER NOT NULL,
+                role        TEXT NOT NULL,          -- assistant / tool_call / tool_result / system
+                content     TEXT NOT NULL,
+                tool_name   TEXT,                   -- 仅 role=tool_call 时有值
+                tool_args   TEXT,                   -- JSON 序列化的工具参数
+                tool_result TEXT,                   -- 仅 role=tool_result 时有值
+                created_at  TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_agent_traces_request_id ON agent_traces(request_id);
+            CREATE INDEX IF NOT EXISTS idx_agent_traces_created_at ON agent_traces(created_at);
         "#,
     )
     .context("创建核心业务表失败")

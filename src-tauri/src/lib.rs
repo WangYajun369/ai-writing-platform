@@ -376,6 +376,8 @@ pub fn run() {
             commands::agent::skills::update_agent_memory,
             commands::agent::skills::delete_agent_memory,
             commands::agent::skills::clear_agent_memories,
+            commands::agent::skills::list_agent_traces,
+            commands::agent::skills::clear_agent_traces,
             // ══════ 系统检查 ══════
             commands::system_check::system_check,
         ])
