@@ -973,6 +973,70 @@ export const systemApi = {
   },
 }
 
+// ==================== Schema 演进工具 ====================
+
+/** 已应用迁移记录(对应 schema_migrations 表的一行) */
+export interface AppliedMigration {
+  version: number
+  name: string
+  appliedAt: string
+  checksum: string
+  /** 是否支持回滚(down_sql 非空)。仅作元数据,框架不自动执行回滚。 */
+  downSql?: string | null
+}
+
+/** 待应用迁移(代码注册但库中尚未应用) */
+export interface PendingMigration {
+  version: number
+  name: string
+  /** 完整 up_sql 的 SHA-256 指纹(规范化后) */
+  checksum: string
+}
+
+/** schema_status 命令返回 */
+export interface SchemaStatus {
+  currentVersion: number
+  latestVersion: number
+  upToDate: boolean
+  appliedMigrations: AppliedMigration[]
+  pendingMigrations: PendingMigration[]
+}
+
+/** schema_diff 单条差异项 */
+export interface SchemaDiffIssue {
+  table: string
+  missingColumn?: string | null
+  extraColumn?: string | null
+  /** "missing_table" | "missing_column" | "extra_column" */
+  issueType: string
+  detail: string
+}
+
+/** schema_diff 命令返回 */
+export interface SchemaDiff {
+  ok: boolean
+  declaredTablesCount: number
+  actualTablesCount: number
+  issues: SchemaDiffIssue[]
+}
+
+export const schemaApi = {
+  /** 查询当前 schema 状态:版本 + 已应用迁移 + 待应用迁移 */
+  async status(): Promise<SchemaStatus> {
+    return typedInvoke<SchemaStatus>('schema_status')
+  },
+
+  /** 对比 PRAGMA table_info 与代码 TABLE_SCHEMA 声明的列差异 */
+  async diff(): Promise<SchemaDiff> {
+    return typedInvoke<SchemaDiff>('schema_diff')
+  },
+
+  /** 列出已应用迁移(轻量,调试控制台用) */
+  async listMigrations(): Promise<AppliedMigration[]> {
+    return typedInvoke<AppliedMigration[]>('schema_migrations_list')
+  },
+}
+
 // ==================== 英语生词本（vocabApi） ====================
 
 export const vocabApi = {

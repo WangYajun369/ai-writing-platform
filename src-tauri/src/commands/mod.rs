@@ -13,6 +13,7 @@ pub mod diary;
 pub mod image;
 pub mod io;
 pub mod schedule;
+pub mod schema;
 pub mod snapshot;
 pub mod system_check;
 pub mod tts;

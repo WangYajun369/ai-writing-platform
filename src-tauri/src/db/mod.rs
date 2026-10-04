@@ -12,6 +12,7 @@
 //! 本模块只保留连接池、版本守卫与迁移分发编排。
 
 pub mod ddl;
+pub mod migrations;
 pub mod schema;
 
 use crate::repository::embedding_repo;
@@ -142,7 +143,7 @@ impl AppDb {
     /// 6. [`AppDb::run_versioned_migrations`]：非幂等演进入口
     /// 7. 写回 `PRAGMA user_version`
     fn migrate(&self) -> anyhow::Result<()> {
-        let conn = self
+        let mut conn = self
             .pool
             .get()
             .map_err(|e| anyhow::anyhow!("获取数据库连接失败: {}", e))?;
@@ -193,8 +194,12 @@ impl AppDb {
         embedding_repo::ensure_chunks_vec(&conn)
             .map_err(|e| anyhow::anyhow!("初始化 sqlite-vec 镜像表失败: {}", e))?;
 
-        // 版本化迁移分发（非幂等演进入口）；全部完成后写回结构版本号
-        Self::run_versioned_migrations(&conn, from_version)?;
+        // 版本化迁移分发（非幂等演进入口）；全部完成后写回结构版本号。
+        // v1.9: schema 演进工具 —— 由 migrations 模块接管,真实分发 + checksum 校验 +
+        // schema_migrations 表持久化迁移历史(支持 schema_status / schema_diff 命令)。
+        migrations::ensure_schema_migrations_table(&conn)?;
+        migrations::record_baseline(&conn)?;
+        migrations::run_pending(&mut conn, from_version)?;
         if from_version != SCHEMA_VERSION {
             set_user_version(&conn, SCHEMA_VERSION)?;
             crate::app_log!(
@@ -207,18 +212,15 @@ impl AppDb {
         Ok(())
     }
 
-    /// 版本化迁移分发：处理无法用幂等 DDL 表达的结构演进（改列、删表、数据搬移等）。
+    /// 版本化迁移分发（保留旧 API 签名,委托给 [`migrations::run_pending`]）。
     ///
-    /// 当前全部结构变更均可幂等表达，故无分发项；后续新增时按 `from_version < N`
-    /// 逐级追加（每级只负责把自己那版的变更做完），并在 [`SCHEMA_VERSION`] 上递增。
-    fn run_versioned_migrations(conn: &Connection, from_version: u32) -> anyhow::Result<()> {
-        let _ = conn;
-        match from_version {
-            // 基线：v1.7.0 之前的旧库，上方幂等 DDL 已覆盖全部结构，无需额外动作
-            0 => {}
-            _ => {}
-        }
-        Ok(())
+    /// 历史入口,新代码请直接调用 [`migrations::run_pending`]。当前实现为 thin wrapper,
+    /// 仅在 `AppDb::migrate` 内部使用,后续若需在运行时手动触发迁移可暴露为 pub 方法。
+    #[allow(dead_code)]
+    fn run_versioned_migrations(conn: &mut Connection, from_version: u32) -> anyhow::Result<()> {
+        migrations::ensure_schema_migrations_table(conn)?;
+        migrations::record_baseline(conn)?;
+        migrations::run_pending(conn, from_version)
     }
 }
 

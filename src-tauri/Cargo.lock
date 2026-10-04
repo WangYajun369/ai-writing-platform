@@ -5353,6 +5353,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "futures-util",
+ "hex",
  "image",
  "libc",
  "r2d2",

@@ -47,6 +47,12 @@ pub enum ErrCode {
     Db,
     /// 数据库结构版本不兼容（`E_DB_VERSION`）：库版本高于应用支持版本，拒绝启动。
     DbVersion,
+    /// 已应用迁移的 checksum 与代码不一致（`E_DB_MIGRATION_CHECKSUM`）：迁移 SQL 被篡改或代码与历史不匹配。
+    DbMigrationChecksum,
+    /// 迁移执行失败（`E_DB_MIGRATION_FAILED`）：SQL 执行错误、事务开启/提交失败等。
+    DbMigrationFailed,
+    /// 不支持的回滚操作（`E_DB_MIGRATION_ROLLBACK_UNSUPPORTED`）：当前框架不自动执行 down_sql。
+    DbMigrationRollbackUnsupported,
 
     // ── HTTP / 序列化 / IO / 加密 ──
     /// HTTP 请求错误（`E_HTTP`）。
@@ -131,6 +137,9 @@ impl ErrCode {
             Self::DbPool => "E_DB_POOL",
             Self::Db => "E_DB",
             Self::DbVersion => "E_DB_VERSION",
+            Self::DbMigrationChecksum => "E_DB_MIGRATION_CHECKSUM",
+            Self::DbMigrationFailed => "E_DB_MIGRATION_FAILED",
+            Self::DbMigrationRollbackUnsupported => "E_DB_MIGRATION_ROLLBACK_UNSUPPORTED",
             Self::Http => "E_HTTP",
             Self::Serde => "E_SERDE",
             Self::Io => "E_IO",
@@ -393,6 +402,9 @@ mod tests {
             (ErrCode::DbPool, "E_DB_POOL"),
             (ErrCode::Db, "E_DB"),
             (ErrCode::DbVersion, "E_DB_VERSION"),
+            (ErrCode::DbMigrationChecksum, "E_DB_MIGRATION_CHECKSUM"),
+            (ErrCode::DbMigrationFailed, "E_DB_MIGRATION_FAILED"),
+            (ErrCode::DbMigrationRollbackUnsupported, "E_DB_MIGRATION_ROLLBACK_UNSUPPORTED"),
             (ErrCode::Http, "E_HTTP"),
             (ErrCode::Serde, "E_SERDE"),
             (ErrCode::Io, "E_IO"),
