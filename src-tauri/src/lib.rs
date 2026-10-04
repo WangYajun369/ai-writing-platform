@@ -22,6 +22,7 @@ mod db; // 数据库连接与初始化
 mod error; // 统一错误类型
 mod logging; // 全局日志宏（app_log! / app_log_error!，双写控制台与调试窗口）
 mod models; // 数据模型
+mod observability; // 可观测性体系收敛（telemetry 事件总线 + 持久化）
 mod repository; // 数据访问层（DAO）
 mod service; // 业务逻辑层
 mod utils; // 工具函数
@@ -378,6 +379,13 @@ pub fn run() {
             commands::agent::skills::clear_agent_memories,
             commands::agent::skills::list_agent_traces,
             commands::agent::skills::clear_agent_traces,
+            // ══════ Telemetry — 可观测性体系收敛 ══════
+            observability::commands::list_telemetry_events,
+            observability::commands::clear_telemetry_events,
+            observability::commands::enable_telemetry_broadcast,
+            observability::commands::disable_telemetry_broadcast,
+            observability::commands::is_telemetry_broadcasting,
+            observability::commands::report_error_event,
             // ══════ 系统检查 ══════
             commands::system_check::system_check,
         ])

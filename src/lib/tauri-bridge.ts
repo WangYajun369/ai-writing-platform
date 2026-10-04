@@ -886,6 +886,72 @@ export const debugApi = {
   },
 }
 
+// ==================== Telemetry（可观测性体系收敛） ====================
+
+/** Telemetry 事件类别 — 对应 4+1 套通道 */
+export type TelemetryKind = 'sql' | 'agent' | 'io' | 'error' | 'system'
+
+/** 统一 Telemetry 事件结构（替代/扩展 LogEntry） */
+export interface TelemetryEvent {
+  id?: string
+  kind: TelemetryKind
+  /** info / warn / error */
+  level: string
+  /** HH:MM:SS */
+  timestamp: string
+  message: string
+  /** 来源标签(file:line 或命令名) */
+  source?: string
+  file?: string
+  fileName?: string
+  line?: number
+  /** 类型化载荷(不同 kind 携带不同结构) */
+  payload?: unknown
+}
+
+export const telemetryApi = {
+  /** 列出事件:优先持久化表(历史),fallback 到内存缓冲(即时) */
+  async list(opts?: {
+    kind?: TelemetryKind
+    limit?: number
+    fromBuffer?: boolean
+  }): Promise<TelemetryEvent[]> {
+    return typedInvoke<TelemetryEvent[]>('list_telemetry_events', {
+      kind: opts?.kind,
+      limit: opts?.limit,
+      fromBuffer: opts?.fromBuffer,
+    })
+  },
+
+  /** 清空事件(可选 kind 过滤;默认同时清空内存缓冲) */
+  async clear(opts?: { kind?: TelemetryKind; clearBuffer?: boolean }): Promise<number> {
+    return typedInvoke<number>('clear_telemetry_events', {
+      kind: opts?.kind,
+      clearBuffer: opts?.clearBuffer,
+    })
+  },
+
+  /** 启用事件总线广播(调试窗口打开时调用) */
+  async enableBroadcast(): Promise<boolean> {
+    return typedInvoke<boolean>('enable_telemetry_broadcast')
+  },
+
+  /** 禁用事件总线广播(调试窗口关闭时调用) */
+  async disableBroadcast(): Promise<boolean> {
+    return typedInvoke<boolean>('disable_telemetry_broadcast')
+  },
+
+  /** 查询广播状态 */
+  async isBroadcasting(): Promise<boolean> {
+    return typedInvoke<boolean>('is_telemetry_broadcasting')
+  },
+
+  /** 显式上报前端错误事件(供前端 catch 路径调用) */
+  async reportError(code: string, message: string, source?: string): Promise<void> {
+    return typedInvoke<void>('report_error_event', { code, message, source })
+  },
+}
+
 // ==================== 系统检查 ====================
 
 export interface SystemCheckItem {

@@ -175,6 +175,24 @@ pub fn apply(conn: &Connection) -> anyhow::Result<()> {
             );
             CREATE INDEX IF NOT EXISTS idx_agent_traces_request_id ON agent_traces(request_id);
             CREATE INDEX IF NOT EXISTS idx_agent_traces_created_at ON agent_traces(created_at);
+
+            -- Telemetry 事件持久化（v1.9 可观测性体系收敛）
+            -- 统一 4+1 套通道：SQL / Agent / IO / Error / System
+            -- 与内存缓冲互补：缓冲只保留最近 1000 条，持久化可滚动保留更久
+            CREATE TABLE IF NOT EXISTS telemetry_events (
+                id          TEXT PRIMARY KEY,
+                kind        TEXT NOT NULL,       -- sql | agent | io | error | system
+                level       TEXT NOT NULL,       -- info | warn | error
+                timestamp   TEXT NOT NULL,      -- HH:MM:SS（显示）
+                message     TEXT NOT NULL,
+                source      TEXT,                -- 可选：file:line 或命令名
+                file        TEXT,
+                line        INTEGER,
+                payload     TEXT,                -- JSON 序列化的类型化载荷
+                created_at  TEXT NOT NULL        -- ISO 8601（排序与回放）
+            );
+            CREATE INDEX IF NOT EXISTS idx_telemetry_kind ON telemetry_events(kind);
+            CREATE INDEX IF NOT EXISTS idx_telemetry_created ON telemetry_events(created_at DESC);
         "#,
     )
     .context("创建核心业务表失败")

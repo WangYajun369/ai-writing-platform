@@ -62,7 +62,7 @@ pub async fn export_all_data(
     output_path: String,
     cache_json: String,
 ) -> Result<(), AppError> {
-    let _guard = super::try_acquire_io_lock()?;
+    let _guard = super::try_acquire_io_lock(Some(&app))?;
     let conn = db.pool.get()?;
     let database = load_full_export_data(&app, &conn)?;
     let cache: serde_json::Value = serde_json::from_str(&cache_json)
@@ -82,7 +82,7 @@ pub async fn export_single_book(
     output_path: String,
     cache_json: String,
 ) -> Result<(), AppError> {
-    let _guard = super::try_acquire_io_lock()?;
+    let _guard = super::try_acquire_io_lock(Some(&app))?;
     let conn = db.pool.get()?;
     let full_data = load_full_export_data(&app, &conn)?;
     let database = filter_single_book_data(&full_data, &book_id);
@@ -103,7 +103,7 @@ pub async fn import_backup(
     file_path: String,
     strategy: Option<String>,
 ) -> Result<serde_json::Value, AppError> {
-    let _guard = super::try_acquire_io_lock()?;
+    let _guard = super::try_acquire_io_lock(Some(&app))?;
     let import_strategy = ImportStrategy::parse(strategy.as_deref())?;
 
     // 只读载入与校验（文件级 → 解密 → 结构 → 行数 → 语义），任何失败零写入
@@ -391,7 +391,7 @@ pub async fn rollback_import(
     db: State<'_, AppDb>,
     ts: String,
 ) -> Result<serde_json::Value, AppError> {
-    let _guard = super::try_acquire_io_lock()?;
+    let _guard = super::try_acquire_io_lock(Some(&app))?;
     let mut conn = db.pool.get()?;
     emit_sql_log(
         &app,
@@ -1193,11 +1193,11 @@ mod tests {
 
     #[test]
     fn io_lock_is_single_flight_and_reentrant() {
-        let g = crate::commands::io::try_acquire_io_lock().expect("首次占用成功");
-        let err = crate::commands::io::try_acquire_io_lock().unwrap_err();
+        let g = crate::commands::io::try_acquire_io_lock(None).expect("首次占用成功");
+        let err = crate::commands::io::try_acquire_io_lock(None).unwrap_err();
         assert!(err.to_string().contains("E_IO_BUSY"), "{err}");
         drop(g);
-        let g2 = crate::commands::io::try_acquire_io_lock().expect("释放后可再占用");
+        let g2 = crate::commands::io::try_acquire_io_lock(None).expect("释放后可再占用");
         drop(g2);
     }
 }

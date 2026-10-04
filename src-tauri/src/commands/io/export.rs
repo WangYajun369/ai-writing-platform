@@ -71,7 +71,7 @@ pub async fn export_book(
     format: String,
     output_path: String,
 ) -> Result<(), AppError> {
-    let _guard = super::try_acquire_io_lock()?;
+    let _guard = super::try_acquire_io_lock(Some(&app))?;
     let conn = db.pool.get()?;
 
     emit_sql_log(

@@ -635,7 +635,10 @@ async fn react_loop(
         // 逐个执行工具并回填 Tool 消息（连接在本回合内使用后即归还）
         let conn = pool.get().map_err(|e| AppError::DbPool(e.to_string()))?;
         // v1.9：trace 持久化 — 记录本轮 assistant 响应（含 tool_calls 计划）
-        let _ = crate::repository::agent_trace_repo::insert_trace(
+        // v1.9+：通过 telemetry::bus::emit_agent_trace 写表 + 实时推 telemetry-event 事件,
+        // 前端调试控制台无需轮询 list_agent_traces 即可看到推理过程
+        let _ = crate::observability::bus::emit_agent_trace(
+            Some(&app),
             &conn,
             request_id,
             skill,
@@ -654,7 +657,8 @@ async fn react_loop(
             let args_value: Value =
                 serde_json::from_str(&tc.arguments).unwrap_or(serde_json::json!({}));
             // v1.9：trace 持久化 — 记录工具调用
-            let _ = crate::repository::agent_trace_repo::insert_trace(
+            let _ = crate::observability::bus::emit_agent_trace(
+                Some(&app),
                 &conn,
                 request_id,
                 skill,
@@ -674,7 +678,8 @@ async fn react_loop(
             };
             let result = clamp_text(&result, MAX_TOOL_RESULT_CHARS);
             // v1.9：trace 持久化 — 记录工具结果
-            let _ = crate::repository::agent_trace_repo::insert_trace(
+            let _ = crate::observability::bus::emit_agent_trace(
+                Some(&app),
                 &conn,
                 request_id,
                 skill,

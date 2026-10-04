@@ -562,7 +562,10 @@ const libRsContent = readFileSync(join(ROOT, 'src-tauri/src/lib.rs'), 'utf-8')
 const handlerBlockMatch = libRsContent.match(/(?:generate|invoke)_handler\s*!\s*[\(\[]([\s\S]*?)[\)\]]/)
 const registeredCommands = new Set()
 if (handlerBlockMatch) {
-  const re = /commands(?:::[\w_]+)+::(\w+)/g
+  // 匹配 commands::xxx::yyy 或 observability::commands::yyy 等任何
+  // 以 `commands::` 中缀为锚的路径,取最后一段为命令名。
+  // v1.9:扩展支持 `observability::commands::xxx` 等非顶层 commands 路径。
+  const re = /(?:[\w_]+::)*commands(?:::[\w_]+)*::(\w+)/g
   let m
   while ((m = re.exec(handlerBlockMatch[1]))) registeredCommands.add(m[1])
 }

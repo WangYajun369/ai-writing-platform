@@ -231,7 +231,7 @@ pub async fn import_txt(
     book_id: String,
     file_path: String,
 ) -> Result<serde_json::Value, AppError> {
-    let _guard = super::try_acquire_io_lock()?;
+    let _guard = super::try_acquire_io_lock(Some(&app))?;
     // 规模上限：先看文件大小，超限直接拒绝（避免读入内存）
     let meta = std::fs::metadata(&file_path)
         .map_err(|e| AppError::business(ErrCode::TxtRead, format!("读取文件信息失败：{}", e)))?;

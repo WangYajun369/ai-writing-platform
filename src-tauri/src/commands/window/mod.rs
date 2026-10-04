@@ -6,11 +6,9 @@ pub mod debug;
 pub mod manager;
 pub mod validate;
 
-use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
-use tauri::Emitter;
 
 /// 日志条目
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,13 +47,17 @@ pub fn log_buffer() -> &'static Mutex<Vec<LogEntry>> {
 static SQL_LOG_ENABLED: AtomicBool = AtomicBool::new(false);
 
 /// 启用 SQL 日志广播（调试窗口打开时调用）
+///
+/// v1.9：同时启用 telemetry 广播,让 4 套通道(包括 SQL)统一推 `telemetry-event`。
 pub fn enable_sql_log() {
     SQL_LOG_ENABLED.store(true, Ordering::Release);
+    crate::observability::bus::enable_broadcast();
 }
 
 /// 禁用 SQL 日志广播（调试窗口关闭时调用）
 pub fn disable_sql_log() {
     SQL_LOG_ENABLED.store(false, Ordering::Release);
+    crate::observability::bus::disable_broadcast();
 }
 
 /// 简单 URL 编码（百分号编码非 ASCII 和保留字符）
@@ -73,6 +75,10 @@ pub fn urlencoding(s: &str) -> String {
 }
 
 /// 向调试面板发送 SQL 操作日志（仅在开关开启时广播）
+///
+/// v1.9：改为 `observability::bus::emit_sql` 的 thin wrapper,签名兼容,
+/// 159 处调用点零改动。bus 内部统一缓冲 + 广播(同时推 `telemetry-event`
+/// 与旧 `debug-log` 别名),让前端旧组件继续工作。
 pub fn emit_sql_log(
     app: &tauri::AppHandle,
     operation: &str,
@@ -84,15 +90,5 @@ pub fn emit_sql_log(
     if !SQL_LOG_ENABLED.load(Ordering::Acquire) {
         return;
     }
-    let _ = app.emit(
-        "debug-log",
-        &LogEntry {
-            timestamp: Local::now().format("%H:%M:%S").to_string(),
-            level: "info".to_string(),
-            message: format!("[SQL] {} → {} | {}", operation, table, detail),
-            file: Some(file.to_string()),
-            file_name: Some(file.split('/').last().unwrap_or(file).to_string()),
-            line: Some(line),
-        },
-    );
+    crate::observability::bus::emit_sql(Some(app), operation, table, detail, file, line);
 }
