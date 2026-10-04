@@ -243,6 +243,18 @@ pub fn max_sort_in_volume(
     }
 }
 
+/// 获取某书下一章应使用的 sort_order（当前最大值 + 1，无章节时为 0）。
+///
+/// 用于 TXT 导入等批量追加场景，避免与已有章节排序冲突。
+/// 注意：含已软删除章节，保证追加位置始终在最末。
+pub fn next_sort_order_in_book(conn: &Connection, book_id: &str) -> Result<i64> {
+    conn.query_row(
+        "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM chapters WHERE book_id = ?1",
+        params![book_id],
+        |row| row.get(0),
+    )
+}
+
 /// 保存章节总结
 pub fn save_summary(conn: &Connection, id: &str, summary: &str, ts: &str) -> Result<()> {
     conn.execute(

@@ -7,7 +7,9 @@
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::repository::{activity_log_repo, task_repo};
+use crate::service::uow::UnitOfWork;
 use crate::utils::now;
+use tauri::AppHandle;
 use uuid::Uuid;
 
 /// 尽力而为地记录一条任务动作（自动补齐 project_id 冗余字段）。
@@ -61,20 +63,42 @@ fn insert_quiet(
 
 /// 某任务的动态时间线（最新在前）
 pub fn list_by_task(
+    app: &AppHandle,
     db: &AppDb,
     task_id: &str,
     limit: i64,
 ) -> Result<Vec<crate::models::ActivityLog>, AppError> {
-    let conn = db.pool.get()?;
-    Ok(activity_log_repo::list_by_task(&conn, task_id, limit)?)
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
+        "SELECT",
+        "task_activity_logs",
+        format!("task_id={}, limit={}", task_id, limit),
+        file!(),
+        line!(),
+    );
+    let logs = activity_log_repo::list_by_task(uow.conn(), task_id, limit)?;
+    uow.commit()?;
+    Ok(logs)
 }
 
 /// 某项目的动态时间线（最新在前）
 pub fn list_by_project(
+    app: &AppHandle,
     db: &AppDb,
     project_id: &str,
     limit: i64,
 ) -> Result<Vec<crate::models::ActivityLog>, AppError> {
-    let conn = db.pool.get()?;
-    Ok(activity_log_repo::list_by_project(&conn, project_id, limit)?)
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
+        "SELECT",
+        "task_activity_logs",
+        format!("project_id={}, limit={}", project_id, limit),
+        file!(),
+        line!(),
+    );
+    let logs = activity_log_repo::list_by_project(uow.conn(), project_id, limit)?;
+    uow.commit()?;
+    Ok(logs)
 }

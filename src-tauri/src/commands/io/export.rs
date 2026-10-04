@@ -4,10 +4,9 @@
 //! Spec §7 增强：卷结构表达（TXT/MD 卷标题行）、导出进度事件（`export-progress`）、
 //! 可取消（`cancel_book_export`）、临时文件 + rename 原子写出（不产生半成品文件）。
 
-use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::{AppError, ErrCode};
-use crate::repository::{book_repo, chapter_repo};
+use crate::service::export_service;
 use crate::utils::{escape_html, strip_html};
 use serde::Serialize;
 use std::fs::File;
@@ -72,27 +71,8 @@ pub async fn export_book(
     output_path: String,
 ) -> Result<(), AppError> {
     let _guard = super::try_acquire_io_lock(Some(&app))?;
-    let conn = db.pool.get()?;
 
-    emit_sql_log(
-        &app,
-        "SELECT",
-        "books",
-        &format!("id={}, export info", book_id),
-        file!(),
-        line!(),
-    );
-    let (title, author) = book_repo::find_title_author(&conn, &book_id)?;
-
-    emit_sql_log(
-        &app,
-        "SELECT",
-        "chapters",
-        &format!("book_id={}, export chapters (with volume)", book_id),
-        file!(),
-        line!(),
-    );
-    let rows = chapter_repo::list_export_with_volume(&conn, &book_id)?;
+    let (title, author, rows) = export_service::load_book_export_data(&app, &db, &book_id)?;
 
     if format != "txt" && format != "md" && format != "html" {
         return Err(AppError::Business(format!(
@@ -224,6 +204,7 @@ fn chapter_block(format: &str, title: &str, html: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::repository::chapter_repo;
 
     fn rows(items: &[(&str, &str, &str)]) -> Vec<chapter_repo::ChapterExportRow> {
         items

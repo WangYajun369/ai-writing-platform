@@ -17,6 +17,8 @@ pub mod uow;
 pub mod book_service;
 pub mod chapter_service;
 pub mod diary_service;
+pub mod export_service;
+pub mod import_txt_service;
 pub mod schedule_service;
 pub mod search_service;
 pub mod snapshot_service;
