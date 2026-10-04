@@ -2,13 +2,13 @@
 
 > 跨平台桌面端小说写作软件 —— Tauri v2 + React 19 + TipTap + Rust 原生 AI Agent
 
-> **适用版本**：`1.7.0`　|　**最后核对**：2026-09-05
+> **适用版本**：`1.9.1`　|　**最后核对**：2026-10-04
 
 欢迎来到 TimeWrite 的官方文档！TimeWrite 是一款面向网络小说作者和文学创作者的桌面写作工具，提供从书库管理、章节编辑到 AI 辅助创作的完整写作工作流。
 
-> 🚀 [**查看项目介绍**](https://wangyajun369.github.io/ai-writing-platform/)　·　📦 [**下载最新版 v1.7.0**](https://github.com/WangYajun369/ai-writing-platform/releases)
+> 🚀 [**查看项目介绍**](https://wangyajun369.github.io/ai-writing-platform/)　·　📦 [**下载最新版 v1.9.1**](https://github.com/WangYajun369/ai-writing-platform/releases)
 
-> 🆕 **v1.7.0 — 数据备份与导入导出 v2**：导入前只读预览（结构校验 / 内容指纹 / 幂等识别 / 逐表对账）、三种导入策略、TXT 导入智能去重、导出进度与可取消、统一错误码。详见 [更新日志](CHANGELOG) 与 [导入导出规范](development/import-export-spec)。
+> 🆕 **v1.9.1 — Rust 代码质量全面升级**：Clippy 警告 96 → 18、编译警告 5 → 0、全量格式化、175 测试通过。详见 [更新日志](CHANGELOG)。
 
 ---
 

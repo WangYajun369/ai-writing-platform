@@ -1,6 +1,6 @@
 # 架构总览
 
-> **适用版本**：`1.7.0`　|　**最后核对**：2026-09-05
+> **适用版本**：`1.9.1`　|　**最后核对**：2026-10-04
 >
 > TimeWrite（MirageInk / 智写时光）运行时为**双进程模型**：WebView 前端 + Rust Core。
 > v1.1 起 Agent 已由 Python 外部子进程迁移为 **Rust 原生引擎**（见 [Agent 引擎架构](architecture/agent-architecture)），

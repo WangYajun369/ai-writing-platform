@@ -149,6 +149,19 @@ python3 .codebuddy/skills/version-release/scripts/bump_version.py patch --dry-ru
 python3 .codebuddy/skills/version-release/scripts/bump_version.py minor --auto-changelog
 ```
 
+> ⚠️ **发版强制步骤（不可跳过）**：`bump_version.py` 只更新 7 个核心文件的 10 个引用点，**不会**触及 `docs/**/*.md` 中的「适用版本 / 最后核对」标记。发版时必须紧接着执行文档版本同步：
+
+```bash
+# 预览：列出所有文档的适用版本与落后情况（必须 0 落后）
+node scripts/refresh-doc-versions.mjs
+
+# 执行：将所有 docs 文档的「适用版本」升级为新版本，「最后核对」刷新为今天
+node scripts/refresh-doc-versions.mjs --write --version <新版本号>
+# 例如: node scripts/refresh-doc-versions.mjs --write --version 1.9.1
+```
+
+> 🛡️ **校验**：执行后再次运行 `node scripts/refresh-doc-versions.mjs`，应显示「落后于当前版本：0」。若仍有落后项，说明存在带注解的版本标记（如 `1.7.0（本规范已于 v1.7.0 落地实现）`），需手动更新（参见规则 15）。
+
 该脚本自动更新的 **10 个版本引用点**（`package.json` 为唯一真源）：
 
 | # | 文件 | 引用点 |
@@ -600,12 +613,16 @@ git checkout main
 git pull origin main
 git merge dev
 
-# 2. Step 1：bump 版本号
+# 2. Step 1：bump 版本号（7 文件 / 10 引用点）
 python3 .codebuddy/skills/version-release/scripts/bump_version.py minor
+
+# 2b. Step 1 补充：同步 docs 文档版本（强制，约 19 个文档的「适用版本」）
+node scripts/refresh-doc-versions.mjs --write --version X.Y.Z
+node scripts/refresh-doc-versions.mjs   # 校验：落后数应为 0
 
 # 3. Step 2：AI 生成 CHANGELOG 内容，填充到 docs/CHANGELOG.md
 
-# 4. Step 3：完整性检查
+# 4. Step 3：完整性检查（含版本一致性断言）
 pnpm check
 
 # 5. Step 4：提交、打 Tag、推送
@@ -628,7 +645,7 @@ git push origin dev
 
 ## 重要规则
 
-1. **绝不跳过版本号同步**：版本号硬编码在 **10 个引用点 / 7 个文件**中（见 Step 1 表格），任一遗漏会导致更新检测失效或版本显示不一致。`pnpm check` 的版本一致性断言会兜住遗漏。
+1. **绝不跳过版本号同步**：版本号硬编码在 **10 个引用点 / 7 个文件**中（见 Step 1 表格），任一遗漏会导致更新检测失效或版本显示不一致。`pnpm check` 的版本一致性断言会兜住这 10 处遗漏。**此外**，`docs/**/*.md` 的「适用版本」标记（约 19 个文档）不在 `check.mjs` 断言范围内，必须由 `refresh-doc-versions.mjs --write --version X.Y.Z` 在发版时手动同步（见规则 14）。
 2. **Tag 格式**：使用 `vX.Y.Z` 格式（带 `v` 前缀），这是 GitHub Actions 工作流的触发条件。
 3. **先更新版本号再打 Tag**：确保 Tag 指向的 commit 已包含版本号更新。workflow 中有「tag 与 tauri.conf.json 版本一致性」校验，不一致会直接构建失败。
 4. **release.yml 的 workflow_dispatch 默认值**：此值仅影响手动触发时的预填值，不影响自动触发流程，但仍建议保持同步（已被一致性断言覆盖）。
@@ -642,16 +659,20 @@ git push origin dev
 11. **Stash 迁移必须使用 `-u` 参数**：`git stash push -u` 能同时暂存未跟踪的新文件，避免文件遗漏。
 12. **新分支命名规范**：使用 `<type>/<简短描述>` 格式（如 `feat/article-export`、`fix/login-crash`），type 遵循 Conventional Commits 前缀。
 13. **Stash 迁移后必须清理**：`stash pop` 成功后 stash 队列应为空；如有冲突残留，需手动 `git stash drop` 清理。
-14. **docs 专题文档的「适用版本」是基线快照，不跟随当前版本**：`docs/**/*.md` 头部的 `> **适用版本**：\`X.Y.Z\`　|　**最后核对**：YYYY-MM-DD` 表示「该文档核对时的基线版本」，**不是**应用当前版本。需要批量刷新核对日期时使用：
+14. **发版时必须同步 docs 文档版本（强制）**：`docs/**/*.md` 头部的 `> **适用版本**：\`X.Y.Z\`　|　**最后核对**：YYYY-MM-DD` 表示「该文档核对时的基线版本」。发版时必须用 `refresh-doc-versions.mjs --write --version <新版本号>` 将所有 docs 升级到当前版本，避免文档停留在旧版本造成信息错位：
 
 ```bash
 node scripts/refresh-doc-versions.mjs                # 预览（列出各文档基线与落后情况）
 node scripts/refresh-doc-versions.mjs --write        # 仅刷新「最后核对」为今天
-node scripts/refresh-doc-versions.mjs --write --version 1.9.0   # 已按新版本复核的文档才加 --version
+node scripts/refresh-doc-versions.mjs --write --version <新版本号>   # 发版时用，升级适用版本
 node scripts/refresh-doc-versions.mjs --stale        # 仅列出落后于当前应用版本的文档
 ```
 
-> 强制跟随应用版本的只有 3 处「当前版本」展示位：`README.md` 头部、`docs/Home.md` 表格、`product/landing-page.html`（已被一致性断言守护）。
+> 强制跟随应用版本的有 3 处「当前版本」展示位：`README.md` 头部、`docs/Home.md` 表格、`product/landing-page.html`（已被 `check.mjs` 一致性断言守护）；docs 的「适用版本」则由 `refresh-doc-versions.mjs` 守护。
+
+15. **带注解的版本标记需手动更新**：`refresh-doc-versions.mjs` 只替换「纯 semver」格式的适用版本（如 `1.7.0`），带注解的（如 `1.7.0（本规范已于 v1.7.0 落地实现）`、`1.0.0（原始分析）`）会被跳过。发版后若 `--stale` 仍有落后项，需手动检查并更新：把版本号改为当前版本，保留括号内的历史注解（如 `1.9.1（本规范已于 v1.7.0 落地实现）`）。常见需手动处理的文件：
+    - `docs/development/import-export-spec.md`（含「已于 v1.7.0 落地实现」注解）
+    - `docs/meta/optimization-report.md`（含「原始分析」历史版本注解）
 
 ## 参考文档
 
