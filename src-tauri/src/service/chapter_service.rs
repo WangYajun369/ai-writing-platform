@@ -21,7 +21,7 @@ use crate::commands::chapter::{ChapterSummaryInfo, RestoreChapterResult, SaveCha
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::Chapter;
-use crate::repository::{book_repo, chapter_repo, volume_repo, writing_stats_repo};
+use crate::repository::{book_repo, chapter_repo, embedding_repo, volume_repo, writing_stats_repo};
 use crate::service::uow::UnitOfWork;
 use crate::utils::{local_today, now, validate_len, MAX_CHAPTER_CONTENT_LEN, MAX_TITLE_LEN};
 use tauri::AppHandle;
@@ -443,6 +443,10 @@ pub fn hard_delete_chapter(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Res
     // DELETE 触发 chapters_fts_ad 触发器 → 使用 DELETE 直接清理 FTS5 索引
     uow.audit("DELETE", "chapters", format!("id={chapter_id}, hard delete"), file!(), line!());
     chapter_repo::hard_delete(uow.conn(), chapter_id)?;
+
+    // embeddings 无外键，显式清理该章节的向量嵌入（含 chunks_vec 镜像行）
+    uow.audit("DELETE", "embeddings", format!("source=chapter/{chapter_id}"), file!(), line!());
+    embedding_repo::delete_by_source(uow.conn(), "chapter", chapter_id)?;
 
     // 按章节字数 delta 扣减书籍总字数（O(1) 更新，避免全量 SUM 扫描剩余章节）
     uow.audit("UPDATE", "books", format!("id={book_id}, apply_word_count_delta={}", -chapter_wc), file!(), line!());

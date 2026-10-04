@@ -204,6 +204,28 @@ pub fn clear_vec_table(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// 删除指定 source 的 embedding 及其 chunks_vec 镜像行
+///
+/// 用于单条章节/世界观卡片删除时的精确清理（比全量 orphan 扫描更高效）。
+/// 返回被删除的 embeddings 行数。
+pub fn delete_by_source(
+    conn: &Connection,
+    source_type: &str,
+    source_id: &str,
+) -> Result<usize> {
+    // 先取 embeddings.id 用于同步删 vec0 镜像
+    let ids: Vec<i64> = conn
+        .prepare("SELECT id FROM embeddings WHERE source_type=?1 AND source_id=?2")?
+        .query_map(params![source_type, source_id], |r| r.get::<_, i64>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    delete_vec_rows(conn, &ids)?;
+    let n = conn.execute(
+        "DELETE FROM embeddings WHERE source_type=?1 AND source_id=?2",
+        params![source_type, source_id],
+    )?;
+    Ok(n)
+}
+
 /// 列出某本书关联的全部 embeddings 行 id（单书导入前清理 vec 镜像用）
 pub fn list_ids_by_book(conn: &Connection, book_id: &str) -> Result<Vec<i64>> {
     let mut stmt = conn.prepare(

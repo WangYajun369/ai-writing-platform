@@ -297,7 +297,7 @@ pub fn restore_book(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppErro
 /// 硬删除书籍及其关联数据
 ///
 /// 硬删除（级联删 volumes/chapters/snapshots/world_cards）+ 两次孤立 embedding
-/// 清理放入同一事务，避免删除成功但清理失败导致孤儿数据残留。
+/// 清理 + Agent 记忆清理放入同一事务，避免删除成功但清理失败导致孤儿数据残留。
 pub fn hard_delete_book(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
     let pooled = db.pool.get()?;
     let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
@@ -310,6 +310,9 @@ pub fn hard_delete_book(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), App
     book_repo::cleanup_orphan_chapter_embeddings(uow.conn())?;
     uow.audit("DELETE", "embeddings", "cleanup orphan world_card embeddings", file!(), line!());
     book_repo::cleanup_orphan_world_card_embeddings(uow.conn())?;
+    // memories.book_id 无外键，显式清理该书的 Agent 记忆
+    uow.audit("DELETE", "memories", format!("book_id={id}"), file!(), line!());
+    book_repo::delete_memories_by_book(uow.conn(), id)?;
 
     uow.audit("COMMIT", "transaction", "hard_delete_book committed", file!(), line!());
     uow.commit()
@@ -332,6 +335,9 @@ pub fn clear_book_trash(app: &AppHandle, db: &AppDb) -> Result<u32, AppError> {
     book_repo::cleanup_orphan_chapter_embeddings(uow.conn())?;
     uow.audit("DELETE", "embeddings", "cleanup orphan world_card embeddings", file!(), line!());
     book_repo::cleanup_orphan_world_card_embeddings(uow.conn())?;
+    // memories.book_id 无外键，清理已删书籍的 Agent 记忆
+    uow.audit("DELETE", "memories", "cleanup deleted books", file!(), line!());
+    book_repo::delete_memories_of_deleted_books(uow.conn())?;
 
     uow.audit("COMMIT", "transaction", "clear_book_trash committed", file!(), line!());
     uow.commit()

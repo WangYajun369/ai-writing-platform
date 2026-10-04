@@ -1069,6 +1069,8 @@ pub fn hard_delete_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), App
     let ts = now();
     task_repo::clean_orphan_parents(uow.conn(), &ts)?;
     uow.commit()?;
+    // 附件记录已 CASCADE 删除，清理磁盘上的孤儿附件文件（事务外副作用）
+    let _ = crate::service::attachment_service::cleanup_orphan_files(app, db);
     Ok(())
 }
 
@@ -1102,6 +1104,8 @@ pub fn clear_task_trash(app: &AppHandle, db: &AppDb) -> Result<u32, AppError> {
     let ts = now();
     task_repo::clean_orphan_parents(uow.conn(), &ts)?;
     uow.commit()?;
+    // 附件记录已 CASCADE 删除，清理磁盘上的孤儿附件文件（事务外副作用）
+    let _ = crate::service::attachment_service::cleanup_orphan_files(app, db);
     Ok(count)
 }
 

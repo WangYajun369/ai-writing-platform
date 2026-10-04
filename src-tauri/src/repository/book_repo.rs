@@ -263,6 +263,25 @@ fn orphan_embedding_ids(conn: &Connection, source_type: &str) -> Result<Vec<i64>
     rows.collect()
 }
 
+/// 删除指定书籍的全部 Agent 记忆（硬删书籍时同事务调用）
+///
+/// memories.book_id 无外键约束，需显式清理避免孤儿记忆。
+pub fn delete_memories_by_book(conn: &Connection, book_id: &str) -> Result<usize> {
+    conn.execute(
+        "DELETE FROM memories WHERE book_id=?1",
+        params![book_id],
+    )
+}
+
+/// 删除全部已软删书籍的 Agent 记忆（清空书籍回收站前置调用）
+pub fn delete_memories_of_deleted_books(conn: &Connection) -> Result<usize> {
+    conn.execute(
+        "DELETE FROM memories WHERE book_id IN \
+         (SELECT id FROM books WHERE deleted_at IS NOT NULL)",
+        [],
+    )
+}
+
 /// 查询书籍日更目标（写作统计用，缺省 0）
 pub fn find_daily_target(conn: &Connection, book_id: &str) -> Result<i64> {
     conn.query_row(

@@ -5,7 +5,7 @@
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::WorldCard;
-use crate::repository::world_card_repo;
+use crate::repository::{embedding_repo, world_card_repo};
 use crate::service::uow::UnitOfWork;
 use crate::utils::{
     escape_fts5_query, like_pattern, now, validate_len, DynamicUpdate, MAX_TAGS_COUNT, MAX_TAG_LEN,
@@ -188,6 +188,9 @@ pub fn delete_world_card(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), Ap
     let mut uow = UnitOfWork::new(&pooled, Some(app));
     uow.audit("DELETE", "world_cards", format!("id={id}"), file!(), line!());
     world_card_repo::delete(uow.conn(), id)?;
+    // embeddings 无外键，显式清理该卡片的向量嵌入（含 chunks_vec 镜像行）
+    uow.audit("DELETE", "embeddings", format!("source=world_card/{id}"), file!(), line!());
+    embedding_repo::delete_by_source(uow.conn(), "world_card", id)?;
     uow.commit()?;
     Ok(())
 }
