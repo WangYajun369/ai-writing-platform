@@ -304,24 +304,25 @@ pub fn update_project(
 
 /// 软删除项目（连同其下全部任务一并软删除，事务保证）
 pub fn delete_project(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
+    // v1.9：迁移到 UnitOfWork，事务边界 + 审计统一收口。
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
     let ts = now();
-    emit_sql_log(
-        app,
+    uow.audit(
         "UPDATE",
         "projects",
-        &format!("id={id}, soft delete (+tasks)"),
+        format!("id={id}, soft delete (+tasks)"),
         file!(),
         line!(),
     );
-    let affected = project_repo::soft_delete(&tx, id, &ts)?;
+    let affected = project_repo::soft_delete(uow.conn(), id, &ts)?;
     if affected == 0 {
         return Err(AppError::NotFound("未找到该项目或项目已删除".into()));
     }
-    let task_count = project_repo::soft_delete_tasks(&tx, id, &ts)?;
+    let task_count = project_repo::soft_delete_tasks(uow.conn(), id, &ts)?;
     crate::app_log!("[TaskCards] 删除项目 {id} 连带软删任务 {task_count} 条");
-    tx.commit()?;
+    uow.commit()?;
     Ok(())
 }
 
@@ -330,51 +331,53 @@ pub fn delete_project(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppEr
 /// 删除项目前已单独进回收站的任务（deleted_at 与项目不同）保持原状，
 /// 由用户在任务回收站自行决定是否恢复。
 pub fn restore_project(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
+    // v1.9：迁移到 UnitOfWork，事务边界 + 审计统一收口。
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
     // restore 前置读取项目的删除时间戳（restore 后 deleted_at 置空），
     // 用它精确匹配「随项目一并删除」的任务子集
-    let project_deleted_at = project_repo::find_by_id(&tx, id)?.deleted_at;
+    let project_deleted_at = project_repo::find_by_id(uow.conn(), id)?.deleted_at;
     let ts = now();
-    emit_sql_log(
-        app,
+    uow.audit(
         "UPDATE",
         "projects",
-        &format!("id={id}, restore (+tasks)"),
+        format!("id={id}, restore (+tasks)"),
         file!(),
         line!(),
     );
-    let affected = project_repo::restore(&tx, id, &ts)?;
+    let affected = project_repo::restore(uow.conn(), id, &ts)?;
     if affected == 0 {
         return Err(AppError::NotFound("未找到该项目或该项目不在回收站".into()));
     }
     if let Some(ref pd) = project_deleted_at {
-        let _ = project_repo::restore_tasks(&tx, id, pd, &ts)?;
+        let _ = project_repo::restore_tasks(uow.conn(), id, pd, &ts)?;
     }
-    tx.commit()?;
+    uow.commit()?;
     Ok(())
 }
 
 /// 彻底删除项目（仅限回收站中的项目；CASCADE 删除其下任务与任务-标签关联，
 /// 同事务显式清理操作日志）
 pub fn hard_delete_project(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork，事务边界 + 审计统一收口。
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
+    uow.audit(
         "DELETE",
         "projects",
-        &format!("id={id}, hard delete"),
+        format!("id={id}, hard delete"),
         file!(),
         line!(),
     );
-    let affected = project_repo::hard_delete(&tx, id)?;
+    let affected = project_repo::hard_delete(uow.conn(), id)?;
     if affected == 0 {
         return Err(AppError::Business("仅回收站中的项目可彻底删除".into()));
     }
     // task_activity_logs 无外键，硬删后需显式清理日志避免孤儿化
-    activity_log_repo::delete_by_project(&tx, id)?;
-    tx.commit()?;
+    activity_log_repo::delete_by_project(uow.conn(), id)?;
+    uow.commit()?;
     Ok(())
 }
 
@@ -394,13 +397,21 @@ pub fn list_deleted_projects(app: &AppHandle, db: &AppDb) -> Result<Vec<Project>
 
 /// 清空项目回收站（同事务清理已删项目的操作日志）
 pub fn clear_project_trash(app: &AppHandle, db: &AppDb) -> Result<u32, AppError> {
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
-    emit_sql_log(app, "DELETE", "projects", "clear trash", file!(), line!());
-    let count = project_repo::count_deleted(&tx)?;
+    // v1.9：迁移到 UnitOfWork，事务边界 + 审计统一收口。
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
+    uow.audit(
+        "DELETE",
+        "projects",
+        "clear trash".to_string(),
+        file!(),
+        line!(),
+    );
+    let count = project_repo::count_deleted(uow.conn())?;
     // task_activity_logs 无外键，先清理已删项目的日志再删项目
-    activity_log_repo::delete_logs_of_deleted_projects(&tx)?;
-    project_repo::clear_trash(&tx)?;
-    tx.commit()?;
+    activity_log_repo::delete_logs_of_deleted_projects(uow.conn())?;
+    project_repo::clear_trash(uow.conn())?;
+    uow.commit()?;
     Ok(count)
 }

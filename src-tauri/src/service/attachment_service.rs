@@ -67,13 +67,14 @@ pub fn ensure_store(app: &AppHandle, db: &AppDb) -> Result<(), AppError> {
     }
 
     // 2) local_path 规范化（历史绝对路径 → 相对数据根）
-    let mut conn = db.pool.get()?;
-    let rows = attachment_repo::all_id_paths(&conn)?;
+    let pooled = db.pool.get()?;
+    let rows = attachment_repo::all_id_paths(&pooled)?;
     if rows.is_empty() {
         return Ok(());
     }
-    let tx = conn
-        .transaction()
+    // v1.9：迁移到 UnitOfWork，事务边界 + 审计统一收口。
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()
         .map_err(|e| AppError::Business(format!("开始附件路径清洗事务失败: {e}")))?;
     let mut changed = 0usize;
     for (id, stored) in rows {
@@ -83,7 +84,7 @@ pub fn ensure_store(app: &AppHandle, db: &AppDb) -> Result<(), AppError> {
         };
         let rel = format!("{ATTACHMENT_DIR}/{name}");
         if rel != stored {
-            tx.execute(
+            uow.conn().execute(
                 "UPDATE attachments SET local_path=?1 WHERE id=?2",
                 rusqlite::params![rel, id],
             )?;
@@ -91,17 +92,17 @@ pub fn ensure_store(app: &AppHandle, db: &AppDb) -> Result<(), AppError> {
         }
     }
     if changed > 0 {
-        tx.commit()
-            .map_err(|e| AppError::Business(format!("附件路径清洗提交失败: {e}")))?;
-        emit_sql_log(
-            app,
+        uow.audit(
             "UPDATE",
             "attachments",
-            &format!("规范化 {changed} 条路径为相对数据根"),
+            format!("规范化 {changed} 条路径为相对数据根"),
             file!(),
             line!(),
         );
+        uow.commit()
+            .map_err(|e| AppError::Business(format!("附件路径清洗提交失败: {e}")))?;
     }
+    // changed == 0 时 Uow::drop 自动 rollback 空事务（与原 tx 不 commit 等价）
     Ok(())
 }
 
@@ -228,23 +229,28 @@ pub fn add_file(
     let dest = dir.join(&stored);
     std::fs::copy(source, &dest)?;
 
-    let conn = db.pool.get()?;
+    let pooled = db.pool.get()?;
     let ts = now();
     let ts_att = ts.clone();
+    // v1.9：迁移到 UnitOfWork，insert + activity_log 同事务，保证「添加即留痕」原子性。
+    // 文件复制副作用仍在事务外：失败时返回；insert/activity_log 失败时事务回滚 + 删除已复制文件。
     let result = (|| -> Result<Attachment, AppError> {
-        let task_id = task_active_or_err(&conn, task_id)?.0;
-        emit_sql_log(
-            app,
+        let task_id = task_active_or_err(&pooled, task_id)?.0;
+        let project_id = task_repo::project_id_of_active(&pooled, &task_id)
+            .ok()
+            .flatten();
+        let rel = format!("{ATTACHMENT_DIR}/{stored}");
+        let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+        uow.begin_transaction()?;
+        uow.audit(
             "INSERT",
             "attachments",
-            &format!("id={id}"),
+            format!("id={id}"),
             file!(),
             line!(),
         );
-        // local_path 记录相对数据根的路径（attachments/<磁盘名>），随 db 一起搬迁仍可用
-        let rel = format!("{ATTACHMENT_DIR}/{stored}");
         attachment_repo::insert(
-            &conn,
+            uow.conn(),
             &id,
             &task_id,
             &file_name,
@@ -253,28 +259,31 @@ pub fn add_file(
             &rel,
             &ts,
         )?;
-        let mut list = attachment_repo::list_by_task(&conn, &task_id)?;
+        let mut list = attachment_repo::list_by_task(uow.conn(), &task_id)?;
         list.retain(|a| a.id == id);
-        Ok(list.into_iter().next().unwrap_or_else(|| Attachment {
+        let att = list.into_iter().next().unwrap_or_else(|| Attachment {
             id: id.clone(),
             task_id: task_id.clone(),
             file_name: file_name.clone(),
             file_type: ext.clone(),
             file_size: meta.len() as i64,
             created_at: ts_att.clone(),
-        }))
+        });
+        activity_log_service::try_task_log_with_conn(
+            uow.conn(),
+            &task_id,
+            project_id.as_deref(),
+            "attachment.added",
+            &format!("添加附件 {file_name}"),
+        )?;
+        uow.commit()?;
+        Ok(att)
     })();
     if let Err(e) = result {
         // 入库失败则回滚已复制文件
         let _ = std::fs::remove_file(&dest);
         return Err(e);
     }
-    activity_log_service::try_task_log(
-        db,
-        task_id,
-        "attachment.added",
-        &format!("添加附件 {file_name}"),
-    );
     result
 }
 
@@ -293,28 +302,38 @@ pub fn open_attachment(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppE
 
 /// 删除附件：硬删记录并删除文件（记录与文件同步移除，不产生无法还原的软删占位）
 pub fn delete_attachment(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
-    let conn = db.pool.get()?;
-    let (att, stored) = attachment_repo::find_active(&conn, id)
+    // v1.9：迁移到 UnitOfWork，事务边界 + 审计统一收口 + activity_log 纳入同事务。
+    let pooled = db.pool.get()?;
+    let (att, stored) = attachment_repo::find_active(&pooled, id)
         .map_err(|_| AppError::NotFound("附件不存在或已删除".into()))?;
     let task_id = att.task_id.clone();
-    emit_sql_log(
-        app,
+    let file_name = att.file_name.clone();
+    // 在 hard_delete 之前查 project_id（避免删除后查不到）
+    let project_id = task_repo::project_id_of_active(&pooled, &task_id)
+        .ok()
+        .flatten();
+
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
+    uow.audit(
         "DELETE",
         "attachments",
-        &format!("id={id}"),
+        format!("id={id}"),
         file!(),
         line!(),
     );
-    attachment_repo::hard_delete(&conn, id)?;
-    if let Ok(p) = resolve_local(app, &stored) {
-        let _ = std::fs::remove_file(&p); // 记录已删，文件尽力清理
-    }
-    activity_log_service::try_task_log(
-        db,
+    attachment_repo::hard_delete(uow.conn(), id)?;
+    activity_log_service::try_task_log_with_conn(
+        uow.conn(),
         &task_id,
+        project_id.as_deref(),
         "attachment.removed",
-        &format!("删除附件 {}", att.file_name),
-    );
+        &format!("删除附件 {file_name}"),
+    )?;
+    uow.commit()?;
+    if let Ok(p) = resolve_local(app, &stored) {
+        let _ = std::fs::remove_file(&p); // 记录已删，文件尽力清理（事务外副作用）
+    }
     Ok(())
 }
 

@@ -51,21 +51,23 @@ fn validate_name(
 
 /// 创建标签（默认启用）
 pub fn create_tag(app: &AppHandle, db: &AppDb, name: &str, color: &str) -> Result<Tag, AppError> {
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
     let ts = now();
-    let conn = db.pool.get()?;
-    let name = validate_name(&conn, name, None)?;
+    let pooled = db.pool.get()?;
+    let name = validate_name(&pooled, name, None)?;
     let color = color.trim().to_string();
     let id = Uuid::new_v4().to_string();
-    emit_sql_log(
-        app,
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "INSERT",
         "tags",
-        &format!("id={id}, name={name}"),
+        format!("id={id}, name={name}"),
         file!(),
         line!(),
     );
-    tag_repo::insert(&conn, &id, &name, &color, &ts)?;
-    Ok(tag_repo::find_by_id(&conn, &id)?
+    tag_repo::insert(uow.conn(), &id, &name, &color, &ts)?;
+    uow.commit()?;
+    Ok(tag_repo::find_by_id(&pooled, &id)?
         .ok_or_else(|| AppError::General("创建标签后读取失败".into()))?)
 }
 
@@ -76,8 +78,9 @@ pub fn update_tag(
     id: &str,
     params: UpdateTagParams,
 ) -> Result<Tag, AppError> {
-    let conn = db.pool.get()?;
-    let existing = tag_repo::find_by_id(&conn, id)?
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let existing = tag_repo::find_by_id(&pooled, id)?
         .ok_or_else(|| AppError::NotFound("未找到该标签".into()))?;
 
     let mut name = existing.name;
@@ -85,7 +88,7 @@ pub fn update_tag(
     let mut status = existing.status;
 
     if let Some(n) = params.name {
-        name = validate_name(&conn, &n, Some(id))?;
+        name = validate_name(&pooled, &n, Some(id))?;
     }
     if let Some(c) = params.color {
         color = c.trim().to_string();
@@ -98,24 +101,28 @@ pub fn update_tag(
     }
 
     let ts = now();
-    emit_sql_log(app, "UPDATE", "tags", &format!("id={id}"), file!(), line!());
-    tag_repo::update(&conn, id, &name, &color, &status, &ts)?;
-    Ok(tag_repo::find_by_id(&conn, id)?
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.audit("UPDATE", "tags", format!("id={id}"), file!(), line!());
+    tag_repo::update(uow.conn(), id, &name, &color, &status, &ts)?;
+    uow.commit()?;
+    Ok(tag_repo::find_by_id(&pooled, id)?
         .ok_or_else(|| AppError::General("更新标签后读取失败".into()))?)
 }
 
 /// 删除标签（返回被移除的关联数；task_tags 由外键级联清理）
 pub fn delete_tag(app: &AppHandle, db: &AppDb, id: &str) -> Result<i64, AppError> {
-    let conn = db.pool.get()?;
-    let usage = tag_repo::usage_count(&conn, id)?;
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let usage = tag_repo::usage_count(&pooled, id)?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "DELETE",
         "tags",
-        &format!("id={id}, usage={usage}"),
+        format!("id={id}, usage={usage}"),
         file!(),
         line!(),
     );
-    tag_repo::delete(&conn, id)?;
+    tag_repo::delete(uow.conn(), id)?;
+    uow.commit()?;
     Ok(usage)
 }

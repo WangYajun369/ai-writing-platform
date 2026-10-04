@@ -340,9 +340,10 @@ pub fn update_task(
     id: &str,
     params: UpdateTaskParams,
 ) -> Result<TaskCard, AppError> {
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
-    let current = task_repo::find_active(&tx, id)
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
+    let current = task_repo::find_active(uow.conn(), id)
         .map_err(|_| AppError::NotFound("未找到该任务或任务已删除".into()))?;
 
     if let Some(ref title) = params.title {
@@ -386,7 +387,7 @@ pub fn update_task(
         new_status.is_some() && new_status.as_deref() != Some(current.status.as_str());
     // 完成前置校验（P2）：由非 done 进入 done 前必须先完成全部子任务
     if status_changed && new_status.as_deref() == Some("done") {
-        ensure_all_subtasks_done(&tx, id, "done")?;
+        ensure_all_subtasks_done(uow.conn(), id, "done")?;
     }
 
     // 动态 UPDATE 由统一的 DynamicUpdate 构建器生成（列名均为代码字面量）
@@ -403,7 +404,7 @@ pub fn update_task(
     }
     // 父任务：Some(空) 解除关联成顶层；Some(id) 校验后关联（同项目、防环）
     if let Some(v) = params.parent_id {
-        let resolved = resolve_parent_id(&tx, Some(id), &current.project_id, Some(v))?;
+        let resolved = resolve_parent_id(uow.conn(), Some(id), &current.project_id, Some(v))?;
         upd.push("parent_id", resolved);
     }
     if let Some(s) = new_status {
@@ -448,61 +449,50 @@ pub fn update_task(
     }
 
     if let Some((sql, values)) = upd.build(id, &ts) {
-        emit_sql_log(
-            app,
-            "UPDATE",
-            "tasks",
-            &format!("id={id}"),
-            file!(),
-            line!(),
-        );
+        uow.audit("UPDATE", "tasks", format!("id={id}"), file!(), line!());
         let params_refs: Vec<&dyn rusqlite::types::ToSql> =
             values.iter().map(|p| p.as_ref()).collect();
-        tx.execute(&sql, params_refs.as_slice())?;
+        uow.conn().execute(&sql, params_refs.as_slice())?;
     }
     if let Some(ids) = params.tag_ids {
-        replace_tags(&tx, id, &ids, &ts)?;
+        replace_tags(uow.conn(), id, &ids, &ts)?;
     }
     // 完成时推进重复任务（P2）：由其他状态转为 done
     let spawned = if status_changed && params.status.as_deref() == Some("done") {
-        roll_recurrence(app, &tx, &current, &ts)?
+        roll_recurrence(app, uow.conn(), &current, &ts)?
     } else {
         None
     };
-    tx.commit()?;
-    // 操作日志埋点（尽力而为）
+    // v1.9：activity_log 纳入事务（try_task_log_with_conn），保证「更新即留痕」原子性。
+    // 在 commit 之前提前 clone title + project_id，避免 commit 后 current 已 drop。
     let was_done = current.status == "done";
-    let title = current.title;
-    if status_changed {
+    let title = current.title.clone();
+    let project_id = current.project_id.clone();
+    let (action, summary) = if status_changed {
         match params.status.as_deref() {
             Some("done") => {
-                let summary = if spawned.is_some() {
+                let s = if spawned.is_some() {
                     format!("完成任务「{title}」，并自动生成下一次重复")
                 } else {
                     format!("完成任务「{title}」")
                 };
-                activity_log_service::try_task_log(db, id, "task.completed", &summary);
+                ("task.completed", s)
             }
-            Some(_) if was_done => {
-                activity_log_service::try_task_log(
-                    db,
-                    id,
-                    "task.reopened",
-                    &format!("重新打开任务「{title}」"),
-                );
-            }
-            _ => {
-                activity_log_service::try_task_log(
-                    db,
-                    id,
-                    "task.updated",
-                    &format!("更新任务「{title}」"),
-                );
-            }
+            Some(_) if was_done => ("task.reopened", format!("重新打开任务「{title}」")),
+            _ => ("task.updated", format!("更新任务「{title}」")),
         }
     } else {
-        activity_log_service::try_task_log(db, id, "task.updated", &format!("更新任务「{title}」"));
-    }
+        ("task.updated", format!("更新任务「{title}」"))
+    };
+    activity_log_service::try_task_log_with_conn(
+        uow.conn(),
+        id,
+        Some(&project_id),
+        action,
+        &summary,
+    )?;
+
+    uow.commit()?;
     get_task(app, db, id)
 }
 
@@ -510,14 +500,14 @@ pub fn update_task(
 /// 由各「进入 done」入口（update_task / set_task_status / drag_task）调用，
 /// 保证所有完成路径（勾选、详情状态切换、看板拖拽）行为一致。
 fn ensure_all_subtasks_done(
-    tx: &rusqlite::Transaction,
+    conn: &rusqlite::Connection,
     task_id: &str,
     to_status: &str,
 ) -> Result<(), AppError> {
     if to_status != "done" {
         return Ok(());
     }
-    let items = subtask_repo::list_by_task(tx, task_id)?;
+    let items = subtask_repo::list_by_task(conn, task_id)?;
     let pending = items.iter().filter(|s| !s.done).count();
     if pending > 0 {
         return Err(AppError::Validation(format!(
@@ -540,17 +530,18 @@ pub fn set_task_status(
     if !valid_status(status) {
         return Err(AppError::Validation(format!("无效的任务状态: {status}")));
     }
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
-    let current = task_repo::find_active(&tx, id)
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
+    let current = task_repo::find_active(uow.conn(), id)
         .map_err(|_| AppError::NotFound("未找到该任务或任务已删除".into()))?;
     if current.status == status {
-        tx.commit()?;
+        uow.commit()?;
         return get_task(app, db, id);
     }
     // 完成前置校验（P2）：进入 done 前必须先完成全部子任务
     if status == "done" {
-        ensure_all_subtasks_done(&tx, id, status)?;
+        ensure_all_subtasks_done(uow.conn(), id, status)?;
     }
     let ts = now();
     let now_local = local_now();
@@ -559,56 +550,57 @@ pub fn set_task_status(
     } else {
         None
     };
-    emit_sql_log(
-        app,
+    uow.audit(
         "UPDATE",
         "tasks",
-        &format!("id={id}, status {}=>{status}", current.status),
+        format!("id={id}, status {}=>{status}", current.status),
         file!(),
         line!(),
     );
-    task_repo::update_status(&tx, id, status, comp, &ts)?;
+    task_repo::update_status(uow.conn(), id, status, comp, &ts)?;
     // 完成时保存本次总结（重新打开任务不会改动历史总结）
     if status == "done" {
         if let Some(s) = completion_summary {
-            emit_sql_log(
-                app,
+            uow.audit(
                 "UPDATE",
                 "tasks",
-                &format!("id={id}, completion_summary={} 字", s.chars().count()),
+                format!("id={id}, completion_summary={} 字", s.chars().count()),
                 file!(),
                 line!(),
             );
-            task_repo::update_completion_summary(&tx, id, s, &ts)?;
+            task_repo::update_completion_summary(uow.conn(), id, s, &ts)?;
         }
     }
     // 移动到目标状态列尾部
-    let next = task_repo::next_sort_order(&tx, &current.project_id, status)?;
-    task_repo::set_sort_order(&tx, id, next, &ts)?;
+    let next = task_repo::next_sort_order(uow.conn(), &current.project_id, status)?;
+    task_repo::set_sort_order(uow.conn(), id, next, &ts)?;
     // 完成时推进重复任务（P2）
     let spawned = if status == "done" {
-        roll_recurrence(app, &tx, &current, &ts)?
+        roll_recurrence(app, uow.conn(), &current, &ts)?
     } else {
         None
     };
-    tx.commit()?;
-    // 操作日志埋点（尽力而为）
-    let title = current.title;
-    if status == "done" {
-        let summary = if spawned.is_some() {
+    // v1.9：activity_log 纳入事务，保证「状态变更即留痕」原子性
+    let title = current.title.clone();
+    let project_id = current.project_id.clone();
+    let (action, summary) = if status == "done" {
+        let s = if spawned.is_some() {
             format!("完成任务「{title}」，并自动生成下一次重复")
         } else {
             format!("完成任务「{title}」")
         };
-        activity_log_service::try_task_log(db, id, "task.completed", &summary);
+        ("task.completed", s)
     } else {
-        activity_log_service::try_task_log(
-            db,
-            id,
-            "task.reopened",
-            &format!("重新打开任务「{title}」"),
-        );
-    }
+        ("task.reopened", format!("重新打开任务「{title}」"))
+    };
+    activity_log_service::try_task_log_with_conn(
+        uow.conn(),
+        id,
+        Some(&project_id),
+        action,
+        &summary,
+    )?;
+    uow.commit()?;
     get_task(app, db, id)
 }
 
@@ -626,15 +618,16 @@ pub fn drag_task(
     if !valid_status(to_status) {
         return Err(AppError::Validation(format!("无效的任务状态: {to_status}")));
     }
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
-    let current = task_repo::find_active(&tx, task_id)
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
+    let current = task_repo::find_active(uow.conn(), task_id)
         .map_err(|_| AppError::NotFound("未找到该任务或任务已删除".into()))?;
     let ts = now();
     if current.status != to_status {
         // 完成前置校验（P2）：拖入「已完成」列前必须先完成全部子任务
         if to_status == "done" {
-            ensure_all_subtasks_done(&tx, task_id, to_status)?;
+            ensure_all_subtasks_done(uow.conn(), task_id, to_status)?;
         }
         let now_local = local_now();
         let comp = if to_status == "done" {
@@ -642,15 +635,14 @@ pub fn drag_task(
         } else {
             None
         };
-        emit_sql_log(
-            app,
+        uow.audit(
             "UPDATE",
             "tasks",
-            &format!("id={task_id}, drag {}=>{to_status}", current.status),
+            format!("id={task_id}, drag {}=>{to_status}", current.status),
             file!(),
             line!(),
         );
-        task_repo::update_status(&tx, task_id, to_status, comp, &ts)?;
+        task_repo::update_status(uow.conn(), task_id, to_status, comp, &ts)?;
     }
     // 按目标列最终顺序重排（事务内，失败自动回滚）
     // 归属校验：列表须包含被拖拽任务本身，且全部为本项目未删除任务，
@@ -660,32 +652,40 @@ pub fn drag_task(
             "重排序列表必须包含被拖拽的任务".into(),
         ));
     }
-    let owned = task_repo::count_active_ids_in_project(&tx, &current.project_id, &ordered_ids)?;
+    let owned =
+        task_repo::count_active_ids_in_project(uow.conn(), &current.project_id, &ordered_ids)?;
     if owned != ordered_ids.len() {
         return Err(AppError::Validation(
             "重排序列表包含不属于本项目或已删除的任务".into(),
         ));
     }
     for (i, tid) in ordered_ids.iter().enumerate() {
-        task_repo::set_sort_order(&tx, tid, i as i64, &ts)?;
+        task_repo::set_sort_order(uow.conn(), tid, i as i64, &ts)?;
     }
     // 拖拽完成时推进重复任务（P2）
     let spawned = if to_status == "done" && current.status != "done" {
-        roll_recurrence(app, &tx, &current, &ts)?
+        roll_recurrence(app, uow.conn(), &current, &ts)?
     } else {
         None
     };
-    tx.commit()?;
-    // 操作日志埋点（尽力而为）
-    let title = current.title;
+    // v1.9：activity_log 纳入事务，保证「拖拽完成即留痕」原子性
     if to_status == "done" {
+        let title = current.title.clone();
+        let project_id = current.project_id.clone();
         let summary = if spawned.is_some() {
             format!("完成任务「{title}」，并自动生成下一次重复")
         } else {
             format!("完成任务「{title}」")
         };
-        activity_log_service::try_task_log(db, task_id, "task.completed", &summary);
+        activity_log_service::try_task_log_with_conn(
+            uow.conn(),
+            task_id,
+            Some(&project_id),
+            "task.completed",
+            &summary,
+        )?;
     }
+    uow.commit()?;
     Ok(())
 }
 
@@ -698,7 +698,7 @@ pub fn drag_task(
 /// - 到达 endDate 后不再生成（原任务保持已完成，规则自然失效）
 fn roll_recurrence(
     app: &AppHandle,
-    tx: &rusqlite::Transaction,
+    conn: &rusqlite::Connection,
     current: &TaskCard,
     ts: &str,
 ) -> Result<Option<String>, AppError> {
@@ -717,7 +717,7 @@ fn roll_recurrence(
     };
     // 防重：同一锚点已生成过实例则跳过（任务「重开后再次完成」不重复生成下一期）
     let spawn_key = format!("taskcard:recurrence:spawned:{}:{anchor}", current.id);
-    if task_meta_repo::get(tx, &spawn_key)?.is_some() {
+    if task_meta_repo::get(conn, &spawn_key)?.is_some() {
         return Ok(None);
     }
     // 结束日期拦截：next 超出 endDate → 不再生成
@@ -734,7 +734,7 @@ fn roll_recurrence(
         }
     }
     let new_id = Uuid::new_v4().to_string();
-    let sort_order = task_repo::next_sort_order(tx, &current.project_id, "todo")?;
+    let sort_order = task_repo::next_sort_order(conn, &current.project_id, "todo")?;
     // 只替换截止日期部分，保留原时刻
     let next_fmt = next.format("%Y-%m-%d").to_string();
     let new_due = current.due_time.as_deref().map(|d| {
@@ -753,7 +753,7 @@ fn roll_recurrence(
         line!(),
     );
     task_repo::insert(
-        tx,
+        conn,
         &new_id,
         &current.project_id,
         current.parent_id.as_deref(),
@@ -769,7 +769,7 @@ fn roll_recurrence(
         ts,
     )?;
     task_repo::update_ext(
-        tx,
+        conn,
         &new_id,
         Some(rule),
         Some(current.note_html.as_str()),
@@ -779,12 +779,12 @@ fn roll_recurrence(
     )?;
     let ids = vec![current.id.clone()];
     // 事务内标签复制失败必须传播（回滚），否则新实例会静默丢标签
-    let pairs = task_repo::tags_of_tasks(tx, &ids)?;
+    let pairs = task_repo::tags_of_tasks(conn, &ids)?;
     for (_, tag) in pairs {
-        task_repo::add_task_tag(tx, &new_id, &tag.id, ts)?;
+        task_repo::add_task_tag(conn, &new_id, &tag.id, ts)?;
     }
     // 写入防重标记：同锚点重复完成（重开后再完成）不再生成实例
-    task_meta_repo::set(tx, &spawn_key, &new_id, ts)?;
+    task_meta_repo::set(conn, &spawn_key, &new_id, ts)?;
     Ok(Some(new_id))
 }
 
@@ -1003,84 +1003,116 @@ pub fn move_task_to_project(
 
 /// 软删除任务（其后代任务的父引用由孤儿清理自动解除，变成独立顶层任务；事务保证）
 pub fn delete_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
-    let title = task_repo::find_by_id(&tx, id)
-        .map_err(|_| AppError::NotFound("未找到该任务".into()))?
-        .title;
+    // v1.9：迁移到 UnitOfWork，事务边界 + 审计统一收口 + activity_log 纳入同事务。
+    // - 原 emit_sql_log 手写两次 → uow.audit() 累积，commit 时统一 emit
+    // - 原 tx.commit() 隐式回滚 → Uow::drop 自动回滚（? 失败路径覆盖）
+    // - 原 activity_log 用 db 新连接 → 改用 try_task_log_with_conn 纳入同事务，
+    //   保证「删除即留痕」原子性（日志失败则删除也回滚）
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
+
+    // 在 soft_delete 之前先拿到 title + project_id，避免删除后查不到
+    let task = task_repo::find_by_id(uow.conn(), id)
+        .map_err(|_| AppError::NotFound("未找到该任务".into()))?;
+    let title = task.title.clone();
+    let project_id = task.project_id.clone();
     let ts = now();
-    emit_sql_log(
-        app,
+
+    uow.audit(
         "UPDATE",
         "tasks",
-        &format!("id={id}, soft delete"),
+        format!("id={id}, soft delete"),
         file!(),
         line!(),
     );
-    task_repo::soft_delete(&tx, id, &ts)?;
-    task_repo::clean_orphan_parents(&tx, &ts)?;
-    tx.commit()?;
-    activity_log_service::try_task_log(db, id, "task.deleted", &format!("删除任务「{title}」"));
+    task_repo::soft_delete(uow.conn(), id, &ts)?;
+    uow.audit(
+        "UPDATE",
+        "tasks",
+        "clean orphan parents",
+        file!(),
+        line!(),
+    );
+    task_repo::clean_orphan_parents(uow.conn(), &ts)?;
+
+    // activity_log 在同事务内写入，project_id 已在删除前拿到
+    activity_log_service::try_task_log_with_conn(
+        uow.conn(),
+        id,
+        Some(&project_id),
+        "task.deleted",
+        &format!("删除任务「{title}」"),
+    )?;
+
+    uow.commit()?;
     Ok(())
 }
 
 /// 恢复任务（所属项目必须未删除，否则引导先恢复项目；事务保证）
 pub fn restore_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
-    let deleted =
-        task_repo::find_by_id(&tx, id).map_err(|_| AppError::NotFound("未找到该任务".into()))?;
+    // v1.9：迁移到 UnitOfWork，事务边界 + 审计统一收口 + activity_log 纳入同事务。
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
+    let deleted = task_repo::find_by_id(uow.conn(), id)
+        .map_err(|_| AppError::NotFound("未找到该任务".into()))?;
     if deleted.deleted_at.is_none() {
         return Err(AppError::Business("该任务不在回收站中".into()));
     }
-    project_repo::find_active(&tx, &deleted.project_id)
+    project_repo::find_active(uow.conn(), &deleted.project_id)
         .map_err(|_| AppError::Business("所属项目已删除，请先在回收站恢复项目".into()))?;
+    // 在 restore 之前先 clone title + project_id，供 activity_log 使用
+    let title = deleted.title.clone();
+    let project_id = deleted.project_id.clone();
     let ts = now();
-    emit_sql_log(
-        app,
+    uow.audit(
         "UPDATE",
         "tasks",
-        &format!("id={id}, restore"),
+        format!("id={id}, restore"),
         file!(),
         line!(),
     );
-    let affected = task_repo::restore(&tx, id, &ts)?;
+    let affected = task_repo::restore(uow.conn(), id, &ts)?;
     if affected == 0 {
         return Err(AppError::NotFound("未找到该任务或任务不在回收站".into()));
     }
     // 恢复任务的父引用可能已悬空（父被删/被迁移），执行孤儿清理保持层级有效
-    task_repo::clean_orphan_parents(&tx, &ts)?;
-    tx.commit()?;
-    activity_log_service::try_task_log(
-        db,
+    task_repo::clean_orphan_parents(uow.conn(), &ts)?;
+    activity_log_service::try_task_log_with_conn(
+        uow.conn(),
         id,
+        Some(&project_id),
         "task.restored",
-        &format!("从回收站恢复任务「{}」", deleted.title),
-    );
+        &format!("从回收站恢复任务「{title}」"),
+    )?;
+    uow.commit()?;
     Ok(())
 }
 
 /// 彻底删除任务（仅限回收站中的任务；同事务清理操作日志与孤儿父引用）
 pub fn hard_delete_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork，事务边界 + 审计统一收口。
+    // 注意：hard_delete 无 activity_log（任务连同日志一起硬删，无留痕需求）。
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
+    uow.audit(
         "DELETE",
         "tasks",
-        &format!("id={id}, hard delete"),
+        format!("id={id}, hard delete"),
         file!(),
         line!(),
     );
-    let affected = task_repo::hard_delete(&tx, id)?;
+    let affected = task_repo::hard_delete(uow.conn(), id)?;
     if affected == 0 {
         return Err(AppError::Business("仅回收站中的任务可彻底删除".into()));
     }
     // task_activity_logs 无外键，硬删后需显式清理日志避免孤儿化
-    activity_log_repo::delete_by_task(&tx, id)?;
+    activity_log_repo::delete_by_task(uow.conn(), id)?;
     let ts = now();
-    task_repo::clean_orphan_parents(&tx, &ts)?;
-    tx.commit()?;
+    task_repo::clean_orphan_parents(uow.conn(), &ts)?;
+    uow.commit()?;
     Ok(())
 }
 

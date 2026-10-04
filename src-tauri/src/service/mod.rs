@@ -5,6 +5,13 @@
 //! - 调用 Repository 层完成数据操作
 //! - 通过 `emit_sql_log` 记录 SQL 审计日志
 //! - 处理事务边界和业务规则
+//!
+//! ## Unit of Work（v1.9 新增）
+//!
+//! [`uow::UnitOfWork`] 封装事务边界 + SQL 审计统一收口，新增跨多表操作
+//! 优先用 Uow。详见 [`uow`] 模块文档。
+
+pub mod uow;
 
 // ── 写作模块 ──
 pub mod book_service;
