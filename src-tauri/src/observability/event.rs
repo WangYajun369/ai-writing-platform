@@ -109,7 +109,10 @@ mod tests {
 
     #[test]
     fn kind_serializes_to_lowercase() {
-        assert_eq!(serde_json::to_string(&TelemetryKind::Sql).unwrap(), "\"sql\"");
+        assert_eq!(
+            serde_json::to_string(&TelemetryKind::Sql).unwrap(),
+            "\"sql\""
+        );
         assert_eq!(
             serde_json::to_string(&TelemetryKind::Agent).unwrap(),
             "\"agent\""

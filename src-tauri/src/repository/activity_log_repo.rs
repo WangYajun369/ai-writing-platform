@@ -51,7 +51,7 @@ pub fn list_by_task(conn: &Connection, task_id: &str, limit: i64) -> Result<Vec<
         "SELECT {ACTIVITY_SELECT} FROM task_activity_logs \
          WHERE task_id=?1 ORDER BY created_at DESC, id DESC LIMIT ?2"
     ))?;
-    let rows = stmt.query_map(params![task_id, limit], |row| parse_log(row))?;
+    let rows = stmt.query_map(params![task_id, limit], parse_log)?;
     rows.collect()
 }
 
@@ -65,7 +65,7 @@ pub fn list_by_project(
         "SELECT {ACTIVITY_SELECT} FROM task_activity_logs \
          WHERE project_id=?1 ORDER BY created_at DESC, id DESC LIMIT ?2"
     ))?;
-    let rows = stmt.query_map(params![project_id, limit], |row| parse_log(row))?;
+    let rows = stmt.query_map(params![project_id, limit], parse_log)?;
     rows.collect()
 }
 
@@ -187,16 +187,38 @@ mod tests {
         // 回归测试：try_task_log 在任务软删后查不到 project_id，
         // 部分日志只有 task_id 无 project_id，硬删项目时必须一并清理。
         let conn = setup();
-        conn.execute("INSERT INTO projects (id) VALUES ('p1')", []).unwrap();
-        conn.execute("INSERT INTO tasks (id, project_id) VALUES ('t1', 'p1')", []).unwrap();
+        conn.execute("INSERT INTO projects (id) VALUES ('p1')", [])
+            .unwrap();
+        conn.execute("INSERT INTO tasks (id, project_id) VALUES ('t1', 'p1')", [])
+            .unwrap();
         // L1: project_id 直接匹配
-        insert(&conn, "l1", Some("t1"), Some("p1"), "task.created", "", "ts").unwrap();
+        insert(
+            &conn,
+            "l1",
+            Some("t1"),
+            Some("p1"),
+            "task.created",
+            "",
+            "ts",
+        )
+        .unwrap();
         // L2: 只有 task_id（模拟任务已软删后 project_id 查不到的场景）
         insert(&conn, "l2", Some("t1"), None, "task.updated", "", "ts").unwrap();
         // L3: 其他项目的日志，不应被删
-        conn.execute("INSERT INTO projects (id) VALUES ('p2')", []).unwrap();
-        conn.execute("INSERT INTO tasks (id, project_id) VALUES ('t2', 'p2')", []).unwrap();
-        insert(&conn, "l3", Some("t2"), Some("p2"), "task.created", "", "ts").unwrap();
+        conn.execute("INSERT INTO projects (id) VALUES ('p2')", [])
+            .unwrap();
+        conn.execute("INSERT INTO tasks (id, project_id) VALUES ('t2', 'p2')", [])
+            .unwrap();
+        insert(
+            &conn,
+            "l3",
+            Some("t2"),
+            Some("p2"),
+            "task.created",
+            "",
+            "ts",
+        )
+        .unwrap();
 
         let n = delete_by_project(&conn, "p1").unwrap();
         assert_eq!(n, 2, "应同时清理 project_id 匹配 和 task_id 匹配的日志");
@@ -210,14 +232,27 @@ mod tests {
     #[test]
     fn delete_logs_of_deleted_projects_covers_task_id_logs() {
         let conn = setup();
-        conn.execute("INSERT INTO projects (id, deleted_at) VALUES ('p1', '2026-01-01')", []).unwrap();
-        conn.execute("INSERT INTO tasks (id, project_id) VALUES ('t1', 'p1')", []).unwrap();
+        conn.execute(
+            "INSERT INTO projects (id, deleted_at) VALUES ('p1', '2026-01-01')",
+            [],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO tasks (id, project_id) VALUES ('t1', 'p1')", [])
+            .unwrap();
         // 项目已软删，其下任务的日志（project_id 为 NULL）应被清理
         insert(&conn, "l1", Some("t1"), None, "task.created", "", "ts").unwrap();
-        insert(&conn, "l2", Some("t1"), Some("p1"), "task.updated", "", "ts").unwrap();
+        insert(
+            &conn,
+            "l2",
+            Some("t1"),
+            Some("p1"),
+            "task.updated",
+            "",
+            "ts",
+        )
+        .unwrap();
 
         let n = delete_logs_of_deleted_projects(&conn).unwrap();
         assert_eq!(n, 2);
     }
 }
-

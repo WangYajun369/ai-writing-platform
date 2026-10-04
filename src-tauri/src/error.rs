@@ -26,7 +26,7 @@
 //! 新增错误码步骤：
 //! 1. 在 [`ErrCode`] 追加变体；
 //! 2. 在 [`ErrCode::as_str`] 的 match 分支追加 `"E_XXX"` 字符串；
-//! 3.（可选）把对应的旧 `format!("E_XXX：...")` 调用点改写为 [`AppError::business`]。
+//! 3. （可选）把对应的旧 `format!("E_XXX：...")` 调用点改写为 [`AppError::business`]。
 
 use serde::{ser::SerializeMap, Serialize};
 use thiserror::Error;
@@ -179,7 +179,6 @@ impl std::fmt::Display for ErrCode {
         f.write_str(self.as_str())
     }
 }
-
 
 /// 应用级错误枚举
 #[derive(Debug, Error)]
@@ -341,7 +340,10 @@ mod tests {
 
     #[test]
     fn falls_back_to_variant_default_code() {
-        assert_eq!(code_of(AppError::Business("无前缀消息".to_string())), "E_BUSINESS");
+        assert_eq!(
+            code_of(AppError::Business("无前缀消息".to_string())),
+            "E_BUSINESS"
+        );
         assert_eq!(code_of(AppError::NotFound("x".to_string())), "E_NOT_FOUND");
         assert_eq!(code_of(AppError::DbPool("x".to_string())), "E_DB_POOL");
         // General 的裸消息也尝试提取
@@ -350,7 +352,10 @@ mod tests {
             "E_EXPORT_CANCELED"
         );
         // 仅 "E_" 无码体 → 归默认码
-        assert_eq!(code_of(AppError::General("E_：无码体".to_string())), "E_GENERAL");
+        assert_eq!(
+            code_of(AppError::General("E_：无码体".to_string())),
+            "E_GENERAL"
+        );
     }
 
     #[test]
@@ -404,7 +409,10 @@ mod tests {
             (ErrCode::DbVersion, "E_DB_VERSION"),
             (ErrCode::DbMigrationChecksum, "E_DB_MIGRATION_CHECKSUM"),
             (ErrCode::DbMigrationFailed, "E_DB_MIGRATION_FAILED"),
-            (ErrCode::DbMigrationRollbackUnsupported, "E_DB_MIGRATION_ROLLBACK_UNSUPPORTED"),
+            (
+                ErrCode::DbMigrationRollbackUnsupported,
+                "E_DB_MIGRATION_ROLLBACK_UNSUPPORTED",
+            ),
             (ErrCode::Http, "E_HTTP"),
             (ErrCode::Serde, "E_SERDE"),
             (ErrCode::Io, "E_IO"),

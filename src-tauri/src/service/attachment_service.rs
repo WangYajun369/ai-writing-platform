@@ -112,7 +112,7 @@ fn move_legacy_files(legacy: &Path, new_dir: &Path) -> bool {
             if !p.is_file() {
                 continue;
             }
-            if std::fs::rename(&p, &new_dir.join(entry.file_name())).is_ok() {
+            if std::fs::rename(&p, new_dir.join(entry.file_name())).is_ok() {
                 any = true;
             }
         }
@@ -221,7 +221,7 @@ pub fn add_file(
     // 磁盘文件名 = uuid(+扩展名)：uuid 全局唯一，天然不重名、不覆盖既有文件
     let id = Uuid::new_v4().to_string();
     let stored = if ext.is_empty() {
-        format!("{id}")
+        id.to_string()
     } else {
         format!("{id}.{ext}")
     };
@@ -364,10 +364,8 @@ pub fn cleanup_orphan_files(app: &AppHandle, db: &AppDb) -> Result<usize, AppErr
             continue;
         }
         let name = entry.file_name().to_string_lossy().to_string();
-        if !referenced.contains(&name) {
-            if std::fs::remove_file(&p).is_ok() {
-                removed += 1;
-            }
+        if !referenced.contains(&name) && std::fs::remove_file(&p).is_ok() {
+            removed += 1;
         }
     }
     Ok(removed)

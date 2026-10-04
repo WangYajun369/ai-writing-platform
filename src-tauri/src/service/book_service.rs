@@ -54,7 +54,13 @@ pub fn list_deleted_books(app: &AppHandle, db: &AppDb) -> Result<Vec<Book>, AppE
     // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
     let pooled = db.pool.get()?;
     let mut uow = UnitOfWork::new(&pooled, Some(app));
-    uow.audit("SELECT", "books", "deleted_at IS NOT NULL", file!(), line!());
+    uow.audit(
+        "SELECT",
+        "books",
+        "deleted_at IS NOT NULL",
+        file!(),
+        line!(),
+    );
     let books = book_repo::list_deleted(uow.conn())?;
     uow.commit()?;
     Ok(books)
@@ -158,7 +164,7 @@ pub fn update_book(
 
         let fields = upd.field_count();
         // build() 返回 None 表示无任何待更新字段：等价于一次回读，不执行 SQL
-        if let Some((sql, values)) = upd.build(&id, &ts) {
+        if let Some((sql, values)) = upd.build(id, &ts) {
             uow.audit(
                 "UPDATE",
                 "books",
@@ -274,7 +280,13 @@ pub fn delete_book(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError
     let pooled = db.pool.get()?;
     let ts = now();
     let mut uow = UnitOfWork::new(&pooled, Some(app));
-    uow.audit("UPDATE", "books", format!("id={id}, soft delete"), file!(), line!());
+    uow.audit(
+        "UPDATE",
+        "books",
+        format!("id={id}, soft delete"),
+        file!(),
+        line!(),
+    );
     book_repo::soft_delete(uow.conn(), id, &ts)?;
     uow.commit()?;
     Ok(())
@@ -285,7 +297,13 @@ pub fn restore_book(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppErro
     // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
     let pooled = db.pool.get()?;
     let mut uow = UnitOfWork::new(&pooled, Some(app));
-    uow.audit("UPDATE", "books", format!("id={id}, restore"), file!(), line!());
+    uow.audit(
+        "UPDATE",
+        "books",
+        format!("id={id}, restore"),
+        file!(),
+        line!(),
+    );
     let affected = book_repo::restore(uow.conn(), id, &now())?;
     if affected == 0 {
         return Err(AppError::NotFound("未找到该作品或未被删除".into()));
@@ -303,18 +321,48 @@ pub fn hard_delete_book(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), App
     let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
     uow.begin_transaction()?;
 
-    uow.audit("DELETE", "books", format!("id={id}, hard delete"), file!(), line!());
+    uow.audit(
+        "DELETE",
+        "books",
+        format!("id={id}, hard delete"),
+        file!(),
+        line!(),
+    );
     book_repo::hard_delete(uow.conn(), id)?;
 
-    uow.audit("DELETE", "embeddings", "cleanup orphan chapter embeddings", file!(), line!());
+    uow.audit(
+        "DELETE",
+        "embeddings",
+        "cleanup orphan chapter embeddings",
+        file!(),
+        line!(),
+    );
     book_repo::cleanup_orphan_chapter_embeddings(uow.conn())?;
-    uow.audit("DELETE", "embeddings", "cleanup orphan world_card embeddings", file!(), line!());
+    uow.audit(
+        "DELETE",
+        "embeddings",
+        "cleanup orphan world_card embeddings",
+        file!(),
+        line!(),
+    );
     book_repo::cleanup_orphan_world_card_embeddings(uow.conn())?;
     // memories.book_id 无外键，显式清理该书的 Agent 记忆
-    uow.audit("DELETE", "memories", format!("book_id={id}"), file!(), line!());
+    uow.audit(
+        "DELETE",
+        "memories",
+        format!("book_id={id}"),
+        file!(),
+        line!(),
+    );
     book_repo::delete_memories_by_book(uow.conn(), id)?;
 
-    uow.audit("COMMIT", "transaction", "hard_delete_book committed", file!(), line!());
+    uow.audit(
+        "COMMIT",
+        "transaction",
+        "hard_delete_book committed",
+        file!(),
+        line!(),
+    );
     uow.commit()
         .map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
     Ok(())
@@ -328,18 +376,48 @@ pub fn clear_book_trash(app: &AppHandle, db: &AppDb) -> Result<u32, AppError> {
 
     uow.audit("SELECT", "books", "COUNT deleted", file!(), line!());
     let count = book_repo::count_deleted(uow.conn())?;
-    uow.audit("DELETE", "books", format!("clear trash, count={count}"), file!(), line!());
+    uow.audit(
+        "DELETE",
+        "books",
+        format!("clear trash, count={count}"),
+        file!(),
+        line!(),
+    );
     book_repo::clear_trash(uow.conn())?;
 
-    uow.audit("DELETE", "embeddings", "cleanup orphan chapter embeddings", file!(), line!());
+    uow.audit(
+        "DELETE",
+        "embeddings",
+        "cleanup orphan chapter embeddings",
+        file!(),
+        line!(),
+    );
     book_repo::cleanup_orphan_chapter_embeddings(uow.conn())?;
-    uow.audit("DELETE", "embeddings", "cleanup orphan world_card embeddings", file!(), line!());
+    uow.audit(
+        "DELETE",
+        "embeddings",
+        "cleanup orphan world_card embeddings",
+        file!(),
+        line!(),
+    );
     book_repo::cleanup_orphan_world_card_embeddings(uow.conn())?;
     // memories.book_id 无外键，清理已删书籍的 Agent 记忆
-    uow.audit("DELETE", "memories", "cleanup deleted books", file!(), line!());
+    uow.audit(
+        "DELETE",
+        "memories",
+        "cleanup deleted books",
+        file!(),
+        line!(),
+    );
     book_repo::delete_memories_of_deleted_books(uow.conn())?;
 
-    uow.audit("COMMIT", "transaction", "clear_book_trash committed", file!(), line!());
+    uow.audit(
+        "COMMIT",
+        "transaction",
+        "clear_book_trash committed",
+        file!(),
+        line!(),
+    );
     uow.commit()
         .map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
     Ok(count)

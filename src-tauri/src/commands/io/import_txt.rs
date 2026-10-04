@@ -37,9 +37,9 @@ fn is_heading_line(line: &str) -> bool {
     }
     // 中文：第[零一二三四五六七八九十百千两\d]+[章节卷回篇]
     if let Some(rest) = t.strip_prefix('第') {
-        let mut chars = rest.chars();
+        let chars = rest.chars();
         let mut first_ok = false;
-        while let Some(c) = chars.next() {
+        for c in chars {
             if "零一二三四五六七八九十百千两".contains(c) || c.is_ascii_digit() {
                 first_ok = true;
                 continue;
@@ -82,7 +82,7 @@ fn parse_txt_stream(
     // 当前正在累积正文的章节
     let mut open: Option<RawChapter> = None;
 
-    while let Some(line) = lines.next() {
+    for line in &mut *lines {
         let line =
             line.map_err(|e| AppError::business(ErrCode::TxtRead, format!("读取 TXT 失败：{e}")))?;
         let line = line.trim_end_matches('\r').to_string();
@@ -165,9 +165,9 @@ pub async fn import_txt(
 
     // 空文件
     if chapters.is_empty() && preface.is_empty() && !heading_seen {
-        return Err(AppError::Business(format!(
-            "E_TXT_NO_CHAPTERS：未识别出任何章节内容（文件为空）"
-        )));
+        return Err(AppError::Business(
+            "E_TXT_NO_CHAPTERS：未识别出任何章节内容（文件为空）".to_string(),
+        ));
     }
 
     // 无任何标题命中 ⇒ 整文件作为单章「全文」导入（现状行为保留）

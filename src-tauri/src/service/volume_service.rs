@@ -16,7 +16,13 @@ pub fn list_volumes(app: &AppHandle, db: &AppDb, book_id: &str) -> Result<Vec<Vo
     // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
     let pooled = db.pool.get()?;
     let mut uow = UnitOfWork::new(&pooled, Some(app));
-    uow.audit("SELECT", "volumes", format!("book_id={book_id}"), file!(), line!());
+    uow.audit(
+        "SELECT",
+        "volumes",
+        format!("book_id={book_id}"),
+        file!(),
+        line!(),
+    );
     let volumes = volume_repo::list_by_book(uow.conn(), book_id)?;
     uow.commit()?;
     Ok(volumes)
@@ -80,7 +86,13 @@ pub fn update_volume(app: &AppHandle, db: &AppDb, id: &str, title: &str) -> Resu
     // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
     let pooled = db.pool.get()?;
     let mut uow = UnitOfWork::new(&pooled, Some(app));
-    uow.audit("UPDATE", "volumes", format!("id={id}, title={title}"), file!(), line!());
+    uow.audit(
+        "UPDATE",
+        "volumes",
+        format!("id={id}, title={title}"),
+        file!(),
+        line!(),
+    );
     volume_repo::update_title(uow.conn(), id, title)?;
     uow.commit()?;
     Ok(())
@@ -92,7 +104,13 @@ pub fn delete_volume(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppErr
     let pooled = db.pool.get()?;
     let ts = now();
     let mut uow = UnitOfWork::new(&pooled, Some(app));
-    uow.audit("UPDATE", "volumes", format!("id={id}, soft delete"), file!(), line!());
+    uow.audit(
+        "UPDATE",
+        "volumes",
+        format!("id={id}, soft delete"),
+        file!(),
+        line!(),
+    );
     volume_repo::soft_delete(uow.conn(), id, &ts)?;
     uow.commit()?;
     Ok(())
@@ -103,7 +121,13 @@ pub fn restore_volume(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppEr
     // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
     let pooled = db.pool.get()?;
     let mut uow = UnitOfWork::new(&pooled, Some(app));
-    uow.audit("UPDATE", "volumes", format!("id={id}, restore"), file!(), line!());
+    uow.audit(
+        "UPDATE",
+        "volumes",
+        format!("id={id}, restore"),
+        file!(),
+        line!(),
+    );
     volume_repo::restore(uow.conn(), id)?;
     uow.commit()?;
     Ok(())
@@ -120,10 +144,22 @@ pub fn hard_delete_volume(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), A
     // 先将所有关联章节的 volume_id 置空（避免后续 DELETE 触发 ON DELETE SET NULL → FTS 分词）
     chapter_repo::clear_volume_id(uow.conn(), id)
         .map_err(|e| AppError::Business(format!("清除卷关联章节失败: {}", e)))?;
-    uow.audit("UPDATE", "chapters", format!("clear volume_id for volume={id}"), file!(), line!());
+    uow.audit(
+        "UPDATE",
+        "chapters",
+        format!("clear volume_id for volume={id}"),
+        file!(),
+        line!(),
+    );
     // 再硬删除卷
     volume_repo::hard_delete(uow.conn(), id)?;
-    uow.audit("DELETE", "volumes", format!("id={id}, hard delete"), file!(), line!());
+    uow.audit(
+        "DELETE",
+        "volumes",
+        format!("id={id}, hard delete"),
+        file!(),
+        line!(),
+    );
     uow.commit()?;
     Ok(())
 }

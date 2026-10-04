@@ -22,7 +22,9 @@ use uuid::Uuid;
 pub fn try_task_log(db: &AppDb, task_id: &str, action: &str, summary: &str) {
     let Ok(conn) = db.pool.get() else { return };
     // 冗余 project_id 查询失败（任务已被删除）时仍会写入日志，项目归属字段置空即可
-    let project_id = task_repo::project_id_of_active(&conn, task_id).ok().flatten();
+    let project_id = task_repo::project_id_of_active(&conn, task_id)
+        .ok()
+        .flatten();
     let _ = insert_quiet(&conn, Some(task_id), project_id.as_deref(), action, summary);
 }
 
@@ -43,8 +45,7 @@ pub fn try_task_log_with_conn(
     action: &str,
     summary: &str,
 ) -> Result<(), AppError> {
-    insert_quiet(conn, Some(task_id), project_id, action, summary)
-        .map_err(AppError::from)
+    insert_quiet(conn, Some(task_id), project_id, action, summary).map_err(AppError::from)
 }
 
 /// 底层写入：生成 UUID 并委托 repository；底层错误原样返回，由调用方决定是否吞掉

@@ -90,6 +90,7 @@ pub fn clear(conn: &Connection, kind: Option<TelemetryKind>) -> Result<usize, Ap
 }
 
 /// 滚动清理:保留最近 `keep` 条,删除更早的(可选 kind 过滤)
+#[cfg_attr(not(test), allow(dead_code))] // 测试中使用，生产环境由调度器按需调用
 pub fn trim(conn: &Connection, keep: i64) -> Result<usize, AppError> {
     // 子查询删除:保留最近 keep 条,删除更早的
     let affected = conn
@@ -107,9 +108,7 @@ pub fn trim(conn: &Connection, keep: i64) -> Result<usize, AppError> {
 
 fn row_to_event(row: &rusqlite::Row<'_>) -> rusqlite::Result<TelemetryEvent> {
     let kind_str: String = row.get(1)?;
-    let kind: TelemetryKind = kind_str
-        .parse()
-        .unwrap_or(TelemetryKind::System);
+    let kind: TelemetryKind = kind_str.parse().unwrap_or(TelemetryKind::System);
     let payload_str: Option<String> = row.get(8)?;
     let payload = payload_str
         .as_deref()

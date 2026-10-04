@@ -6,7 +6,9 @@
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::{Tag, TaskCard, TodayOverview};
-use crate::repository::{activity_log_repo, project_repo, subtask_repo, task_meta_repo, task_repo, template_repo};
+use crate::repository::{
+    activity_log_repo, project_repo, subtask_repo, task_meta_repo, task_repo, template_repo,
+};
 use crate::service::activity_log_service;
 use crate::service::uow::UnitOfWork;
 use crate::utils::{local_now, local_today, now, validate_len};
@@ -59,7 +61,8 @@ fn check_time_range(start: &Option<String>, due: &Option<String>) -> Result<(), 
 /// - 空值/空串 → None（不关联父任务）
 /// - 父任务必须存在、未删除、且与任务同属一个项目
 /// - 禁止把任务挂到自己或自己的后代之下（防环）
-/// self_id 为当前任务的 id（新建时为 None）。
+///
+/// `self_id` 为当前任务的 id（新建时为 None）。
 fn resolve_parent_id(
     conn: &rusqlite::Connection,
     self_id: Option<&str>,
@@ -195,7 +198,13 @@ pub fn list_tasks(
     // v1.9：迁移到 UnitOfWork（只读查询，autocommit 模式，审计统一收口）。
     let pooled = db.pool.get()?;
     let mut uow = UnitOfWork::new(&pooled, Some(app));
-    uow.audit("SELECT", "tasks", format!("project_id={project_id}"), file!(), line!());
+    uow.audit(
+        "SELECT",
+        "tasks",
+        format!("project_id={project_id}"),
+        file!(),
+        line!(),
+    );
     let mut tasks = task_repo::list_by_project(uow.conn(), project_id)?;
     fill_tags(uow.conn(), &mut tasks)?;
     uow.commit()?;
@@ -207,7 +216,13 @@ pub fn list_all_tasks(app: &AppHandle, db: &AppDb) -> Result<Vec<TaskCard>, AppE
     // v1.9：迁移到 UnitOfWork（只读查询，autocommit 模式，审计统一收口）。
     let pooled = db.pool.get()?;
     let mut uow = UnitOfWork::new(&pooled, Some(app));
-    uow.audit("SELECT", "tasks", "all active".to_string(), file!(), line!());
+    uow.audit(
+        "SELECT",
+        "tasks",
+        "all active".to_string(),
+        file!(),
+        line!(),
+    );
     let mut tasks = task_repo::list_all(uow.conn())?;
     fill_tags(uow.conn(), &mut tasks)?;
     uow.commit()?;
@@ -270,7 +285,13 @@ pub fn create_task(
     ensure_project_active(uow.conn(), &params.project_id)?;
     let parent_id = resolve_parent_id(uow.conn(), None, &params.project_id, params.parent_id)?;
     let sort_order = task_repo::next_sort_order(uow.conn(), &params.project_id, &params.status)?;
-    uow.audit("INSERT", "tasks", format!("id={id}, title={title}, project={}", params.project_id), file!(), line!());
+    uow.audit(
+        "INSERT",
+        "tasks",
+        format!("id={id}, title={title}, project={}", params.project_id),
+        file!(),
+        line!(),
+    );
     task_repo::insert(
         uow.conn(),
         &id,
@@ -594,6 +615,7 @@ pub fn set_task_status(
 /// 看板拖拽（PRD 9.4.4）：
 /// - 跨列：更新状态（进 done 记录完成时间 / 离开 done 清空）后按目标列顺序重排
 /// - 同列：按传入顺序重排（手动排序）
+///
 /// `ordered_ids` 为拖放后目标列完整顺序（须包含 task_id）
 pub fn drag_task(
     app: &AppHandle,
@@ -887,7 +909,13 @@ pub fn copy_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<TaskCard, AppE
     let new_id = Uuid::new_v4().to_string();
     let ts = now();
     let sort_order = task_repo::next_sort_order(uow.conn(), &src.project_id, "todo")?;
-    uow.audit("INSERT", "tasks", format!("id={new_id}, copy from {id}"), file!(), line!());
+    uow.audit(
+        "INSERT",
+        "tasks",
+        format!("id={new_id}, copy from {id}"),
+        file!(),
+        line!(),
+    );
     task_repo::insert(
         uow.conn(),
         &new_id,
@@ -944,7 +972,16 @@ pub fn move_task_to_project(
     task_repo::set_sort_order(uow.conn(), task_id, next, &ts)?;
     // 解除因跨项目造成的悬空父引用
     task_repo::clean_orphan_parents(uow.conn(), &ts)?;
-    uow.audit("UPDATE", "tasks", format!("id={task_id} (subtree {}) -> project {to_project_id}", subtree.len()), file!(), line!());
+    uow.audit(
+        "UPDATE",
+        "tasks",
+        format!(
+            "id={task_id} (subtree {}) -> project {to_project_id}",
+            subtree.len()
+        ),
+        file!(),
+        line!(),
+    );
     uow.commit()?;
     activity_log_service::try_task_log(
         db,
@@ -983,13 +1020,7 @@ pub fn delete_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError
         line!(),
     );
     task_repo::soft_delete(uow.conn(), id, &ts)?;
-    uow.audit(
-        "UPDATE",
-        "tasks",
-        "clean orphan parents",
-        file!(),
-        line!(),
-    );
+    uow.audit("UPDATE", "tasks", "clean orphan parents", file!(), line!());
     task_repo::clean_orphan_parents(uow.conn(), &ts)?;
 
     // activity_log 在同事务内写入，project_id 已在删除前拿到
@@ -1079,7 +1110,13 @@ pub fn list_deleted_tasks(app: &AppHandle, db: &AppDb) -> Result<Vec<DeletedTask
     // v1.9：迁移到 UnitOfWork（只读查询，autocommit 模式，审计统一收口）。
     let pooled = db.pool.get()?;
     let mut uow = UnitOfWork::new(&pooled, Some(app));
-    uow.audit("SELECT", "tasks", "deleted_at IS NOT NULL".to_string(), file!(), line!());
+    uow.audit(
+        "SELECT",
+        "tasks",
+        "deleted_at IS NOT NULL".to_string(),
+        file!(),
+        line!(),
+    );
     let rows = task_repo::list_deleted(uow.conn())?;
     uow.commit()?;
     Ok(rows
@@ -1129,7 +1166,13 @@ pub fn purge_expired_trash(app: &AppHandle, db: &AppDb) -> Result<u32, AppError>
     // 截止线 = 当前 UTC 时间 - 保留期（deleted_at 为 UTC RFC3339，字典序可比较）
     let cutoff = (chrono::Utc::now() - chrono::Duration::days(TRASH_RETENTION_DAYS)).to_rfc3339();
     let ts = now();
-    uow.audit("DELETE", "tasks+projects", format!("auto purge < {cutoff}"), file!(), line!());
+    uow.audit(
+        "DELETE",
+        "tasks+projects",
+        format!("auto purge < {cutoff}"),
+        file!(),
+        line!(),
+    );
     // task_activity_logs 无外键：先清理即将硬删数据的日志，再执行硬删（同一事务）
     activity_log_repo::delete_logs_of_expired_tasks(uow.conn(), &cutoff)?;
     activity_log_repo::delete_logs_of_expired_projects(uow.conn(), &cutoff)?;
@@ -1193,7 +1236,13 @@ pub fn get_today_overview(app: &AppHandle, db: &AppDb) -> Result<TodayOverview, 
     // v1.9：迁移到 UnitOfWork（只读查询，autocommit 模式，审计统一收口）。
     let pooled = db.pool.get()?;
     let mut uow = UnitOfWork::new(&pooled, Some(app));
-    uow.audit("SELECT", "tasks", "today overview".to_string(), file!(), line!());
+    uow.audit(
+        "SELECT",
+        "tasks",
+        "today overview".to_string(),
+        file!(),
+        line!(),
+    );
     let (undone_due, done_today, overdue) =
         task_repo::today_overview_counts(uow.conn(), &today, &tomorrow, &now_local)?;
     uow.commit()?;
@@ -1251,10 +1300,7 @@ mod tests {
             &Some("2026-09-24 18:00".into())
         )
         .is_ok());
-        let err = check_time_range(
-            &Some("2026-09-25".into()),
-            &Some("2026-09-24".into()),
-        );
+        let err = check_time_range(&Some("2026-09-25".into()), &Some("2026-09-24".into()));
         assert!(err.is_err(), "开始晚于截止应报错");
     }
 
@@ -1316,18 +1362,12 @@ mod tests {
     fn recur_monthly() {
         // monthDays=[15,20]，锚点 9-16 → 当月 20 日
         assert_eq!(
-            next_recur_date(
-                r#"{"freq":"monthly","monthDays":[15,20]}"#,
-                "2026-09-16"
-            ),
+            next_recur_date(r#"{"freq":"monthly","monthDays":[15,20]}"#, "2026-09-16"),
             Some(d("2026-09-20"))
         );
         // 锚点 9-20（含当天不算，须晚于锚点）→ 下月 15 日
         assert_eq!(
-            next_recur_date(
-                r#"{"freq":"monthly","monthDays":[15,20]}"#,
-                "2026-09-20"
-            ),
+            next_recur_date(r#"{"freq":"monthly","monthDays":[15,20]}"#, "2026-09-20"),
             Some(d("2026-10-15"))
         );
         // 旧版 monthDay=31，锚点 1-31 → 2 月取月末（2026 平年 28 日）
@@ -1362,20 +1402,11 @@ mod tests {
     /// advance_month：跨年推进 + 月末钳制 + 闰年
     #[test]
     fn advance_month_edge_cases() {
-        assert_eq!(
-            advance_month(d("2026-12-15"), 20, 1),
-            Some(d("2027-01-20"))
-        );
+        assert_eq!(advance_month(d("2026-12-15"), 20, 1), Some(d("2027-01-20")));
         // 1-31 推进 1 月 → 2 月月末（平年 28）
-        assert_eq!(
-            advance_month(d("2026-01-31"), 31, 1),
-            Some(d("2026-02-28"))
-        );
+        assert_eq!(advance_month(d("2026-01-31"), 31, 1), Some(d("2026-02-28")));
         // 闰年 2024：1-31 → 2-29
-        assert_eq!(
-            advance_month(d("2024-01-31"), 31, 1),
-            Some(d("2024-02-29"))
-        );
+        assert_eq!(advance_month(d("2024-01-31"), 31, 1), Some(d("2024-02-29")));
         // 4-30 推进 12 个月 → 次年 4-30
         assert_eq!(
             advance_month(d("2026-04-30"), 30, 12),
@@ -1432,10 +1463,7 @@ mod tests {
     #[test]
     fn parent_none_for_blank() {
         let conn = setup_tasks_conn();
-        assert_eq!(
-            resolve_parent_id(&conn, None, "p1", None).unwrap(),
-            None
-        );
+        assert_eq!(resolve_parent_id(&conn, None, "p1", None).unwrap(), None);
         assert_eq!(
             resolve_parent_id(&conn, None, "p1", Some("  ".into())).unwrap(),
             None

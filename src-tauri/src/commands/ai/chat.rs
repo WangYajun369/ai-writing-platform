@@ -635,9 +635,7 @@ mod tests {
             SseFrame::default()
         );
         assert_eq!(
-            parse_sse_frame(
-                &serde_json::json!({"choices": [{"delta": {"role": "assistant"}}]})
-            ),
+            parse_sse_frame(&serde_json::json!({"choices": [{"delta": {"role": "assistant"}}]})),
             SseFrame::default()
         );
     }

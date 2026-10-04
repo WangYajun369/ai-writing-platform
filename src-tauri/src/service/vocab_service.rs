@@ -312,7 +312,13 @@ pub fn delete_word(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError
     }
     // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
     let mut uow = UnitOfWork::new(&pooled, Some(app));
-    uow.audit("DELETE", "vocab_words", format!("id={id}"), file!(), line!());
+    uow.audit(
+        "DELETE",
+        "vocab_words",
+        format!("id={id}"),
+        file!(),
+        line!(),
+    );
     vocab_repo::delete_word(uow.conn(), id)?;
     uow.commit()?;
     emit_due_updated(app);
@@ -354,7 +360,13 @@ pub fn list_due(app: &AppHandle, db: &AppDb) -> Result<Vec<VocabWord>, AppError>
     // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
     let pooled = db.pool.get()?;
     let mut uow = UnitOfWork::new(&pooled, Some(app));
-    uow.audit("SELECT", "vocab_words", format!("due <= {today}"), file!(), line!());
+    uow.audit(
+        "SELECT",
+        "vocab_words",
+        format!("due <= {today}"),
+        file!(),
+        line!(),
+    );
     let words = vocab_repo::list_due(uow.conn(), &today)?;
     uow.commit()?;
     Ok(words)

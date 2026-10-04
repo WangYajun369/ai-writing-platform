@@ -36,7 +36,7 @@ pub async fn list_telemetry_events(
         .map(|s| s.parse::<TelemetryKind>())
         .transpose()
         .map_err(|_| AppError::Validation("无效的 telemetry kind".into()))?;
-    Ok(persist::list_recent(&conn, kind, limit)?)
+    persist::list_recent(&conn, kind, limit)
 }
 
 /// 清空事件(可选 kind 过滤)

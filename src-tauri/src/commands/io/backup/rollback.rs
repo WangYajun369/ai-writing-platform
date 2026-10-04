@@ -113,7 +113,11 @@ pub(crate) fn snapshot_scope(
 }
 
 /// 统计快照行数（回滚时用于报告影响规模）
-pub(crate) fn count_rb_table(conn: &rusqlite::Connection, ts: &str, table: &str) -> Result<i64, AppError> {
+pub(crate) fn count_rb_table(
+    conn: &rusqlite::Connection,
+    ts: &str,
+    table: &str,
+) -> Result<i64, AppError> {
     let rb = rb_table(ts, table);
     let cnt: i64 = conn.query_row(&format!("SELECT COUNT(*) FROM {}", rb), [], |r| r.get(0))?;
     Ok(cnt)
@@ -158,7 +162,10 @@ pub(crate) fn clear_book_scope(conn: &rusqlite::Connection, book_id: &str) -> Re
 }
 
 /// 当前作用域下的数据清理（full / single），供回滚撤销「导入后状态」用
-pub(crate) fn clear_scope_data(conn: &rusqlite::Connection, scope: &ImportScope) -> Result<(), AppError> {
+pub(crate) fn clear_scope_data(
+    conn: &rusqlite::Connection,
+    scope: &ImportScope,
+) -> Result<(), AppError> {
     match scope {
         ImportScope::Full => clear_full_tables(conn),
         ImportScope::Single(book_id) => clear_book_scope(conn, book_id),
@@ -213,10 +220,7 @@ pub fn prune_expired_rollbacks(conn: &rusqlite::Connection) -> Result<usize, App
 ///
 /// v1.9：迁移到 UnitOfWork（事务边界统一）。本函数消费 Uow 并在内部 commit；
 /// vec 镜像对齐等后置操作由调用方在 commit 后处理。
-pub fn execute_rollback(
-    mut uow: UnitOfWork,
-    ts: &str,
-) -> Result<serde_json::Value, AppError> {
+pub fn execute_rollback(mut uow: UnitOfWork, ts: &str) -> Result<serde_json::Value, AppError> {
     let Some((scope_str, file_name)) = get_rollback_log(uow.conn(), ts)? else {
         return Err(AppError::Business(format!(
             "E_BACKUP_ROLLBACK：回退点不存在或已过期：{}",

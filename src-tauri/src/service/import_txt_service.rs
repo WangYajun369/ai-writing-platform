@@ -139,8 +139,9 @@ pub fn import_parsed_chapters(
     let (to_write, skipped, renamed) = plan_import(chapters, &existing_titles, &existing_fps);
 
     // 单事务写入：全部分章 + recalc_word_count 原子提交
-    uow.begin_transaction()
-        .map_err(|e| AppError::business(ErrCode::TxtTxn, format!("开始 TXT 导入事务失败: {}", e)))?;
+    uow.begin_transaction().map_err(|e| {
+        AppError::business(ErrCode::TxtTxn, format!("开始 TXT 导入事务失败: {}", e))
+    })?;
 
     uow.audit(
         "INSERT",
@@ -155,9 +156,9 @@ pub fn import_parsed_chapters(
         file!(),
         line!(),
     );
-    let mut next_order = chapter_repo::next_sort_order_in_book(uow.conn(), book_id)
+    let start_order = chapter_repo::next_sort_order_in_book(uow.conn(), book_id)
         .map_err(|e| AppError::business(ErrCode::TxtQuery, format!("查询章节排序失败: {}", e)))?;
-    for ch in &to_write {
+    for (i, ch) in to_write.iter().enumerate() {
         let id = uuid::Uuid::new_v4().to_string();
         let ts = now();
         chapter_repo::insert_with_content(
@@ -167,10 +168,9 @@ pub fn import_parsed_chapters(
             &ch.title,
             &ch.html,
             ch.word_count,
-            next_order,
+            start_order + i as i64,
             &ts,
         )?;
-        next_order += 1;
     }
 
     uow.audit(

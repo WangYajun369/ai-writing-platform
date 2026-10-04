@@ -130,10 +130,16 @@ mod tests {
         let ts = DateTime::parse_from_rfc3339("2026-09-27T16:30:00+00:00").unwrap();
         let fixed = chrono::FixedOffset::east_opt(8 * 3600).unwrap();
         let local_date = ts.with_timezone(&fixed).date_naive();
-        assert_eq!(local_date, chrono::NaiveDate::from_ymd_opt(2026, 9, 28).unwrap());
+        assert_eq!(
+            local_date,
+            chrono::NaiveDate::from_ymd_opt(2026, 9, 28).unwrap()
+        );
         let monday =
             local_date - Duration::days(local_date.weekday().num_days_from_monday() as i64);
-        assert_eq!(monday, chrono::NaiveDate::from_ymd_opt(2026, 9, 28).unwrap());
+        assert_eq!(
+            monday,
+            chrono::NaiveDate::from_ymd_opt(2026, 9, 28).unwrap()
+        );
     }
 
     // ── 周报统计集成测试（repo 查询 + 分桶，一次锁定 P1-1 / P1-2 两个历史 bug）──
@@ -166,25 +172,89 @@ mod tests {
         let conn = test_log_db();
         // 2026-09-23 是周三；正午 UTC 在任意民用时区（UTC±12 内）仍是 2026-09-23
         let wed_utc = "2026-09-23T12:00:00+00:00";
-        activity_log_repo::insert(&conn, "1", Some("t1"), Some("p1"), "task.created", "", wed_utc).unwrap();
-        activity_log_repo::insert(&conn, "2", Some("t2"), Some("p1"), "task.completed", "", wed_utc).unwrap();
-        activity_log_repo::insert(&conn, "3", Some("t3"), Some("p1"), "task.completed", "", wed_utc).unwrap();
+        activity_log_repo::insert(
+            &conn,
+            "1",
+            Some("t1"),
+            Some("p1"),
+            "task.created",
+            "",
+            wed_utc,
+        )
+        .unwrap();
+        activity_log_repo::insert(
+            &conn,
+            "2",
+            Some("t2"),
+            Some("p1"),
+            "task.completed",
+            "",
+            wed_utc,
+        )
+        .unwrap();
+        activity_log_repo::insert(
+            &conn,
+            "3",
+            Some("t3"),
+            Some("p1"),
+            "task.completed",
+            "",
+            wed_utc,
+        )
+        .unwrap();
         // 历史遗留的错误动作名（v1.8.0 前曾按 'completed' 计数，现在必须排除）
-        activity_log_repo::insert(&conn, "4", Some("t4"), Some("p1"), "completed", "", wed_utc).unwrap();
+        activity_log_repo::insert(&conn, "4", Some("t4"), Some("p1"), "completed", "", wed_utc)
+            .unwrap();
         // 无关动作与其他项目，均不得混入
-        activity_log_repo::insert(&conn, "5", Some("t5"), Some("p1"), "task.updated", "", wed_utc).unwrap();
-        activity_log_repo::insert(&conn, "6", Some("t6"), Some("p2"), "task.completed", "", wed_utc).unwrap();
+        activity_log_repo::insert(
+            &conn,
+            "5",
+            Some("t5"),
+            Some("p1"),
+            "task.updated",
+            "",
+            wed_utc,
+        )
+        .unwrap();
+        activity_log_repo::insert(
+            &conn,
+            "6",
+            Some("t6"),
+            Some("p2"),
+            "task.completed",
+            "",
+            wed_utc,
+        )
+        .unwrap();
         // 区间之外的旧日志不得计入
-        activity_log_repo::insert(&conn, "7", Some("t7"), Some("p1"), "task.completed", "", "2020-01-01T00:00:00+00:00").unwrap();
+        activity_log_repo::insert(
+            &conn,
+            "7",
+            Some("t7"),
+            Some("p1"),
+            "task.completed",
+            "",
+            "2020-01-01T00:00:00+00:00",
+        )
+        .unwrap();
 
-        let rows = activity_log_repo::list_weekly_actions_since(&conn, "p1", "2026-09-21T00:00:00+00:00").unwrap();
-        assert_eq!(rows.len(), 3, "只应取回 p1 的 created×1 + completed×2，实际 {rows:?}");
+        let rows =
+            activity_log_repo::list_weekly_actions_since(&conn, "p1", "2026-09-21T00:00:00+00:00")
+                .unwrap();
+        assert_eq!(
+            rows.len(),
+            3,
+            "只应取回 p1 的 created×1 + completed×2，实际 {rows:?}"
+        );
 
         let buckets = bucket_by_local_week(rows);
         let monday = chrono::NaiveDate::from_ymd_opt(2026, 9, 21).unwrap();
         let (created, completed) = buckets.get(&monday).copied().unwrap_or((0, 0));
         assert_eq!(created, 1, "task.created 应计 1");
-        assert_eq!(completed, 2, "task.completed 应计 2，裸 'completed' 不得计入");
+        assert_eq!(
+            completed, 2,
+            "task.completed 应计 2，裸 'completed' 不得计入"
+        );
     }
 
     /// 分桶对非法时间戳静默跳过（不 panic、不影响其余行）
@@ -192,7 +262,10 @@ mod tests {
     fn bucket_skips_invalid_timestamp() {
         let rows = vec![
             ("task.created".to_string(), "not-a-timestamp".to_string()),
-            ("task.completed".to_string(), "2026-09-23T12:00:00+00:00".to_string()),
+            (
+                "task.completed".to_string(),
+                "2026-09-23T12:00:00+00:00".to_string(),
+            ),
         ];
         let buckets = bucket_by_local_week(rows);
         let monday = chrono::NaiveDate::from_ymd_opt(2026, 9, 21).unwrap();

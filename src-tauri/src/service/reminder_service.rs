@@ -152,7 +152,7 @@ pub fn run_once(app: &AppHandle) -> Result<usize, AppError> {
                         .filter(|t| {
                             t.status != "done"
                                 && (t.planned_today
-                                    || t.due_time.as_deref().map_or(false, |d| {
+                                    || t.due_time.as_deref().is_some_and(|d| {
                                         d.len() >= 10 && &d[..10] <= today.as_str()
                                     }))
                         })
@@ -302,7 +302,7 @@ pub fn run_once(app: &AppHandle) -> Result<usize, AppError> {
             ),
         };
 
-        if send_notification(app, &title, &body) {
+        if send_notification(app, title, &body) {
             task_meta_repo::set(&conn, &key, "1", &now_str)?;
             append_log(
                 &conn,

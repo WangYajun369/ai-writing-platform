@@ -28,7 +28,7 @@ pub fn list_by_task(conn: &Connection, task_id: &str) -> Result<Vec<TaskSubtask>
         "SELECT {SUBTASK_SELECT} FROM task_subtasks \
          WHERE task_id=?1 ORDER BY done ASC, sort_order ASC, created_at ASC"
     ))?;
-    let rows = stmt.query_map(params![task_id], |row| parse_subtask(row))?;
+    let rows = stmt.query_map(params![task_id], parse_subtask)?;
     rows.collect()
 }
 
@@ -37,7 +37,7 @@ pub fn find_by_id(conn: &Connection, id: &str) -> Result<TaskSubtask> {
     conn.query_row(
         &format!("SELECT {SUBTASK_SELECT} FROM task_subtasks WHERE id=?1"),
         params![id],
-        |row| parse_subtask(row),
+        parse_subtask,
     )
 }
 

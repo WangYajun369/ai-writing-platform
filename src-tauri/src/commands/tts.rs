@@ -18,7 +18,7 @@
 //!
 //! 对应 tauri-bridge.ts 的 `ttsApi`（单词 / 例句朗读按钮与朗读设置）。
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use base64::Engine as _;
@@ -246,6 +246,6 @@ fn hex_prefix(bytes: &[u8], n: usize) -> String {
     out
 }
 
-fn path_to_string(p: &PathBuf) -> String {
+fn path_to_string(p: &Path) -> String {
     p.to_string_lossy().to_string()
 }

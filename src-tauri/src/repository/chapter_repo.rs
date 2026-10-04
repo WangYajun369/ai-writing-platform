@@ -10,6 +10,24 @@
 use crate::models::Chapter;
 use rusqlite::{params, Connection, Result};
 
+/// 备份导出用章节全量行：(id, book_id, volume_id, title, content_html, word_count, status, sort_order, created_at, updated_at, deleted_at, summary, summary_at, outline)
+pub type ChapterBackupRow = (
+    String,
+    String,
+    Option<String>,
+    String,
+    String,
+    i64,
+    String,
+    i64,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    String,
+);
+
 /// 列出指定书籍的所有未删除章节（不含 content_html），按 sort_order 升序
 pub fn list_by_book(conn: &Connection, book_id: &str) -> Result<Vec<Chapter>> {
     let mut stmt = conn.prepare(
@@ -343,26 +361,7 @@ pub fn count_active_with_content(conn: &Connection, book_id: &str) -> Result<usi
 }
 
 /// 列出所有章节（含已删除和 HTML 内容），用于备份导出
-pub fn list_all_include_deleted_with_content(
-    conn: &Connection,
-) -> Result<
-    Vec<(
-        String,
-        String,
-        Option<String>,
-        String,
-        String,
-        i64,
-        String,
-        i64,
-        String,
-        String,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-        String,
-    )>,
-> {
+pub fn list_all_include_deleted_with_content(conn: &Connection) -> Result<Vec<ChapterBackupRow>> {
     let mut stmt = conn.prepare(
         "SELECT id,book_id,volume_id,title,content_html,word_count,status,sort_order,created_at,updated_at,deleted_at,summary,summary_at,outline FROM chapters"
     )?;

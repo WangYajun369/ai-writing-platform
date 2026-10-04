@@ -49,26 +49,25 @@ pub fn load(conn: &Connection, section: ConfigSection) -> Result<Option<ConfigRe
              FROM app_config WHERE section = ?",
         )
         .map_err(AppError::Db)?;
-    let row = stmt
-        .query_row(params![section.as_str()], |r| {
-            let value_str: String = r.get(1)?;
-            let value: Value = serde_json::from_str(&value_str).unwrap_or(Value::Null);
-            Ok(ConfigRecord {
-                section: r.get(0)?,
-                value,
-                version: r.get::<_, i64>(2)? as u32,
-                updated_at: r.get(3)?,
-            })
+
+    stmt.query_row(params![section.as_str()], |r| {
+        let value_str: String = r.get(1)?;
+        let value: Value = serde_json::from_str(&value_str).unwrap_or(Value::Null);
+        Ok(ConfigRecord {
+            section: r.get(0)?,
+            value,
+            version: r.get::<_, i64>(2)? as u32,
+            updated_at: r.get(3)?,
         })
-        .map(|r| Some(r))
-        .or_else(|e| {
-            if matches!(e, rusqlite::Error::QueryReturnedNoRows) {
-                Ok(None)
-            } else {
-                Err(AppError::Db(e))
-            }
-        });
-    row
+    })
+    .map(Some)
+    .or_else(|e| {
+        if matches!(e, rusqlite::Error::QueryReturnedNoRows) {
+            Ok(None)
+        } else {
+            Err(AppError::Db(e))
+        }
+    })
 }
 
 /// 删除一段配置(供调试 / 重置场景使用)。返回是否实际删除。
@@ -130,7 +129,8 @@ pub fn check_versions(conn: &Connection) -> Result<(), AppError> {
         crate::error::ErrCode::ConfigVersion,
         format!(
             "以下配置段版本高于应用支持 v{}:{}",
-            super::CONFIG_VERSION, detail
+            super::CONFIG_VERSION,
+            detail
         ),
     ))
 }
@@ -224,7 +224,13 @@ mod tests {
     #[test]
     fn check_versions_rejects_high_version() {
         let conn = setup();
-        upsert(&conn, ConfigSection::Ai, &json!({}), super::super::CONFIG_VERSION + 1).unwrap();
+        upsert(
+            &conn,
+            ConfigSection::Ai,
+            &json!({}),
+            super::super::CONFIG_VERSION + 1,
+        )
+        .unwrap();
         let err = check_versions(&conn);
         assert!(err.is_err());
         let msg = err.unwrap_err().to_string();

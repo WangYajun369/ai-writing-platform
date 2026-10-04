@@ -384,14 +384,15 @@ pub async fn trigger_embedding(
             file!(),
             line!(),
         );
-        let chapters: Vec<SourceItem> = chapter_repo::list_ids_and_content_plain(uow.conn(), book_id)?
-            .into_iter()
-            .map(|(id, html)| SourceItem {
-                source_type: "chapter".into(),
-                source_id: id,
-                plain_text: truncate_for_embedding(&strip_html(&html)),
-            })
-            .collect();
+        let chapters: Vec<SourceItem> =
+            chapter_repo::list_ids_and_content_plain(uow.conn(), book_id)?
+                .into_iter()
+                .map(|(id, html)| SourceItem {
+                    source_type: "chapter".into(),
+                    source_id: id,
+                    plain_text: truncate_for_embedding(&strip_html(&html)),
+                })
+                .collect();
         let tc = chapters.len();
 
         uow.audit(
@@ -401,14 +402,15 @@ pub async fn trigger_embedding(
             file!(),
             line!(),
         );
-        let cards: Vec<SourceItem> = world_card_repo::list_ids_and_content_plain(uow.conn(), book_id)?
-            .into_iter()
-            .map(|(id, html)| SourceItem {
-                source_type: "world_card".into(),
-                source_id: id,
-                plain_text: truncate_for_embedding(&strip_html(&html)),
-            })
-            .collect();
+        let cards: Vec<SourceItem> =
+            world_card_repo::list_ids_and_content_plain(uow.conn(), book_id)?
+                .into_iter()
+                .map(|(id, html)| SourceItem {
+                    source_type: "world_card".into(),
+                    source_id: id,
+                    plain_text: truncate_for_embedding(&strip_html(&html)),
+                })
+                .collect();
         let twc = cards.len();
 
         let mut all: Vec<SourceItem> = chapters;

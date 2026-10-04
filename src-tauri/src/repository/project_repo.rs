@@ -75,10 +75,10 @@ pub fn list(conn: &Connection, status: Option<&str>) -> Result<Vec<Project>> {
     };
     let mut stmt = conn.prepare(&sql)?;
     if cond {
-        let rows = stmt.query_map(params![status.unwrap()], |row| parse_project(row))?;
+        let rows = stmt.query_map(params![status.unwrap()], parse_project)?;
         rows.collect()
     } else {
-        let rows = stmt.query_map([], |row| parse_project(row))?;
+        let rows = stmt.query_map([], parse_project)?;
         rows.collect()
     }
 }
@@ -88,7 +88,7 @@ pub fn find_by_id(conn: &Connection, id: &str) -> Result<Project> {
     conn.query_row(
         &format!("SELECT {PROJECT_SELECT} FROM projects WHERE id=?1"),
         params![id],
-        |row| parse_project(row),
+        parse_project,
     )
 }
 
@@ -97,7 +97,7 @@ pub fn find_active(conn: &Connection, id: &str) -> Result<Project> {
     conn.query_row(
         &format!("SELECT {PROJECT_SELECT} FROM projects WHERE id=?1 AND deleted_at IS NULL"),
         params![id],
-        |row| parse_project(row),
+        parse_project,
     )
 }
 
@@ -106,7 +106,7 @@ pub fn list_deleted(conn: &Connection) -> Result<Vec<Project>> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {PROJECT_SELECT} FROM projects WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC"
     ))?;
-    let rows = stmt.query_map([], |row| parse_project(row))?;
+    let rows = stmt.query_map([], parse_project)?;
     rows.collect()
 }
 

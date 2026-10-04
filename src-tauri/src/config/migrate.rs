@@ -28,6 +28,7 @@ use crate::error::{AppError, ErrCode};
 /// 当前全部段配置均以 v1 写入,无历史版本,故无分发项;后续演进时按
 /// `from_version < N` 逐级追加(每级只负责把自己那版的变更做完),
 /// 并在 `CONFIG_VERSION` 上递增。
+#[allow(dead_code)] // 预留：后续配置版本演进时启用
 pub fn run_versioned_migrations(_conn: &Connection, _from_version: u32) -> Result<(), AppError> {
     Ok(())
 }
@@ -68,10 +69,13 @@ pub struct SectionMigration {
 /// - 若某段在 `app_config` 表已存在(version >= 1),跳过迁移(返回 `migrated=false`)
 /// - 若某段在 payload 中不存在,跳过
 /// - 若某段载荷解析失败,记录 `reason`,不阻塞其他段迁移
-pub fn migrate_from_local_storage(conn: &Connection, payload: &Value) -> Result<LegacyMigrationResult, AppError> {
-    let obj = payload.as_object().ok_or_else(|| {
-        AppError::business(ErrCode::ConfigParse, "迁移载荷必须是 JSON 对象")
-    })?;
+pub fn migrate_from_local_storage(
+    conn: &Connection,
+    payload: &Value,
+) -> Result<LegacyMigrationResult, AppError> {
+    let obj = payload
+        .as_object()
+        .ok_or_else(|| AppError::business(ErrCode::ConfigParse, "迁移载荷必须是 JSON 对象"))?;
 
     let ai = migrate_ai(conn, obj)?;
     let tts = migrate_tts(conn, obj)?;
@@ -92,7 +96,10 @@ pub fn migrate_from_local_storage(conn: &Connection, payload: &Value) -> Result<
 /// - `apiKey` 单字段 → `bigmodelApiKey` + `deepseekApiKey`
 /// - 顶层字段(provider/endpoint/...) → 嵌套到 `chat` 子对象
 /// - 旧 RAG 字段(apiKey) → `bigmodelApiKey`
-fn migrate_ai(conn: &Connection, payload: &Map<String, Value>) -> Result<SectionMigration, AppError> {
+fn migrate_ai(
+    conn: &Connection,
+    payload: &Map<String, Value>,
+) -> Result<SectionMigration, AppError> {
     // 已迁移则跳过
     if let Ok(Some(_)) = store::load(conn, ConfigSection::Ai) {
         return Ok(SectionMigration {
@@ -102,10 +109,12 @@ fn migrate_ai(conn: &Connection, payload: &Map<String, Value>) -> Result<Section
     }
     let raw = match payload.get("ai") {
         Some(v) if !v.is_null() => v.clone(),
-        _ => return Ok(SectionMigration {
-            migrated: false,
-            reason: Some("no ai data".into()),
-        }),
+        _ => {
+            return Ok(SectionMigration {
+                migrated: false,
+                reason: Some("no ai data".into()),
+            })
+        }
     };
     // 兼容旧格式:无 chat/rag 子对象 → 视为 v0 顶层字段
     let merged = if raw.get("chat").is_none() || raw.get("rag").is_none() {
@@ -151,13 +160,31 @@ fn migrate_ai(conn: &Connection, payload: &Map<String, Value>) -> Result<Section
 
 /// v0 旧 AI 配置 → v1 新格式(对齐前端 `migrateLegacyAiConfig`)
 fn migrate_legacy_ai_config(raw: &Value) -> Value {
-    let old_provider = raw.get("provider").and_then(|v| v.as_str()).unwrap_or("bigmodel");
+    let old_provider = raw
+        .get("provider")
+        .and_then(|v| v.as_str())
+        .unwrap_or("bigmodel");
     let old_api_key = raw.get("apiKey").and_then(|v| v.as_str()).unwrap_or("");
-    let endpoint = raw.get("endpoint").and_then(|v| v.as_str()).unwrap_or("https://open.bigmodel.cn/api/paas/v4");
-    let model = raw.get("model").and_then(|v| v.as_str()).unwrap_or("glm-5.1");
-    let temperature = raw.get("temperature").and_then(|v| v.as_f64()).unwrap_or(0.7) as f64;
-    let max_tokens = raw.get("maxTokens").and_then(|v| v.as_i64()).unwrap_or(131072);
-    let embedding_model = raw.get("embeddingModel").and_then(|v| v.as_str()).unwrap_or("embedding-3");
+    let endpoint = raw
+        .get("endpoint")
+        .and_then(|v| v.as_str())
+        .unwrap_or("https://open.bigmodel.cn/api/paas/v4");
+    let model = raw
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("glm-5.1");
+    let temperature = raw
+        .get("temperature")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.7);
+    let max_tokens = raw
+        .get("maxTokens")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(131072);
+    let embedding_model = raw
+        .get("embeddingModel")
+        .and_then(|v| v.as_str())
+        .unwrap_or("embedding-3");
 
     serde_json::json!({
         "chat": {
@@ -183,21 +210,40 @@ fn migrate_legacy_ai_config(raw: &Value) -> Value {
 /// v0 旧 RAG 子对象 → v1 新格式(对齐前端 `migrateRagConfig`)
 fn migrate_legacy_rag_config(rag: &Map<String, Value>) -> Map<String, Value> {
     let old_key = rag.get("apiKey").cloned().unwrap_or(Value::Null);
-    let provider_str = rag.get("provider").and_then(|v| v.as_str()).unwrap_or("bigmodel");
-    let provider = if provider_str == "deepseek" { "bigmodel" } else { provider_str };
-    let endpoint = rag.get("endpoint").and_then(|v| v.as_str()).unwrap_or("https://open.bigmodel.cn/api/paas/v4");
-    let embedding_model = rag.get("embeddingModel").and_then(|v| v.as_str()).unwrap_or("embedding-3");
+    let provider_str = rag
+        .get("provider")
+        .and_then(|v| v.as_str())
+        .unwrap_or("bigmodel");
+    let provider = if provider_str == "deepseek" {
+        "bigmodel"
+    } else {
+        provider_str
+    };
+    let endpoint = rag
+        .get("endpoint")
+        .and_then(|v| v.as_str())
+        .unwrap_or("https://open.bigmodel.cn/api/paas/v4");
+    let embedding_model = rag
+        .get("embeddingModel")
+        .and_then(|v| v.as_str())
+        .unwrap_or("embedding-3");
 
     let mut out = Map::new();
     out.insert("provider".into(), Value::String(provider.into()));
     out.insert("endpoint".into(), Value::String(endpoint.into()));
-    out.insert("embeddingModel".into(), Value::String(embedding_model.into()));
+    out.insert(
+        "embeddingModel".into(),
+        Value::String(embedding_model.into()),
+    );
     out.insert("bigmodelApiKey".into(), old_key);
     out
 }
 
 /// 迁移 TTS 配置段(无旧格式,直接写入)
-fn migrate_tts(conn: &Connection, payload: &Map<String, Value>) -> Result<SectionMigration, AppError> {
+fn migrate_tts(
+    conn: &Connection,
+    payload: &Map<String, Value>,
+) -> Result<SectionMigration, AppError> {
     if let Ok(Some(_)) = store::load(conn, ConfigSection::Tts) {
         return Ok(SectionMigration {
             migrated: false,
@@ -206,10 +252,12 @@ fn migrate_tts(conn: &Connection, payload: &Map<String, Value>) -> Result<Sectio
     }
     let raw = match payload.get("tts") {
         Some(v) if !v.is_null() => v.clone(),
-        _ => return Ok(SectionMigration {
-            migrated: false,
-            reason: Some("no tts data".into()),
-        }),
+        _ => {
+            return Ok(SectionMigration {
+                migrated: false,
+                reason: Some("no tts data".into()),
+            })
+        }
     };
     // 兼容旧版曾用 appId/accessKey 双字段,这里仅保留 apiKey / speaker
     let mut value = raw.clone();
@@ -246,10 +294,12 @@ fn migrate_preferences(
     }
     let raw = match payload.get("preferences") {
         Some(v) if !v.is_null() => v.clone(),
-        _ => return Ok(SectionMigration {
-            migrated: false,
-            reason: Some("no preferences data".into()),
-        }),
+        _ => {
+            return Ok(SectionMigration {
+                migrated: false,
+                reason: Some("no preferences data".into()),
+            })
+        }
     };
     if !raw.is_object() {
         return Ok(SectionMigration {
@@ -257,7 +307,12 @@ fn migrate_preferences(
             reason: Some("preferences payload not an object".into()),
         });
     }
-    store::upsert(conn, ConfigSection::Preferences, &raw, super::CONFIG_VERSION)?;
+    store::upsert(
+        conn,
+        ConfigSection::Preferences,
+        &raw,
+        super::CONFIG_VERSION,
+    )?;
     Ok(SectionMigration {
         migrated: true,
         reason: None,
@@ -277,10 +332,12 @@ fn migrate_ai_tool_categories(
     }
     let raw = match payload.get("aiToolCategories") {
         Some(v) if !v.is_null() => v.clone(),
-        _ => return Ok(SectionMigration {
-            migrated: false,
-            reason: Some("no ai_tool_categories data".into()),
-        }),
+        _ => {
+            return Ok(SectionMigration {
+                migrated: false,
+                reason: Some("no ai_tool_categories data".into()),
+            })
+        }
     };
     // 旧版曾用单层 prompts 数组(`time-write-ai-tool-prompts` key)
     // 前端启动时已检测并迁移到 `aiToolCategories`,后端收到时已是分类数组
@@ -290,7 +347,12 @@ fn migrate_ai_tool_categories(
             reason: Some("ai_tool_categories payload not an array".into()),
         });
     }
-    store::upsert(conn, ConfigSection::AiToolCategories, &raw, super::CONFIG_VERSION)?;
+    store::upsert(
+        conn,
+        ConfigSection::AiToolCategories,
+        &raw,
+        super::CONFIG_VERSION,
+    )?;
     Ok(SectionMigration {
         migrated: true,
         reason: None,
@@ -395,12 +457,16 @@ mod tests {
         assert_eq!(tts.value["apiKey"], "tts-key");
 
         // Preferences:原样写入
-        let prefs = store::load(&conn, ConfigSection::Preferences).unwrap().unwrap();
+        let prefs = store::load(&conn, ConfigSection::Preferences)
+            .unwrap()
+            .unwrap();
         assert_eq!(prefs.value["theme"], "dark");
         assert_eq!(prefs.value["fontSize"], 18);
 
         // AI 工具箱分类:原样写入
-        let cats = store::load(&conn, ConfigSection::AiToolCategories).unwrap().unwrap();
+        let cats = store::load(&conn, ConfigSection::AiToolCategories)
+            .unwrap()
+            .unwrap();
         assert_eq!(cats.value[0]["name"], "Test");
     }
 
@@ -458,7 +524,10 @@ mod tests {
         let result = migrate_from_local_storage(&conn, &payload).unwrap();
         assert!(result.tts.migrated);
         let tts = store::load(&conn, ConfigSection::Tts).unwrap().unwrap();
-        assert_eq!(tts.value["speaker"], super::super::defaults::DEFAULT_TTS_SPEAKER);
+        assert_eq!(
+            tts.value["speaker"],
+            super::super::defaults::DEFAULT_TTS_SPEAKER
+        );
     }
 
     #[test]

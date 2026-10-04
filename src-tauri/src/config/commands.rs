@@ -31,13 +31,10 @@ use super::store;
 ///
 /// 返回 JSON Value:默认值与持久化值浅合并(持久化值优先),最后应用 env 覆盖。
 #[tauri::command]
-pub async fn get_config(
-    db: State<'_, AppDb>,
-    section: String,
-) -> Result<Value, AppError> {
-    let section: ConfigSection = section
-        .parse()
-        .map_err(|_| AppError::business(ErrCode::ConfigSection, format!("未知配置段: {}", section)))?;
+pub async fn get_config(db: State<'_, AppDb>, section: String) -> Result<Value, AppError> {
+    let section: ConfigSection = section.parse().map_err(|_| {
+        AppError::business(ErrCode::ConfigSection, format!("未知配置段: {}", section))
+    })?;
     let conn = db.pool.get().map_err(|e| AppError::DbPool(e.to_string()))?;
 
     // 1. 默认值
@@ -74,9 +71,9 @@ pub async fn set_config(
     section: String,
     value: Value,
 ) -> Result<(), AppError> {
-    let section: ConfigSection = section
-        .parse()
-        .map_err(|_| AppError::business(ErrCode::ConfigSection, format!("未知配置段: {}", section)))?;
+    let section: ConfigSection = section.parse().map_err(|_| {
+        AppError::business(ErrCode::ConfigSection, format!("未知配置段: {}", section))
+    })?;
     let conn = db.pool.get().map_err(|e| AppError::DbPool(e.to_string()))?;
     store::upsert(&conn, section, &value, super::CONFIG_VERSION)?;
     Ok(())
@@ -84,13 +81,10 @@ pub async fn set_config(
 
 /// 重置某段配置为默认值(删除持久化记录,前端再读取时 fallback 到默认值)
 #[tauri::command]
-pub async fn reset_config(
-    db: State<'_, AppDb>,
-    section: String,
-) -> Result<Value, AppError> {
-    let section: ConfigSection = section
-        .parse()
-        .map_err(|_| AppError::business(ErrCode::ConfigSection, format!("未知配置段: {}", section)))?;
+pub async fn reset_config(db: State<'_, AppDb>, section: String) -> Result<Value, AppError> {
+    let section: ConfigSection = section.parse().map_err(|_| {
+        AppError::business(ErrCode::ConfigSection, format!("未知配置段: {}", section))
+    })?;
     let conn = db.pool.get().map_err(|e| AppError::DbPool(e.to_string()))?;
     let _ = store::delete(&conn, section);
     Ok(defaults::default_value(section))

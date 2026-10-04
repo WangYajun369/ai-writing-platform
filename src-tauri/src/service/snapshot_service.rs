@@ -120,26 +120,56 @@ pub fn restore_snapshot(
     let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
     uow.begin_transaction()?;
 
-    uow.audit("SELECT", "snapshots", format!("id={snapshot_id}, restore content"), file!(), line!());
+    uow.audit(
+        "SELECT",
+        "snapshots",
+        format!("id={snapshot_id}, restore content"),
+        file!(),
+        line!(),
+    );
     let (chapter_id, content_html, wc) = snapshot_repo::find_full(uow.conn(), snapshot_id)?;
 
     // save 前先取当前章节归属书籍与旧字数（用于 delta 计算）
-    uow.audit("SELECT", "chapters", format!("id={chapter_id}, find_book_and_wc"), file!(), line!());
+    uow.audit(
+        "SELECT",
+        "chapters",
+        format!("id={chapter_id}, find_book_and_wc"),
+        file!(),
+        line!(),
+    );
     let (book_id, old_wc) = chapter_repo::find_book_and_wc(uow.conn(), &chapter_id)?;
 
     let ts = now();
-    uow.audit("UPDATE", "chapters", format!("id={chapter_id}, restore from snapshot"), file!(), line!());
+    uow.audit(
+        "UPDATE",
+        "chapters",
+        format!("id={chapter_id}, restore from snapshot"),
+        file!(),
+        line!(),
+    );
     // 快照 wc 为该版本创建时的字数：恢复后章节字数回到版本值，再按差值 delta 更新书籍聚合
     chapter_repo::save_content(uow.conn(), &chapter_id, &content_html, wc, &ts)?;
 
     // 按差值增量更新书籍总字数（O(1) delta 更新，避免全量 SUM 扫描所有章节）
     let delta = wc.saturating_sub(old_wc);
-    uow.audit("UPDATE", "books", format!("id={book_id}, apply_word_count_delta={delta}"), file!(), line!());
+    uow.audit(
+        "UPDATE",
+        "books",
+        format!("id={book_id}, apply_word_count_delta={delta}"),
+        file!(),
+        line!(),
+    );
     book_repo::apply_word_count_delta(uow.conn(), &book_id, delta, &ts)?;
 
     let book_wc = book_repo::word_count_by_book(uow.conn(), &book_id)?;
 
-    uow.audit("COMMIT", "transaction", "restore_snapshot committed", file!(), line!());
+    uow.audit(
+        "COMMIT",
+        "transaction",
+        "restore_snapshot committed",
+        file!(),
+        line!(),
+    );
     uow.commit()
         .map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
 
@@ -159,7 +189,13 @@ pub fn delete_snapshot(app: &AppHandle, db: &AppDb, snapshot_id: &str) -> Result
     // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
     let pooled = db.pool.get()?;
     let mut uow = UnitOfWork::new(&pooled, Some(app));
-    uow.audit("DELETE", "snapshots", format!("id={snapshot_id}"), file!(), line!());
+    uow.audit(
+        "DELETE",
+        "snapshots",
+        format!("id={snapshot_id}"),
+        file!(),
+        line!(),
+    );
     snapshot_repo::delete(uow.conn(), snapshot_id)?;
     uow.commit()?;
     Ok(())

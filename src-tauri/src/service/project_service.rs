@@ -98,8 +98,7 @@ pub fn list_projects(
     uow.commit()?;
     let mut views = Vec::with_capacity(projects.len());
     for p in projects {
-        let (total, todo, doing, done, overdue) =
-            stats_map.get(&p.id).copied().unwrap_or_default();
+        let (total, todo, doing, done, overdue) = stats_map.get(&p.id).copied().unwrap_or_default();
         views.push(ProjectView {
             stats: ProjectStats {
                 total,
@@ -383,7 +382,13 @@ pub fn list_deleted_projects(app: &AppHandle, db: &AppDb) -> Result<Vec<Project>
     // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
     let pooled = db.pool.get()?;
     let mut uow = UnitOfWork::new(&pooled, Some(app));
-    uow.audit("SELECT", "projects", "deleted_at IS NOT NULL", file!(), line!());
+    uow.audit(
+        "SELECT",
+        "projects",
+        "deleted_at IS NOT NULL",
+        file!(),
+        line!(),
+    );
     let projects = project_repo::list_deleted(uow.conn())?;
     uow.commit()?;
     Ok(projects)

@@ -71,8 +71,8 @@ pub fn create_tag(app: &AppHandle, db: &AppDb, name: &str, color: &str) -> Resul
     );
     tag_repo::insert(uow.conn(), &id, &name, &color, &ts)?;
     uow.commit()?;
-    Ok(tag_repo::find_by_id(&pooled, &id)?
-        .ok_or_else(|| AppError::General("创建标签后读取失败".into()))?)
+    tag_repo::find_by_id(&pooled, &id)?
+        .ok_or_else(|| AppError::General("创建标签后读取失败".into()))
 }
 
 /// 更新标签（名称/颜色/停启用）
@@ -109,8 +109,7 @@ pub fn update_tag(
     uow.audit("UPDATE", "tags", format!("id={id}"), file!(), line!());
     tag_repo::update(uow.conn(), id, &name, &color, &status, &ts)?;
     uow.commit()?;
-    Ok(tag_repo::find_by_id(&pooled, id)?
-        .ok_or_else(|| AppError::General("更新标签后读取失败".into()))?)
+    tag_repo::find_by_id(&pooled, id)?.ok_or_else(|| AppError::General("更新标签后读取失败".into()))
 }
 
 /// 删除标签（返回被移除的关联数；task_tags 由外键级联清理）

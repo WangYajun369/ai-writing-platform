@@ -1,9 +1,9 @@
 //! Schema 演进工具 IPC 命令层
 //!
 //! 提供调试控制台 / 设置页查询当前数据库 schema 状态的能力:
-//! - [`schema_status`]:当前版本 + 已应用迁移 + 待应用迁移(对比代码与库);
-//! - [`schema_diff`]:对比 PRAGMA table_info 与 [`crate::db::schema::TABLE_SCHEMA`] 声明的列差异;
-//! - [`schema_migrations_list`]:仅查已应用迁移历史(轻量,调试用)。
+//! - [`schema_status`][]:当前版本 + 已应用迁移 + 待应用迁移(对比代码与库);
+//! - [`schema_diff`][]:对比 PRAGMA table_info 与 [`crate::db::schema::TABLE_SCHEMA`] 声明的列差异;
+//! - [`schema_migrations_list`][]:仅查已应用迁移历史(轻量,调试用)。
 //!
 //! 配套前端 `schemaApi` + `SchemaPanel`,可挂在调试控制台作为新面板。
 //! 与原 [`crate::commands::window::validate::validate_database`] 互补:
@@ -119,8 +119,8 @@ pub async fn schema_diff(db: State<'_, AppDb>) -> Result<SchemaDiff, AppError> {
             });
             continue;
         }
-        let actual_cols = schema_repo::list_table_columns(&conn, table_name)
-            .map_err(AppError::from)?;
+        let actual_cols =
+            schema_repo::list_table_columns(&conn, table_name).map_err(AppError::from)?;
 
         for expected in *expected_cols {
             if !actual_cols.contains(&expected.to_string()) {
@@ -140,7 +140,10 @@ pub async fn schema_diff(db: State<'_, AppDb>) -> Result<SchemaDiff, AppError> {
                     missing_column: None,
                     extra_column: Some(actual.clone()),
                     issue_type: "extra_column".to_string(),
-                    detail: format!("表 {} 多出列: {}(代码未声明,需同步 TABLE_SCHEMA)", table_name, actual),
+                    detail: format!(
+                        "表 {} 多出列: {}(代码未声明,需同步 TABLE_SCHEMA)",
+                        table_name, actual
+                    ),
                 });
             }
         }

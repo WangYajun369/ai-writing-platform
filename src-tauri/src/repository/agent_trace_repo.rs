@@ -4,7 +4,7 @@
 //! 调试控制台或前端按 request_id 回放。不依赖 Tauri State / AppHandle。
 
 use chrono::Local;
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -61,7 +61,10 @@ pub fn insert_trace(
 }
 
 /// 按 request_id 列出轨迹（按 round + created_at 升序，便于回放）
-pub fn list_traces_by_request(conn: &Connection, request_id: &str) -> Result<Vec<AgentTrace>, AppError> {
+pub fn list_traces_by_request(
+    conn: &Connection,
+    request_id: &str,
+) -> Result<Vec<AgentTrace>, AppError> {
     let mut stmt = conn
         .prepare(
             "SELECT id, request_id, skill, round, role, content, tool_name, tool_args, tool_result, created_at
@@ -139,9 +142,42 @@ mod tests {
     #[test]
     fn insert_and_list_traces() {
         let conn = setup();
-        insert_trace(&conn, "req-1", "writing", 0, "assistant", "正在思考...", None, None, None).unwrap();
-        insert_trace(&conn, "req-1", "writing", 1, "tool_call", "调用工具", Some("read_chapter"), Some("{\"id\":\"ch1\"}"), None).unwrap();
-        insert_trace(&conn, "req-1", "writing", 1, "tool_result", "工具结果", None, None, Some("章节内容...")).unwrap();
+        insert_trace(
+            &conn,
+            "req-1",
+            "writing",
+            0,
+            "assistant",
+            "正在思考...",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        insert_trace(
+            &conn,
+            "req-1",
+            "writing",
+            1,
+            "tool_call",
+            "调用工具",
+            Some("read_chapter"),
+            Some("{\"id\":\"ch1\"}"),
+            None,
+        )
+        .unwrap();
+        insert_trace(
+            &conn,
+            "req-1",
+            "writing",
+            1,
+            "tool_result",
+            "工具结果",
+            None,
+            None,
+            Some("章节内容..."),
+        )
+        .unwrap();
         let traces = list_traces_by_request(&conn, "req-1").unwrap();
         assert_eq!(traces.len(), 3);
         assert_eq!(traces[0].round, 0);
@@ -160,8 +196,30 @@ mod tests {
     #[test]
     fn delete_traces_by_request_test() {
         let conn = setup();
-        insert_trace(&conn, "req-1", "writing", 0, "assistant", "内容", None, None, None).unwrap();
-        insert_trace(&conn, "req-2", "research", 0, "assistant", "内容", None, None, None).unwrap();
+        insert_trace(
+            &conn,
+            "req-1",
+            "writing",
+            0,
+            "assistant",
+            "内容",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        insert_trace(
+            &conn,
+            "req-2",
+            "research",
+            0,
+            "assistant",
+            "内容",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let deleted = super::delete_traces_by_request(&conn, "req-1").unwrap();
         assert_eq!(deleted, 1);
         assert!(list_traces_by_request(&conn, "req-1").unwrap().is_empty());
@@ -171,8 +229,30 @@ mod tests {
     #[test]
     fn clear_all_traces_test() {
         let conn = setup();
-        insert_trace(&conn, "req-1", "writing", 0, "assistant", "内容", None, None, None).unwrap();
-        insert_trace(&conn, "req-2", "research", 0, "assistant", "内容", None, None, None).unwrap();
+        insert_trace(
+            &conn,
+            "req-1",
+            "writing",
+            0,
+            "assistant",
+            "内容",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        insert_trace(
+            &conn,
+            "req-2",
+            "research",
+            0,
+            "assistant",
+            "内容",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let deleted = super::clear_all_traces(&conn).unwrap();
         assert_eq!(deleted, 2);
         assert!(list_traces_by_request(&conn, "req-1").unwrap().is_empty());

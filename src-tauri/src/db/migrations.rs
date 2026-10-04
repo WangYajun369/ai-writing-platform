@@ -223,13 +223,7 @@ pub fn run_pending(conn: &mut Connection, from_version: u32) -> anyhow::Result<(
         if let Err(e) = tx.execute(
             "INSERT INTO schema_migrations (version, name, applied_at, checksum, down_sql)
              VALUES (?, ?, ?, ?, ?)",
-            params![
-                m.version,
-                m.name,
-                Local::now().to_rfc3339(),
-                cs,
-                m.down_sql,
-            ],
+            params![m.version, m.name, Local::now().to_rfc3339(), cs, m.down_sql,],
         ) {
             return Err(anyhow::anyhow!(
                 "E_DB_MIGRATION_FAILED: v{} ({}) 写入迁移历史失败: {}",
@@ -257,6 +251,7 @@ pub fn run_pending(conn: &mut Connection, from_version: u32) -> anyhow::Result<(
 }
 
 /// 计算待应用迁移列表(供 `schema_status` 命令返回)。
+#[cfg_attr(not(test), allow(dead_code))] // 供 schema_status IPC 命令调用
 pub fn pending(from_version: u32) -> Vec<&'static Migration> {
     MIGRATIONS
         .iter()
@@ -277,7 +272,8 @@ mod tests {
     #[test]
     fn checksum_stable() {
         let a = checksum("ALTER TABLE foo ADD COLUMN bar TEXT NOT NULL DEFAULT ''");
-        let b = checksum("ALTER   TABLE   foo   ADD   COLUMN   bar   TEXT   NOT   NULL   DEFAULT   ''");
+        let b =
+            checksum("ALTER   TABLE   foo   ADD   COLUMN   bar   TEXT   NOT   NULL   DEFAULT   ''");
         assert_eq!(a, b, "空白差异不应影响 checksum");
         assert_eq!(a.len(), 64, "SHA-256 应为 64 字符 16 进制");
     }
@@ -374,7 +370,13 @@ mod tests {
         tx.execute(
             "INSERT INTO schema_migrations (version, name, applied_at, checksum, down_sql)
              VALUES (?, ?, ?, ?, ?)",
-            params![v2.version, v2.name, "2026-01-01T00:00:00+08:00", v2_cs, v2.down_sql],
+            params![
+                v2.version,
+                v2.name,
+                "2026-01-01T00:00:00+08:00",
+                v2_cs,
+                v2.down_sql
+            ],
         )
         .unwrap();
         tx.commit().unwrap();
@@ -385,7 +387,10 @@ mod tests {
         assert_eq!(list[1].version, 2);
         assert_eq!(list[1].name, "create_demo_v2_table");
         assert_eq!(list[1].checksum, v2_cs);
-        assert_eq!(list[1].down_sql.as_deref(), Some("DROP TABLE IF EXISTS tw_demo_v2"));
+        assert_eq!(
+            list[1].down_sql.as_deref(),
+            Some("DROP TABLE IF EXISTS tw_demo_v2")
+        );
 
         // 5. 验证表已创建
         let cnt: i64 = conn

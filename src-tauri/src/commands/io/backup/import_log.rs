@@ -17,8 +17,9 @@ pub(crate) const IMPORT_LOG_KEEP: usize = 20;
 /// 序列化使用 struct 固定字段序，因此「导出时序列化」与「导入解析后再序列化」字节一致；
 /// 天然排除 exportedAt / cache / backupType / appVersion / schemaVersion / payloadHash。
 pub(crate) fn database_canonical_hash(payload: &ExportPayload) -> Result<String, AppError> {
-    let bytes = serde_json::to_vec(&payload.database)
-        .map_err(|e| AppError::business(ErrCode::BackupSerialize, format!("载荷指纹计算失败: {}", e)))?;
+    let bytes = serde_json::to_vec(&payload.database).map_err(|e| {
+        AppError::business(ErrCode::BackupSerialize, format!("载荷指纹计算失败: {}", e))
+    })?;
     Ok(sha256_hex(&bytes))
 }
 

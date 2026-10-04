@@ -178,7 +178,13 @@ pub fn delete_diary(app: &AppHandle, db: &AppDb, date: &str) -> Result<(), AppEr
     // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
     let pooled = db.pool.get()?;
     let mut uow = UnitOfWork::new(&pooled, Some(app));
-    uow.audit("DELETE", "diaries", format!("diary_date={date}"), file!(), line!());
+    uow.audit(
+        "DELETE",
+        "diaries",
+        format!("diary_date={date}"),
+        file!(),
+        line!(),
+    );
     diary_repo::delete_by_date(uow.conn(), date)?;
     uow.commit()?;
     Ok(())

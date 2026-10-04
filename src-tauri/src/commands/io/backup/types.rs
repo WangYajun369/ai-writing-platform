@@ -39,10 +39,9 @@ impl ImportScope {
     pub(crate) fn parse(s: &str) -> Option<ImportScope> {
         if s == "full" {
             Some(ImportScope::Full)
-        } else if let Some(id) = s.strip_prefix("single:") {
-            Some(ImportScope::Single(id.to_string()))
         } else {
-            None
+            s.strip_prefix("single:")
+                .map(|id| ImportScope::Single(id.to_string()))
         }
     }
 }

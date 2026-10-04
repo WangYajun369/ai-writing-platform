@@ -5,8 +5,8 @@
 //! 1. **事务边界手写**：原 service 直接 `db.pool.get()` 取连接，
 //!    跨多表操作（如 task 删除要清 tasks + subtasks + task_tags + attachments
 //!    + activity_logs）需要外层事务，但内层 service 不知道，靠人工拼接。
-//!    UnitOfWork 提供显式 `begin_transaction` / `commit` / `rollback`，
-//!    跨 service 协作时通过 `&mut Uow` 引用传递，支持嵌套协调。
+//!      UnitOfWork 提供显式 `begin_transaction` / `commit` / `rollback`，
+//!      跨 service 协作时通过 `&mut Uow` 引用传递，支持嵌套协调。
 //!
 //! 2. **SQL 审计分散**：原 100+ 处 `emit_sql_log(app, "INSERT", "tags", ...)`
 //!    手写在每个 SQL 操作后，冗长且易遗漏。Uow 改为累积式：service 内
@@ -166,6 +166,7 @@ impl<'a> UnitOfWork<'a> {
     }
 
     /// 当前累积的审计条目数（用于测试与诊断）。
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn pending_audit_count(&self) -> usize {
         self.pending_audits.len()
     }
@@ -233,9 +234,11 @@ mod tests {
         uow.commit().unwrap();
 
         // commit 后应能查到
-        let count: i64 =
-            conn.query_row("SELECT COUNT(*) FROM tags WHERE id = 't1'", [], |row| row.get(0))
-                .unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tags WHERE id = 't1'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
         assert_eq!(count, 1);
     }
 
@@ -256,9 +259,11 @@ mod tests {
         uow.rollback();
 
         // rollback 后应查不到（事务回滚）
-        let count: i64 =
-            conn.query_row("SELECT COUNT(*) FROM tags WHERE id = 't1'", [], |row| row.get(0))
-                .unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tags WHERE id = 't1'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
         assert_eq!(count, 0);
     }
 
@@ -277,9 +282,11 @@ mod tests {
             // 模拟 ? 失败：uow 离开作用域，drop 应自动 rollback
         }
         // 验证：数据应未持久化
-        let count: i64 =
-            conn.query_row("SELECT COUNT(*) FROM tags WHERE id = 't1'", [], |row| row.get(0))
-                .unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tags WHERE id = 't1'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
         assert_eq!(count, 0);
     }
 

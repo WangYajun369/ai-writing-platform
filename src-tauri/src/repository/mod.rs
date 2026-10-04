@@ -21,17 +21,17 @@
 //! service 负责决定更新哪些字段（业务语义），repository 负责执行 SQL（数据访问），
 //! 实现分层彻底分离。
 
-use rusqlite::Connection;
 use rusqlite::types::ToSql;
+use rusqlite::Connection;
 
-pub mod book_repo;
 pub mod agent_trace_repo;
+pub mod book_repo;
 pub mod chapter_repo;
 pub mod diary_repo;
 pub mod embedding_repo;
 pub mod schedule_repo;
-pub mod soft_delete;
 pub mod snapshot_repo;
+pub mod soft_delete;
 pub mod vocab_repo;
 pub mod volume_repo;
 pub mod world_card_repo;

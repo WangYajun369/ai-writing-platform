@@ -77,7 +77,10 @@ pub(crate) fn classify_plain_row(out: &mut RowReconcile, backup_fp: &str, target
     }
 }
 
-pub(crate) fn reconcile_books(conn: &rusqlite::Connection, rows: &[Book]) -> Result<RowReconcile, AppError> {
+pub(crate) fn reconcile_books(
+    conn: &rusqlite::Connection,
+    rows: &[Book],
+) -> Result<RowReconcile, AppError> {
     let mut stmt = conn.prepare(
         "SELECT updated_at, title, author, description, cover_image, db_path, tags, deleted_at, outline \
          FROM books WHERE id = ?1",
@@ -89,7 +92,7 @@ pub(crate) fn reconcile_books(conn: &rusqlite::Connection, rows: &[Book]) -> Res
             match q.next()? {
                 None => None,
                 Some(r) => {
-                    let target_fp = vec![
+                    let target_fp = [
                         r.get::<_, String>(1)?,
                         r.get::<_, String>(2)?,
                         r.get::<_, String>(3)?,
@@ -105,7 +108,7 @@ pub(crate) fn reconcile_books(conn: &rusqlite::Connection, rows: &[Book]) -> Res
             }
         };
         let tags_json = serde_json::to_string(&b.tags).unwrap_or_else(|_| "[]".to_string());
-        let backup_fp = vec![
+        let backup_fp = [
             b.title.clone(),
             b.author.clone(),
             b.description.clone(),
@@ -134,7 +137,7 @@ pub(crate) fn reconcile_volumes(
             match q.next()? {
                 None => None,
                 Some(r) => Some(
-                    vec![
+                    [
                         r.get::<_, String>(0)?,
                         r.get::<_, i64>(1)?.to_string(),
                         fp_opt(r.get::<_, Option<String>>(2)?),
@@ -143,7 +146,7 @@ pub(crate) fn reconcile_volumes(
                 ),
             }
         };
-        let backup_fp = vec![
+        let backup_fp = [
             v.title.clone(),
             v.sort_order.to_string(),
             fp_opt(v.deleted_at.clone()),
@@ -170,7 +173,7 @@ pub(crate) fn reconcile_chapters(
             match q.next()? {
                 None => None,
                 Some(r) => {
-                    let target_fp = vec![
+                    let target_fp = [
                         fp_opt(r.get::<_, Option<String>>(1)?),
                         r.get::<_, String>(2)?,
                         r.get::<_, String>(3)?,
@@ -187,7 +190,7 @@ pub(crate) fn reconcile_chapters(
                 }
             }
         };
-        let backup_fp = vec![
+        let backup_fp = [
             fp_opt(c.volume_id.clone()),
             c.title.clone(),
             c.content_html.clone(),
@@ -219,7 +222,7 @@ pub(crate) fn reconcile_snapshots(
             match q.next()? {
                 None => None,
                 Some(r) => Some(
-                    vec![
+                    [
                         r.get::<_, String>(0)?,
                         r.get::<_, String>(1)?,
                         r.get::<_, i64>(2)?.to_string(),
@@ -230,7 +233,7 @@ pub(crate) fn reconcile_snapshots(
                 ),
             }
         };
-        let backup_fp = vec![
+        let backup_fp = [
             s.chapter_id.clone(),
             s.content_html.clone(),
             s.word_count.to_string(),
@@ -258,7 +261,7 @@ pub(crate) fn reconcile_world_cards(
             match q.next()? {
                 None => None,
                 Some(r) => {
-                    let target_fp = vec![
+                    let target_fp = [
                         r.get::<_, String>(1)?,
                         r.get::<_, String>(2)?,
                         r.get::<_, String>(3)?,
@@ -272,7 +275,7 @@ pub(crate) fn reconcile_world_cards(
             }
         };
         let tags_json = serde_json::to_string(&w.tags).unwrap_or_else(|_| "[]".to_string());
-        let backup_fp = vec![
+        let backup_fp = [
             w.card_type.clone(),
             w.title.clone(),
             w.content.clone(),
