@@ -18,6 +18,7 @@
 // db（连接池 + Schema 迁移）与 repository（DAO）构成数据层；service 为业务逻辑层；
 // commands 为应用层（IPC 命令），仅允许依赖 service / repository / db。
 mod commands; // Tauri IPC 命令集合
+mod config; // 应用配置统一模块（4 段配置 + ConfigVersion + env 覆盖）
 mod db; // 数据库连接与初始化
 mod error; // 统一错误类型
 mod logging; // 全局日志宏（app_log! / app_log_error!，双写控制台与调试窗口）
@@ -120,6 +121,16 @@ pub fn run() {
                     // 启动兜底：清理超过 24h 的导入回退点（上次会话遗留，幂等）
                     if let Err(e) = commands::io::backup::prune_expired_rollbacks(&conn) {
                         crate::app_log_error!("[Rollback] 过期导入回退点清理失败（跳过）: {}", e);
+                    }
+                    // 应用配置：app_config 表 DDL（幂等）+ ConfigVersion 守卫
+                    // 失败不阻塞启动（与记忆库清理一致），仅日志告警；前端读取时
+                    // 持久化失败会 fallback 到默认值,不影响应用可用性。
+                    if let Err(e) = config::store::apply_ddl(&conn) {
+                        crate::app_log_error!("[Config] app_config DDL 应用失败（跳过）: {}", e);
+                    } else if let Err(e) = config::store::check_versions(&conn) {
+                        // 版本守卫:某段高于应用支持版本,记录告警(不阻塞启动,
+                        // 前端读取时仍按默认值返回,但用户可见错误提示)
+                        crate::app_log_error!("[Config] 配置版本守卫失败: {}", e);
                     }
                 }
             }
@@ -386,6 +397,12 @@ pub fn run() {
             observability::commands::disable_telemetry_broadcast,
             observability::commands::is_telemetry_broadcasting,
             observability::commands::report_error_event,
+            // ══════ Config — 应用配置统一模块 ══════
+            config::commands::get_config,
+            config::commands::set_config,
+            config::commands::reset_config,
+            config::commands::get_config_meta,
+            config::commands::migrate_legacy_config,
             // ══════ 系统检查 ══════
             commands::system_check::system_check,
         ])

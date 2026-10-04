@@ -15,6 +15,7 @@ import {
   detectDiaryBookWindow,
 } from './windowDetection'
 import { useAppVersion } from '@/hooks/useAppVersion'
+import { useConfigInit } from '@/hooks/useConfigInit'
 import { useConsoleInterceptor } from '@/hooks/useConsoleInterceptor'
 import { useThemeFontInit } from '@/hooks/useThemeFontInit'
 import { useStartupUpdateCheck } from '@/hooks/useUpdateCheck'
@@ -57,6 +58,7 @@ export default function AppInit() {
 
   // 启动 hooks
   useAppVersion()
+  useConfigInit()
   useThemeFontInit()
 
   // 启动静默更新检查：仅主窗口（独立窗口各自为 popup，无需重复检查）

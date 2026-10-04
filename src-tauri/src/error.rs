@@ -106,6 +106,14 @@ pub enum ErrCode {
     /// 导出被取消（`E_EXPORT_CANCELED`，未生成文件）。
     ExportCanceled,
 
+    // ── 应用配置 ──
+    /// 应用配置版本不兼容（`E_CONFIG_VERSION`）：配置段版本高于应用支持版本。
+    ConfigVersion,
+    /// 应用配置段不存在（`E_CONFIG_SECTION`）。
+    ConfigSection,
+    /// 应用配置载荷解析失败（`E_CONFIG_PARSE`）。
+    ConfigParse,
+
     // ── 兜底 ──
     /// 业务逻辑错误兜底码（`E_BUSINESS`）。
     Business,
@@ -148,6 +156,9 @@ impl ErrCode {
             Self::ExportFormat => "E_EXPORT_FORMAT",
             Self::ExportWrite => "E_EXPORT_WRITE",
             Self::ExportCanceled => "E_EXPORT_CANCELED",
+            Self::ConfigVersion => "E_CONFIG_VERSION",
+            Self::ConfigSection => "E_CONFIG_SECTION",
+            Self::ConfigParse => "E_CONFIG_PARSE",
             Self::Business => "E_BUSINESS",
             Self::General => "E_GENERAL",
         }

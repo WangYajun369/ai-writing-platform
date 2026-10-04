@@ -1335,3 +1335,72 @@ export const writingApi = {
     return typedInvoke<WritingStatsPayload>('get_writing_stats', { bookId })
   },
 }
+
+// ==================== 应用配置统一模块 ====================
+
+/** 配置段标识(对齐 Rust `ConfigSection`) */
+export type ConfigSectionName =
+  | 'ai'
+  | 'tts'
+  | 'preferences'
+  | 'ai_tool_categories'
+
+/** 单段配置的元信息(供调试与诊断) */
+export interface ConfigSectionMeta {
+  section: string
+  version: number
+  updatedAt?: string
+}
+
+/** 应用配置元信息 */
+export interface ConfigMeta {
+  currentVersion: number
+  sections: ConfigSectionMeta[]
+}
+
+/** 旧 localStorage 数据迁移结果(逐段返回) */
+export interface LegacyMigrationResult {
+  ai: SectionMigration
+  tts: SectionMigration
+  preferences: SectionMigration
+  aiToolCategories: SectionMigration
+}
+
+export interface SectionMigration {
+  /** 是否检测到旧数据并实际写入 */
+  migrated: boolean
+  /** 迁移跳过原因(无旧数据 / 已迁移 / 解析失败) */
+  reason?: string
+}
+
+export const configApi = {
+  /** 读取某段配置(三层加载:默认值 → 持久化值 → env 覆盖) */
+  async get<T = unknown>(section: ConfigSectionName): Promise<T> {
+    return typedInvoke<T>('get_config', { section })
+  },
+
+  /** 写入某段配置(以当前 CONFIG_VERSION 持久化) */
+  async set(section: ConfigSectionName, value: unknown): Promise<void> {
+    return typedInvoke<void>('set_config', { section, value })
+  },
+
+  /** 重置某段配置为默认值(删除持久化记录) */
+  async reset<T = unknown>(section: ConfigSectionName): Promise<T> {
+    return typedInvoke<T>('reset_config', { section })
+  },
+
+  /** 返回配置元信息(供调试与诊断) */
+  async getMeta(): Promise<ConfigMeta> {
+    return typedInvoke<ConfigMeta>('get_config_meta')
+  },
+
+  /** 一次性迁移旧 localStorage 数据到 app_config 表(幂等:已迁移的段跳过) */
+  async migrateLegacy(payload: {
+    ai?: unknown
+    tts?: unknown
+    preferences?: unknown
+    aiToolCategories?: unknown
+  }): Promise<LegacyMigrationResult> {
+    return typedInvoke<LegacyMigrationResult>('migrate_legacy_config', { payload })
+  },
+}
