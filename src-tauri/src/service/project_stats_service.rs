@@ -8,11 +8,11 @@
 //! UTC 做数据库过滤，再在 Rust 侧逐条换算为本地日期按「本地周一」分桶，
 //! 避免跨时区用户（如 UTC+8 周一 08:00 前）的周归属错位。
 
-use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::ProjectWeeklyStat;
 use crate::repository::{activity_log_repo, project_repo};
+use crate::service::uow::UnitOfWork;
 use chrono::{DateTime, Datelike, Duration, Local, Utc};
 use std::collections::HashMap;
 use tauri::AppHandle;
@@ -25,8 +25,10 @@ pub fn project_weekly_stats(
     weeks: u32,
 ) -> Result<Vec<ProjectWeeklyStat>, AppError> {
     let weeks = weeks.clamp(4, 26);
-    let conn = db.pool.get()?;
-    project_repo::find_active(&conn, project_id)
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    project_repo::find_active(uow.conn(), project_id)
         .map_err(|_| AppError::NotFound("未找到该项目或项目已删除".into()))?;
 
     // 本周周一（本地时区）与统计起点（最早一周的周一）
@@ -37,17 +39,17 @@ pub fn project_weekly_stats(
     // 本地零点 → UTC RFC3339（与日志 created_at 同一时钟域比较）
     let from_utc = local_midnight_utc(first_monday);
 
-    emit_sql_log(
-        app,
+    uow.audit(
         "SELECT",
         "task_activity_logs",
-        &format!("weekly project_id={project_id}"),
+        format!("weekly project_id={project_id}"),
         file!(),
         line!(),
     );
 
     // 单条查询取回区间日志，Rust 侧按本地周分桶（替代逐周串行 COUNT 的 2N 查询）
-    let rows = activity_log_repo::list_weekly_actions_since(&conn, project_id, &from_utc)?;
+    let rows = activity_log_repo::list_weekly_actions_since(uow.conn(), project_id, &from_utc)?;
+    uow.commit()?;
     let buckets = bucket_by_local_week(rows);
 
     // (0..weeks).rev()：从最远一周写到本周，保证返回数组按周升序（oldest → newest）

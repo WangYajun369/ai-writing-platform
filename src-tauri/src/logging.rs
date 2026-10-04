@@ -26,7 +26,10 @@
 //! 日志缓冲上限 1000 条（超出丢弃最旧的）。因此**流式热路径**（如 AI SSE 逐 chunk
 //! 解析）不要使用本宏，否则会瞬间刷满缓冲、冲掉其它模块的日志。
 
-/// 日志双写实现：stderr + 调试窗口缓冲
+/// 日志双写实现：stderr + 调试窗口缓冲 + telemetry 缓冲
+///
+/// v1.9：同时写入 telemetry 缓冲,让所有 `app_log!` / `app_log_error!` 调用
+/// 自动出现在 TelemetryExplorer 的 System / Error 类别下,无需逐个调用点改造。
 #[macro_export]
 macro_rules! app_log_inner {
     ($level:expr, $($arg:tt)*) => {{
@@ -41,7 +44,7 @@ macro_rules! app_log_inner {
             buffer.push($crate::commands::window::LogEntry {
                 timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
                 level: $level.to_string(),
-                message: msg,
+                message: msg.clone(),
                 // 宏不采集调用点位置：file / file_name / line 留空。
                 // 这三个字段供前端上报（LogEntryInput）与验证模块（validate.rs）填充，宏路径不启用。
                 file: None,
@@ -49,6 +52,15 @@ macro_rules! app_log_inner {
                 line: None,
             });
         }
+        // v1.9：同步推 telemetry 缓冲（不广播，避免宏路径高频时刷屏；
+        // 调试窗口打开时 telemetry broadcast 开关已开,这里只补缓冲）
+        let kind = if $level == "error" {
+            $crate::observability::event::TelemetryKind::Error
+        } else {
+            $crate::observability::event::TelemetryKind::System
+        };
+        let event = $crate::observability::event::TelemetryEvent::new(kind, $level, msg);
+        $crate::observability::bus::emit(None, None, event);
     }};
 }
 

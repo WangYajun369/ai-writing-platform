@@ -4,8 +4,9 @@
 //! 供 rollback_import 消费撤销；过期点由 prune_expired_rollbacks 清理。
 
 use super::types::ImportScope;
-use crate::error::AppError;
+use crate::error::{AppError, ErrCode};
 use crate::repository::embedding_repo;
+use crate::service::uow::UnitOfWork;
 use chrono::Utc;
 use rusqlite::params;
 
@@ -209,11 +210,14 @@ pub fn prune_expired_rollbacks(conn: &rusqlite::Connection) -> Result<usize, App
 }
 
 /// 撤销一次导入：把目标库恢复至该回退点快照状态（事务内，commit 后重建 vec 镜像）
+///
+/// v1.9：迁移到 UnitOfWork（事务边界统一）。本函数消费 Uow 并在内部 commit；
+/// vec 镜像对齐等后置操作由调用方在 commit 后处理。
 pub fn execute_rollback(
-    conn: &mut rusqlite::Connection,
+    mut uow: UnitOfWork,
     ts: &str,
 ) -> Result<serde_json::Value, AppError> {
-    let Some((scope_str, file_name)) = get_rollback_log(conn, ts)? else {
+    let Some((scope_str, file_name)) = get_rollback_log(uow.conn(), ts)? else {
         return Err(AppError::Business(format!(
             "E_BACKUP_ROLLBACK：回退点不存在或已过期：{}",
             ts
@@ -228,26 +232,20 @@ pub fn execute_rollback(
 
     // 先确认快照表可读（避免回滚到一半才发现数据缺失）
     for table in RB_TABLES {
-        count_rb_table(conn, ts, table)?;
+        count_rb_table(uow.conn(), ts, table)?;
     }
 
-    let tx = conn
-        .transaction()
-        .map_err(|e| AppError::Business(format!("E_BACKUP_TXN：开始回滚事务失败: {}", e)))?;
+    uow.begin_transaction()
+        .map_err(|e| AppError::business(ErrCode::BackupTxn, format!("开始回滚事务失败: {}", e)))?;
 
     // 1) 删除当前导入后的数据（撤销 replace 的效果）
-    clear_scope_data(&tx, &scope)?;
+    clear_scope_data(uow.conn(), &scope)?;
     // 2) 从快照恢复导入前状态
-    let restored = restore_from_clones(&tx, ts)?;
+    let restored = restore_from_clones(uow.conn(), ts)?;
     // 3) 消费回退点
-    drop_rollback_point(&tx, ts)?;
-    tx.commit()
-        .map_err(|e| AppError::Business(format!("E_BACKUP_TXN：提交回滚事务失败: {}", e)))?;
-
-    // 4) vec 镜像与 embeddings 对齐（回滚恢复的 embedding 行可能为空或非空）
-    if let Err(e) = embedding_repo::rebuild_chunks_vec(conn) {
-        crate::app_log_error!("[Rollback] vec 镜像重建失败（可后续由检索自动修复）: {}", e);
-    }
+    drop_rollback_point(uow.conn(), ts)?;
+    uow.commit()
+        .map_err(|e| AppError::business(ErrCode::BackupTxn, format!("提交回滚事务失败: {}", e)))?;
 
     Ok(serde_json::json!({
         "rolledBack": true,

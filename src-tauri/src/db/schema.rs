@@ -5,11 +5,11 @@
 
 /// 每张表的预期列定义（表名, [列名列表]）
 ///
-/// 供 validate.rs 做表结构完整性检查（缺表 / 缺列 / 外键孤儿检测）。
-/// 覆盖范围：书籍创作模块核心表 + embeddings / memories；
-/// 任务卡、生词本、日记等后加入模块的表不在此清单内。
+/// 供 validate.rs 做表结构完整性检查（缺表 / 缺列 / 外键孤儿检测），
+/// 以及 `schema_diff` 命令对比 PRAGMA table_info 与代码声明的差异。
+///
 /// 维护约定：db::mod::migrate 若通过 safe_add_column 给旧库补列，
-/// 需同步更新此处对应表的列清单，否则 validate_database 会误报缺列。
+/// 需同步更新此处对应表的列清单，否则 validate_database / schema_diff 会误报缺列。
 pub const TABLE_SCHEMA: &[(&str, &[&str])] = &[
     (
         "books",
@@ -114,5 +114,87 @@ pub const TABLE_SCHEMA: &[(&str, &[&str])] = &[
             "updated_at",
             "last_hit_at",
         ],
+    ),
+    (
+        "diaries",
+        &[
+            "id",
+            "diary_date",
+            "content_html",
+            "word_count",
+            "keywords",
+            "created_at",
+            "updated_at",
+        ],
+    ),
+    (
+        "vocab_words",
+        &[
+            "id",
+            "word",
+            "phonetic",
+            "meanings",
+            "example",
+            "example_zh",
+            "repetition",
+            "interval_days",
+            "ease_factor",
+            "status",
+            "next_review_at",
+            "last_review_at",
+            "review_count",
+            "correct_count",
+            "source",
+            "ai_details",
+            "created_at",
+            "updated_at",
+        ],
+    ),
+    (
+        "vocab_reviews",
+        &[
+            "id",
+            "word_id",
+            "review_date",
+            "rating",
+            "repetition",
+            "interval_days",
+            "ease_factor",
+            "reviewed_at",
+        ],
+    ),
+    (
+        "agent_traces",
+        &[
+            "id",
+            "request_id",
+            "skill",
+            "round",
+            "role",
+            "content",
+            "tool_name",
+            "tool_args",
+            "tool_result",
+            "created_at",
+        ],
+    ),
+    (
+        "telemetry_events",
+        &[
+            "id",
+            "kind",
+            "level",
+            "timestamp",
+            "message",
+            "source",
+            "file",
+            "line",
+            "payload",
+            "created_at",
+        ],
+    ),
+    (
+        "schema_migrations",
+        &["version", "name", "applied_at", "checksum", "down_sql"],
     ),
 ];

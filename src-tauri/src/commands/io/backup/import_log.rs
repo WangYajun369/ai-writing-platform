@@ -4,7 +4,7 @@
 //! 支撑「曾于 xx 导入」幂等提示与 payloadHash 防篡改校验。
 
 use super::types::{sha256_hex, ExportPayload};
-use crate::error::AppError;
+use crate::error::{AppError, ErrCode};
 use chrono::Utc;
 use rusqlite::params;
 
@@ -18,7 +18,7 @@ pub(crate) const IMPORT_LOG_KEEP: usize = 20;
 /// 天然排除 exportedAt / cache / backupType / appVersion / schemaVersion / payloadHash。
 pub(crate) fn database_canonical_hash(payload: &ExportPayload) -> Result<String, AppError> {
     let bytes = serde_json::to_vec(&payload.database)
-        .map_err(|e| AppError::Business(format!("E_BACKUP_SERIALIZE：载荷指纹计算失败: {}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::BackupSerialize, format!("载荷指纹计算失败: {}", e)))?;
     Ok(sha256_hex(&bytes))
 }
 

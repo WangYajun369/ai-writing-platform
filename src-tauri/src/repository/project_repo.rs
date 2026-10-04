@@ -4,10 +4,17 @@
 //! 项目软删除时连带其下任务一并软删（由 service 在同一事务内调用）。
 
 use crate::models::Project;
+use crate::repository::soft_delete::{self, Table};
 use rusqlite::{params, Connection, OptionalExtension, Result};
 
 /// 完整 SELECT 列名
 pub const PROJECT_SELECT: &str = "id,name,description,color,icon,status,plan_start_date,plan_end_date,pinned,sort_order,deleted_at,created_at,updated_at";
+
+/// `projects` 表的软删除 marker（v1.9 架构优化 #2）
+pub struct ProjectTable;
+impl Table for ProjectTable {
+    const NAME: &'static str = "projects";
+}
 
 /// 未删除项目总数（默认颜色轮询等场景）
 pub fn count_active(conn: &Connection) -> Result<i64> {
@@ -128,11 +135,10 @@ pub fn insert(
 }
 
 /// 软删除项目（标记 deleted_at）
+///
+/// 委派到 `soft_delete::soft_delete::<ProjectTable>`（v1.9 架构优化 #2）
 pub fn soft_delete(conn: &Connection, id: &str, ts: &str) -> Result<usize> {
-    conn.execute(
-        "UPDATE projects SET deleted_at=?1, updated_at=?1 WHERE id=?2 AND deleted_at IS NULL",
-        params![ts, id],
-    )
+    soft_delete::soft_delete::<ProjectTable>(conn, id, ts)
 }
 
 /// 连带软删除某项目下全部未删除任务（service 事务内调用）
@@ -144,11 +150,10 @@ pub fn soft_delete_tasks(conn: &Connection, project_id: &str, ts: &str) -> Resul
 }
 
 /// 恢复项目（清除 deleted_at），返回影响行数
+///
+/// 委派到 `soft_delete::restore::<ProjectTable>`（v1.9 架构优化 #2）
 pub fn restore(conn: &Connection, id: &str, ts: &str) -> Result<usize> {
-    conn.execute(
-        "UPDATE projects SET deleted_at=NULL, updated_at=?1 WHERE id=?2 AND deleted_at IS NOT NULL",
-        params![ts, id],
-    )
+    soft_delete::restore::<ProjectTable>(conn, id, ts)
 }
 
 /// 连带恢复「随项目一并删除」的任务（deleted_at 与项目删除时间戳一致者）。
@@ -168,36 +173,33 @@ pub fn restore_tasks(
 
 /// 硬删除项目（ON DELETE CASCADE 级联删除其下任务与任务标签关联；
 /// 仅限回收站中的项目，返回影响行数）
+///
+/// 委派到 `soft_delete::hard_delete_trashed::<ProjectTable>`（v1.9 架构优化 #2）
 pub fn hard_delete(conn: &Connection, id: &str) -> Result<usize> {
-    Ok(conn.execute(
-        "DELETE FROM projects WHERE id=?1 AND deleted_at IS NOT NULL",
-        params![id],
-    )?)
+    soft_delete::hard_delete_trashed::<ProjectTable>(conn, id)
 }
 
 /// 统计回收站中的项目数量
+///
+/// 委派到 `soft_delete::count_deleted::<ProjectTable>`（v1.9 架构优化 #2）
 pub fn count_deleted(conn: &Connection) -> Result<u32> {
-    conn.query_row(
-        "SELECT COUNT(*) FROM projects WHERE deleted_at IS NOT NULL",
-        [],
-        |row| row.get(0),
-    )
+    soft_delete::count_deleted::<ProjectTable>(conn)
 }
 
 /// 清空项目回收站（级联删除其下任务）
+///
+/// 委派到 `soft_delete::clear_trash::<ProjectTable>`（v1.9 架构优化 #2）
 pub fn clear_trash(conn: &Connection) -> Result<()> {
-    conn.execute("DELETE FROM projects WHERE deleted_at IS NOT NULL", [])?;
-    Ok(())
+    soft_delete::clear_trash::<ProjectTable>(conn)
 }
 
 /// 回收站自动清理：硬删除删除时间早于 cutoff 的项目（PRD 9.12.2 保留 30 天）。
 /// 其下任务 / 附件 / 里程碑 / 操作日志由外键级联删除。
 /// deleted_at 为 UTC RFC3339 字符串（与 cutoff 同格式，可字典序比较）。
+///
+/// 委派到 `soft_delete::purge_expired::<ProjectTable>`（v1.9 架构优化 #2）
 pub fn purge_expired(conn: &Connection, cutoff: &str) -> Result<usize> {
-    conn.execute(
-        "DELETE FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < ?1",
-        params![cutoff],
-    )
+    soft_delete::purge_expired::<ProjectTable>(conn, cutoff)
 }
 
 #[cfg(test)]

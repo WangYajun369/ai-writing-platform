@@ -11,7 +11,8 @@
  * 4. 每 20s 兜底轮询
  */
 import { useCallback, useEffect, useState } from 'react'
-import { listen } from '@tauri-apps/api/event'
+import { WindowEvent } from '@/lib/window-events'
+import { useTauriEvent } from '@/hooks/useTauriEvent'
 import { Loader2Icon } from 'lucide-react'
 import { PluginManager } from '@/plugins/PluginManager'
 import { COMMAND_ICON_MAP, FALLBACK_COMMAND_ICON } from '@/plugins/commandIcons'
@@ -67,22 +68,17 @@ export default function HomeHeaderPlugins() {
     return PluginManager.subscribe(refresh)
   }, [pullState])
 
-  // 挂载拉取 + 事件刷新 + 兜底轮询
+  // 挂载拉取 + 兜底轮询（20s）— 与事件监听解耦
+  // v1.9：4 个事件监听迁移到 useTauriEvent hook，自动管理 unlisten + 竞态安全。
   useEffect(() => {
     void pullState()
-    const unDue = listen('vocab-due-updated', () => void pullState())
-    const unClosed = listen('vocab-window-closed', () => void pullState())
-    const unTasksClosed = listen('tasks-window-closed', () => void pullState())
-    const unTasksData = listen('tasks-data-updated', () => void pullState())
     const timer = window.setInterval(() => void pullState(), 20_000)
-    return () => {
-      void unDue.then((fn) => fn())
-      void unClosed.then((fn) => fn())
-      void unTasksClosed.then((fn) => fn())
-      void unTasksData.then((fn) => fn())
-      window.clearInterval(timer)
-    }
+    return () => window.clearInterval(timer)
   }, [pullState])
+  useTauriEvent(WindowEvent.VOCAB_DUE_UPDATED, () => void pullState())
+  useTauriEvent(WindowEvent.VOCAB_WINDOW_CLOSED, () => void pullState())
+  useTauriEvent(WindowEvent.TASKS_WINDOW_CLOSED, () => void pullState())
+  useTauriEvent(WindowEvent.TASKS_DATA_UPDATED, () => void pullState())
 
   async function handleClick(cmd: PluginCommand) {
     if (busyId) return

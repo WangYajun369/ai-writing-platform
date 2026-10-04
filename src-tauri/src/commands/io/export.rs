@@ -4,10 +4,9 @@
 //! Spec §7 增强：卷结构表达（TXT/MD 卷标题行）、导出进度事件（`export-progress`）、
 //! 可取消（`cancel_book_export`）、临时文件 + rename 原子写出（不产生半成品文件）。
 
-use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
-use crate::error::AppError;
-use crate::repository::{book_repo, chapter_repo};
+use crate::error::{AppError, ErrCode};
+use crate::service::export_service;
 use crate::utils::{escape_html, strip_html};
 use serde::Serialize;
 use std::fs::File;
@@ -71,28 +70,9 @@ pub async fn export_book(
     format: String,
     output_path: String,
 ) -> Result<(), AppError> {
-    let _guard = super::try_acquire_io_lock()?;
-    let conn = db.pool.get()?;
+    let _guard = super::try_acquire_io_lock(Some(&app))?;
 
-    emit_sql_log(
-        &app,
-        "SELECT",
-        "books",
-        &format!("id={}, export info", book_id),
-        file!(),
-        line!(),
-    );
-    let (title, author) = book_repo::find_title_author(&conn, &book_id)?;
-
-    emit_sql_log(
-        &app,
-        "SELECT",
-        "chapters",
-        &format!("book_id={}, export chapters (with volume)", book_id),
-        file!(),
-        line!(),
-    );
-    let rows = chapter_repo::list_export_with_volume(&conn, &book_id)?;
+    let (title, author, rows) = export_service::load_book_export_data(&app, &db, &book_id)?;
 
     if format != "txt" && format != "md" && format != "html" {
         return Err(AppError::Business(format!(
@@ -107,13 +87,13 @@ pub async fn export_book(
 
     // 写出到临时文件；成功后 rename 原子替换（Spec §8.2 精神，避免半成品）
     let file = File::create(&tmp_path)
-        .map_err(|e| AppError::Business(format!("E_EXPORT_WRITE：创建临时文件失败: {}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::ExportWrite, format!("创建临时文件失败: {}", e)))?;
     let mut w = std::io::BufWriter::new(file);
 
     let (header, tail) = document_frame(&format, &title, &author);
     let write_res: Result<(), AppError> = (|| {
         w.write_all(header.as_bytes())
-            .map_err(|e| AppError::Business(format!("E_EXPORT_WRITE：写入导出文件失败: {}", e)))?;
+            .map_err(|e| AppError::business(ErrCode::ExportWrite, format!("写入导出文件失败: {}", e)))?;
 
         let mut last_volume: Option<String> = None;
         let mut done = 0usize;
@@ -127,13 +107,13 @@ pub async fn export_book(
             if row.volume_title != last_volume {
                 let vh = volume_heading(&format, row.volume_title.as_deref());
                 w.write_all(vh.as_bytes()).map_err(|e| {
-                    AppError::Business(format!("E_EXPORT_WRITE：写入导出文件失败: {}", e))
+                    AppError::business(ErrCode::ExportWrite, format!("写入导出文件失败: {}", e))
                 })?;
                 last_volume = row.volume_title.clone();
             }
             let block = chapter_block(&format, &row.title, &row.html);
             w.write_all(block.as_bytes()).map_err(|e| {
-                AppError::Business(format!("E_EXPORT_WRITE：写入导出文件失败: {}", e))
+                AppError::business(ErrCode::ExportWrite, format!("写入导出文件失败: {}", e))
             })?;
 
             done += 1;
@@ -152,9 +132,9 @@ pub async fn export_book(
         }
 
         w.write_all(tail.as_bytes())
-            .map_err(|e| AppError::Business(format!("E_EXPORT_WRITE：写入导出文件失败: {}", e)))?;
+            .map_err(|e| AppError::business(ErrCode::ExportWrite, format!("写入导出文件失败: {}", e)))?;
         w.flush()
-            .map_err(|e| AppError::Business(format!("E_EXPORT_WRITE：写入导出文件失败: {}", e)))?;
+            .map_err(|e| AppError::business(ErrCode::ExportWrite, format!("写入导出文件失败: {}", e)))?;
         Ok(())
     })();
 
@@ -169,7 +149,7 @@ pub async fn export_book(
     drop(w);
 
     std::fs::rename(&tmp_path, &output_path).map_err(|e| {
-        AppError::Business(format!("E_EXPORT_WRITE：移动临时文件到目标路径失败: {}", e))
+        AppError::business(ErrCode::ExportWrite, format!("移动临时文件到目标路径失败: {}", e))
     })?;
 
     Ok(())
@@ -224,6 +204,7 @@ fn chapter_block(format: &str, title: &str, html: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::repository::chapter_repo;
 
     fn rows(items: &[(&str, &str, &str)]) -> Vec<chapter_repo::ChapterExportRow> {
         items

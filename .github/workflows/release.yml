@@ -9,7 +9,7 @@ on:
       version:
         description: '发布版本号 (e.g. 1.0.0)'
         required: true
-        default: '1.8.1'
+        default: '1.9.0'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -176,6 +176,20 @@ jobs:
       - name: List artifacts
         run: find artifacts -type f
 
+      - name: Verify tag matches app version
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${{ github.ref_name }}"
+          TAG_VERSION="${TAG_VERSION#v}"
+          CONF_VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          echo "tag=$TAG_VERSION  tauri.conf.json=$CONF_VERSION"
+          if [ "$TAG_VERSION" != "$CONF_VERSION" ]; then
+            echo "❌ 版本号不一致：tag 为 v$TAG_VERSION，但 tauri.conf.json 为 $CONF_VERSION"
+            echo "   请确认已在 main 分支执行 bump 脚本后再打 tag。"
+            exit 1
+          fi
+          echo "✅ 版本号一致：v$TAG_VERSION"
+
       - name: Generate latest.json
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
@@ -205,10 +219,17 @@ jobs:
           DMG_SIGNATURE=$(npx tauri signer sign -f "$DMG" 2>/dev/null | jq -r '.signature' || echo "")
           EXE_SIGNATURE=$(npx tauri signer sign -f "$EXE" 2>/dev/null | jq -r '.signature' || echo "")
 
+          # 必须失败即停：tauri.conf.json 已配置 pubkey，无签名的 latest.json
+          # 会让更新器在验签阶段拒绝更新（用户侧静默失效），必须阻断发布。
           if [ -z "$DMG_SIGNATURE" ] || [ -z "$EXE_SIGNATURE" ]; then
-            echo "⚠️  签名生成失败，请检查 TAURI_PRIVATE_KEY 是否正确配置"
-            echo "将以无签名模式生成 latest.json（更新器将使用 pubkey 为空时的行为）"
+            echo "❌ 更新包签名生成失败"
+            echo "   tauri.conf.json 的 updater.pubkey 已配置，缺少签名的 latest.json 将导致"
+            echo "   所有客户端自动更新验签失败。请检查 Secrets："
+            echo "   TAURI_PRIVATE_KEY / TAURI_PRIVATE_KEY_PASSWORD 是否与 pubkey 配对。"
+            echo "   DMG_SIGNATURE 长度=${#DMG_SIGNATURE}  EXE_SIGNATURE 长度=${#EXE_SIGNATURE}"
+            exit 1
           fi
+          echo "✅ 签名生成成功（DMG ${#DMG_SIGNATURE} 字节 / EXE ${#EXE_SIGNATURE} 字节）"
 
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 

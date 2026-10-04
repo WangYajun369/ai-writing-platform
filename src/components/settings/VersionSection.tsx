@@ -1,135 +1,23 @@
 /**
  * 版本更新区块 —— 当前版本 / 检查更新 / 下载安装
  *
- * 更新链路：
- * 1. 优先 Tauri updater 插件（应用内提示、可静默下载安装）
- * 2. 插件不可用时回退 GitHub Releases API（checkViaGithub），仅提示并引导跳转下载
- * APP_VERSION 取自 useAiStore（启动时经系统信息注入），作为对比基准。
+ * 更新链路与状态机集中在 useUpdateCheck（应用内 updater 优先，GitHub API 兜底），
+ * 本组件只负责呈现：手动检查会清除「跳过此版本」记录，确保用户主动检查必有反馈。
  */
-import { useState } from 'react'
-import { RefreshCwIcon } from 'lucide-react'
 import { useAiStore } from '@/stores/aiStore'
-import { GITHUB_REPO } from './constants'
-
-type UpdateStatus = 'idle' | 'checking' | 'available' | 'up-to-date' | 'error'
-
-/** 比较两个 semver 版本号，返回 1 表示 v1 > v2 */
-function compareVersions(v1: string, v2: string): number {
-  const a = v1.replace(/^v/, '').split('.').map(Number)
-  const b = v2.replace(/^v/, '').split('.').map(Number)
-  for (let i = 0; i < 3; i++) {
-    if ((a[i] ?? 0) > (b[i] ?? 0)) return 1
-    if ((a[i] ?? 0) < (b[i] ?? 0)) return -1
-  }
-  return 0
-}
-
-/** 通过 GitHub Releases API 检查更新 */
-async function checkViaGithub(appVersion: string): Promise<{ version: string; url: string; body: string } | null> {
-  const resp = await fetch(
-    `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
-    { headers: { Accept: 'application/vnd.github+json' } },
-  )
-  if (!resp.ok) throw new Error(`GitHub API 返回 ${resp.status}`)
-  const data = await resp.json()
-  const remoteVer = data.tag_name ?? ''
-  if (!remoteVer) return null
-  if (compareVersions(remoteVer, appVersion) > 0) {
-    return {
-      version: remoteVer,
-      url: data.html_url ?? `https://github.com/${GITHUB_REPO}/releases/latest`,
-      body: data.body ?? '',
-    }
-  }
-  return null
-}
-
-/** 打开外部链接 */
-async function openUrl(url: string) {
-  try {
-    const { open } = await import('@tauri-apps/plugin-shell')
-    await open(url)
-  } catch {
-    window.open(url, '_blank')
-  }
-}
+import { useUpdateCheck } from '@/hooks/useUpdateCheck'
+import { clearSkippedVersion } from '@/lib/version'
+import { RefreshCwIcon, RocketIcon, SkipForwardIcon } from 'lucide-react'
 
 export function VersionSection() {
-  const [isChecking, setIsChecking] = useState(false)
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle')
-  const [updateMessage, setUpdateMessage] = useState('')
-  const [releaseUrl, setReleaseUrl] = useState('')
-
   const APP_VERSION = useAiStore((s) => s.appVersion)
+  const { status, message, update, progress, installing, installed, check, skip, install } =
+    useUpdateCheck()
 
-  const handleCheckUpdate = async () => {
-    setIsChecking(true)
-    setUpdateStatus('checking')
-    setUpdateMessage('')
-
-    try {
-      // 1) 优先使用 Tauri updater 插件
-      const { check } = await import('@tauri-apps/plugin-updater')
-      const update = await check()
-
-      if (update) {
-        setUpdateStatus('available')
-        setUpdateMessage(`发现新版本 ${update.version}，当前版本 ${update.currentVersion}。\n${update.body ?? ''}`)
-        setIsChecking(false)
-        return
-      }
-      setUpdateStatus('up-to-date')
-      setUpdateMessage('已是最新版本')
-    } catch (updaterErr) {
-      // 2) Tauri updater 失败 → 回退到 GitHub API
-      console.warn('[Updater] Tauri updater 检查失败，尝试 GitHub API:', updaterErr)
-      try {
-        const release = await checkViaGithub(APP_VERSION)
-        if (release) {
-          setReleaseUrl(release.url)
-          setUpdateStatus('available')
-          setUpdateMessage(`发现新版本 ${release.version}，当前版本 v${APP_VERSION}。\n请前往 GitHub 下载安装。\n\n${release.body}`)
-        } else {
-          setUpdateStatus('up-to-date')
-          setUpdateMessage('已是最新版本（通过 GitHub 检查）')
-        }
-      } catch (githubErr) {
-        console.error('[Updater] GitHub API 检查也失败:', githubErr)
-        const msg = githubErr instanceof Error ? githubErr.message : String(githubErr)
-        setUpdateStatus('error')
-        if (msg.includes('403') || msg.includes('rate limit')) {
-          setUpdateMessage('GitHub API 请求频率限制，请稍后再试')
-        } else if (msg.includes('404')) {
-          setUpdateMessage('暂无发布版本，请等待后续更新')
-        } else {
-          setUpdateMessage(`检查更新失败：${msg}`)
-        }
-      }
-    } finally {
-      setIsChecking(false)
-    }
-  }
-
-  /** 下载并安装新版本：GitHub 兜底命中时跳转浏览器下载；否则交给 updater 插件 */
-  const handleDownloadAndInstall = async () => {
-    if (releaseUrl) {
-      await openUrl(releaseUrl)
-      return
-    }
-
-    setIsChecking(true)
-    try {
-      const { check } = await import('@tauri-apps/plugin-updater')
-      const update = await check()
-      if (update) {
-        await update.downloadAndInstall(() => {})
-      }
-    } catch (err) {
-      console.error('[Updater] 下载安装失败:', err)
-      setUpdateMessage(err instanceof Error ? err.message : '下载更新失败')
-    } finally {
-      setIsChecking(false)
-    }
+  const handleCheckUpdate = () => {
+    // 主动检查视为用户想了解最新情况：清除跳过记录
+    clearSkippedVersion()
+    void check()
   }
 
   // 不同检查结果对应的结果条底色/文字色
@@ -161,26 +49,66 @@ export function VersionSection() {
       <div className="space-y-3">
         <button
           onClick={handleCheckUpdate}
-          disabled={isChecking}
+          disabled={status === 'checking'}
           className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <RefreshCwIcon className={`w-4 h-4 ${isChecking ? 'animate-spin' : ''}`} />
-          {isChecking ? '正在检查...' : '检查更新'}
+          <RefreshCwIcon className={`w-4 h-4 ${status === 'checking' ? 'animate-spin' : ''}`} />
+          {status === 'checking' ? '正在检查...' : '检查更新'}
         </button>
 
-        {updateStatus !== 'idle' && (
-          <div className={`p-3 rounded-lg text-sm ${statusStyles[updateStatus] ?? ''}`}>
-            <p className="whitespace-pre-wrap">{updateMessage}</p>
+        {status !== 'idle' && (
+          <div className={`p-3 rounded-lg text-sm ${statusStyles[status] ?? ''}`}>
+            <p className="whitespace-pre-wrap">{message}</p>
 
-            {updateStatus === 'available' && (
-              <button
-                onClick={handleDownloadAndInstall}
-                disabled={isChecking}
-                className="mt-3 flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <RefreshCwIcon className={`w-4 h-4 ${isChecking ? 'animate-spin' : ''}`} />
-                {releaseUrl ? '前往 GitHub 下载' : '立即更新'}
-              </button>
+            {/* 下载进度 */}
+            {installing && (
+              <div className="mt-3">
+                <div className="h-1.5 w-full rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
+                  <div
+                    className="h-full bg-green-600 transition-[width] duration-300"
+                    style={{ width: `${progress ?? 0}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-xs opacity-80">
+                  {progress !== null ? `已下载 ${progress}%` : '正在准备下载…'}
+                </p>
+              </div>
+            )}
+
+            {/* 操作区 */}
+            {status === 'available' && (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {installed ? (
+                  <span className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium">
+                    <RocketIcon className="w-4 h-4" />
+                    请重启应用以完成更新
+                  </span>
+                ) : (
+                  <button
+                    onClick={install}
+                    disabled={installing}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <RefreshCwIcon className={`w-4 h-4 ${installing ? 'animate-spin' : ''}`} />
+                    {update?.source === 'github'
+                      ? '前往 GitHub 下载'
+                      : installing
+                        ? '正在下载…'
+                        : '立即更新'}
+                  </button>
+                )}
+
+                {!installed && (
+                  <button
+                    onClick={skip}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                    title="本版本不再提示；发布更新的版本时会重新提示"
+                  >
+                    <SkipForwardIcon className="w-3.5 h-3.5" />
+                    跳过此版本
+                  </button>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -189,7 +117,7 @@ export function VersionSection() {
       {/* 补充说明 */}
       <div className="p-3 bg-muted/50 rounded-lg text-xs text-muted-foreground">
         <p>更新检查需要网络连接，优先使用应用内更新；如不可用则自动通过 GitHub API 检查。</p>
-        {updateStatus === 'up-to-date' && (
+        {status === 'up-to-date' && (
           <span className="block mt-1 text-primary">你正在使用最新版本，感谢支持！</span>
         )}
       </div>

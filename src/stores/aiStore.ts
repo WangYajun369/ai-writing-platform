@@ -1,16 +1,44 @@
 /**
  * aiStore — AI 领域独立 store（AI 配置/对话记录/工具箱分类/连接状态/应用版本）
  *
- * Phase 3 问题 3 收尾：由原 aiSlice 升级为真正独立的 Zustand store。
+ * v1.9 架构优化:AI 配置与工具箱分类的持久化层从 localStorage 迁移到后端
+ * 统一 config 模块(configClient.ai / configClient.aiToolCategories)。
+ *
+ * 启动流程:
+ * 1. store 初始化用默认配置(同步,首帧不阻塞)
+ * 2. AppInit 调用 `initFromConfig()` 从后端拉取真实 aiConfig + aiToolCategories
+ * 3. 各 setter 同步更新内存 + 异步写后端
+ *
+ * 仍保留 localStorage 的:
+ * - aiConversations / aiSummaries(按书增长,属运行时状态)
+ * - 防抖持久化策略(流式期间避免写放大)
  */
 import { create } from 'zustand'
 import type { AiConfig, AiMessage, ConversationSummary, AiToolCategory } from '../types'
 import {
-  loadAiConfig, saveAiConfig,
-  loadAiToolCategories, saveAiToolCategories,
   aiConversationsStore, aiSummariesStore,
   saveAiConversations,
 } from './appTypes'
+import { configClient } from '@/lib/configClient'
+import { DEFAULT_AI_TOOL_CATEGORIES } from './appTypes'
+
+/** AI 配置默认值(与后端 `defaults::default_ai_config` 对齐) */
+export const defaultAiConfig: AiConfig = {
+  chat: {
+    provider: 'deepseek',
+    endpoint: 'https://api.deepseek.com',
+    model: 'deepseek-v4-flash',
+    temperature: 0.7,
+    maxTokens: 131072,
+    thinkingEnabled: true,
+    contextWindowSize: 10,
+  },
+  rag: {
+    provider: 'bigmodel',
+    endpoint: 'https://open.bigmodel.cn/api/paas/v4',
+    embeddingModel: 'embedding-3',
+  },
+}
 
 export interface AiState {
   aiConnectionStatus: 'idle' | 'testing' | 'connected' | 'error'
@@ -21,6 +49,8 @@ export interface AiState {
   appVersion: string
   aiConfig: AiConfig
 
+  /** 从后端 config 模块加载 aiConfig + aiToolCategories(AppInit 调用) */
+  initFromConfig: () => Promise<void>
   setAiConfig: (config: Partial<AiConfig>) => void
 
   // —— AI 对话管理 ——
@@ -46,8 +76,21 @@ export interface AiState {
   setAppVersion: (appVersion: string) => void
 }
 
+/** 把 aiConfig 异步写后端(失败静默) */
+function persistAiConfigToBackend(config: AiConfig): void {
+  void configClient.ai.set(config).catch(() => {
+    /* ignore */
+  })
+}
+
+/** 把 aiToolCategories 异步写后端(失败静默) */
+function persistAiToolCategoriesToBackend(categories: AiToolCategory[]): void {
+  void configClient.aiToolCategories.set(categories).catch(() => {
+    /* ignore */
+  })
+}
+
 export const useAiStore = create<AiState>()((set, get) => {
-  const savedAiConfig = loadAiConfig()
   const savedAiConversations = aiConversationsStore.load()
   const savedAiSummaries = aiSummariesStore.load()
 
@@ -56,25 +99,32 @@ export const useAiStore = create<AiState>()((set, get) => {
     aiConnectionDetail: '',
     aiConversations: savedAiConversations,
     aiSummaries: savedAiSummaries,
-    aiToolCategories: loadAiToolCategories(),
+    aiToolCategories: DEFAULT_AI_TOOL_CATEGORIES,
     appVersion: '',
-    aiConfig: {
-      chat: {
-        provider: 'deepseek',
-        endpoint: 'https://api.deepseek.com',
-        model: 'deepseek-v4-flash',
-        temperature: 0.7,
-        maxTokens: 131072,
-        thinkingEnabled: true,
-        contextWindowSize: 10,
-      },
-      rag: {
-        provider: 'bigmodel',
-        endpoint: 'https://open.bigmodel.cn/api/paas/v4',
-        embeddingModel: 'embedding-3',
-      },
-      ...savedAiConfig,
-    } as AiConfig,
+    aiConfig: defaultAiConfig,
+
+    initFromConfig: async () => {
+      try {
+        const remoteConfig = await configClient.ai.get()
+        // 浅合并:后端返回的字段覆盖默认值,缺失字段保留默认
+        set({
+          aiConfig: {
+            chat: { ...defaultAiConfig.chat, ...remoteConfig.chat },
+            rag: { ...defaultAiConfig.rag, ...remoteConfig.rag },
+          },
+        })
+      } catch {
+        /* 后端读取失败,保持默认值 */
+      }
+      try {
+        const remoteCats = await configClient.aiToolCategories.get()
+        if (Array.isArray(remoteCats) && remoteCats.length > 0) {
+          set({ aiToolCategories: remoteCats })
+        }
+      } catch {
+        /* 后端读取失败,保持默认值 */
+      }
+    },
 
     setAiConfig: (config) =>
       set((s) => {
@@ -82,7 +132,7 @@ export const useAiStore = create<AiState>()((set, get) => {
           chat: config.chat ? { ...s.aiConfig.chat, ...config.chat } : s.aiConfig.chat,
           rag: config.rag ? { ...s.aiConfig.rag, ...config.rag } : s.aiConfig.rag,
         }
-        saveAiConfig(merged)
+        persistAiConfigToBackend(merged)
         return { aiConfig: merged }
       }),
 
@@ -178,13 +228,13 @@ export const useAiStore = create<AiState>()((set, get) => {
 
     // —— AI 工具箱分类管理 ——
     setAiToolCategories: (categories) => {
-      saveAiToolCategories(categories)
+      persistAiToolCategoriesToBackend(categories)
       set({ aiToolCategories: categories })
     },
     addAiToolCategory: (category) =>
       set((s) => {
         const categories = [...s.aiToolCategories, category]
-        saveAiToolCategories(categories)
+        persistAiToolCategoriesToBackend(categories)
         return { aiToolCategories: categories }
       }),
     updateAiToolCategory: (categoryId, patch) =>
@@ -192,13 +242,13 @@ export const useAiStore = create<AiState>()((set, get) => {
         const categories = s.aiToolCategories.map((c) =>
           c.id === categoryId ? { ...c, ...patch } : c,
         )
-        saveAiToolCategories(categories)
+        persistAiToolCategoriesToBackend(categories)
         return { aiToolCategories: categories }
       }),
     deleteAiToolCategory: (categoryId) =>
       set((s) => {
         const categories = s.aiToolCategories.filter((c) => c.id !== categoryId)
-        saveAiToolCategories(categories)
+        persistAiToolCategoriesToBackend(categories)
         return { aiToolCategories: categories }
       }),
     addAiToolPrompt: (categoryId, prompt) =>
@@ -206,7 +256,7 @@ export const useAiStore = create<AiState>()((set, get) => {
         const categories = s.aiToolCategories.map((c) =>
           c.id === categoryId ? { ...c, tools: [...c.tools, prompt] } : c,
         )
-        saveAiToolCategories(categories)
+        persistAiToolCategoriesToBackend(categories)
         return { aiToolCategories: categories }
       }),
     updateAiToolPrompt: (categoryId, promptId, patch) =>
@@ -216,7 +266,7 @@ export const useAiStore = create<AiState>()((set, get) => {
             ? { ...c, tools: c.tools.map((p) => (p.id === promptId ? { ...p, ...patch } : p)) }
             : c,
         )
-        saveAiToolCategories(categories)
+        persistAiToolCategoriesToBackend(categories)
         return { aiToolCategories: categories }
       }),
     deleteAiToolPrompt: (categoryId, promptId) =>
@@ -224,7 +274,7 @@ export const useAiStore = create<AiState>()((set, get) => {
         const categories = s.aiToolCategories.map((c) =>
           c.id === categoryId ? { ...c, tools: c.tools.filter((p) => p.id !== promptId) } : c,
         )
-        saveAiToolCategories(categories)
+        persistAiToolCategoriesToBackend(categories)
         return { aiToolCategories: categories }
       }),
 

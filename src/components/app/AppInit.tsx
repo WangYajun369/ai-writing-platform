@@ -15,8 +15,10 @@ import {
   detectDiaryBookWindow,
 } from './windowDetection'
 import { useAppVersion } from '@/hooks/useAppVersion'
+import { useConfigInit } from '@/hooks/useConfigInit'
 import { useConsoleInterceptor } from '@/hooks/useConsoleInterceptor'
 import { useThemeFontInit } from '@/hooks/useThemeFontInit'
+import { useStartupUpdateCheck } from '@/hooks/useUpdateCheck'
 import AppRouter from '@/router'
 import WorldbuildingPanel from '@/components/worldbuilding/WorldbuildingPanel'
 import SnapshotPanel from '@/components/editor/SnapshotPanel'
@@ -44,11 +46,7 @@ function WindowShell({ children }: { children: React.ReactNode }) {
 
 // 组件：AppInit 应用初始化入口（按独立窗口 URL 参数路由，主窗口渲染插件宿主 + 主路由）
 export default function AppInit() {
-  // 启动 hooks
-  useAppVersion()
-  useThemeFontInit()
-
-  // 窗口检测（仅在挂载时求值）
+  // 窗口检测（纯函数，读取 URL 参数；先于 hooks 求值以便条件启用启动检查）
   const worldWin = detectWorldWindow()
   const historyWin = detectHistoryWindow()
   const summaryWin = detectSummaryWindow()
@@ -57,6 +55,23 @@ export default function AppInit() {
   const vocabWin = detectVocabWindow()
   const tasksWin = detectTasksWindow()
   const diaryBookWin = detectDiaryBookWindow()
+
+  // 启动 hooks
+  useAppVersion()
+  useConfigInit()
+  useThemeFontInit()
+
+  // 启动静默更新检查：仅主窗口（独立窗口各自为 popup，无需重复检查）
+  const isSubWindow =
+    worldWin.isWorld ||
+    historyWin.isHistory ||
+    summaryWin.isSummary ||
+    aiToolboxWin.isAiToolbox ||
+    debugWin.isDebug ||
+    vocabWin.isVocab ||
+    tasksWin.isTasks ||
+    diaryBookWin.isDiaryBook
+  useStartupUpdateCheck(!isSubWindow)
 
   // 非调试窗口启用 console 拦截
   useConsoleInterceptor(debugWin.isDebug)

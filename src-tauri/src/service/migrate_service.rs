@@ -3,7 +3,6 @@
 //! 幂等迁移：读取全部未删除日程，写入默认项目「个人事务」下；
 //! 完成标记在 task_meta 中，重复执行直接返回 already=true。
 
-use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::MigrateResult;
@@ -40,15 +39,18 @@ pub fn migrate_schedules(app: &AppHandle, db: &AppDb) -> Result<MigrateResult, A
     let today = local_today();
     let now_local = local_now();
     let ts = now();
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
 
-    let already = task_meta_repo::get(&tx, MIGRATION_META_KEY)?.as_deref() == Some("1");
+    let already =
+        task_meta_repo::get(uow.conn(), MIGRATION_META_KEY)?.as_deref() == Some("1");
 
     // 默认项目：优先复用「个人事务」，否则新建
-    let project_id = project_repo::find_id_by_name(&tx, DEFAULT_PROJECT_NAME)?;
+    let project_id = project_repo::find_id_by_name(uow.conn(), DEFAULT_PROJECT_NAME)?;
 
     if already {
+        uow.rollback();
         return Ok(MigrateResult {
             migrated: 0,
             completed: 0,
@@ -62,7 +64,7 @@ pub fn migrate_schedules(app: &AppHandle, db: &AppDb) -> Result<MigrateResult, A
         None => {
             let pid = Uuid::new_v4().to_string();
             project_repo::insert(
-                &tx,
+                uow.conn(),
                 &pid,
                 DEFAULT_PROJECT_NAME,
                 "",
@@ -78,7 +80,7 @@ pub fn migrate_schedules(app: &AppHandle, db: &AppDb) -> Result<MigrateResult, A
         }
     };
 
-    let schedules = schedule_repo::list_all(&tx)?;
+    let schedules = schedule_repo::list_all(uow.conn())?;
     let mut migrated: i64 = 0;
     let mut completed: i64 = 0;
     for s in &schedules {
@@ -88,9 +90,9 @@ pub fn migrate_schedules(app: &AppHandle, db: &AppDb) -> Result<MigrateResult, A
         let due = format!("{}T23:59:59", s.schedule_date);
         // 仅在迁移当日把「今天到期」的日程标为计划今日，迁移后即可出现在今日任务页
         let planned = if s.schedule_date == today { 1 } else { 0 };
-        let sort_order = task_repo::next_sort_order(&tx, &pid, status)?;
+        let sort_order = task_repo::next_sort_order(uow.conn(), &pid, status)?;
         task_repo::insert(
-            &tx,
+            uow.conn(),
             &id,
             &pid,
             None,
@@ -107,23 +109,22 @@ pub fn migrate_schedules(app: &AppHandle, db: &AppDb) -> Result<MigrateResult, A
         )?;
         if s.done {
             // 已完成的日程补记完成时间：insert 阶段不落 completed_time，此处回填本地当前时间
-            task_repo::update_status(&tx, &id, "done", Some(now_local.as_str()), &ts)?;
+            task_repo::update_status(uow.conn(), &id, "done", Some(now_local.as_str()), &ts)?;
         }
         migrated += 1;
         if s.done {
             completed += 1;
         }
     }
-    emit_sql_log(
-        app,
+    uow.audit(
         "INSERT",
         "tasks",
-        &format!("migrate {migrated} schedules -> project {pid}"),
+        format!("migrate {migrated} schedules -> project {pid}"),
         file!(),
         line!(),
     );
-    task_meta_repo::set(&tx, MIGRATION_META_KEY, "1", &ts)?;
-    tx.commit()?;
+    task_meta_repo::set(uow.conn(), MIGRATION_META_KEY, "1", &ts)?;
+    uow.commit()?;
 
     crate::app_log!("[TaskCards] 日程迁移完成：{migrated} 条（已完成 {completed} 条）");
     Ok(MigrateResult {

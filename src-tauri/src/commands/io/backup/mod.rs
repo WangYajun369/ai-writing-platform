@@ -42,10 +42,10 @@ pub(crate) use types::{ImportScope, ImportStrategy};
 #[cfg(test)]
 pub(crate) use types::ExportPayload;
 
-use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
-use crate::error::AppError;
+use crate::error::{AppError, ErrCode};
 use crate::repository::embedding_repo;
+use crate::service::uow::UnitOfWork;
 #[cfg(test)]
 use chrono::Utc;
 #[cfg(test)]
@@ -62,11 +62,13 @@ pub async fn export_all_data(
     output_path: String,
     cache_json: String,
 ) -> Result<(), AppError> {
-    let _guard = super::try_acquire_io_lock()?;
+    let _guard = super::try_acquire_io_lock(Some(&app))?;
     let conn = db.pool.get()?;
-    let database = load_full_export_data(&app, &conn)?;
+    let mut uow = UnitOfWork::new(&conn, Some(&app));
+    let database = load_full_export_data(&mut uow)?;
+    uow.commit()?;
     let cache: serde_json::Value = serde_json::from_str(&cache_json)
-        .map_err(|e| AppError::Business(format!("E_BACKUP_CACHE：缓存数据解析失败: {}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::BackupCache, format!("缓存数据解析失败: {}", e)))?;
 
     build_and_write_payload("full", database, cache, &output_path)
 }
@@ -82,12 +84,14 @@ pub async fn export_single_book(
     output_path: String,
     cache_json: String,
 ) -> Result<(), AppError> {
-    let _guard = super::try_acquire_io_lock()?;
+    let _guard = super::try_acquire_io_lock(Some(&app))?;
     let conn = db.pool.get()?;
-    let full_data = load_full_export_data(&app, &conn)?;
+    let mut uow = UnitOfWork::new(&conn, Some(&app));
+    let full_data = load_full_export_data(&mut uow)?;
+    uow.commit()?;
     let database = filter_single_book_data(&full_data, &book_id);
     let cache: serde_json::Value = serde_json::from_str(&cache_json)
-        .map_err(|e| AppError::Business(format!("E_BACKUP_CACHE：缓存数据解析失败: {}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::BackupCache, format!("缓存数据解析失败: {}", e)))?;
 
     build_and_write_payload("single", database, cache, &output_path)
 }
@@ -103,7 +107,7 @@ pub async fn import_backup(
     file_path: String,
     strategy: Option<String>,
 ) -> Result<serde_json::Value, AppError> {
-    let _guard = super::try_acquire_io_lock()?;
+    let _guard = super::try_acquire_io_lock(Some(&app))?;
     let import_strategy = ImportStrategy::parse(strategy.as_deref())?;
 
     // 只读载入与校验（文件级 → 解密 → 结构 → 行数 → 语义），任何失败零写入
@@ -130,7 +134,7 @@ pub async fn import_backup(
         )));
     }
 
-    let mut conn = db.pool.get()?;
+    let conn = db.pool.get()?;
     let file_name = std::path::Path::new(&file_path)
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
@@ -138,9 +142,19 @@ pub async fn import_backup(
 
     // 非破坏性策略（merge / fill-gaps）：不清空、不快照，单事务逐行写入
     if import_strategy != ImportStrategy::Replace {
-        let value = run_upsert_import(&app, &mut conn, &payload, import_strategy)?;
+        let uow = UnitOfWork::new(&conn, Some(&app));
+        let value = run_upsert_import(uow, &payload, import_strategy)?;
+        // uow 在 run_upsert_import 内部 commit 后释放对 conn 的借用
         // 导入日志：仅在事务成功提交后写入（幂等判定基础；仅 v2 载荷）
         record_import_success(&conn, &payload, &payload_hash, &file_name, file_size)?;
+
+        // vec0 镜像对齐 + 过期回退点清理（与 replace 路径保持一致）
+        if let Err(e) = embedding_repo::rebuild_chunks_vec(&conn) {
+            crate::app_log_error!("[Backup] {} 后 vec 镜像对齐失败（忽略）: {}", import_strategy.as_str(), e);
+        }
+        if let Err(e) = prune_expired_rollbacks(&conn) {
+            crate::app_log_error!("[Rollback] 过期回退点清理失败（忽略）: {}", e);
+        }
         return Ok(value);
     }
 
@@ -148,23 +162,15 @@ pub async fn import_backup(
     let backup_type = payload.backup_type.clone();
     match backup_type.as_str() {
         "full" => {
-            emit_sql_log(
-                &app,
-                "BEGIN",
-                "transaction",
-                "full import transaction",
-                file!(),
-                line!(),
-            );
-            let tx = conn
-                .transaction()
-                .map_err(|e| AppError::Business(format!("E_BACKUP_TXN：开始事务失败: {}", e)))?;
+            let mut uow = UnitOfWork::new(&conn, Some(&app));
+            uow.begin_transaction()
+                .map_err(|e| AppError::business(ErrCode::BackupTxn, format!("开始事务失败: {}", e)))?;
 
             // 事务内、删除前创建回退点快照（与导入同事务：失败自动回滚消失）
             let scope = ImportScope::Full;
             let rollback_ts = new_rollback_ts();
-            if let Err(e) = snapshot_scope(&tx, &rollback_ts, &scope)
-                .and_then(|_| insert_rollback_log(&tx, &rollback_ts, &scope, &file_name))
+            if let Err(e) = snapshot_scope(uow.conn(), &rollback_ts, &scope)
+                .and_then(|_| insert_rollback_log(uow.conn(), &rollback_ts, &scope, &file_name))
             {
                 return Err(AppError::Business(format!(
                     "E_BACKUP_TXN：导入失败（事务已回滚，原数据未受影响）：创建回退点失败 - {}",
@@ -172,35 +178,15 @@ pub async fn import_backup(
                 )));
             }
 
-            match run_full_import(&app, &tx, &payload) {
-                Ok(()) => {
-                    emit_sql_log(
-                        &app,
-                        "COMMIT",
-                        "transaction",
-                        "full import committed",
-                        file!(),
-                        line!(),
-                    );
-                    tx.commit().map_err(|e| {
-                        AppError::Business(format!("E_BACKUP_TXN：提交事务失败: {}", e))
-                    })?;
-                }
-                Err(e) => {
-                    emit_sql_log(
-                        &app,
-                        "ROLLBACK",
-                        "transaction",
-                        "full import rolled back (auto)",
-                        file!(),
-                        line!(),
-                    );
-                    return Err(AppError::Business(format!(
-                        "E_BACKUP_TXN：导入失败（事务已回滚，原数据未受影响）：{}",
-                        e
-                    )));
-                }
+            if let Err(e) = run_full_import(&mut uow, &payload) {
+                return Err(AppError::Business(format!(
+                    "E_BACKUP_TXN：导入失败（事务已回滚，原数据未受影响）：{}",
+                    e
+                )));
             }
+
+            uow.commit()
+                .map_err(|e| AppError::business(ErrCode::BackupTxn, format!("提交事务失败: {}", e)))?;
 
             // 导入日志：仅在事务成功提交后写入（幂等判定基础；仅 v2 载荷）
             record_import_success(&conn, &payload, &payload_hash, &file_name, file_size)?;
@@ -225,23 +211,15 @@ pub async fn import_backup(
         "single" => {
             let book_id = payload.database.books[0].id.clone();
 
-            emit_sql_log(
-                &app,
-                "BEGIN",
-                "transaction",
-                &format!("single import transaction for book_id={}", book_id),
-                file!(),
-                line!(),
-            );
-            let tx = conn
-                .transaction()
-                .map_err(|e| AppError::Business(format!("E_BACKUP_TXN：开始事务失败: {}", e)))?;
+            let mut uow = UnitOfWork::new(&conn, Some(&app));
+            uow.begin_transaction()
+                .map_err(|e| AppError::business(ErrCode::BackupTxn, format!("开始事务失败: {}", e)))?;
 
             // 事务内、删除前创建回退点快照
             let scope = ImportScope::Single(book_id.clone());
             let rollback_ts = new_rollback_ts();
-            if let Err(e) = snapshot_scope(&tx, &rollback_ts, &scope)
-                .and_then(|_| insert_rollback_log(&tx, &rollback_ts, &scope, &file_name))
+            if let Err(e) = snapshot_scope(uow.conn(), &rollback_ts, &scope)
+                .and_then(|_| insert_rollback_log(uow.conn(), &rollback_ts, &scope, &file_name))
             {
                 return Err(AppError::Business(format!(
                     "E_BACKUP_TXN：导入失败（事务已回滚，原数据未受影响）：创建回退点失败 - {}",
@@ -249,35 +227,15 @@ pub async fn import_backup(
                 )));
             }
 
-            match run_single_import(&app, &tx, &payload, &book_id) {
-                Ok(()) => {
-                    emit_sql_log(
-                        &app,
-                        "COMMIT",
-                        "transaction",
-                        "single import committed",
-                        file!(),
-                        line!(),
-                    );
-                    tx.commit().map_err(|e| {
-                        AppError::Business(format!("E_BACKUP_TXN：提交事务失败: {}", e))
-                    })?;
-                }
-                Err(e) => {
-                    emit_sql_log(
-                        &app,
-                        "ROLLBACK",
-                        "transaction",
-                        "single import rolled back (auto)",
-                        file!(),
-                        line!(),
-                    );
-                    return Err(AppError::Business(format!(
-                        "E_BACKUP_TXN：导入失败（事务已回滚，原数据未受影响）：{}",
-                        e
-                    )));
-                }
+            if let Err(e) = run_single_import(&mut uow, &payload, &book_id) {
+                return Err(AppError::Business(format!(
+                    "E_BACKUP_TXN：导入失败（事务已回滚，原数据未受影响）：{}",
+                    e
+                )));
             }
+
+            uow.commit()
+                .map_err(|e| AppError::business(ErrCode::BackupTxn, format!("提交事务失败: {}", e)))?;
 
             // 导入日志：仅在事务成功提交后写入（幂等判定基础；仅 v2 载荷）
             record_import_success(&conn, &payload, &payload_hash, &file_name, file_size)?;
@@ -391,17 +349,15 @@ pub async fn rollback_import(
     db: State<'_, AppDb>,
     ts: String,
 ) -> Result<serde_json::Value, AppError> {
-    let _guard = super::try_acquire_io_lock()?;
-    let mut conn = db.pool.get()?;
-    emit_sql_log(
-        &app,
-        "BEGIN",
-        "transaction",
-        &format!("rollback import ts={}", ts),
-        file!(),
-        line!(),
-    );
-    execute_rollback(&mut conn, &ts)
+    let _guard = super::try_acquire_io_lock(Some(&app))?;
+    let conn = db.pool.get()?;
+    let uow = UnitOfWork::new(&conn, Some(&app));
+    let result = execute_rollback(uow, &ts)?;
+    // vec 镜像与 embeddings 对齐（回滚恢复的 embedding 行可能为空或非空）
+    if let Err(e) = embedding_repo::rebuild_chunks_vec(&conn) {
+        crate::app_log_error!("[Rollback] vec 镜像重建失败（可后续由检索自动修复）: {}", e);
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -477,7 +433,7 @@ mod tests {
 
     #[test]
     fn rollback_full_snapshot_and_restore() {
-        let mut conn = test_conn();
+        let conn = test_conn();
         insert_sample(&conn);
         let ts = "test_full_1";
         snapshot_scope(&conn, ts, &ImportScope::Full).unwrap();
@@ -491,7 +447,7 @@ mod tests {
         )
         .unwrap();
 
-        let out = execute_rollback(&mut conn, ts).unwrap();
+        let out = execute_rollback(UnitOfWork::new(&conn, None), ts).unwrap();
         assert!(out["rolledBack"].as_bool().unwrap());
 
         let titles: Vec<String> = conn
@@ -517,7 +473,7 @@ mod tests {
 
     #[test]
     fn rollback_single_scope_only_touches_book() {
-        let mut conn = test_conn();
+        let conn = test_conn();
         insert_sample(&conn);
         let ts = "test_single_1";
         snapshot_scope(&conn, ts, &ImportScope::Single("b1".to_string())).unwrap();
@@ -533,7 +489,7 @@ mod tests {
         )
         .unwrap();
 
-        execute_rollback(&mut conn, ts).unwrap();
+        execute_rollback(UnitOfWork::new(&conn, None), ts).unwrap();
 
         // b1 恢复为旧内容，导入产生的新章节 c9 被撤销
         let b1_chapters: Vec<String> = conn
@@ -584,8 +540,8 @@ mod tests {
 
     #[test]
     fn rollback_unknown_ts_is_rejected() {
-        let mut conn = test_conn();
-        let err = execute_rollback(&mut conn, "not_exists").unwrap_err();
+        let conn = test_conn();
+        let err = execute_rollback(UnitOfWork::new(&conn, None), "not_exists").unwrap_err();
         assert!(err.to_string().contains("不存在或已过期"));
     }
 
@@ -1193,11 +1149,11 @@ mod tests {
 
     #[test]
     fn io_lock_is_single_flight_and_reentrant() {
-        let g = crate::commands::io::try_acquire_io_lock().expect("首次占用成功");
-        let err = crate::commands::io::try_acquire_io_lock().unwrap_err();
+        let g = crate::commands::io::try_acquire_io_lock(None).expect("首次占用成功");
+        let err = crate::commands::io::try_acquire_io_lock(None).unwrap_err();
         assert!(err.to_string().contains("E_IO_BUSY"), "{err}");
         drop(g);
-        let g2 = crate::commands::io::try_acquire_io_lock().expect("释放后可再占用");
+        let g2 = crate::commands::io::try_acquire_io_lock(None).expect("释放后可再占用");
         drop(g2);
     }
 }

@@ -7,14 +7,19 @@ MirageInk (TimeWrite) 版本号自动化更新脚本
   python3 .codebuddy/skills/version-release/scripts/bump_version.py patch       # 优化   0.1.0 → 0.1.1
   python3 .codebuddy/skills/version-release/scripts/bump_version.py set 0.5.0   # 重置为指定版本
   python3 .codebuddy/skills/version-release/scripts/bump_version.py major --dry-run  # 预览模式（不写入文件）
+  python3 .codebuddy/skills/version-release/scripts/bump_version.py patch --auto-changelog  # 按 git log 生成更新日志草稿
 
-涉及更新的 5 个文件：
-  - package.json           → JSON 字段 version
-  - src-tauri/Cargo.toml   → TOML 字段 package.version
-  - src-tauri/tauri.conf.json → JSON 字段 version
-  - README.md              → 应用信息表格中的版本号
+涉及更新的 7 个文件 / 10 个版本引用点（package.json 为唯一真源）：
+  - package.json                  → JSON 字段 version
+  - src-tauri/Cargo.toml          → TOML 字段 package.version
+  - src-tauri/tauri.conf.json     → JSON 字段 version（前端运行时版本来源）
+  - README.md                     → ① 应用信息表格「版本」行 ② 头部「当前版本」行 ③ 头部「vX.Y.Z 亮点」行
+  - docs/Home.md                  → 应用信息表格「当前版本」行
+  - product/landing-page.html     → ① Hero 徽章「vX.Y.Z 已发布」 ② 页脚版本号
   - .github/workflows/release.yml → workflow_dispatch 默认值
-  - docs/CHANGELOG.md      → 自动插入新版本条目头部（## vX.Y.Z (日期)）
+  - docs/CHANGELOG.md             → 自动插入新版本条目头部（可选 --auto-changelog 生成正文草稿）
+
+防漂移：scripts/check.mjs 会断言以上 10 个引用点版本号全部一致，任一处遗漏即 check 失败。
 """
 
 import json
@@ -48,6 +53,36 @@ FILES = {
         "type": "regex",
         "pattern": r"\| 版本 \| (\d+\.\d+\.\d+) \|",
         "replacement": "| 版本 | {version} |",
+    },
+    "README.md（头部当前版本行）": {
+        "path": PROJECT_ROOT / "README.md",
+        "type": "regex",
+        "pattern": r"\*\*当前版本：`\d+\.\d+\.\d+`\*\*",
+        "replacement": "**当前版本：`{version}`**",
+    },
+    "README.md（头部亮点行）": {
+        "path": PROJECT_ROOT / "README.md",
+        "type": "regex",
+        "pattern": r"> \*\*v\d+\.\d+\.\d+ 亮点\*\*",
+        "replacement": "> **v{version} 亮点**",
+    },
+    "docs/Home.md（应用信息表格当前版本）": {
+        "path": PROJECT_ROOT / "docs" / "Home.md",
+        "type": "regex",
+        "pattern": r"\| 当前版本 \| \d+\.\d+\.\d+ \|",
+        "replacement": "| 当前版本 | {version} |",
+    },
+    "product/landing-page.html（Hero 徽章版本）": {
+        "path": PROJECT_ROOT / "product" / "landing-page.html",
+        "type": "regex",
+        "pattern": r"v\d+\.\d+\.\d+ 已发布",
+        "replacement": "v{version} 已发布",
+    },
+    "product/landing-page.html（页脚版本号）": {
+        "path": PROJECT_ROOT / "product" / "landing-page.html",
+        "type": "regex",
+        "pattern": r"(TimeWrite</strong> &nbsp;·&nbsp; )v\d+\.\d+\.\d+",
+        "replacement": r"\1v{version}",
     },
     ".github/workflows/release.yml": {
         "path": PROJECT_ROOT / ".github" / "workflows" / "release.yml",
@@ -111,7 +146,78 @@ def update_file(filepath: Path, old_ver: str, new_ver: str, cfg: dict):
         f.write(new_content)
 
 
-def insert_changelog_entry(new_version: str):
+def _git(args: list) -> str:
+    """执行 git 命令并返回 stdout（失败返回空串）"""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["git"] + args, capture_output=True, text=True, cwd=PROJECT_ROOT
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+# 提交前缀 → CHANGELOG 分类
+CATEGORY_RULES = [
+    (("feat",), "新增"),
+    (("fix",), "修复"),
+    (("perf", "refactor", "chore", "style", "docs"), "优化"),
+    (("test", "build", "ci"), "工程"),
+]
+
+
+def _classify(subject: str) -> str:
+    """按 conventional commit 前缀归类，无前缀归入「优化」"""
+    head = subject.split(":", 1)[0].strip().lower()
+    head = head.split("(", 1)[0].strip()
+    for prefixes, category in CATEGORY_RULES:
+        if head in prefixes:
+            return category
+    return "优化"
+
+
+def generate_changelog_draft(limit_commits: int = 200) -> str:
+    """
+    基于上一版本 Tag 以来的 git log 生成更新日志正文草稿（按前缀分类）。
+    发布前的 Release 提交（chore: release vX.Y.Z）不计入。
+    """
+    prev_tag = ""
+    tags = [t for t in _git(["tag", "--sort=-v:refname"]).splitlines() if t.strip()]
+    if tags:
+        prev_tag = tags[0]
+
+    log_args = ["log", "--format=%s", f"--max-count={limit_commits}"]
+    raw = _git(log_args + [f"{prev_tag}..HEAD"] if prev_tag else log_args)
+    if not raw:
+        return ""
+
+    buckets = {"新增": [], "修复": [], "优化": [], "工程": []}
+    for subject in raw.splitlines():
+        subject = subject.strip()
+        if not subject or subject.startswith("chore: release"):
+            continue
+        # 去掉 conventional 前缀，保留可读描述
+        desc = subject.split(":", 1)[1].strip() if ":" in subject.split(" ", 1)[0] else subject
+        buckets[_classify(subject)].append(desc)
+
+    if not any(buckets.values()):
+        return ""
+
+    lines = []
+    for category in ("新增", "修复", "优化", "工程"):
+        items = buckets[category]
+        if not items:
+            continue
+        lines.append(f"### {category}")
+        lines.extend(f"- {item}" for item in items)
+        lines.append("")
+
+    header = f"<!-- 以下为脚本按 git log（自 {prev_tag or '首次发布'}）生成的草稿，请人工精炼后删除本注释 -->"
+    return "\n".join([header] + lines).rstrip() + "\n"
+
+
+def insert_changelog_entry(new_version: str, body: str = ""):
     """在 docs/CHANGELOG.md 中插入新版本条目头部（与现有格式一致）"""
     if not CHANGELOG_PATH.exists():
         print(f"⚠️  CHANGELOG.md 不存在，跳过插入版本条目。")
@@ -128,24 +234,30 @@ def insert_changelog_entry(new_version: str):
         print(f"⚠️  CHANGELOG.md 中已存在 {new_entry}，跳过插入。")
         return
 
+    entry_block = new_entry + "\n"
+    if body:
+        entry_block += "\n" + body.rstrip() + "\n"
+
     # 在第一个 ## v 标题之前插入（即最新版本条目位置）
     # 找到 # 更新日志 之后的第一个 ## v 标题
     changelog_header = "# 更新日志\n"
     idx = content.find(changelog_header)
     if idx == -1:
         print(f"⚠️  未在 CHANGELOG.md 中找到 '# 更新日志' 标题，在文件顶部插入。")
-        new_content = new_entry + "\n\n" + content
+        new_content = entry_block + "\n" + content
     else:
         # 在 # 更新日志 行后的第一个换行之后、第一个 ## v 之前插入
         insert_pos = idx + len(changelog_header)
         # 跳过可能的空行
         while insert_pos < len(content) and content[insert_pos] == '\n':
             insert_pos += 1
-        new_content = content[:insert_pos] + new_entry + "\n\n" + content[insert_pos:]
+        new_content = content[:insert_pos] + entry_block + "\n" + content[insert_pos:]
 
     with open(CHANGELOG_PATH, "w", encoding="utf-8") as f:
         f.write(new_content)
-    print(f"✅ 已在 CHANGELOG.md 中插入: {new_entry}")
+    print(f"✅ 已在 CHANGELOG.md 中插入: {new_entry}" + ("（含自动草稿）" if body else "（正文待人工填写）"))
+    if body:
+        print("   ⚠️  草稿由 git log 归类生成，发布前请人工精炼并删除注释行。")
 
 
 def update_changelog_header(old_ver: str, new_ver: str):
@@ -173,11 +285,13 @@ def update_changelog_header(old_ver: str, new_ver: str):
 
 def main():
     dry_run = "--dry-run" in sys.argv
-    args = [a for a in sys.argv[1:] if a != "--dry-run"]
+    auto_changelog = "--auto-changelog" in sys.argv
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
 
     if len(args) < 1:
-        print("用法: bump_version.py <major|minor|patch|set> [version] [--dry-run]")
-        print("  --dry-run  预览模式，仅显示将要执行的操作，不实际修改文件")
+        print("用法: bump_version.py <major|minor|patch|set> [version] [--dry-run] [--auto-changelog]")
+        print("  --dry-run         预览模式，仅显示将要执行的操作，不实际修改文件")
+        print("  --auto-changelog  按 git log（自上一 Tag）自动生成更新日志正文草稿")
         sys.exit(1)
 
     action = args[0]
@@ -234,8 +348,9 @@ def main():
         # set 命令：更新已有版本条目的标题
         update_changelog_header(current, new_version)
     elif action in ("major", "minor", "patch"):
-        # bump 命令：插入新版本条目
-        insert_changelog_entry(new_version)
+        # bump 命令：插入新版本条目（可选自动草稿）
+        draft = generate_changelog_draft() if auto_changelog else ""
+        insert_changelog_entry(new_version, draft)
 
     print()
     print("=" * 50)

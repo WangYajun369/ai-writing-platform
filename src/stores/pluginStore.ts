@@ -39,6 +39,7 @@ export const usePluginStore = create<PluginState & PluginActions>((set, get) => 
 
   enablePlugin: async (pluginId: string) => {
     // context will be injected by the app initialization
+    // storage 由 PluginManager.enable 内部按 pluginId 自动 namespace 隔离
     const context = {
       app: {
         getActiveBookId: () => undefined,
@@ -60,13 +61,10 @@ export const usePluginStore = create<PluginState & PluginActions>((set, get) => 
         keys: async () => [],
       },
     }
-    try {
-      await PluginManager.enable(pluginId, context)
-      get().refresh()
-    } catch (err) {
-      get().refresh()
-      throw err
-    }
+    // PluginManager.enable 内部已做错误隔离(单插件 init 异常仅标记 error 状态,
+    // 不 rethrow,不阻塞其他插件);此处直接 refresh 同步状态即可
+    await PluginManager.enable(pluginId, context)
+    get().refresh()
   },
 
   disablePlugin: (pluginId: string) => {

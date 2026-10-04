@@ -98,3 +98,11 @@ pub fn all_id_paths(conn: &Connection) -> Result<Vec<(String, String)>> {
     let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
     rows.collect()
 }
+
+/// 更新附件的 local_path（启动时路径规范化：绝对路径 → 相对数据根）
+pub fn update_path(conn: &Connection, id: &str, local_path: &str) -> Result<usize> {
+    conn.execute(
+        "UPDATE attachments SET local_path=?1 WHERE id=?2",
+        params![local_path, id],
+    )
+}

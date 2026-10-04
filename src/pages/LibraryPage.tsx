@@ -10,14 +10,16 @@
  */
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 import { PlusIcon, SearchIcon, SettingsIcon, BookOpenIcon, Trash2Icon, WrenchIcon, UploadIcon, DownloadIcon, BugIcon } from 'lucide-react'
-import { listen } from '@tauri-apps/api/event'
+import { WindowEvent } from '@/lib/window-events'
+import { useTauriEvent } from '@/hooks/useTauriEvent'
 import { save, open } from '@tauri-apps/plugin-dialog'
 import { useBooksStore } from '@/stores/booksStore'
 import { useAiStore } from '@/stores/aiStore'
 import { usePreferencesStore } from '@/stores/preferencesStore'
 import { aiToolboxWindowOpenAtom, debugWindowOpenAtom } from '@/stores/uiAtoms'
+import { availableUpdateAtom } from '@/stores/updateAtoms'
 import { bookApi, importExportApi, windowApi, debugApi } from '@/lib/tauri-bridge'
 import type { BackupInspectReport, ImportStrategy } from '@/lib/tauri-bridge'
 import { cn, formatWordCount } from '@/lib/utils'
@@ -71,6 +73,7 @@ export default function LibraryPage() {
     trashCount, setTrashCount,
   } = useBooksStore()
   const { appVersion } = useAiStore()
+  const availableUpdate = useAtomValue(availableUpdateAtom)
   const { gridSize, librarySortBy, setLibrarySortBy } = usePreferencesStore()
   const sortBy = librarySortBy
   const [searchQuery, setSearchQuery] = useState('')
@@ -336,40 +339,11 @@ export default function LibraryPage() {
   }, [])
 
   // 监听 AI 工具箱窗口关闭事件
-  useEffect(() => {
-    let cancelled = false
-    let unlistenFn: (() => void) | undefined
-
-    listen('ai-toolbox-window-closed', () => {
-      if (!cancelled) setAiToolboxWindowOpen(false)
-    }).then((fn) => {
-      if (cancelled) fn()
-      else unlistenFn = fn
-    })
-
-    return () => {
-      cancelled = true
-      unlistenFn?.()
-    }
-  }, [])
+  // v1.9：迁移到 useTauriEvent hook，自动管理 unlisten + 竞态安全。
+  useTauriEvent(WindowEvent.AI_TOOLBOX_WINDOW_CLOSED, () => setAiToolboxWindowOpen(false))
 
   // 监听调试控制台窗口关闭事件
-  useEffect(() => {
-    let cancelled = false
-    let unlistenFn: (() => void) | undefined
-
-    listen('debug-window-closed', () => {
-      if (!cancelled) setDebugWindowOpen(false)
-    }).then((fn) => {
-      if (cancelled) fn()
-      else unlistenFn = fn
-    })
-
-    return () => {
-      cancelled = true
-      unlistenFn?.()
-    }
-  }, [])
+  useTauriEvent(WindowEvent.DEBUG_WINDOW_CLOSED, () => setDebugWindowOpen(false))
 
   // 动态计算网格行高：基于实际列宽计算，而非固定预估值
   const gridRowHeight = useMemo(() => {
@@ -602,6 +576,17 @@ export default function LibraryPage() {
         <span>{books.length} 部作品</span>
         <span>总字数 {formatWordCount(books.reduce((s, b) => s + b.wordCount, 0))}</span>
         <div className="flex-1" />
+        {/* 发现新版本时提示（启动静默检查写入；点击进设置页更新） */}
+        {availableUpdate && (
+          <button
+            onClick={() => navigate('/settings')}
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+            title={`发现新版本 v${availableUpdate.version}，点击前往设置更新`}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+            新版本 v{availableUpdate.version}
+          </button>
+        )}
         <span>智写时光 TimeWrite v{appVersion}</span>
       </footer>
 

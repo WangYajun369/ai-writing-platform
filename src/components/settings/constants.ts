@@ -4,8 +4,10 @@
  * - provider key（bigmodel / deepseek）与 types.ts 中 Provider/RagProvider 一致，
  *   设置区块按 key 读取对应默认值并随服务商切换整体套用
  * - DeepSeek 不提供 Embeddings API，因此 RAG 侧仅维护 bigmodel（智谱）默认项
- * - GITHUB_REPO 供「版本更新」区块通过 GitHub Releases API 做兜底检查
+ * - GITHUB_REPO 的真源在 lib/updateApi.ts（更新检查链路），此处 re-export 保持旧引用可用
  */
+
+export { GITHUB_REPO } from '@/lib/updateApi.ts'
 
 /** 智谱 BigModel 可选模型 */
 export const BIGMODEL_MODELS = ['glm-5.1'] as const
@@ -26,6 +28,3 @@ export const PROVIDER_DEFAULTS: Record<string, { endpoint: string; model: string
 export const RAG_PROVIDER_DEFAULTS: Record<string, { endpoint: string; embeddingModel: string }> = {
   bigmodel: { endpoint: 'https://open.bigmodel.cn/api/paas/v4', embeddingModel: 'embedding-3' },
 }
-
-/** GitHub 仓库地址（版本更新检查用） */
-export const GITHUB_REPO = 'WangYajun369/ai-writing-platform'

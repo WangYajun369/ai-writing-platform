@@ -18,10 +18,12 @@
 // db（连接池 + Schema 迁移）与 repository（DAO）构成数据层；service 为业务逻辑层；
 // commands 为应用层（IPC 命令），仅允许依赖 service / repository / db。
 mod commands; // Tauri IPC 命令集合
+mod config; // 应用配置统一模块（4 段配置 + ConfigVersion + env 覆盖）
 mod db; // 数据库连接与初始化
 mod error; // 统一错误类型
 mod logging; // 全局日志宏（app_log! / app_log_error!，双写控制台与调试窗口）
 mod models; // 数据模型
+mod observability; // 可观测性体系收敛（telemetry 事件总线 + 持久化）
 mod repository; // 数据访问层（DAO）
 mod service; // 业务逻辑层
 mod utils; // 工具函数
@@ -120,6 +122,16 @@ pub fn run() {
                     if let Err(e) = commands::io::backup::prune_expired_rollbacks(&conn) {
                         crate::app_log_error!("[Rollback] 过期导入回退点清理失败（跳过）: {}", e);
                     }
+                    // 应用配置：app_config 表 DDL（幂等）+ ConfigVersion 守卫
+                    // 失败不阻塞启动（与记忆库清理一致），仅日志告警；前端读取时
+                    // 持久化失败会 fallback 到默认值,不影响应用可用性。
+                    if let Err(e) = config::store::apply_ddl(&conn) {
+                        crate::app_log_error!("[Config] app_config DDL 应用失败（跳过）: {}", e);
+                    } else if let Err(e) = config::store::check_versions(&conn) {
+                        // 版本守卫:某段高于应用支持版本,记录告警(不阻塞启动,
+                        // 前端读取时仍按默认值返回,但用户可见错误提示)
+                        crate::app_log_error!("[Config] 配置版本守卫失败: {}", e);
+                    }
                 }
             }
 
@@ -168,39 +180,11 @@ pub fn run() {
                 });
             }
 
-            // ========== 3. 任务卡到期提醒后台循环 ==========
-            // 应用启动 20 秒后开始，每 60 秒扫描一次；偏好关闭时内部自动跳过。
-            // 注意：提醒需要应用保持运行，Tauri 窗口全部关闭后进程退出，循环随之停止。
-            {
-                use std::time::Duration;
-                let handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(Duration::from_secs(20)).await;
-                    loop {
-                        let app = handle.clone();
-                        match crate::service::reminder_service::run_once(&app) {
-                            Ok(sent) => {
-                                if sent > 0 {
-                                    crate::app_log!("[提醒] 本轮发出 {sent} 条到期提醒");
-                                }
-                            }
-                            Err(e) => {
-                                crate::app_log!("[提醒] 本轮扫描失败（自动忽略）: {e}");
-                            }
-                        }
-                        // 回收站 30 天自动清理（内部按自然日守卫，每天实际执行一次）
-                        {
-                            let db = app.state::<crate::db::AppDb>();
-                            if let Err(e) =
-                                crate::service::task_service::purge_expired_trash(&app, &db)
-                            {
-                                crate::app_log!("[回收站] 自动清理失败（自动忽略）: {e}");
-                            }
-                        }
-                        tokio::time::sleep(Duration::from_secs(60)).await;
-                    }
-                });
-            }
+            // ========== 3. 后台任务调度器 ==========
+            // 任务卡到期提醒 + 回收站 30 天自动清理。每个 job 独立 spawn，互不影响；
+            // 连续失败 N 次后自动退避（见 service::scheduler）。提醒需要应用保持运行，
+            // Tauri 窗口全部关闭后进程退出，调度器随之停止。
+            crate::service::scheduler::register_all(app.handle());
 
             Ok(())
         })
@@ -404,8 +388,27 @@ pub fn run() {
             commands::agent::skills::update_agent_memory,
             commands::agent::skills::delete_agent_memory,
             commands::agent::skills::clear_agent_memories,
+            commands::agent::skills::list_agent_traces,
+            commands::agent::skills::clear_agent_traces,
+            // ══════ Telemetry — 可观测性体系收敛 ══════
+            observability::commands::list_telemetry_events,
+            observability::commands::clear_telemetry_events,
+            observability::commands::enable_telemetry_broadcast,
+            observability::commands::disable_telemetry_broadcast,
+            observability::commands::is_telemetry_broadcasting,
+            observability::commands::report_error_event,
+            // ══════ Config — 应用配置统一模块 ══════
+            config::commands::get_config,
+            config::commands::set_config,
+            config::commands::reset_config,
+            config::commands::get_config_meta,
+            config::commands::migrate_legacy_config,
             // ══════ 系统检查 ══════
             commands::system_check::system_check,
+            // ══════ Schema 演进工具 ══════
+            commands::schema::schema_status,
+            commands::schema::schema_diff,
+            commands::schema::schema_migrations_list,
         ])
         .run(tauri::generate_context!())
         .expect("启动 Tauri 应用失败——可能是系统资源不足或配置文件损坏");

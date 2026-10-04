@@ -8,10 +8,19 @@
 
 use crate::models::Book;
 use crate::repository::embedding_repo;
+use crate::repository::soft_delete::{self, Table};
 use rusqlite::{params, Connection, Result};
 
 /// 完整的 SELECT 列名
 pub const BOOK_SELECT: &str = "id,title,author,description,cover_image,word_count,daily_target,today_count,db_path,tags,created_at,updated_at,deleted_at,outline";
+
+/// `books` 表的软删除 marker（v1.9 架构优化 #2）
+///
+/// 供 `soft_delete::*::<BookTable>` 泛型函数使用，编译期注入表名。
+pub struct BookTable;
+impl Table for BookTable {
+    const NAME: &'static str = "books";
+}
 
 /// 从 rusqlite Row 解析 Book（按列名获取，不依赖列顺序）
 pub fn parse_book(row: &rusqlite::Row) -> Result<Book> {
@@ -112,15 +121,21 @@ pub fn clear_cover(conn: &Connection, id: &str, ts: &str) -> Result<()> {
 }
 
 /// 软删除书籍（标记 deleted_at）
+///
+/// 委派到 `soft_delete::soft_delete::<BookTable>`（v1.9 架构优化 #2）
 pub fn soft_delete(conn: &Connection, id: &str, ts: &str) -> Result<()> {
-    conn.execute(
-        "UPDATE books SET deleted_at=?1, updated_at=?1 WHERE id=?2 AND deleted_at IS NULL",
-        params![ts, id],
-    )?;
+    soft_delete::soft_delete::<BookTable>(conn, id, ts)?;
     Ok(())
 }
 
 /// 恢复已删除的书籍（清除 deleted_at）
+///
+/// 委派到 `soft_delete::restore::<BookTable>`（v1.9 架构优化 #2）。
+///
+/// 注意：此处不限定 `deleted_at IS NOT NULL` 守卫，与泛型默认实现略有不同——
+/// books 表的 restore 在历史行为上接受「未删除的行也返回 1 受影响」，
+/// 调用方（book_service::restore_book）通过 0-affected NotFound 判断回收站状态。
+/// 为保持向后兼容，此处显式拼接 SQL 而非使用泛型版本。
 pub fn restore(conn: &Connection, id: &str, ts: &str) -> Result<usize> {
     conn.execute(
         "UPDATE books SET deleted_at=NULL, updated_at=?1 WHERE id=?2",
@@ -129,53 +144,59 @@ pub fn restore(conn: &Connection, id: &str, ts: &str) -> Result<usize> {
 }
 
 /// 硬删除书籍（CASCADE 自动删除 volumes/chapters/snapshots/world_cards）
+///
+/// 委派到 `soft_delete::hard_delete::<BookTable>`（v1.9 架构优化 #2）。
+/// 无 `deleted_at` 守卫，依赖调用方在 service 层确保回收站状态（book_service::hard_delete_book）。
 pub fn hard_delete(conn: &Connection, id: &str) -> Result<()> {
-    conn.execute("DELETE FROM books WHERE id=?1", params![id])?;
+    soft_delete::hard_delete::<BookTable>(conn, id)?;
     Ok(())
 }
 
 /// 统计已删除的书籍数量
+///
+/// 委派到 `soft_delete::count_deleted::<BookTable>`（v1.9 架构优化 #2）
 pub fn count_deleted(conn: &Connection) -> Result<u32> {
-    conn.query_row(
-        "SELECT COUNT(*) FROM books WHERE deleted_at IS NOT NULL",
-        [],
-        |row| row.get(0),
-    )
+    soft_delete::count_deleted::<BookTable>(conn)
 }
 
 /// 清空回收站：硬删除所有已标记删除的书籍
+///
+/// 委派到 `soft_delete::clear_trash::<BookTable>`（v1.9 架构优化 #2）
 pub fn clear_trash(conn: &Connection) -> Result<()> {
-    conn.execute("DELETE FROM books WHERE deleted_at IS NOT NULL", [])?;
-    Ok(())
+    soft_delete::clear_trash::<BookTable>(conn)
 }
 
 // ---- 字数聚合 ----
 
-/// 根据 chapter_id 重新聚合并更新对应书籍的总字数
-pub fn update_word_count_by_chapter(conn: &Connection, chapter_id: &str, ts: &str) -> Result<()> {
-    // 子查询：由章节反查所属 book_id，再聚合该书未删除章节的 word_count 总和（无章节时为 0）
+/// 对指定书籍的 `word_count` 应用增量更新（delta 可正可负）
+///
+/// 与 `recalc_word_count` 的全量 SUM 不同，此函数直接 `books.word_count += delta`，
+/// 复杂度 O(1)，适合保存 / 删除 / 恢复路径的高频调用。
+///
+/// # 边界
+///
+/// - 使用 `MAX(0, word_count + ?)` 防止 delta 为负时出现负数字数
+/// - 同步刷新 `updated_at`
+///
+/// # Arguments
+/// * `conn` - 数据库连接
+/// * `book_id` - 书籍 ID
+/// * `delta` - 字数增量（正数表示增加，负数表示减少）
+/// * `ts` - 时间戳，用于更新 `books.updated_at`
+pub fn apply_word_count_delta(
+    conn: &Connection,
+    book_id: &str,
+    delta: i64,
+    ts: &str,
+) -> Result<()> {
     conn.execute(
-        "UPDATE books SET word_count=(\
-            SELECT COALESCE(SUM(word_count),0) FROM chapters \
-            WHERE book_id=(SELECT book_id FROM chapters WHERE id=?1) AND deleted_at IS NULL\
-         ), updated_at=?2 \
-         WHERE id=(SELECT book_id FROM chapters WHERE id=?1)",
-        params![chapter_id, ts],
+        "UPDATE books SET word_count = MAX(0, word_count + ?1), updated_at=?2 WHERE id=?3",
+        params![delta, ts, book_id],
     )?;
     Ok(())
 }
 
-/// 通过 chapter_id 读取对应书籍的总字数
-pub fn word_count_by_chapter(conn: &Connection, chapter_id: &str) -> Result<i64> {
-    conn.query_row(
-        "SELECT word_count FROM books WHERE id=(SELECT book_id FROM chapters WHERE id=?1)",
-        params![chapter_id],
-        |row| row.get(0),
-    )
-}
-
 /// 通过 book_id 读取书籍总字数
-#[allow(dead_code)]
 pub fn word_count_by_book(conn: &Connection, book_id: &str) -> Result<i64> {
     conn.query_row(
         "SELECT word_count FROM books WHERE id=?1",
@@ -242,6 +263,25 @@ fn orphan_embedding_ids(conn: &Connection, source_type: &str) -> Result<Vec<i64>
     rows.collect()
 }
 
+/// 删除指定书籍的全部 Agent 记忆（硬删书籍时同事务调用）
+///
+/// memories.book_id 无外键约束，需显式清理避免孤儿记忆。
+pub fn delete_memories_by_book(conn: &Connection, book_id: &str) -> Result<usize> {
+    conn.execute(
+        "DELETE FROM memories WHERE book_id=?1",
+        params![book_id],
+    )
+}
+
+/// 删除全部已软删书籍的 Agent 记忆（清空书籍回收站前置调用）
+pub fn delete_memories_of_deleted_books(conn: &Connection) -> Result<usize> {
+    conn.execute(
+        "DELETE FROM memories WHERE book_id IN \
+         (SELECT id FROM books WHERE deleted_at IS NOT NULL)",
+        [],
+    )
+}
+
 /// 查询书籍日更目标（写作统计用，缺省 0）
 pub fn find_daily_target(conn: &Connection, book_id: &str) -> Result<i64> {
     conn.query_row(
@@ -249,4 +289,68 @@ pub fn find_daily_target(conn: &Connection, book_id: &str) -> Result<i64> {
         params![book_id],
         |row| row.get::<_, i64>(0),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 构造仅含 books 测试所需列的内存库（id, title, word_count, updated_at）
+    fn setup() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE books (
+                id          TEXT PRIMARY KEY,
+                title       TEXT NOT NULL DEFAULT '',
+                word_count  INTEGER NOT NULL DEFAULT 0,
+                updated_at  TEXT NOT NULL DEFAULT ''
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO books (id, title, word_count, updated_at) VALUES ('b1', 'Book1', 100, 't0')",
+            [],
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn apply_delta_positive_increases_word_count() {
+        let conn = setup();
+        apply_word_count_delta(&conn, "b1", 50, "t1").unwrap();
+        assert_eq!(word_count_by_book(&conn, "b1").unwrap(), 150);
+    }
+
+    #[test]
+    fn apply_delta_negative_decreases_word_count() {
+        let conn = setup();
+        apply_word_count_delta(&conn, "b1", -30, "t2").unwrap();
+        assert_eq!(word_count_by_book(&conn, "b1").unwrap(), 70);
+    }
+
+    #[test]
+    fn apply_delta_negative_clamped_to_zero() {
+        // delta 负数且绝对值大于当前 word_count：MAX(0, ...) 钳制为 0，避免负数
+        let conn = setup();
+        apply_word_count_delta(&conn, "b1", -200, "t3").unwrap();
+        assert_eq!(word_count_by_book(&conn, "b1").unwrap(), 0);
+    }
+
+    #[test]
+    fn apply_delta_zero_is_noop() {
+        let conn = setup();
+        apply_word_count_delta(&conn, "b1", 0, "t4").unwrap();
+        assert_eq!(word_count_by_book(&conn, "b1").unwrap(), 100);
+    }
+
+    #[test]
+    fn apply_delta_unknown_book_is_noop() {
+        // 未知 book_id：UPDATE 影响 0 行，不报错（与 recalc 行为一致）
+        let conn = setup();
+        apply_word_count_delta(&conn, "unknown", 50, "t5").unwrap();
+        // 原 book 不受影响
+        assert_eq!(word_count_by_book(&conn, "b1").unwrap(), 100);
+    }
 }

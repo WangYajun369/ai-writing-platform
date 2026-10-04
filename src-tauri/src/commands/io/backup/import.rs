@@ -3,15 +3,13 @@
 //! 载入链路：文件级 → 解密 → 结构 → 版本 → 行数上限 → 语义校验，任何失败零写入；
 //! replace 清空重建（配合回退点），merge/fill-gaps 单事务逐行择优写入。
 
-use super::rollback::{clear_book_scope, clear_full_tables, prune_expired_rollbacks};
+use super::rollback::{clear_book_scope, clear_full_tables};
 use super::types::{backup_is_newer, stats_to_json, DatabaseExport, ExportPayload, ImportStrategy, WriteStats, MAX_BACKUP_FILE_BYTES, MAX_BACKUP_ROWS};
 use crate::commands::io::crypto::{parse_encrypted_file, validate_payload_structure};
-use crate::commands::window::emit_sql_log;
-use crate::error::AppError;
-use crate::repository::embedding_repo;
+use crate::error::{AppError, ErrCode};
+use crate::service::uow::UnitOfWork;
 use rusqlite::params;
 use std::collections::HashSet;
-use tauri::AppHandle;
 
 // ---- 数据导入辅助 ----
 
@@ -399,22 +397,22 @@ pub(crate) fn apply_upsert_data(
 }
 
 /// 将备份数据写入数据库（replace 语义专用：调用方已清空目标范围，直接全量插入）
+///
+/// v1.9：迁移到 UnitOfWork（审计统一收口，调用方负责事务边界）。
 pub(crate) fn write_backup_data(
-    app: &AppHandle,
-    conn: &rusqlite::Connection,
+    uow: &mut UnitOfWork,
     dbx: &DatabaseExport,
 ) -> Result<(), AppError> {
-    emit_sql_log(
-        app,
+    uow.audit(
         "INSERT",
         "books",
-        &format!("backup import: {} books", dbx.books.len()),
+        format!("backup import: {} books", dbx.books.len()),
         file!(),
         line!(),
     );
     for book in &dbx.books {
         let tags_json = serde_json::to_string(&book.tags).unwrap_or_else(|_| "[]".to_string());
-        conn.execute(
+        uow.conn().execute(
             "INSERT INTO books (id,title,author,description,cover_image,word_count,daily_target,today_count,db_path,tags,created_at,updated_at,deleted_at,outline) \
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
             params![
@@ -426,16 +424,15 @@ pub(crate) fn write_backup_data(
         )?;
     }
 
-    emit_sql_log(
-        app,
+    uow.audit(
         "INSERT",
         "volumes",
-        &format!("backup import: {} volumes", dbx.volumes.len()),
+        format!("backup import: {} volumes", dbx.volumes.len()),
         file!(),
         line!(),
     );
     for vol in &dbx.volumes {
-        conn.execute(
+        uow.conn().execute(
             "INSERT INTO volumes (id,book_id,title,sort_order,created_at,deleted_at) \
              VALUES (?1,?2,?3,?4,?5,?6)",
             params![
@@ -449,16 +446,15 @@ pub(crate) fn write_backup_data(
         )?;
     }
 
-    emit_sql_log(
-        app,
+    uow.audit(
         "INSERT",
         "chapters",
-        &format!("backup import: {} chapters", dbx.chapters.len()),
+        format!("backup import: {} chapters", dbx.chapters.len()),
         file!(),
         line!(),
     );
     for ch in &dbx.chapters {
-        conn.execute(
+        uow.conn().execute(
             "INSERT INTO chapters (id,book_id,volume_id,title,content_html,word_count,status,sort_order,created_at,updated_at,deleted_at,summary,summary_at,outline) \
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
             params![
@@ -469,16 +465,15 @@ pub(crate) fn write_backup_data(
         )?;
     }
 
-    emit_sql_log(
-        app,
+    uow.audit(
         "INSERT",
         "snapshots",
-        &format!("backup import: {} snapshots", dbx.snapshots.len()),
+        format!("backup import: {} snapshots", dbx.snapshots.len()),
         file!(),
         line!(),
     );
     for snap in &dbx.snapshots {
-        conn.execute(
+        uow.conn().execute(
             "INSERT INTO snapshots (id,chapter_id,content_html,word_count,type,label,created_at) \
              VALUES (?1,?2,?3,?4,?5,?6,?7)",
             params![
@@ -493,17 +488,16 @@ pub(crate) fn write_backup_data(
         )?;
     }
 
-    emit_sql_log(
-        app,
+    uow.audit(
         "INSERT",
         "world_cards",
-        &format!("backup import: {} world_cards", dbx.world_cards.len()),
+        format!("backup import: {} world_cards", dbx.world_cards.len()),
         file!(),
         line!(),
     );
     for card in &dbx.world_cards {
         let tags_json = serde_json::to_string(&card.tags).unwrap_or_else(|_| "[]".to_string());
-        conn.execute(
+        uow.conn().execute(
             "INSERT INTO world_cards (id,book_id,type,title,content,content_html,tags,vectorized,created_at,updated_at) \
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
             params![
@@ -518,42 +512,42 @@ pub(crate) fn write_backup_data(
 }
 
 /// 执行全量数据写入（事务内：清空所有表 → 写入备份数据）
+///
+/// v1.9：迁移到 UnitOfWork（调用方已开启事务，本函数不自行 commit）。
 pub(crate) fn run_full_import(
-    app: &AppHandle,
-    conn: &rusqlite::Connection,
+    uow: &mut UnitOfWork,
     payload: &ExportPayload,
 ) -> Result<(), AppError> {
-    emit_sql_log(
-        app,
+    uow.audit(
         "DELETE",
         "all tables",
-        "full import: clearing all data",
+        "full import: clearing all data".to_string(),
         file!(),
         line!(),
     );
-    clear_full_tables(conn)?;
+    clear_full_tables(uow.conn())?;
 
-    write_backup_data(app, conn, &payload.database)
+    write_backup_data(uow, &payload.database)
 }
 
 /// 执行单作品数据写入（事务内：仅删除目标作品数据 → 写入备份数据）
+///
+/// v1.9：迁移到 UnitOfWork（调用方已开启事务，本函数不自行 commit）。
 pub(crate) fn run_single_import(
-    app: &AppHandle,
-    conn: &rusqlite::Connection,
+    uow: &mut UnitOfWork,
     payload: &ExportPayload,
     book_id: &str,
 ) -> Result<(), AppError> {
-    emit_sql_log(
-        app,
+    uow.audit(
         "DELETE",
         "all tables",
-        &format!("single import: clearing data for book_id={}", book_id),
+        format!("single import: clearing data for book_id={book_id}"),
         file!(),
         line!(),
     );
-    clear_book_scope(conn, book_id)?;
+    clear_book_scope(uow.conn(), book_id)?;
 
-    write_backup_data(app, conn, &payload.database)
+    write_backup_data(uow, &payload.database)
 }
 
 /// 版本兼容检查（Spec §2.2 / §10）：v1.x / v2.x 可导入；高于当前支持主版本 → E_BACKUP_VERSION
@@ -576,7 +570,7 @@ pub(crate) fn check_supported_version(version: &str) -> Result<(), AppError> {
 pub(crate) fn load_backup_payload(file_path: &str) -> Result<(ExportPayload, u64), AppError> {
     // 0) 文件大小上限：先查 metadata 拒绝超大文件，避免一次性读入内存
     let meta = std::fs::metadata(file_path)
-        .map_err(|e| AppError::Business(format!("E_BACKUP_READ：读取文件失败：{}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::BackupRead, format!("读取文件失败：{}", e)))?;
     if meta.len() > MAX_BACKUP_FILE_BYTES {
         return Err(AppError::Business(format!(
             "E_BACKUP_TOO_LARGE：备份文件大小 {:.1} MB 超过上限 200 MB",
@@ -585,7 +579,7 @@ pub(crate) fn load_backup_payload(file_path: &str) -> Result<(ExportPayload, u64
     }
 
     let file_bytes = std::fs::read(file_path)
-        .map_err(|e| AppError::Business(format!("E_BACKUP_READ：读取文件失败：{}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::BackupRead, format!("读取文件失败：{}", e)))?;
 
     let json_str = parse_encrypted_file(&file_bytes)?;
     validate_payload_structure(&json_str)?;
@@ -631,30 +625,23 @@ pub(crate) fn load_backup_payload(file_path: &str) -> Result<(ExportPayload, u64
     Ok((payload, meta.len()))
 }
 
-/// 事务内执行非破坏性策略导入（merge / fill-gaps），提交后统一对齐 vec0 镜像（G13）。
+/// 事务内执行非破坏性策略导入（merge / fill-gaps）。
+///
+/// v1.9：迁移到 UnitOfWork（事务边界 + 审计统一收口）。
+/// 本函数消费 Uow 并在内部 commit；vec0 镜像对齐与过期回退点清理等
+/// 最佳努力后置操作由调用方在 commit 后另行处理（与 replace 路径保持一致）。
 pub(crate) fn run_upsert_import(
-    app: &AppHandle,
-    conn: &mut rusqlite::Connection,
+    mut uow: UnitOfWork,
     payload: &ExportPayload,
     strategy: ImportStrategy,
 ) -> Result<serde_json::Value, AppError> {
-    emit_sql_log(
-        app,
-        "BEGIN",
-        "transaction",
-        &format!("{} import transaction", strategy.as_str()),
-        file!(),
-        line!(),
-    );
-    let tx = conn
-        .transaction()
-        .map_err(|e| AppError::Business(format!("E_BACKUP_TXN：开始事务失败: {}", e)))?;
+    uow.begin_transaction()
+        .map_err(|e| AppError::business(ErrCode::BackupTxn, format!("开始事务失败: {}", e)))?;
 
-    emit_sql_log(
-        app,
+    uow.audit(
         "MERGE",
         "all content tables",
-        &format!(
+        format!(
             "{} import: books={} volumes={} chapters={} snapshots={} worldCards={}",
             strategy.as_str(),
             payload.database.books.len(),
@@ -667,49 +654,19 @@ pub(crate) fn run_upsert_import(
         line!(),
     );
 
-    let stats =
-        match apply_upsert_data(&tx, &payload.database, strategy == ImportStrategy::FillGaps) {
-            Ok(s) => s,
-            Err(e) => {
-                emit_sql_log(
-                    app,
-                    "ROLLBACK",
-                    "transaction",
-                    "upsert import rolled back (auto)",
-                    file!(),
-                    line!(),
-                );
-                return Err(AppError::Business(format!(
-                    "E_BACKUP_TXN：导入失败（事务已回滚，目标库未受影响）：{}",
-                    e
-                )));
-            }
-        };
+    let stats = match apply_upsert_data(uow.conn(), &payload.database, strategy == ImportStrategy::FillGaps) {
+        Ok(s) => s,
+        Err(e) => {
+            // 出错时不手动回滚：Uow drop 自动回滚事务并丢弃审计条目
+            return Err(AppError::Business(format!(
+                "E_BACKUP_TXN：导入失败（事务已回滚，目标库未受影响）：{}",
+                e
+            )));
+        }
+    };
 
-    emit_sql_log(
-        app,
-        "COMMIT",
-        "transaction",
-        &format!("{} import committed", strategy.as_str()),
-        file!(),
-        line!(),
-    );
-    tx.commit()
-        .map_err(|e| AppError::Business(format!("E_BACKUP_TXN：提交事务失败: {}", e)))?;
-
-    // 非破坏性策略不产生新向量，但统一对齐 vec0 镜像，防止内容变更后镜像残留/缺失（G13）
-    if let Err(e) = embedding_repo::rebuild_chunks_vec(conn) {
-        crate::app_log_error!(
-            "[Backup] {} 后 vec 镜像对齐失败（忽略，可后续由检索自动修复）: {}",
-            strategy.as_str(),
-            e
-        );
-    }
-
-    // 清理过期回退点（非破坏性导入本身不回退，但保持库内点数量受控）
-    if let Err(e) = prune_expired_rollbacks(conn) {
-        crate::app_log_error!("[Rollback] 过期回退点清理失败（忽略）: {}", e);
-    }
+    uow.commit()
+        .map_err(|e| AppError::business(ErrCode::BackupTxn, format!("提交事务失败: {}", e)))?;
 
     Ok(serde_json::json!({
         "cache": payload.cache,

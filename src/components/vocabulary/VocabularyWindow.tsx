@@ -7,7 +7,8 @@
  *      （该事件由后端在任何影响到期数的写操作后广播，主窗口徽标同步刷新）
  */
 import { useEffect, useState } from 'react'
-import { listen } from '@tauri-apps/api/event'
+import { WindowEvent } from '@/lib/window-events'
+import { useTauriEvent } from '@/hooks/useTauriEvent'
 import { open } from '@tauri-apps/plugin-dialog'
 import {
   BookOpenIcon,
@@ -63,14 +64,10 @@ export default function VocabularyWindow() {
   }, [])
 
   // 后端广播到期变化 → 刷新（窗口内操作与主窗口操作都会触发）
-  useEffect(() => {
-    const un = listen('vocab-due-updated', () => {
-      void refreshAll()
-    })
-    return () => {
-      void un.then((fn) => fn())
-    }
-  }, [refreshAll])
+  // v1.9：迁移到 useTauriEvent hook，自动管理 unlisten + 竞态安全。
+  useTauriEvent(WindowEvent.VOCAB_DUE_UPDATED, () => {
+    void refreshAll()
+  })
 
   // 有待复习时默认进入复习页
   useEffect(() => {

@@ -154,3 +154,27 @@ pub fn clear_agent_memories(db: State<'_, AppDb>, book_id: String) -> Result<i64
     let conn = db.pool.get().map_err(|e| AppError::DbPool(e.to_string()))?;
     memory::clear_memories(&conn, &book_id)
 }
+
+// ─── Agent Trace 持久化（v1.9）────────────────────────────────────────
+// 调试控制台按 request_id 查询回放 + 批量清理。
+// 写入由 engine.rs react_loop 自动完成（每轮 assistant/tool_call/tool_result）。
+
+/// 按 request_id 列出 Agent 推理轨迹（按 round + created_at 升序）
+#[tauri::command]
+pub fn list_agent_traces(
+    app: AppHandle,
+    db: State<'_, AppDb>,
+    request_id: String,
+) -> Result<Vec<crate::repository::agent_trace_repo::AgentTrace>, AppError> {
+    crate::service::agent_trace_service::list_traces(&app, &db, &request_id)
+}
+
+/// 清理 Agent 轨迹：传入 request_id 清指定会话，不传清全部
+#[tauri::command]
+pub fn clear_agent_traces(
+    app: AppHandle,
+    db: State<'_, AppDb>,
+    request_id: Option<String>,
+) -> Result<usize, AppError> {
+    crate::service::agent_trace_service::clear_traces(&app, &db, request_id.as_deref())
+}

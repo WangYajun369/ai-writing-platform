@@ -7,7 +7,7 @@
  *       pnpm check --fast   # 快速模式：跳过 cargo check（约 10s 内完成）
  */
 
-import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'fs'
+import { existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { execSync } from 'child_process'
 import { fileURLToPath } from 'url'
@@ -342,11 +342,20 @@ check('lib.rs 注册所有模块命令', fileContains(
 
 // 数据库结构检查
 check('db/mod.rs 含 PRAGMA WAL', fileContains('src-tauri/src/db/mod.rs', 'WAL'))
-check('db/mod.rs 含完整表结构 (books/chapters/volumes/snapshots/world_cards)',
-  fileContains('src-tauri/src/db/mod.rs',
+// DDL 已按产品域拆分到 db/ddl/ 子目录；核心表结构由 ddl/core.rs 承载，
+// 任务卡表由 ddl/taskcard.rs 承载（详见 src-tauri/src/db/ddl/mod.rs 的拆分说明）。
+check('db/ddl/core.rs 含完整核心表结构 (books/chapters/volumes/snapshots/world_cards)',
+  fileContains('src-tauri/src/db/ddl/core.rs',
     'CREATE TABLE IF NOT EXISTS books',
     'CREATE TABLE IF NOT EXISTS chapters',
     'CREATE TABLE IF NOT EXISTS snapshots'))
+check('db/ddl/taskcard.rs 含任务卡核心表 (projects/tasks/tags/task_tags)',
+  fileContains('src-tauri/src/db/ddl/taskcard.rs',
+    'CREATE TABLE IF NOT EXISTS projects',
+    'CREATE TABLE IF NOT EXISTS tasks',
+    'CREATE TABLE IF NOT EXISTS task_tags'))
+check('db/ddl/mod.rs 提供 apply_all_ddl 编排入口',
+  fileContains('src-tauri/src/db/ddl/mod.rs', 'pub fn apply_all_ddl'))
 
 // 架构验证
 check('repository 层实现数据访问分离', fileContains('src-tauri/src/repository/book_repo.rs', 'rusqlite'))
@@ -470,6 +479,141 @@ check('活文档无 uvicorn 残留 (README / ipc-api / FAQ)',
   !fileContains('README.md', 'uvicorn') &&
   !fileContains('docs/development/ipc-api.md', 'uvicorn') &&
   !fileContains('docs/FAQ.md', 'uvicorn'))
+
+// ── 版本号一致性（10 个引用点，防漂移） ──────────────────────
+// 单一真源：package.json 的 version。其余 9 处由 bump 脚本同步
+// （.codebuddy/skills/version-release/scripts/bump_version.py），此处断言全部一致。
+// 任一处遗漏 → 本项目检查失败，从机制上杜绝「发版后部分文档版本号停留在旧版」。
+console.log('\n  ── 版本号一致性 ──')
+
+function readJsonVersion(relPath) {
+  try { return JSON.parse(readFileSync(join(ROOT, relPath), 'utf-8')).version ?? null } catch { return null }
+}
+
+function matchVersion(relPath, pattern) {
+  try {
+    const m = readFileSync(join(ROOT, relPath), 'utf-8').match(pattern)
+    return m?.[1] ?? null
+  } catch { return null }
+}
+
+const pkgVersion = readJsonVersion('package.json')
+check('package.json 可读取版本号', !!pkgVersion)
+
+if (pkgVersion) {
+  const versionPoints = [
+    ['src-tauri/tauri.conf.json', readJsonVersion('src-tauri/tauri.conf.json')],
+    ['src-tauri/Cargo.toml', matchVersion('src-tauri/Cargo.toml', /^version\s*=\s*"([^"]+)"/m)],
+    ['README.md（表格版本）', matchVersion('README.md', /\| 版本 \| (\d+\.\d+\.\d+) \|/)],
+    ['README.md（当前版本行）', matchVersion('README.md', /\*\*当前版本：`(\d+\.\d+\.\d+)`\*\*/)],
+    ['README.md（亮点行）', matchVersion('README.md', /> \*\*v(\d+\.\d+\.\d+) 亮点\*\*/)],
+    ['docs/Home.md（当前版本）', matchVersion('docs/Home.md', /\| 当前版本 \| (\d+\.\d+\.\d+) \|/)],
+    ['product/landing-page.html（Hero 徽章）', matchVersion('product/landing-page.html', /v(\d+\.\d+\.\d+) 已发布/)],
+    ['product/landing-page.html（页脚）', matchVersion('product/landing-page.html', /TimeWrite<\/strong> &nbsp;·&nbsp; v(\d+\.\d+\.\d+)/)],
+    ['.github/workflows/release.yml（默认版本）', matchVersion('.github/workflows/release.yml', /default:\s*'(\d+\.\d+\.\d+)'/)],
+  ]
+
+  for (const [label, v] of versionPoints) {
+    const ok = v === pkgVersion
+    check(`版本号一致 · ${label}：${v ?? '未匹配到版本'}${ok ? '' : ` ≠ ${pkgVersion}`}`, ok)
+  }
+}
+
+// ── 窗口能力（capability）覆盖：防「权限缺失 → 功能静默失效」 ──
+// 历史问题：debug/diary-book 未纳入任何 capability，调试控制台 listen 被拒；
+// 主窗口缺 updater:default，导致「应用内更新」路径始终失败、静默降级到 GitHub 兜底。
+console.log('\n  ── 窗口能力覆盖 ──')
+check('capabilities/updater.json 存在（应用内更新权限）', fileExists('src-tauri/capabilities/updater.json'))
+check('updater 能力授予 updater:default', fileContains('src-tauri/capabilities/updater.json', 'updater:default'))
+check('updater 能力仅限主窗口（最小权限）', fileContains('src-tauri/capabilities/updater.json', '"main"'))
+check('sub-windows 能力覆盖 debug / diary-book', fileContains('src-tauri/capabilities/sub-windows.json', '"debug"', '"diary-book"'))
+check('lib.rs 注册 updater 插件', fileContains('src-tauri/src/lib.rs', 'tauri_plugin_updater'))
+
+// ── IPC 注册一致性：#[tauri::command] 函数 ↔ invoke_handler! 注册项 ──
+// 反向校验：扫描全部 .rs 源文件中标注 #[tauri::command] 的函数名，
+// 与 lib.rs 中 invoke_handler! 实际注册的命令名双向比对。
+// 任一方向不一致即失败：漏注册会导致前端 invoke 报 not found（运行时才发现）；
+// 幽灵命令（注册了不存在的函数）通常源于重命名后遗漏，cargo 编译未必报错。
+console.log('\n  ── IPC 注册一致性 ──')
+
+function walkRsFiles(dir) {
+  const out = []
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name)
+    if (e.isDirectory()) out.push(...walkRsFiles(p))
+    else if (e.name.endsWith('.rs')) out.push(p)
+  }
+  return out
+}
+
+// 匹配 #[tauri::command] 标注的函数名（支持中间有 doc comment / pub async / pub fn）
+// 形如：  #[tauri::command]\n pub async fn list_books(...)
+const COMMAND_FN_RE = /#\[\s*tauri::command[^\]]*\]\s*(?:\/\/\/[^\n]*\n\s*)*(?:pub\s+)?(?:async\s+)?fn\s+(\w+)/g
+const definedCommands = new Set()
+for (const f of walkRsFiles(join(ROOT, 'src-tauri/src'))) {
+  const txt = readFileSync(f, 'utf-8')
+  let m
+  while ((m = COMMAND_FN_RE.exec(txt))) definedCommands.add(m[1])
+}
+
+// 从 lib.rs 的 generate_handler![...] 块中提取注册的命令名（取路径最后一段）
+const libRsContent = readFileSync(join(ROOT, 'src-tauri/src/lib.rs'), 'utf-8')
+// 同时兼容 generate_handler![...] 与 invoke_handler!(...) 两种调用形式
+const handlerBlockMatch = libRsContent.match(/(?:generate|invoke)_handler\s*!\s*[\(\[]([\s\S]*?)[\)\]]/)
+const registeredCommands = new Set()
+if (handlerBlockMatch) {
+  // 匹配 commands::xxx::yyy 或 observability::commands::yyy 等任何
+  // 以 `commands::` 中缀为锚的路径,取最后一段为命令名。
+  // v1.9:扩展支持 `observability::commands::xxx` 等非顶层 commands 路径。
+  const re = /(?:[\w_]+::)*commands(?:::[\w_]+)*::(\w+)/g
+  let m
+  while ((m = re.exec(handlerBlockMatch[1]))) registeredCommands.add(m[1])
+}
+
+check(`扫描到 #[tauri::command] 函数 (${definedCommands.size} 个)`, definedCommands.size > 0)
+check(`lib.rs generate_handler! 注册命令 (${registeredCommands.size} 个)`, registeredCommands.size > 0)
+
+const unregistered = [...definedCommands].filter(c => !registeredCommands.has(c)).sort()
+check(`无漏注册命令（前端 invoke 会 not found）`, unregistered.length === 0)
+if (unregistered.length > 0) {
+  console.log(`     ↳ 漏注册 ${unregistered.length} 个：${unregistered.slice(0, 15).join(', ')}${unregistered.length > 15 ? ' ...' : ''}`)
+}
+
+const phantom = [...registeredCommands].filter(c => !definedCommands.has(c)).sort()
+check(`无幽灵命令（注册了不存在的函数，多为重命名后遗漏）`, phantom.length === 0)
+if (phantom.length > 0) {
+  console.log(`     ↳ 幽灵 ${phantom.length} 个：${phantom.slice(0, 15).join(', ')}${phantom.length > 15 ? ' ...' : ''}`)
+}
+
+// ── IPC 命令名契约层：src/types/ipc-commands.ts ↔ Rust 源码 ──
+// 单一真源：Rust 源码（#[tauri::command] 函数名）。
+// check.mjs 自动生成并校验 ipc-commands.ts，漂移即失败。
+// 前端可基于 IpcCommand 联合类型约束 invoke 调用，IDE 补全 + 编译期检查。
+console.log('\n  ── IPC 命令名契约层 ──')
+const ipcCommandsPath = join(ROOT, 'src/types/ipc-commands.ts')
+const sortedCommands = [...definedCommands].sort()
+const expectedContent = `// 自动生成,不要手动修改。由 scripts/check.mjs 从 src-tauri/src 中
+// 所有 #[tauri::command] 标注的函数名提取。单一真源:Rust 源码。
+// 漂移时 pnpm check 会失败;新增命令后重新运行 pnpm check 自动同步。
+
+export type IpcCommand =
+${sortedCommands.map(c => `  | '${c}'`).join('\n')}
+`
+if (!existsSync(ipcCommandsPath)) {
+  writeFileSync(ipcCommandsPath, expectedContent, 'utf-8')
+  check(`首次生成 src/types/ipc-commands.ts (${sortedCommands.length} 个命令)`, true)
+  console.log(`     ↳ 已生成,后续运行将校验一致性`)
+} else {
+  const actual = readFileSync(ipcCommandsPath, 'utf-8')
+  if (actual !== expectedContent) {
+    // 自动同步:直接写回最新内容
+    writeFileSync(ipcCommandsPath, expectedContent, 'utf-8')
+    check(`src/types/ipc-commands.ts 与 Rust 源码一致(已自动同步)`, true)
+    console.log(`     ↳ 检测到漂移,已自动同步 ${sortedCommands.length} 个命令`)
+  } else {
+    check(`src/types/ipc-commands.ts 与 Rust 源码一致 (${sortedCommands.length} 个命令)`, true)
+  }
+}
 
 // ── 汇总 ────────────────────────────────────────────────────
 console.log('\n' + '='.repeat(50))

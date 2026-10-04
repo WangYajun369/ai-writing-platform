@@ -848,3 +848,22 @@ export interface RemindLogEntry {
   time: string
 }
 
+/** Agent 推理轨迹（单条 thought/action/observation，v1.9） */
+export interface AgentTrace {
+  id: string
+  requestId: string
+  skill: string
+  /** 轮次（从 0 开始） */
+  round: number
+  /** assistant / tool_call / tool_result / system */
+  role: string
+  content: string
+  /** 仅 role=tool_call / tool_result 时有值 */
+  toolName?: string | null
+  /** 仅 role=tool_call 时有值（JSON 序列化的参数） */
+  toolArgs?: string | null
+  /** 仅 role=tool_result 时有值 */
+  toolResult?: string | null
+  /** RFC 3339 时间戳 */
+  createdAt: string
+}

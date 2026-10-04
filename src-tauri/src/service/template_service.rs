@@ -3,11 +3,11 @@
 //! 模板 = 「一键套用创建相似任务」：预设标题 / 描述 / 优先级 / 备注 / 标签 /
 //! 截止偏移天数 / 子任务标题清单。套用时可临时指定所属项目与截止时间。
 
-use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::{TaskCard, TaskTemplate};
 use crate::repository::{project_repo, subtask_repo, task_repo, template_repo};
+use crate::service::uow::UnitOfWork;
 use crate::utils::{local_today, now, validate_len};
 use tauri::AppHandle;
 use uuid::Uuid;
@@ -69,9 +69,13 @@ fn ensure_valid_priority(p: &str) -> Result<(), AppError> {
 
 /// 列出全部模板
 pub fn list_templates(app: &AppHandle, db: &AppDb) -> Result<Vec<TaskTemplate>, AppError> {
-    emit_sql_log(app, "SELECT", "task_templates", "all", file!(), line!());
-    let conn = db.pool.get()?;
-    Ok(template_repo::list_all(&conn)?)
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("SELECT", "task_templates", "all", file!(), line!());
+    let templates = template_repo::list_all(uow.conn())?;
+    uow.commit()?;
+    Ok(templates)
 }
 
 /// 创建模板
@@ -92,17 +96,18 @@ pub fn create_template(
     ensure_valid_priority(&params.priority)?;
     let id = Uuid::new_v4().to_string();
     let ts = now();
-    let conn = db.pool.get()?;
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "INSERT",
         "task_templates",
-        &format!("id={id}, name={name}"),
+        format!("id={id}, name={name}"),
         file!(),
         line!(),
     );
     template_repo::insert(
-        &conn,
+        uow.conn(),
         &id,
         name,
         params.project_id.as_deref(),
@@ -115,7 +120,8 @@ pub fn create_template(
         &params.subtask_titles,
         &ts,
     )?;
-    template_repo::find_by_id(&conn, &id).map_err(AppError::from)
+    uow.commit()?;
+    template_repo::find_by_id(&pooled, &id).map_err(AppError::from)
 }
 
 /// 更新模板
@@ -135,18 +141,19 @@ pub fn update_template(
     if let Some(ref p) = params.priority {
         ensure_valid_priority(p)?;
     }
-    let conn = db.pool.get()?;
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
     let ts = now();
-    emit_sql_log(
-        app,
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "UPDATE",
         "task_templates",
-        &format!("id={id}"),
+        format!("id={id}"),
         file!(),
         line!(),
     );
     let n = template_repo::update(
-        &conn,
+        uow.conn(),
         id,
         params.name.as_deref().map(str::trim),
         params.project_id.as_ref().map(|o| o.as_deref()),
@@ -162,23 +169,26 @@ pub fn update_template(
     if n == 0 {
         return Err(AppError::NotFound("未找到该模板".into()));
     }
-    template_repo::find_by_id(&conn, id).map_err(AppError::from)
+    uow.commit()?;
+    template_repo::find_by_id(&pooled, id).map_err(AppError::from)
 }
 
 /// 删除模板
 pub fn delete_template(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
-    let conn = db.pool.get()?;
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "DELETE",
         "task_templates",
-        &format!("id={id}"),
+        format!("id={id}"),
         file!(),
         line!(),
     );
-    if template_repo::delete(&conn, id)? == 0 {
+    if template_repo::delete(uow.conn(), id)? == 0 {
         return Err(AppError::NotFound("未找到该模板".into()));
     }
+    uow.commit()?;
     Ok(())
 }
 
@@ -192,11 +202,13 @@ pub fn create_task_from_template(
     project_id: &str,
     due_time: Option<String>,
 ) -> Result<TaskCard, AppError> {
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
-    let tmpl = template_repo::find_by_id(&tx, template_id)
+    // v1.9：迁移到 UnitOfWork，事务边界 + 审计统一收口。
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
+    let tmpl = template_repo::find_by_id(uow.conn(), template_id)
         .map_err(|_| AppError::NotFound("未找到该模板".into()))?;
-    project_repo::find_active(&tx, project_id)
+    project_repo::find_active(uow.conn(), project_id)
         .map_err(|_| AppError::NotFound("所属项目不存在或已删除".into()))?;
 
     // 截止：显式传参 > 偏移天数推算
@@ -219,17 +231,16 @@ pub fn create_task_from_template(
     } else {
         tmpl.title.trim()
     };
-    let sort_order = task_repo::next_sort_order(&tx, project_id, "todo")?;
-    emit_sql_log(
-        app,
+    let sort_order = task_repo::next_sort_order(uow.conn(), project_id, "todo")?;
+    uow.audit(
         "INSERT",
         "tasks",
-        &format!("id={id}, from template {}", tmpl.id),
+        format!("id={id}, from template {}", tmpl.id),
         file!(),
         line!(),
     );
     task_repo::insert(
-        &tx,
+        uow.conn(),
         &id,
         project_id,
         None,
@@ -245,7 +256,7 @@ pub fn create_task_from_template(
         &ts,
     )?;
     // 标签（只关联仍存在的标签）
-    template_repo::attach_existing_tags(&tx, &id, &tmpl.tag_ids, &ts)?;
+    template_repo::attach_existing_tags(uow.conn(), &id, &tmpl.tag_ids, &ts)?;
     // 子任务清单
     for (i, st) in tmpl.subtask_titles.iter().enumerate() {
         let st = st.trim();
@@ -253,14 +264,14 @@ pub fn create_task_from_template(
             continue;
         }
         let sid = Uuid::new_v4().to_string();
-        subtask_repo::insert(&tx, &sid, &id, st, i as i64, &ts)?;
+        subtask_repo::insert(uow.conn(), &sid, &id, st, i as i64, &ts)?;
     }
-    tx.commit()?;
-    let mut task = task_repo::find_active(&conn, &id)
+    uow.commit()?;
+    let mut task = task_repo::find_active(&pooled, &id)
         .map_err(|_| AppError::NotFound("任务创建失败".into()))?;
     let ids = vec![task.id.clone()];
     // 标签回填失败留痕（只读路径不阻断，但问题可感知）
-    match task_repo::tags_of_tasks(&conn, &ids) {
+    match task_repo::tags_of_tasks(&pooled, &ids) {
         Ok(pairs) => task.tags = pairs.into_iter().map(|(_, t)| t).collect(),
         Err(e) => crate::app_log!("[模板] 查询新建任务 {id} 标签失败: {e}"),
     }

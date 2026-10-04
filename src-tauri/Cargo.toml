@@ -1,6 +1,6 @@
 [package]
 name = "time-write"
-version = "1.8.1"
+version = "1.9.0"
 description = "智写时光 TimeWrite —— 跨平台小说创作工具"
 authors = ["TimeWrite Team"]
 edition = "2021"
@@ -42,6 +42,7 @@ thiserror = "1"
 regex-lite = "0.1"
 aes-gcm = "0.10"
 sha2 = "0.10"
+hex = "0.4"
 rand = "0.8"
 image = "0.25"
 base64 = "0.22"

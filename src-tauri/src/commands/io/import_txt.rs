@@ -6,13 +6,13 @@
 //! - 去重：同书名同正文指纹 ⇒ 跳过；同名不同文 ⇒ 追加「（导入 N）」；
 //! - 规模：≤ 20 MB / ≤ 2,000 章；空文件报 `E_TXT_NO_CHAPTERS`；
 //! - 事务：全部分章写入 + `recalc_word_count` 单事务原子提交（v1 为逐条提交）。
+//!
+//! 分层：本文件仅负责文件 IO + 流式解析；去重比对 + 事务写入由
+//! [`crate::service::import_txt_service`] 承担（UnitOfWork 收口审计）。
 
-use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
-use crate::error::AppError;
-use crate::repository::{book_repo, chapter_repo};
-use crate::utils::{escape_html, now};
-use std::collections::HashMap;
+use crate::error::{AppError, ErrCode};
+use crate::service::import_txt_service::{self, RawChapter};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use tauri::{AppHandle, State};
@@ -26,13 +26,6 @@ const MAX_CHAPTERS: usize = 2_000;
 const FALLBACK_TITLE: &str = "全文";
 /// 开篇引言章的标题（v1 会丢/并入首章，v2 独立成章）
 const PREFACE_TITLE: &str = "前言";
-
-/// 解析出的原始章节（body 为已折叠空行的原始文本行）
-#[derive(Debug, Clone)]
-struct RawChapter {
-    title: String,
-    body: Vec<String>,
-}
 
 /// 是否章节标题候选行（Spec §6.1，行级匹配：中文数字章 / Chapter / 序章楔子尾声后记番外）
 ///
@@ -91,7 +84,7 @@ fn parse_txt_stream(
 
     while let Some(line) = lines.next() {
         let line =
-            line.map_err(|e| AppError::Business(format!("E_TXT_READ：读取 TXT 失败：{e}")))?;
+            line.map_err(|e| AppError::business(ErrCode::TxtRead, format!("读取 TXT 失败：{e}")))?;
         let line = line.trim_end_matches('\r').to_string();
         if line.trim().is_empty() {
             continue; // 空行折叠
@@ -142,87 +135,6 @@ fn parse_txt_stream(
     Ok((chapters, preface, heading_seen))
 }
 
-/// 将原始文本行渲染为 HTML（Spec §6.2）：逐行转义后包 `<p>`，空行已在解析期折叠
-fn render_html(body: &[String]) -> String {
-    body.iter()
-        .map(|line| format!("<p>{}</p>", escape_html(line)))
-        .collect()
-}
-
-/// 归一化指纹（Spec §6.3）：去掉全部空白字符（HTML 两侧均经同一转义渲染，格式一致可比较）
-fn fingerprint(html: &str) -> String {
-    html.chars().filter(|c| !c.is_whitespace()).collect()
-}
-
-/// 待写入章节（已定稿标题 + 渲染 HTML + 字数）
-#[derive(Debug)]
-struct ChapterToWrite {
-    title: String,
-    html: String,
-    word_count: i64,
-}
-
-/// 去重规划（Spec §6.3）：对解析出的每章对照库内已有章节决定 跳过 / 重命名 / 原样写入。
-///
-/// 返回 (待写章节（跳过的不含在内）, skipped, renamed)。
-/// - 同书名 + 同正文指纹 ⇒ skipped；
-/// - 书名已存在但正文不同 ⇒ 追加「标题（导入 N）」并 renamed++；
-/// - 书名不存在 ⇒ 原样写入。
-fn plan_import(
-    parsed: &[RawChapter],
-    existing_titles: &[String],
-    existing_fps: &HashMap<String, Vec<String>>,
-) -> (Vec<ChapterToWrite>, usize, usize) {
-    // 已占用书名（库内已有 + 本次已排期）
-    let mut used: Vec<String> = existing_titles.to_vec();
-    let mut to_write: Vec<ChapterToWrite> = Vec::new();
-    let mut skipped = 0usize;
-    let mut renamed = 0usize;
-
-    for ch in parsed {
-        let html = render_html(&ch.body);
-        let fp = fingerprint(&html);
-        let wc = ch
-            .body
-            .iter()
-            .flat_map(|l| l.chars())
-            .filter(|c| !c.is_whitespace())
-            .count() as i64;
-
-        // 全文一致 ⇒ 跳过
-        if existing_fps
-            .get(&ch.title)
-            .map(|fps| fps.iter().any(|f| f == &fp))
-            .unwrap_or(false)
-        {
-            skipped += 1;
-            continue;
-        }
-
-        // 同名冲突（库内已有同名 或 本次已排期同名）⇒ 重命名追加
-        let mut final_title = ch.title.clone();
-        if used.iter().any(|t| t == &final_title) {
-            let mut n = 2;
-            loop {
-                let candidate = format!("{}（导入 {}）", ch.title, n);
-                if !used.iter().any(|t| t == &candidate) {
-                    final_title = candidate;
-                    break;
-                }
-                n += 1;
-            }
-            renamed += 1;
-        }
-        used.push(final_title.clone());
-        to_write.push(ChapterToWrite {
-            title: final_title,
-            html,
-            word_count: wc,
-        });
-    }
-    (to_write, skipped, renamed)
-}
-
 /// 导入 TXT 文件（正则自动分章）
 #[tauri::command]
 pub async fn import_txt(
@@ -231,20 +143,23 @@ pub async fn import_txt(
     book_id: String,
     file_path: String,
 ) -> Result<serde_json::Value, AppError> {
-    let _guard = super::try_acquire_io_lock()?;
+    let _guard = super::try_acquire_io_lock(Some(&app))?;
     // 规模上限：先看文件大小，超限直接拒绝（避免读入内存）
     let meta = std::fs::metadata(&file_path)
-        .map_err(|e| AppError::Business(format!("E_TXT_READ：读取文件信息失败：{}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::TxtRead, format!("读取文件信息失败：{}", e)))?;
     if meta.len() > MAX_FILE_BYTES {
-        return Err(AppError::Business(format!(
-            "E_TXT_TOO_LARGE：TXT 文件超过 {} MB 上限，请拆分后分批导入",
-            MAX_FILE_BYTES / 1024 / 1024
-        )));
+        return Err(AppError::business(
+            ErrCode::TxtTooLarge,
+            format!(
+                "TXT 文件超过 {} MB 上限，请拆分后分批导入",
+                MAX_FILE_BYTES / 1024 / 1024
+            ),
+        ));
     }
 
     // 流式解析（> 2 MB 也仅按行读取，不一次性整文件进内存）
     let file = File::open(&file_path)
-        .map_err(|e| AppError::Business(format!("E_TXT_READ：打开文件失败：{}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::TxtRead, format!("打开文件失败：{}", e)))?;
     let mut lines_iter = BufReader::new(file).lines();
     let (mut chapters, mut preface, heading_seen) = parse_txt_stream(&mut lines_iter)?;
 
@@ -259,7 +174,7 @@ pub async fn import_txt(
     if chapters.is_empty() && preface.is_empty() && heading_seen {
         // 全为无正文的标题行：退化为整文件单章
         let raw = std::fs::read_to_string(&file_path)
-            .map_err(|e| AppError::Business(format!("E_TXT_READ：读取文件失败：{}", e)))?;
+            .map_err(|e| AppError::business(ErrCode::TxtRead, format!("读取文件失败：{}", e)))?;
         let trimmed = raw.trim();
         if !trimmed.is_empty() {
             let body: Vec<String> = trimmed
@@ -301,88 +216,13 @@ pub async fn import_txt(
         )));
     }
 
-    let mut conn = db.pool.get()?;
-
-    emit_sql_log(
-        &app,
-        "SELECT",
-        "chapters",
-        &format!("import_txt dedupe precheck book_id={}", book_id),
-        file!(),
-        line!(),
-    );
-    // 库内已有章节（标题 + HTML），用于去重比对
-    let existing = chapter_repo::list_titles_and_content(&conn, &book_id)?;
-    let existing_titles: Vec<String> = existing.iter().map(|(t, _)| t.clone()).collect();
-    let mut existing_fps: HashMap<String, Vec<String>> = HashMap::new();
-    for (t, html) in &existing {
-        existing_fps
-            .entry(t.clone())
-            .or_default()
-            .push(fingerprint(html));
-    }
-
-    let (to_write, skipped, renamed) = plan_import(&chapters, &existing_titles, &existing_fps);
-
-    // 单事务写入：全部分章 + recalc_word_count 原子提交（Spec §6.4，G5）
-    let tx = conn
-        .transaction()
-        .map_err(|e| AppError::Business(format!("E_TXT_TXN：开始 TXT 导入事务失败: {}", e)))?;
-    {
-        emit_sql_log(
-            &app,
-            "INSERT",
-            "chapters",
-            &format!(
-                "import_txt, {} new (skip {}, rename {}) for book_id={}",
-                to_write.len(),
-                skipped,
-                renamed,
-                book_id
-            ),
-            file!(),
-            line!(),
-        );
-        // 续接现有最大 sort_order，避免与已有章节排序冲突
-        let mut next_order: i64 = tx
-            .query_row(
-                "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM chapters WHERE book_id = ?1",
-                [&book_id],
-                |r| r.get(0),
-            )
-            .map_err(|e| AppError::Business(format!("E_TXT_QUERY：查询章节排序失败: {}", e)))?;
-        for ch in &to_write {
-            let id = uuid::Uuid::new_v4().to_string();
-            let ts = now();
-            chapter_repo::insert_with_content(
-                &tx,
-                &id,
-                &book_id,
-                &ch.title,
-                &ch.html,
-                ch.word_count,
-                next_order,
-                &ts,
-            )?;
-            next_order += 1;
-        }
-        emit_sql_log(
-            &app,
-            "UPDATE",
-            "books",
-            &format!("recalc word_count for book_id={}", book_id),
-            file!(),
-            line!(),
-        );
-        book_repo::recalc_word_count(&tx, &book_id, &now())?;
-    }
-    tx.commit()
-        .map_err(|e| AppError::Business(format!("E_TXT_COMMIT：TXT 导入提交失败: {}", e)))?;
+    // 委托 service 层：去重比对 + 单事务写入 + 字数重算（UnitOfWork 收口审计）
+    let result = import_txt_service::import_parsed_chapters(&app, &db, &book_id, &chapters)?;
 
     Ok(serde_json::json!({
-        "chaptersCreated": to_write.len(),
-        "chaptersSkipped": skipped,
-        "chaptersRenamed": renamed,
+        "chaptersCreated": result.chapters_created,
+        "chaptersSkipped": result.chapters_skipped,
+        "chaptersRenamed": result.chapters_renamed,
     }))
 }
 
@@ -464,74 +304,5 @@ mod tests {
         // 正文引用「第一章」不单独成行 → 不是标题行，整段保留
         let (chapters, _, _) = parse_text("全文只有一段，提到第一章的事。\n第二章尚未开始。\n");
         assert_eq!(chapters.len(), 0); // 无标题 → 交由调用方兜底单章
-    }
-
-    #[test]
-    fn plan_import_dedupes_rename_and_counts() {
-        // 库内已有：与“第一章 A”同名同内容
-        let existing = vec![
-            (
-                "第一章 A".to_string(),
-                render_html(&["已经导入".to_string()]),
-            ),
-            (
-                "第二章 已有".to_string(),
-                render_html(&["老版本".to_string()]),
-            ),
-        ];
-        let titles: Vec<String> = existing.iter().map(|(t, _)| t.clone()).collect();
-        let mut fps: HashMap<String, Vec<String>> = HashMap::new();
-        for (t, h) in &existing {
-            fps.entry(t.clone()).or_default().push(fingerprint(h));
-        }
-
-        let parsed = vec![
-            RawChapter {
-                title: "第一章 A".into(),
-                body: vec!["已经导入".into()],
-            }, // 全文一致 → skip
-            RawChapter {
-                title: "第一章 A".into(),
-                body: vec!["新内容".into()],
-            }, // 同名不同文 → rename（导入 2）
-            RawChapter {
-                title: "第二章 已有".into(),
-                body: vec!["老版本".into()],
-            }, // skip
-            RawChapter {
-                title: "第三章 新".into(),
-                body: vec!["全新".into()],
-            }, // insert
-            RawChapter {
-                title: "第一章 A".into(),
-                body: vec!["再一个版本".into()],
-            }, // 同名 → rename（导入 3）
-        ];
-
-        let (writes, skipped, renamed) = plan_import(&parsed, &titles, &fps);
-        assert_eq!(skipped, 2);
-        assert_eq!(renamed, 2);
-        assert_eq!(writes.len(), 3);
-        let got: Vec<&str> = writes.iter().map(|w| w.title.as_str()).collect();
-        assert_eq!(
-            got,
-            vec!["第一章 A（导入 2）", "第三章 新", "第一章 A（导入 3）"]
-        );
-        // 字数 = 非空白字符数
-        assert_eq!(writes[1].word_count, 2); // “全新”
-        assert_eq!(writes[0].word_count, 3); // “新内容”
-    }
-
-    #[test]
-    fn render_escapes_and_folds() {
-        let html = render_html(&["<b>加粗</b> & 文本".to_string(), "A&B".to_string()]);
-        assert_eq!(
-            html,
-            "<p>&lt;b&gt;加粗&lt;/b&gt; &amp; 文本</p><p>A&amp;B</p>"
-        );
-        assert_eq!(
-            fingerprint(&html),
-            "<p>&lt;b&gt;加粗&lt;/b&gt;&amp;文本</p><p>A&amp;B</p>"
-        );
     }
 }

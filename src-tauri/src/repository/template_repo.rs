@@ -141,6 +141,35 @@ pub fn delete(conn: &Connection, id: &str) -> Result<usize> {
     conn.execute("DELETE FROM task_templates WHERE id=?1", params![id])
 }
 
+/// 删除指定项目的全部模板（硬删除项目时同事务调用）
+///
+/// task_templates.project_id 无外键，需显式清理避免孤儿模板。
+/// project_id 为 NULL 的全局模板不受影响。
+pub fn delete_by_project(conn: &Connection, project_id: &str) -> Result<usize> {
+    conn.execute(
+        "DELETE FROM task_templates WHERE project_id=?1",
+        params![project_id],
+    )
+}
+
+/// 删除全部已软删项目的模板（清空项目回收站前置调用）
+pub fn delete_by_deleted_projects(conn: &Connection) -> Result<usize> {
+    conn.execute(
+        "DELETE FROM task_templates WHERE project_id IN \
+         (SELECT id FROM projects WHERE deleted_at IS NOT NULL)",
+        [],
+    )
+}
+
+/// 删除全部已过期（deleted_at < cutoff）项目的模板（回收站自动清理前置调用）
+pub fn delete_by_expired_projects(conn: &Connection, cutoff: &str) -> Result<usize> {
+    conn.execute(
+        "DELETE FROM task_templates WHERE project_id IN \
+         (SELECT id FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < ?1)",
+        params![cutoff],
+    )
+}
+
 /// 给任务关联模板中仍然存在的标签（忽略已被删除的标签 id，避免外键报错）
 pub fn attach_existing_tags(
     conn: &Connection,
@@ -156,4 +185,68 @@ pub fn attach_existing_tags(
         )?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE projects (id TEXT PRIMARY KEY, deleted_at TEXT);
+             CREATE TABLE task_templates (
+                 id TEXT PRIMARY KEY, name TEXT NOT NULL, project_id TEXT,
+                 title TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',
+                 priority TEXT NOT NULL DEFAULT 'medium', note TEXT NOT NULL DEFAULT '',
+                 due_offset_days INTEGER NOT NULL DEFAULT 0, tag_ids TEXT NOT NULL DEFAULT '[]',
+                 subtask_titles TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL,
+                 updated_at TEXT NOT NULL
+             );",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn insert_template(conn: &Connection, id: &str, project_id: Option<&str>) {
+        conn.execute(
+            "INSERT INTO task_templates (id, name, project_id, created_at, updated_at) \
+             VALUES (?1, 'tpl', ?2, 'ts', 'ts')",
+            params![id, project_id],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn delete_by_project_removes_only_project_templates() {
+        let conn = setup();
+        // 项目专属模板
+        insert_template(&conn, "tpl1", Some("p1"));
+        insert_template(&conn, "tpl2", Some("p1"));
+        // 全局模板（project_id = NULL）应保留
+        insert_template(&conn, "tpl3", None);
+        // 其他项目模板应保留
+        insert_template(&conn, "tpl4", Some("p2"));
+
+        let n = delete_by_project(&conn, "p1").unwrap();
+        assert_eq!(n, 2);
+
+        let remaining: i64 = conn
+            .query_row("SELECT COUNT(*) FROM task_templates", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(remaining, 2, "全局模板 + 其他项目模板保留");
+    }
+
+    #[test]
+    fn delete_by_deleted_projects_cleans_orphan_templates() {
+        let conn = setup();
+        conn.execute("INSERT INTO projects (id, deleted_at) VALUES ('p1', '2026-01-01')", []).unwrap();
+        insert_template(&conn, "tpl1", Some("p1"));
+        // 活跃项目的模板不受影响
+        conn.execute("INSERT INTO projects (id) VALUES ('p2')", []).unwrap();
+        insert_template(&conn, "tpl2", Some("p2"));
+
+        let n = delete_by_deleted_projects(&conn).unwrap();
+        assert_eq!(n, 1);
+    }
 }

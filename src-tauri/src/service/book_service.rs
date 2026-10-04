@@ -3,11 +3,11 @@
 //! 封装书籍的 CRUD 操作逻辑，负责从连接池获取连接、
 //! 记录 SQL 审计日志，并调用 Repository 层执行实际操作。
 
-use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::Book;
 use crate::repository::book_repo;
+use crate::service::uow::UnitOfWork;
 use crate::utils::{
     now, validate_len, DynamicUpdate, MAX_AUTHOR_LEN, MAX_DESCRIPTION_LEN, MAX_TITLE_LEN,
 };
@@ -29,37 +29,35 @@ pub struct UpdateBookParams {
 
 /// 列出所有未删除的书籍
 pub fn list_books(app: &AppHandle, db: &AppDb) -> Result<Vec<Book>, AppError> {
-    emit_sql_log(app, "SELECT", "books", "", file!(), line!());
-    let conn = db.pool.get()?;
-    Ok(book_repo::list_all(&conn)?)
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("SELECT", "books", "", file!(), line!());
+    let books = book_repo::list_all(uow.conn())?;
+    uow.commit()?;
+    Ok(books)
 }
 
 /// 根据 ID 获取单本书
 pub fn get_book(app: &AppHandle, db: &AppDb, id: &str) -> Result<Book, AppError> {
-    emit_sql_log(
-        app,
-        "SELECT",
-        "books",
-        &format!("id={id}"),
-        file!(),
-        line!(),
-    );
-    let conn = db.pool.get()?;
-    Ok(book_repo::find_by_id(&conn, id)?)
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("SELECT", "books", format!("id={id}"), file!(), line!());
+    let book = book_repo::find_by_id(uow.conn(), id)?;
+    uow.commit()?;
+    Ok(book)
 }
 
 /// 列出回收站中的书籍
 pub fn list_deleted_books(app: &AppHandle, db: &AppDb) -> Result<Vec<Book>, AppError> {
-    emit_sql_log(
-        app,
-        "SELECT",
-        "books",
-        "deleted_at IS NOT NULL",
-        file!(),
-        line!(),
-    );
-    let conn = db.pool.get()?;
-    Ok(book_repo::list_deleted(&conn)?)
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("SELECT", "books", "deleted_at IS NOT NULL", file!(), line!());
+    let books = book_repo::list_deleted(uow.conn())?;
+    uow.commit()?;
+    Ok(books)
 }
 
 /// 创建新书
@@ -80,17 +78,18 @@ pub fn create_book(
     let ts = now();
     let tags_json = serde_json::to_string(tags).unwrap_or_else(|_| "[]".to_string());
 
-    emit_sql_log(
-        app,
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
         "INSERT",
         "books",
-        &format!("id={id}, title={title}"),
+        format!("id={id}, title={title}"),
         file!(),
         line!(),
     );
-    let conn = db.pool.get()?;
     book_repo::insert(
-        &conn,
+        uow.conn(),
         &id,
         title,
         author,
@@ -99,6 +98,7 @@ pub fn create_book(
         &tags_json,
         &ts,
     )?;
+    uow.commit()?;
 
     // 输入与落库一致，直接内存构造返回值，避免再查一次库
     Ok(Book {
@@ -128,7 +128,9 @@ pub fn update_book(
 ) -> Result<Book, AppError> {
     let ts = now();
     {
-        let conn = db.pool.get()?;
+        // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+        let pooled = db.pool.get()?;
+        let mut uow = UnitOfWork::new(&pooled, Some(app));
 
         // 字段收集统一走 DynamicUpdate 构建器（Phase 4 问题 17 去重）
         let mut upd = DynamicUpdate::new("books");
@@ -157,17 +159,15 @@ pub fn update_book(
         let fields = upd.field_count();
         // build() 返回 None 表示无任何待更新字段：等价于一次回读，不执行 SQL
         if let Some((sql, values)) = upd.build(&id, &ts) {
-            emit_sql_log(
-                app,
+            uow.audit(
                 "UPDATE",
                 "books",
-                &format!("id={id}, fields={fields}"),
+                format!("id={id}, fields={fields}"),
                 file!(),
                 line!(),
             );
-            let params_refs: Vec<&dyn rusqlite::types::ToSql> =
-                values.iter().map(|p| p.as_ref()).collect();
-            conn.execute(&sql, params_refs.as_slice())?;
+            crate::repository::execute_update(uow.conn(), &sql, values)?;
+            uow.commit()?;
         }
     }
     get_book(app, db, id)
@@ -184,16 +184,18 @@ pub fn set_book_cover(
     if source_path.trim().is_empty() {
         let ts = now();
         {
-            let conn = db.pool.get()?;
-            emit_sql_log(
-                app,
+            // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+            let pooled = db.pool.get()?;
+            let mut uow = UnitOfWork::new(&pooled, Some(app));
+            uow.audit(
                 "UPDATE",
                 "books",
-                &format!("id={id}, clear cover_image"),
+                format!("id={id}, clear cover_image"),
                 file!(),
                 line!(),
             );
-            book_repo::clear_cover(&conn, id, &ts)?;
+            book_repo::clear_cover(uow.conn(), id, &ts)?;
+            uow.commit()?;
         }
         return get_book(app, db, id);
     }
@@ -201,16 +203,18 @@ pub fn set_book_cover(
     let data_url = crate::commands::image::process_image_data(source_path, 800, 85)?;
     let ts = now();
     {
-        let conn = db.pool.get()?;
-        emit_sql_log(
-            app,
+        // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+        let pooled = db.pool.get()?;
+        let mut uow = UnitOfWork::new(&pooled, Some(app));
+        uow.audit(
             "UPDATE",
             "books",
-            &format!("id={id}, set cover_image"),
+            format!("id={id}, set cover_image"),
             file!(),
             line!(),
         );
-        book_repo::update_cover(&conn, id, &data_url, &ts)?;
+        book_repo::update_cover(uow.conn(), id, &data_url, &ts)?;
+        uow.commit()?;
     }
     get_book(app, db, id)
 }
@@ -225,16 +229,18 @@ pub fn set_book_cover_data(
     if data_url.trim().is_empty() {
         let ts = now();
         {
-            let conn = db.pool.get()?;
-            emit_sql_log(
-                app,
+            // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+            let pooled = db.pool.get()?;
+            let mut uow = UnitOfWork::new(&pooled, Some(app));
+            uow.audit(
                 "UPDATE",
                 "books",
-                &format!("id={id}, clear cover_image"),
+                format!("id={id}, clear cover_image"),
                 file!(),
                 line!(),
             );
-            book_repo::clear_cover(&conn, id, &ts)?;
+            book_repo::clear_cover(uow.conn(), id, &ts)?;
+            uow.commit()?;
         }
         return get_book(app, db, id);
     }
@@ -246,164 +252,95 @@ pub fn set_book_cover_data(
 
     let ts = now();
     {
-        let conn = db.pool.get()?;
-        emit_sql_log(
-            app,
+        // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+        let pooled = db.pool.get()?;
+        let mut uow = UnitOfWork::new(&pooled, Some(app));
+        uow.audit(
             "UPDATE",
             "books",
-            &format!("id={id}, set cover_image from data URL"),
+            format!("id={id}, set cover_image from data URL"),
             file!(),
             line!(),
         );
-        book_repo::update_cover(&conn, id, data_url, &ts)?;
+        book_repo::update_cover(uow.conn(), id, data_url, &ts)?;
+        uow.commit()?;
     }
     get_book(app, db, id)
 }
 
 /// 软删除书籍
 pub fn delete_book(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
-    let conn = db.pool.get()?;
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
     let ts = now();
-    emit_sql_log(
-        app,
-        "UPDATE",
-        "books",
-        &format!("id={id}, soft delete"),
-        file!(),
-        line!(),
-    );
-    Ok(book_repo::soft_delete(&conn, id, &ts)?)
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("UPDATE", "books", format!("id={id}, soft delete"), file!(), line!());
+    book_repo::soft_delete(uow.conn(), id, &ts)?;
+    uow.commit()?;
+    Ok(())
 }
 
 /// 恢复已删除的书籍
 pub fn restore_book(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
-    let conn = db.pool.get()?;
-    emit_sql_log(
-        app,
-        "UPDATE",
-        "books",
-        &format!("id={id}, restore"),
-        file!(),
-        line!(),
-    );
-    let affected = book_repo::restore(&conn, id, &now())?;
+    // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("UPDATE", "books", format!("id={id}, restore"), file!(), line!());
+    let affected = book_repo::restore(uow.conn(), id, &now())?;
     if affected == 0 {
         return Err(AppError::NotFound("未找到该作品或未被删除".into()));
     }
+    uow.commit()?;
     Ok(())
 }
 
 /// 硬删除书籍及其关联数据
 ///
 /// 硬删除（级联删 volumes/chapters/snapshots/world_cards）+ 两次孤立 embedding
-/// 清理放入同一事务，避免删除成功但清理失败导致孤儿数据残留。
+/// 清理 + Agent 记忆清理放入同一事务，避免删除成功但清理失败导致孤儿数据残留。
 pub fn hard_delete_book(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
-    emit_sql_log(
-        app,
-        "BEGIN",
-        "transaction",
-        "hard_delete_book",
-        file!(),
-        line!(),
-    );
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
 
-    emit_sql_log(
-        app,
-        "DELETE",
-        "books",
-        &format!("id={id}, hard delete"),
-        file!(),
-        line!(),
-    );
-    book_repo::hard_delete(&tx, id)?;
+    uow.audit("DELETE", "books", format!("id={id}, hard delete"), file!(), line!());
+    book_repo::hard_delete(uow.conn(), id)?;
 
-    emit_sql_log(
-        app,
-        "DELETE",
-        "embeddings",
-        "cleanup orphan chapter embeddings",
-        file!(),
-        line!(),
-    );
-    book_repo::cleanup_orphan_chapter_embeddings(&tx)?;
-    emit_sql_log(
-        app,
-        "DELETE",
-        "embeddings",
-        "cleanup orphan world_card embeddings",
-        file!(),
-        line!(),
-    );
-    book_repo::cleanup_orphan_world_card_embeddings(&tx)?;
+    uow.audit("DELETE", "embeddings", "cleanup orphan chapter embeddings", file!(), line!());
+    book_repo::cleanup_orphan_chapter_embeddings(uow.conn())?;
+    uow.audit("DELETE", "embeddings", "cleanup orphan world_card embeddings", file!(), line!());
+    book_repo::cleanup_orphan_world_card_embeddings(uow.conn())?;
+    // memories.book_id 无外键，显式清理该书的 Agent 记忆
+    uow.audit("DELETE", "memories", format!("book_id={id}"), file!(), line!());
+    book_repo::delete_memories_by_book(uow.conn(), id)?;
 
-    emit_sql_log(
-        app,
-        "COMMIT",
-        "transaction",
-        "hard_delete_book committed",
-        file!(),
-        line!(),
-    );
-    tx.commit()
+    uow.audit("COMMIT", "transaction", "hard_delete_book committed", file!(), line!());
+    uow.commit()
         .map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
     Ok(())
 }
 
 /// 清空回收站（清空 + 清理孤立 embedding 在同一事务内原子完成）
 pub fn clear_book_trash(app: &AppHandle, db: &AppDb) -> Result<u32, AppError> {
-    emit_sql_log(
-        app,
-        "BEGIN",
-        "transaction",
-        "clear_book_trash",
-        file!(),
-        line!(),
-    );
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
 
-    emit_sql_log(app, "SELECT", "books", "COUNT deleted", file!(), line!());
-    let count = book_repo::count_deleted(&tx)?;
-    emit_sql_log(
-        app,
-        "DELETE",
-        "books",
-        &format!("clear trash, count={count}"),
-        file!(),
-        line!(),
-    );
-    book_repo::clear_trash(&tx)?;
+    uow.audit("SELECT", "books", "COUNT deleted", file!(), line!());
+    let count = book_repo::count_deleted(uow.conn())?;
+    uow.audit("DELETE", "books", format!("clear trash, count={count}"), file!(), line!());
+    book_repo::clear_trash(uow.conn())?;
 
-    emit_sql_log(
-        app,
-        "DELETE",
-        "embeddings",
-        "cleanup orphan chapter embeddings",
-        file!(),
-        line!(),
-    );
-    book_repo::cleanup_orphan_chapter_embeddings(&tx)?;
-    emit_sql_log(
-        app,
-        "DELETE",
-        "embeddings",
-        "cleanup orphan world_card embeddings",
-        file!(),
-        line!(),
-    );
-    book_repo::cleanup_orphan_world_card_embeddings(&tx)?;
+    uow.audit("DELETE", "embeddings", "cleanup orphan chapter embeddings", file!(), line!());
+    book_repo::cleanup_orphan_chapter_embeddings(uow.conn())?;
+    uow.audit("DELETE", "embeddings", "cleanup orphan world_card embeddings", file!(), line!());
+    book_repo::cleanup_orphan_world_card_embeddings(uow.conn())?;
+    // memories.book_id 无外键，清理已删书籍的 Agent 记忆
+    uow.audit("DELETE", "memories", "cleanup deleted books", file!(), line!());
+    book_repo::delete_memories_of_deleted_books(uow.conn())?;
 
-    emit_sql_log(
-        app,
-        "COMMIT",
-        "transaction",
-        "clear_book_trash committed",
-        file!(),
-        line!(),
-    );
-    tx.commit()
+    uow.audit("COMMIT", "transaction", "clear_book_trash committed", file!(), line!());
+    uow.commit()
         .map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
     Ok(count)
 }

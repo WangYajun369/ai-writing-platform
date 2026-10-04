@@ -5,50 +5,29 @@
 
 use super::types::{sha256_hex, ChapterExport, DatabaseExport, EmbeddingMetaExport, ExportPayload, MAX_BACKUP_FILE_BYTES};
 use crate::commands::io::crypto::build_encrypted_file;
-use crate::commands::window::emit_sql_log;
-use crate::error::AppError;
+use crate::error::{AppError, ErrCode};
 use crate::repository::{
     book_repo, chapter_repo, embedding_repo, snapshot_repo, volume_repo, world_card_repo,
 };
+use crate::service::uow::UnitOfWork;
 use chrono::Utc;
-use tauri::AppHandle;
 
 // ---- 导出辅助函数 ----
 
 /// 从 Repository 加载全量数据（委托给各 repo 的 list_all_* 函数）
+///
+/// v1.9：迁移到 UnitOfWork（只读查询，autocommit 模式，审计统一收口）。
 pub(crate) fn load_full_export_data(
-    app: &AppHandle,
-    conn: &rusqlite::Connection,
+    uow: &mut UnitOfWork,
 ) -> Result<DatabaseExport, AppError> {
-    emit_sql_log(
-        app,
-        "SELECT",
-        "books",
-        "full export via repo",
-        file!(),
-        line!(),
-    );
-    let books = book_repo::list_all_include_deleted(conn)?;
+    uow.audit("SELECT", "books", "full export via repo".to_string(), file!(), line!());
+    let books = book_repo::list_all_include_deleted(uow.conn())?;
 
-    emit_sql_log(
-        app,
-        "SELECT",
-        "volumes",
-        "full export via repo",
-        file!(),
-        line!(),
-    );
-    let volumes = volume_repo::list_all_include_deleted(conn)?;
+    uow.audit("SELECT", "volumes", "full export via repo".to_string(), file!(), line!());
+    let volumes = volume_repo::list_all_include_deleted(uow.conn())?;
 
-    emit_sql_log(
-        app,
-        "SELECT",
-        "chapters",
-        "full export via repo",
-        file!(),
-        line!(),
-    );
-    let chapter_rows = chapter_repo::list_all_include_deleted_with_content(conn)?;
+    uow.audit("SELECT", "chapters", "full export via repo".to_string(), file!(), line!());
+    let chapter_rows = chapter_repo::list_all_include_deleted_with_content(uow.conn())?;
     let chapters: Vec<ChapterExport> = chapter_rows
         .into_iter()
         .map(
@@ -88,35 +67,14 @@ pub(crate) fn load_full_export_data(
         )
         .collect();
 
-    emit_sql_log(
-        app,
-        "SELECT",
-        "snapshots",
-        "full export via repo",
-        file!(),
-        line!(),
-    );
-    let snapshots = snapshot_repo::list_all(conn)?;
+    uow.audit("SELECT", "snapshots", "full export via repo".to_string(), file!(), line!());
+    let snapshots = snapshot_repo::list_all(uow.conn())?;
 
-    emit_sql_log(
-        app,
-        "SELECT",
-        "world_cards",
-        "full export via repo",
-        file!(),
-        line!(),
-    );
-    let world_cards = world_card_repo::list_all(conn)?;
+    uow.audit("SELECT", "world_cards", "full export via repo".to_string(), file!(), line!());
+    let world_cards = world_card_repo::list_all(uow.conn())?;
 
-    emit_sql_log(
-        app,
-        "SELECT",
-        "embeddings",
-        "full export via repo",
-        file!(),
-        line!(),
-    );
-    let emb_rows = embedding_repo::list_all_meta(conn)?;
+    uow.audit("SELECT", "embeddings", "full export via repo".to_string(), file!(), line!());
+    let emb_rows = embedding_repo::list_all_meta(uow.conn())?;
     let embeddings: Vec<EmbeddingMetaExport> = emb_rows
         .into_iter()
         .map(
@@ -198,7 +156,7 @@ pub(crate) fn build_and_write_payload(
     // v2 载荷（Spec §3.2 / §4.2）：payloadHash = database 规范化 JSON 的 SHA-256，
     // 排除 exportedAt / cache / backupType / appVersion 等导出侧元数据
     let db_bytes = serde_json::to_vec(&database)
-        .map_err(|e| AppError::Business(format!("E_BACKUP_SERIALIZE：JSON 序列化失败: {}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::BackupSerialize, format!("JSON 序列化失败: {}", e)))?;
     let payload_hash = sha256_hex(&db_bytes);
 
     let payload = ExportPayload {
@@ -212,7 +170,7 @@ pub(crate) fn build_and_write_payload(
         cache,
     };
     let json = serde_json::to_string(&payload)
-        .map_err(|e| AppError::Business(format!("E_BACKUP_SERIALIZE：JSON 序列化失败: {}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::BackupSerialize, format!("JSON 序列化失败: {}", e)))?;
     // Spec §8.2：序列化后估算，超 200 MB 拒绝（提示分书导出）
     if json.len() > MAX_BACKUP_FILE_BYTES as usize {
         return Err(AppError::Business(format!(
@@ -224,7 +182,7 @@ pub(crate) fn build_and_write_payload(
     // Spec §8.2：先写临时文件，成功后 rename 原子替换（避免中断留下半截文件）
     let tmp_path = format!("{}.tw.tmp", output_path);
     std::fs::write(&tmp_path, &encrypted)
-        .map_err(|e| AppError::Business(format!("E_BACKUP_WRITE：写入临时文件失败: {}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::BackupWrite, format!("写入临时文件失败: {}", e)))?;
     if let Err(e) = std::fs::rename(&tmp_path, output_path) {
         let _ = std::fs::remove_file(&tmp_path);
         return Err(AppError::Business(format!(

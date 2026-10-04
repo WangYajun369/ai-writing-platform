@@ -67,10 +67,10 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
   // 队列为空且不是展示结果时，展示初始界面（由 startSession 触发）
   const idle = queue.length === 0 && !finished
 
-  /** 提交自评 */
+  /** 提交自评（不翻面也可直接评分） */
   const submitRating = useCallback(
     async (rating: VocabRating) => {
-      if (!current || busy || !flipped) return
+      if (!current || busy) return
       setBusy(true)
       try {
         const updated = await vocabApi.review(current.word.id, rating)
@@ -100,7 +100,7 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
     [current, queue, busy, flipped, refreshAll],
   )
 
-  // 键盘：空格翻面；翻面后 1-4 键评分
+  // 键盘：空格翻面；1-4 键随时评分（无需翻面）
   useEffect(() => {
     if (!current || finished) return
     const onKey = (e: KeyboardEvent) => {
@@ -108,7 +108,7 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
       if (e.code === 'Space' || e.key === 'Enter') {
         e.preventDefault()
         if (!busy) setFlipped((f) => !f)
-      } else if (flipped && ['1', '2', '3', '4'].includes(e.key)) {
+      } else if (['1', '2', '3', '4'].includes(e.key)) {
         void submitRating((Number(e.key) - 1) as VocabRating)
       }
     }
@@ -263,8 +263,9 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
   const isFresh = !current.word.lastReviewAt
 
   return (
-    <div className="flex h-full flex-col items-center overflow-y-auto px-6 py-6 vocab-scroll">
-      {/* 进度条 */}
+    <div className="flex h-full flex-col">
+      <div className="flex flex-1 flex-col items-center overflow-y-auto px-6 py-6 vocab-scroll">
+        {/* 进度条 */}
       <div className="mb-4 w-full max-w-xl">
         <div className="mb-1 flex items-center justify-between text-[11px] text-zinc-500">
           <span className="flex items-center gap-1">
@@ -350,31 +351,6 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
 
             {/* AI 词条精讲（词根词缀/近反义词/词组/动词变形/词性例句） */}
             {current.word.knowledge && <VocabKnowledgeView knowledge={current.word.knowledge} className="mt-3" />}
-
-            <div className="mt-5 border-t border-white/8 pt-4">
-              <div className="mb-2 text-center text-[11px] text-zinc-500">回忆得如何？</div>
-              <div className="grid grid-cols-4 gap-2">
-                {RATING_META.map((meta) => (
-                  <button
-                    key={meta.rating}
-                    disabled={busy}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      void submitRating(meta.rating)
-                    }}
-                    title={meta.hint}
-                    className={cn(
-                      'flex flex-col items-center gap-0.5 rounded-xl border px-2 py-2.5 text-[13px] font-medium transition disabled:opacity-50',
-                      meta.className,
-                    )}
-                  >
-                    {meta.label}
-                    <span className="text-[9.5px] font-normal opacity-70">{meta.desc}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="mt-2 text-center text-[10px] text-zinc-600">快捷键 1-4 · 忘记的词会再测一次</div>
-            </div>
           </div>
         )}
 
@@ -385,14 +361,36 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
           </div>
         )}
       </div>
+      </div>
 
-      {!flipped && (
-        <div className="mt-3 flex items-center gap-2 text-[10.5px] text-zinc-600">
-          <span className="rounded border border-white/10 px-1.5 py-0.5">空格 / Enter</span> 翻面
-          <span className="mx-1">·</span>
-          <span className="rounded border border-white/10 px-1.5 py-0.5">1 - 4</span> 自评
+      {/* 底部固定操作栏：四键自评（忘记/模糊/记得/轻松）常驻，不翻面也可直接评分 */}
+      <div className="shrink-0 border-t border-white/8 px-6 py-3">
+        <div className="mx-auto w-full max-w-xl">
+          <div className="mb-2 text-center text-[11px] text-zinc-500">
+            {flipped ? '回忆得如何？' : '已认识可不翻面直接评分，不认识先翻面看释义'}
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            {RATING_META.map((meta) => (
+              <button
+                key={meta.rating}
+                disabled={busy}
+                onClick={() => void submitRating(meta.rating)}
+                title={meta.hint}
+                className={cn(
+                  'flex flex-col items-center gap-0.5 rounded-xl border px-2 py-2.5 text-[13px] font-medium transition disabled:opacity-50',
+                  meta.className,
+                )}
+              >
+                {meta.label}
+                <span className="text-[9.5px] font-normal opacity-70">{meta.desc}</span>
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 text-center text-[10px] text-zinc-600">
+            空格 / Enter 翻面 · 快捷键 1-4 自评 · 忘记的词会再测一次
+          </div>
         </div>
-      )}
+      </div>
     </div>
   )
 }

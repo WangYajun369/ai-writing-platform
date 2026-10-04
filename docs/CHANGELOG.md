@@ -1,5 +1,25 @@
 # 更新日志
 
+## v1.9.0 (2026-10-04) — 应用内更新与回收站逻辑修复
+
+### 修复
+- **卷软删后恢复章节丢失归属**：`volume_repo::soft_delete` 原本在软删卷时执行 `UPDATE chapters SET volume_id=NULL`，但 `restore_volume` 只清除 `deleted_at` 不重新关联章节，导致恢复卷后原下属章节全部散落到根目录且不可逆。由于 `hard_delete_volume` 已在删除前显式调用 `chapter_repo::clear_volume_id` 解绑（避免 `ON DELETE SET NULL` 触发 FTS 分词异常），软删时解绑是多余的——移除后章节与卷的归属关系在软删/恢复周期内完整保留
+- **应用内更新失效**：主窗口未授予 `updater:default` capability，`plugin-updater` 的 `check()` 被 Tauri 权限层拒绝，「立即更新（应用内静默下载安装）」路径从未真正可用——一直静默降级到 GitHub API 兜底 + 跳转浏览器下载。新增 `capabilities/updater.json`（仅主窗口，最小权限）；经负向验证确认 Tauri 会拒绝非法权限名，机制真实生效
+- **版本号漂移**：`README.md` 头部「当前版本」与亮点块停留在 1.8.0、`docs/Home.md` 停留在 1.7.0、宣传页 Hero 徽章与页脚停留在 1.8.0——bump 脚本只覆盖了 10 个版本引用点中的 5 个，且无任何一致性校验。已全部对齐并补机制（见下）
+
+### 新增
+- **启动静默更新检查**：主窗口启动 4s 后非阻塞检查更新，命中后书库页页脚显示「新版本 vX.Y.Z」徽标（点击直达设置页），不打断写作
+- **「跳过此版本」**：可忽略当前发现的版本，后续静默检查不再打扰；出现更新的版本时自动重新提示，用户手动检查则忽略跳过记录
+- **下载进度与安装反馈**：应用内更新的下载进度条（0-100%），安装完成后提示「重启应用以完成更新」
+- `src/lib/version.ts`（semver 比较 / 跳过版本持久化）、`src/lib/updateApi.ts`（GitHub 兜底通道）、`src/stores/updateAtoms.ts`、`src/hooks/useUpdateCheck.ts`（检查状态机，设置页与启动检查共用）
+- `scripts/refresh-doc-versions.mjs`：文档「适用版本 / 最后核对」批量刷新（默认预览，`--write` 落盘；仅刷新日期，`--version` 才改基线版本）
+
+### 优化
+- `VersionSection.tsx` 重构为薄展示层，更新链路与状态机收敛到 `useUpdateCheck`，消除组件内联的逻辑与重复的 GitHub 检查实现
+- `check.mjs` 新增两组防漂移断言：**版本号一致性**（以 package.json 为唯一真源，逐一比对 9 个引用点）与**窗口能力覆盖**（updater 权限存在且仅限主窗口、sub-windows 覆盖 debug/diary-book）——检查项 205 → 220
+- `release.yml`：新增「tag 与 tauri.conf.json 版本一致性」校验；更新包签名生成失败改为 **fail-fast**（此前仅告警并继续，会产出验签失败的 latest.json 导致全量客户端自动更新失效）
+- 测试：新增 `src/test/version.test.ts`（14 项：三段位比较、v 前缀、预发布后缀、0.0.0 占位、跳过版本语义、持久化），前端测试 23 → 37
+
 ## v1.8.1 (2026-09-29) — 任务卡数据一致性修复与 Agent IPC 收口
 
 ### 修复
