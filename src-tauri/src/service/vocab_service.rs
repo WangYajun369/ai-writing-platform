@@ -387,7 +387,7 @@ pub fn submit_review(
         )));
     }
 
-    let mut conn = db.pool.get()?;
+    let conn = db.pool.get()?;
     let word = vocab_repo::find_by_id(&conn, word_id)?
         .ok_or_else(|| AppError::NotFound(format!("生词不存在: {word_id}")))?;
 
@@ -420,22 +420,21 @@ pub fn submit_review(
         "learning"
     };
 
-    emit_sql_log(
-        app,
+    let reviewed_at = now();
+    let mut uow = crate::service::uow::UnitOfWork::new(&conn, Some(app));
+    uow.begin_transaction()?;
+    uow.audit(
         "REVIEW",
         "vocab_words",
-        &format!(
+        format!(
             "word={}, rating={rating}, q={quality}, rep={}->{}, interval={}d, ef={:.2}",
             word.word, word.repetition, sm.repetition, sm.interval_days, sm.ease_factor
         ),
         file!(),
         line!(),
     );
-
-    let reviewed_at = now();
-    let tx = conn.transaction()?;
     vocab_repo::update_review_state(
-        &tx,
+        uow.conn(),
         &word.id,
         sm.repetition,
         sm.interval_days,
@@ -446,7 +445,7 @@ pub fn submit_review(
         correct,
     )?;
     vocab_repo::insert_review_log(
-        &tx,
+        uow.conn(),
         &Uuid::new_v4().to_string(),
         &word.id,
         &today,
@@ -456,7 +455,7 @@ pub fn submit_review(
         sm.ease_factor,
         &reviewed_at,
     )?;
-    tx.commit()?;
+    uow.commit()?;
 
     emit_due_updated(app);
     vocab_repo::find_by_id(&conn, &word.id)?

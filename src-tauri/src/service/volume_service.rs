@@ -133,53 +133,21 @@ pub fn restore_volume(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppEr
 /// 必须先 UPDATE chapters SET volume_id=NULL，否则 DELETE volumes 触发
 /// ON DELETE SET NULL → chapters_fts_au 对大文本重新分词 → SQL logic error。
 pub fn hard_delete_volume(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
-    emit_sql_log(
-        app,
-        "BEGIN",
-        "transaction",
-        "hard_delete_volume",
-        file!(),
-        line!(),
-    );
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
-
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
     // 先将所有关联章节的 volume_id 置空（避免后续 DELETE 触发 ON DELETE SET NULL → FTS 分词）
-    emit_sql_log(
-        app,
-        "UPDATE",
-        "chapters",
-        &format!("clear volume_id for volume={id}"),
-        file!(),
-        line!(),
-    );
-    tx.execute(
-        "UPDATE chapters SET volume_id=NULL WHERE volume_id=?1",
-        rusqlite::params![id],
-    )
-    .map_err(|e| AppError::Business(format!("清除卷关联章节失败: {}", e)))?;
-
+    uow.conn()
+        .execute(
+            "UPDATE chapters SET volume_id=NULL WHERE volume_id=?1",
+            rusqlite::params![id],
+        )
+        .map_err(|e| AppError::Business(format!("清除卷关联章节失败: {}", e)))?;
+    uow.audit("UPDATE", "chapters", format!("clear volume_id for volume={id}"), file!(), line!());
     // 再硬删除卷
-    emit_sql_log(
-        app,
-        "DELETE",
-        "volumes",
-        &format!("id={id}, hard delete"),
-        file!(),
-        line!(),
-    );
-    volume_repo::hard_delete(&tx, id)?;
-
-    emit_sql_log(
-        app,
-        "COMMIT",
-        "transaction",
-        "hard_delete_volume committed",
-        file!(),
-        line!(),
-    );
-    tx.commit()
-        .map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
+    volume_repo::hard_delete(uow.conn(), id)?;
+    uow.audit("DELETE", "volumes", format!("id={id}, hard delete"), file!(), line!());
+    uow.commit()?;
     Ok(())
 }
 

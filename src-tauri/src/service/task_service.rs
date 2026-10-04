@@ -269,21 +269,15 @@ pub fn create_task(
     let id = Uuid::new_v4().to_string();
     let ts = now();
 
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
-    ensure_project_active(&tx, &params.project_id)?;
-    let parent_id = resolve_parent_id(&tx, None, &params.project_id, params.parent_id)?;
-    let sort_order = task_repo::next_sort_order(&tx, &params.project_id, &params.status)?;
-    emit_sql_log(
-        app,
-        "INSERT",
-        "tasks",
-        &format!("id={id}, title={title}, project={}", params.project_id),
-        file!(),
-        line!(),
-    );
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
+    ensure_project_active(uow.conn(), &params.project_id)?;
+    let parent_id = resolve_parent_id(uow.conn(), None, &params.project_id, params.parent_id)?;
+    let sort_order = task_repo::next_sort_order(uow.conn(), &params.project_id, &params.status)?;
+    uow.audit("INSERT", "tasks", format!("id={id}, title={title}, project={}", params.project_id), file!(), line!());
     task_repo::insert(
-        &tx,
+        uow.conn(),
         &id,
         &params.project_id,
         parent_id.as_deref(),
@@ -298,12 +292,12 @@ pub fn create_task(
         sort_order,
         &ts,
     )?;
-    replace_tags(&tx, &id, &params.tag_ids, &ts)?;
+    replace_tags(uow.conn(), &id, &params.tag_ids, &ts)?;
     let rec = params.recurrence.trim();
     if !rec.is_empty() && rec != "{}" {
-        task_repo::update_ext(&tx, &id, Some(rec), None, None, None, &ts)?;
+        task_repo::update_ext(uow.conn(), &id, Some(rec), None, None, None, &ts)?;
     }
-    tx.commit()?;
+    uow.commit()?;
     activity_log_service::try_task_log(
         db,
         &id,
@@ -894,23 +888,17 @@ fn advance_month(
 
 /// 复制任务：标题/描述/标签复制，状态置待办并排到待办列尾（PRD 9.6.2）
 pub fn copy_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<TaskCard, AppError> {
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
-    let src = task_repo::find_active(&tx, id)
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
+    let src = task_repo::find_active(uow.conn(), id)
         .map_err(|_| AppError::NotFound("未找到该任务或任务已删除".into()))?;
     let new_id = Uuid::new_v4().to_string();
     let ts = now();
-    let sort_order = task_repo::next_sort_order(&tx, &src.project_id, "todo")?;
-    emit_sql_log(
-        app,
-        "INSERT",
-        "tasks",
-        &format!("id={new_id}, copy from {id}"),
-        file!(),
-        line!(),
-    );
+    let sort_order = task_repo::next_sort_order(uow.conn(), &src.project_id, "todo")?;
+    uow.audit("INSERT", "tasks", format!("id={new_id}, copy from {id}"), file!(), line!());
     task_repo::insert(
-        &tx,
+        uow.conn(),
         &new_id,
         &src.project_id,
         src.parent_id.as_deref(),
@@ -927,11 +915,11 @@ pub fn copy_task(app: &AppHandle, db: &AppDb, id: &str) -> Result<TaskCard, AppE
     )?;
     // 复制标签（事务内失败必须传播回滚，避免副本静默丢标签）
     let ids = vec![src.id.clone()];
-    let pairs = task_repo::tags_of_tasks(&tx, &ids)?;
+    let pairs = task_repo::tags_of_tasks(uow.conn(), &ids)?;
     for (_, tag) in pairs {
-        task_repo::add_task_tag(&tx, &new_id, &tag.id, &ts)?;
+        task_repo::add_task_tag(uow.conn(), &new_id, &tag.id, &ts)?;
     }
-    tx.commit()?;
+    uow.commit()?;
     activity_log_service::try_task_log(
         db,
         &new_id,
@@ -950,14 +938,15 @@ pub fn move_task_to_project(
     task_id: &str,
     to_project_id: &str,
 ) -> Result<TaskCard, AppError> {
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
-    let current = task_repo::find_active(&tx, task_id)
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
+    let current = task_repo::find_active(uow.conn(), task_id)
         .map_err(|_| AppError::NotFound("未找到该任务或任务已删除".into()))?;
-    ensure_project_active(&tx, to_project_id)?;
+    ensure_project_active(uow.conn(), to_project_id)?;
     let ts = now();
-    let subtree = task_repo::subtree_ids(&tx, task_id)?;
-    let next = task_repo::next_sort_order(&tx, to_project_id, &current.status)?;
+    let subtree = task_repo::subtree_ids(uow.conn(), task_id)?;
+    let next = task_repo::next_sort_order(uow.conn(), to_project_id, &current.status)?;
     // 整棵子树整体迁移（根任务追加到目标状态列尾，其余保持原列内排序）
     let placeholders: Vec<&str> = vec!["?"; subtree.len()];
     let sql = format!(
@@ -970,26 +959,16 @@ pub fn move_task_to_project(
         params.push(Box::new(tid.clone()));
     }
     let params_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-    tx.execute(&sql, params_refs.as_slice())?;
+    uow.conn().execute(&sql, params_refs.as_slice())?;
     // 根任务移到目标状态列尾
-    tx.execute(
+    uow.conn().execute(
         "UPDATE tasks SET sort_order=?1, updated_at=?2 WHERE id=?3",
         rusqlite::params![next, ts, task_id],
     )?;
     // 解除因跨项目造成的悬空父引用
-    task_repo::clean_orphan_parents(&tx, &ts)?;
-    emit_sql_log(
-        app,
-        "UPDATE",
-        "tasks",
-        &format!(
-            "id={task_id} (subtree {}) -> project {to_project_id}",
-            subtree.len()
-        ),
-        file!(),
-        line!(),
-    );
-    tx.commit()?;
+    task_repo::clean_orphan_parents(uow.conn(), &ts)?;
+    uow.audit("UPDATE", "tasks", format!("id={task_id} (subtree {}) -> project {to_project_id}", subtree.len()), file!(), line!());
+    uow.commit()?;
     activity_log_service::try_task_log(
         db,
         task_id,
@@ -1139,16 +1118,17 @@ pub fn list_deleted_tasks(app: &AppHandle, db: &AppDb) -> Result<Vec<DeletedTask
 
 /// 清空任务回收站（同事务清理操作日志与孤儿父引用）
 pub fn clear_task_trash(app: &AppHandle, db: &AppDb) -> Result<u32, AppError> {
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
-    emit_sql_log(app, "DELETE", "tasks", "clear trash", file!(), line!());
-    let count = task_repo::count_deleted(&tx)?;
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
+    uow.audit("DELETE", "tasks", "clear trash", file!(), line!());
+    let count = task_repo::count_deleted(uow.conn())?;
     // task_activity_logs 无外键，先清理已删任务的日志再删任务
-    activity_log_repo::delete_logs_of_deleted_tasks(&tx)?;
-    task_repo::clear_trash(&tx)?;
+    activity_log_repo::delete_logs_of_deleted_tasks(uow.conn())?;
+    task_repo::clear_trash(uow.conn())?;
     let ts = now();
-    task_repo::clean_orphan_parents(&tx, &ts)?;
-    tx.commit()?;
+    task_repo::clean_orphan_parents(uow.conn(), &ts)?;
+    uow.commit()?;
     Ok(count)
 }
 
@@ -1161,36 +1141,31 @@ pub const TRASH_RETENTION_DAYS: i64 = 30;
 /// 项目与任务。由 lib.rs 后台循环每日调用一次（task_meta 日期守卫，同日内
 /// 重复调用直接返回 0）。返回本次实际清理的条目数（任务 + 项目）。
 pub fn purge_expired_trash(app: &AppHandle, db: &AppDb) -> Result<u32, AppError> {
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
     let today = local_today();
-    if task_meta_repo::get(&tx, KEY_TRASH_PURGE_DATE)?.as_deref() == Some(today.as_str()) {
+    if task_meta_repo::get(uow.conn(), KEY_TRASH_PURGE_DATE)?.as_deref() == Some(today.as_str()) {
+        uow.rollback();
         return Ok(0);
     }
     // 截止线 = 当前 UTC 时间 - 保留期（deleted_at 为 UTC RFC3339，字典序可比较）
     let cutoff = (chrono::Utc::now() - chrono::Duration::days(TRASH_RETENTION_DAYS)).to_rfc3339();
     let ts = now();
-    emit_sql_log(
-        app,
-        "DELETE",
-        "tasks+projects",
-        &format!("auto purge < {cutoff}"),
-        file!(),
-        line!(),
-    );
+    uow.audit("DELETE", "tasks+projects", format!("auto purge < {cutoff}"), file!(), line!());
     // task_activity_logs 无外键：先清理即将硬删数据的日志，再执行硬删（同一事务）
-    activity_log_repo::delete_logs_of_expired_tasks(&tx, &cutoff)?;
-    activity_log_repo::delete_logs_of_expired_projects(&tx, &cutoff)?;
-    let task_n = task_repo::purge_expired(&tx, &cutoff)?;
-    let project_n = project_repo::purge_expired(&tx, &cutoff)?;
-    task_meta_repo::set(&tx, KEY_TRASH_PURGE_DATE, &today, &ts)?;
-    task_repo::clean_orphan_parents(&tx, &ts)?;
+    activity_log_repo::delete_logs_of_expired_tasks(uow.conn(), &cutoff)?;
+    activity_log_repo::delete_logs_of_expired_projects(uow.conn(), &cutoff)?;
+    let task_n = task_repo::purge_expired(uow.conn(), &cutoff)?;
+    let project_n = project_repo::purge_expired(uow.conn(), &cutoff)?;
+    task_meta_repo::set(uow.conn(), KEY_TRASH_PURGE_DATE, &today, &ts)?;
+    task_repo::clean_orphan_parents(uow.conn(), &ts)?;
     // 兜底清理历史遗留孤儿日志（无外键时代的存量泄漏）
-    let orphan_logs = activity_log_repo::delete_orphan_logs(&tx)?;
+    let orphan_logs = activity_log_repo::delete_orphan_logs(uow.conn())?;
     if orphan_logs > 0 {
         crate::app_log!("[回收站] 清理历史孤儿操作日志 {orphan_logs} 条");
     }
-    tx.commit()?;
+    uow.commit()?;
     let total = (task_n + project_n) as u32;
     if total > 0 {
         crate::app_log!("[回收站] 自动清理 {total} 条过期数据（任务 {task_n}，项目 {project_n}）");
@@ -1208,26 +1183,21 @@ pub fn purge_expired_trash(app: &AppHandle, db: &AppDb) -> Result<u32, AppError>
 
 /// 「计划今日」滚动清理（PRD 7.4）：自然日切换后由前端触发
 pub fn roll_planned_today(app: &AppHandle, db: &AppDb) -> Result<u32, AppError> {
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
     let today = local_today();
     // 自然日守卫：仅跨天后的首次调用才清理（记录上次滚动日期），
     // 避免每次打开窗口都清掉当天新设的「计划今日」任务。
-    if task_meta_repo::get(&tx, KEY_ROLL_PLANNED_DATE)?.as_deref() == Some(today.as_str()) {
+    if task_meta_repo::get(uow.conn(), KEY_ROLL_PLANNED_DATE)?.as_deref() == Some(today.as_str()) {
+        uow.rollback();
         return Ok(0);
     }
     let ts = now();
-    emit_sql_log(
-        app,
-        "UPDATE",
-        "tasks",
-        "roll planned_today",
-        file!(),
-        line!(),
-    );
-    let n = task_repo::roll_planned_today(&tx, &ts)?;
-    task_meta_repo::set(&tx, KEY_ROLL_PLANNED_DATE, &today, &ts)?;
-    tx.commit()?;
+    uow.audit("UPDATE", "tasks", "roll planned_today", file!(), line!());
+    let n = task_repo::roll_planned_today(uow.conn(), &ts)?;
+    task_meta_repo::set(uow.conn(), KEY_ROLL_PLANNED_DATE, &today, &ts)?;
+    uow.commit()?;
     Ok(n as u32)
 }
 

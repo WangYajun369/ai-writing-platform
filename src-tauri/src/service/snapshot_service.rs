@@ -109,52 +109,24 @@ pub fn restore_snapshot(
     snapshot_id: &str,
 ) -> Result<SaveChapterResult, AppError> {
     // 恢复内容与书籍字数重算放入同一事务，避免部分提交导致字数不一致
-    emit_sql_log(
-        app,
-        "BEGIN",
-        "transaction",
-        "restore_snapshot",
-        file!(),
-        line!(),
-    );
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
 
-    emit_sql_log(
-        app,
-        "SELECT",
-        "snapshots",
-        &format!("id={snapshot_id}, restore content"),
-        file!(),
-        line!(),
-    );
-    let (chapter_id, content_html, wc) = snapshot_repo::find_full(&tx, snapshot_id)?;
+    uow.audit("SELECT", "snapshots", format!("id={snapshot_id}, restore content"), file!(), line!());
+    let (chapter_id, content_html, wc) = snapshot_repo::find_full(uow.conn(), snapshot_id)?;
 
     let ts = now();
-    emit_sql_log(
-        app,
-        "UPDATE",
-        "chapters",
-        &format!("id={chapter_id}, restore from snapshot"),
-        file!(),
-        line!(),
-    );
+    uow.audit("UPDATE", "chapters", format!("id={chapter_id}, restore from snapshot"), file!(), line!());
     // 快照 wc 为该版本创建时的字数：恢复后章节字数回到版本值，再同步书籍聚合
-    chapter_repo::save_content(&tx, &chapter_id, &content_html, wc, &ts)?;
+    chapter_repo::save_content(uow.conn(), &chapter_id, &content_html, wc, &ts)?;
 
-    book_repo::update_word_count_by_chapter(&tx, &chapter_id, &ts)?;
+    book_repo::update_word_count_by_chapter(uow.conn(), &chapter_id, &ts)?;
 
-    let book_wc = book_repo::word_count_by_chapter(&tx, &chapter_id)?;
+    let book_wc = book_repo::word_count_by_chapter(uow.conn(), &chapter_id)?;
 
-    emit_sql_log(
-        app,
-        "COMMIT",
-        "transaction",
-        "restore_snapshot committed",
-        file!(),
-        line!(),
-    );
-    tx.commit()
+    uow.audit("COMMIT", "transaction", "restore_snapshot committed", file!(), line!());
+    uow.commit()
         .map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
 
     // 通知主窗口刷新编辑器内容

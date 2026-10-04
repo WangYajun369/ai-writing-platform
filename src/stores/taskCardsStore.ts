@@ -8,6 +8,7 @@
  */
 import { create } from 'zustand'
 import { emit } from '@tauri-apps/api/event'
+import { WindowEvent } from '@/lib/window-events'
 import { taskCardApi } from '@/lib/tauri-bridge'
 import { errText } from '@/lib/errors'
 import { toast } from '@/lib/toast'
@@ -26,7 +27,7 @@ import type {
 
 /** 变更后广播：主窗口 home-header 角标即时刷新 */
 function notifyChanged() {
-  void emit('tasks-data-updated')
+  void emit(WindowEvent.TASKS_DATA_UPDATED)
 }
 
 interface TaskCardsState {

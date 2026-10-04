@@ -171,57 +171,36 @@ pub fn save_chapter(
     // 字数由前端按编辑器统计后传入：后端信任该值，仅负责聚合与差值计算，不重新统计正文
 
     // 三步操作放入同一事务：保存失败时字数聚合不会残留半成品状态
-    emit_sql_log(
-        app,
-        "BEGIN",
-        "transaction",
-        "save_chapter",
-        file!(),
-        line!(),
-    );
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
 
     // Step 0: 读取旧字数与归属书籍（写作统计 delta 依据；须在写入前取值）
-    let (book_id, old_wc) = chapter_repo::find_book_and_wc(&tx, chapter_id)
+    let (book_id, old_wc) = chapter_repo::find_book_and_wc(uow.conn(), chapter_id)
         .map_err(|e| AppError::Business(format!("保存失败 [step0-read_old_wc]: {}", e)))?;
 
     // Step 1: 保存内容到 chapters 表（写入 content_html 和 word_count，触发 FTS5 同步）
-    emit_sql_log(
-        app,
-        "UPDATE",
-        "chapters",
-        &format!("id={chapter_id}, save content_html, wc={word_count}"),
-        file!(),
-        line!(),
-    );
-    chapter_repo::save_content(&tx, chapter_id, content_html, word_count, &ts)
+    uow.audit("UPDATE", "chapters", format!("id={chapter_id}, save content_html, wc={word_count}"), file!(), line!());
+    chapter_repo::save_content(uow.conn(), chapter_id, content_html, word_count, &ts)
         .map_err(|e| AppError::Business(format!("保存内容失败 [step1-save_content]: {}", e)))?;
 
     // Step 2: 级联更新书籍总字数（基于所有未删除章节的字数求和）
-    book_repo::update_word_count_by_chapter(&tx, chapter_id, &ts)
+    book_repo::update_word_count_by_chapter(uow.conn(), chapter_id, &ts)
         .map_err(|e| AppError::Business(format!("保存失败 [step2-update_book_wc]: {}", e)))?;
 
     // Step 3: 回读更新后的书籍字数，确保调用方拿到最新值
-    let book_wc = book_repo::word_count_by_chapter(&tx, chapter_id)
+    let book_wc = book_repo::word_count_by_chapter(uow.conn(), chapter_id)
         .map_err(|e| AppError::Business(format!("保存失败 [step3-read_book_wc]: {}", e)))?;
 
     // Step 3.5: 写作统计——按当日净增字数（新字数 − 旧字数）落库，仅累计正增量
     let delta = word_count.saturating_sub(old_wc);
     if delta > 0 {
-        writing_stats_repo::record_delta(&tx, &book_id, &local_today(), delta)
+        writing_stats_repo::record_delta(uow.conn(), &book_id, &local_today(), delta)
             .map_err(|e| AppError::Business(format!("保存失败 [step3.5-record_stats]: {}", e)))?;
     }
 
-    emit_sql_log(
-        app,
-        "COMMIT",
-        "transaction",
-        "save_chapter committed",
-        file!(),
-        line!(),
-    );
-    tx.commit()
+    uow.audit("COMMIT", "transaction", "save_chapter committed", file!(), line!());
+    uow.commit()
         .map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
 
     Ok(SaveChapterResult {
@@ -326,41 +305,20 @@ pub fn delete_chapter(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Result<i
     let ts = now();
 
     // 软删除标记与书籍字数扣除放入同一事务，避免删除成功但字数未扣的中间态
-    emit_sql_log(
-        app,
-        "BEGIN",
-        "transaction",
-        "delete_chapter",
-        file!(),
-        line!(),
-    );
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
 
     // 标记章节为已删除（设置 deleted_at 时间戳）
-    emit_sql_log(
-        app,
-        "UPDATE",
-        "chapters",
-        &format!("id={chapter_id}, soft delete"),
-        file!(),
-        line!(),
-    );
-    chapter_repo::soft_delete(&tx, chapter_id, &ts)?;
+    uow.audit("UPDATE", "chapters", format!("id={chapter_id}, soft delete"), file!(), line!());
+    chapter_repo::soft_delete(uow.conn(), chapter_id, &ts)?;
 
     // 软删除后需将章节字数从书籍总字数中扣除
-    book_repo::update_word_count_by_chapter(&tx, chapter_id, &ts)?;
-    let book_wc = book_repo::word_count_by_chapter(&tx, chapter_id)?;
+    book_repo::update_word_count_by_chapter(uow.conn(), chapter_id, &ts)?;
+    let book_wc = book_repo::word_count_by_chapter(uow.conn(), chapter_id)?;
 
-    emit_sql_log(
-        app,
-        "COMMIT",
-        "transaction",
-        "delete_chapter committed",
-        file!(),
-        line!(),
-    );
-    tx.commit()
+    uow.audit("COMMIT", "transaction", "delete_chapter committed", file!(), line!());
+    uow.commit()
         .map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
     Ok(book_wc)
 }
@@ -383,39 +341,18 @@ pub fn restore_chapter(
     let ts = now();
 
     // 恢复标记与书籍字数重算放入同一事务，避免恢复成功但字数未计回的中间态
-    emit_sql_log(
-        app,
-        "BEGIN",
-        "transaction",
-        "restore_chapter",
-        file!(),
-        line!(),
-    );
-    let mut conn = db.pool.get()?;
-    let tx = conn.transaction()?;
+    let pooled = db.pool.get()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
 
     // 查询章节当前关联的卷 ID（即使已软删除仍保留此字段）
-    emit_sql_log(
-        app,
-        "SELECT",
-        "chapters",
-        &format!("id={chapter_id}, check volume_id"),
-        file!(),
-        line!(),
-    );
-    let current_vid = chapter_repo::find_volume_id(&tx, chapter_id)?;
+    uow.audit("SELECT", "chapters", format!("id={chapter_id}, check volume_id"), file!(), line!());
+    let current_vid = chapter_repo::find_volume_id(uow.conn(), chapter_id)?;
 
     // 确认原卷是否仍处于活跃状态（未被删除）
     let effective_volume_id = if let Some(ref vid) = current_vid {
-        emit_sql_log(
-            app,
-            "SELECT",
-            "volumes",
-            &format!("id={vid}, check exists"),
-            file!(),
-            line!(),
-        );
-        if volume_repo::exists_active(&tx, vid)? {
+        uow.audit("SELECT", "volumes", format!("id={vid}, check exists"), file!(), line!());
+        if volume_repo::exists_active(uow.conn(), vid)? {
             Some(vid.clone()) // 原卷存在，恢复到原卷
         } else {
             None // 原卷已删除，恢复到根目录
@@ -425,29 +362,15 @@ pub fn restore_chapter(
     };
 
     // 清除 deleted_at 并将章节恢复到有效卷
-    emit_sql_log(
-        app,
-        "UPDATE",
-        "chapters",
-        &format!("id={chapter_id}, restore"),
-        file!(),
-        line!(),
-    );
-    chapter_repo::restore(&tx, chapter_id, &effective_volume_id, &ts)?;
+    uow.audit("UPDATE", "chapters", format!("id={chapter_id}, restore"), file!(), line!());
+    chapter_repo::restore(uow.conn(), chapter_id, &effective_volume_id, &ts)?;
 
     // 将恢复的章节字数重新计入书籍聚合
-    book_repo::update_word_count_by_chapter(&tx, chapter_id, &ts)?;
-    let book_wc = book_repo::word_count_by_chapter(&tx, chapter_id)?;
+    book_repo::update_word_count_by_chapter(uow.conn(), chapter_id, &ts)?;
+    let book_wc = book_repo::word_count_by_chapter(uow.conn(), chapter_id)?;
 
-    emit_sql_log(
-        app,
-        "COMMIT",
-        "transaction",
-        "restore_chapter committed",
-        file!(),
-        line!(),
-    );
-    tx.commit()
+    uow.audit("COMMIT", "transaction", "restore_chapter committed", file!(), line!());
+    uow.commit()
         .map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
 
     Ok(RestoreChapterResult {
@@ -473,45 +396,24 @@ pub fn restore_chapter(
 /// # Returns
 /// 硬删除后更新过的全书总字数
 pub fn hard_delete_chapter(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Result<i64, AppError> {
-    let mut conn = db.pool.get()?;
+    let pooled = db.pool.get()?;
     let ts = now();
 
-    emit_sql_log(
-        app,
-        "BEGIN",
-        "transaction",
-        "hard_delete_chapter",
-        file!(),
-        line!(),
-    );
-    let tx = conn.transaction()?;
+    let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
+    uow.begin_transaction()?;
 
     // 事务内先获取 book_id，避免硬删除后无法回溯关联书籍
     // 若章节已被级联删除或不存在，视为已完成，直接返回 0
-    emit_sql_log(
-        app,
-        "SELECT",
-        "chapters",
-        &format!("id={chapter_id}, get book_id"),
-        file!(),
-        line!(),
-    );
-    let book_id: String = match tx.query_row(
+    uow.audit("SELECT", "chapters", format!("id={chapter_id}, get book_id"), file!(), line!());
+    let book_id: String = match uow.conn().query_row(
         "SELECT book_id FROM chapters WHERE id=?1",
         rusqlite::params![chapter_id],
         |row| row.get(0),
     ) {
         Ok(id) => id,
         Err(rusqlite::Error::QueryReturnedNoRows) => {
-            emit_sql_log(
-                app,
-                "COMMIT",
-                "transaction",
-                "hard_delete_chapter skipped (chapter not found)",
-                file!(),
-                line!(),
-            );
-            tx.commit()
+            uow.audit("COMMIT", "transaction", "hard_delete_chapter skipped (chapter not found)", file!(), line!());
+            uow.commit()
                 .map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
             return Ok(0);
         }
@@ -519,39 +421,18 @@ pub fn hard_delete_chapter(app: &AppHandle, db: &AppDb, chapter_id: &str) -> Res
     };
 
     // DELETE 触发 chapters_fts_ad 触发器 → 使用 DELETE 直接清理 FTS5 索引
-    emit_sql_log(
-        app,
-        "DELETE",
-        "chapters",
-        &format!("id={chapter_id}, hard delete"),
-        file!(),
-        line!(),
-    );
-    chapter_repo::hard_delete(&tx, chapter_id)?;
+    uow.audit("DELETE", "chapters", format!("id={chapter_id}, hard delete"), file!(), line!());
+    chapter_repo::hard_delete(uow.conn(), chapter_id)?;
 
     // 硬删除后书籍字数不再包含此章节，需完全重算
-    emit_sql_log(
-        app,
-        "UPDATE",
-        "books",
-        &format!("recalc word_count for book_id={book_id}"),
-        file!(),
-        line!(),
-    );
-    book_repo::recalc_word_count(&tx, &book_id, &ts)?;
+    uow.audit("UPDATE", "books", format!("recalc word_count for book_id={book_id}"), file!(), line!());
+    book_repo::recalc_word_count(uow.conn(), &book_id, &ts)?;
 
     // 使用 book_id 查询（章节已不存在，无法通过 chapter_id 反查）
-    let book_wc = book_repo::word_count_by_book(&tx, &book_id)?;
+    let book_wc = book_repo::word_count_by_book(uow.conn(), &book_id)?;
 
-    emit_sql_log(
-        app,
-        "COMMIT",
-        "transaction",
-        "hard_delete_chapter committed",
-        file!(),
-        line!(),
-    );
-    tx.commit()
+    uow.audit("COMMIT", "transaction", "hard_delete_chapter committed", file!(), line!());
+    uow.commit()
         .map_err(|e| AppError::Business(format!("提交事务失败: {}", e)))?;
     Ok(book_wc)
 }
