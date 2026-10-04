@@ -6,7 +6,7 @@
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::{Project, ProjectStats, ProjectView};
-use crate::repository::{activity_log_repo, project_repo, task_repo};
+use crate::repository::{activity_log_repo, project_repo, task_repo, template_repo};
 use crate::service::uow::UnitOfWork;
 use crate::utils::{local_now, now, validate_len};
 use tauri::AppHandle;
@@ -352,7 +352,7 @@ pub fn restore_project(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppE
 }
 
 /// 彻底删除项目（仅限回收站中的项目；CASCADE 删除其下任务与任务-标签关联，
-/// 同事务显式清理操作日志）
+/// 同事务显式清理操作日志与项目模板）
 pub fn hard_delete_project(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
     // v1.9：迁移到 UnitOfWork，事务边界 + 审计统一收口。
     let pooled = db.pool.get()?;
@@ -365,12 +365,15 @@ pub fn hard_delete_project(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), 
         file!(),
         line!(),
     );
+    // 顺序至关重要：先清无外键的关联数据（logs / templates），再删项目。
+    // 项目硬删除会 CASCADE 删除 tasks，delete_by_project 的 task_id 子查询
+    // 依赖 tasks 仍存在，故必须在 hard_delete 之前调用。
+    activity_log_repo::delete_by_project(uow.conn(), id)?;
+    template_repo::delete_by_project(uow.conn(), id)?;
     let affected = project_repo::hard_delete(uow.conn(), id)?;
     if affected == 0 {
         return Err(AppError::Business("仅回收站中的项目可彻底删除".into()));
     }
-    // task_activity_logs 无外键，硬删后需显式清理日志避免孤儿化
-    activity_log_repo::delete_by_project(uow.conn(), id)?;
     uow.commit()?;
     Ok(())
 }
@@ -386,7 +389,7 @@ pub fn list_deleted_projects(app: &AppHandle, db: &AppDb) -> Result<Vec<Project>
     Ok(projects)
 }
 
-/// 清空项目回收站（同事务清理已删项目的操作日志）
+/// 清空项目回收站（同事务清理已删项目的操作日志与模板）
 pub fn clear_project_trash(app: &AppHandle, db: &AppDb) -> Result<u32, AppError> {
     // v1.9：迁移到 UnitOfWork，事务边界 + 审计统一收口。
     let pooled = db.pool.get()?;
@@ -400,8 +403,9 @@ pub fn clear_project_trash(app: &AppHandle, db: &AppDb) -> Result<u32, AppError>
         line!(),
     );
     let count = project_repo::count_deleted(uow.conn())?;
-    // task_activity_logs 无外键，先清理已删项目的日志再删项目
+    // 无外键关联表（logs / templates）先清理，再删项目（CASCADE 删 tasks）
     activity_log_repo::delete_logs_of_deleted_projects(uow.conn())?;
+    template_repo::delete_by_deleted_projects(uow.conn())?;
     project_repo::clear_trash(uow.conn())?;
     uow.commit()?;
     Ok(count)

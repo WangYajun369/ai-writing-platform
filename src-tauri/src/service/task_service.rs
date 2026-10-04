@@ -6,7 +6,7 @@
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::{Tag, TaskCard, TodayOverview};
-use crate::repository::{activity_log_repo, project_repo, subtask_repo, task_meta_repo, task_repo};
+use crate::repository::{activity_log_repo, project_repo, subtask_repo, task_meta_repo, task_repo, template_repo};
 use crate::service::activity_log_service;
 use crate::service::uow::UnitOfWork;
 use crate::utils::{local_now, local_today, now, validate_len};
@@ -1129,6 +1129,8 @@ pub fn purge_expired_trash(app: &AppHandle, db: &AppDb) -> Result<u32, AppError>
     // task_activity_logs 无外键：先清理即将硬删数据的日志，再执行硬删（同一事务）
     activity_log_repo::delete_logs_of_expired_tasks(uow.conn(), &cutoff)?;
     activity_log_repo::delete_logs_of_expired_projects(uow.conn(), &cutoff)?;
+    // task_templates.project_id 无外键，同步清理已过期项目的模板
+    template_repo::delete_by_expired_projects(uow.conn(), &cutoff)?;
     let task_n = task_repo::purge_expired(uow.conn(), &cutoff)?;
     let project_n = project_repo::purge_expired(uow.conn(), &cutoff)?;
     task_meta_repo::set(uow.conn(), KEY_TRASH_PURGE_DATE, &today, &ts)?;
