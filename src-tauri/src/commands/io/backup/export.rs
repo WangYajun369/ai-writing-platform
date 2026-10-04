@@ -5,50 +5,29 @@
 
 use super::types::{sha256_hex, ChapterExport, DatabaseExport, EmbeddingMetaExport, ExportPayload, MAX_BACKUP_FILE_BYTES};
 use crate::commands::io::crypto::build_encrypted_file;
-use crate::commands::window::emit_sql_log;
 use crate::error::{AppError, ErrCode};
 use crate::repository::{
     book_repo, chapter_repo, embedding_repo, snapshot_repo, volume_repo, world_card_repo,
 };
+use crate::service::uow::UnitOfWork;
 use chrono::Utc;
-use tauri::AppHandle;
 
 // ---- 导出辅助函数 ----
 
 /// 从 Repository 加载全量数据（委托给各 repo 的 list_all_* 函数）
+///
+/// v1.9：迁移到 UnitOfWork（只读查询，autocommit 模式，审计统一收口）。
 pub(crate) fn load_full_export_data(
-    app: &AppHandle,
-    conn: &rusqlite::Connection,
+    uow: &mut UnitOfWork,
 ) -> Result<DatabaseExport, AppError> {
-    emit_sql_log(
-        app,
-        "SELECT",
-        "books",
-        "full export via repo",
-        file!(),
-        line!(),
-    );
-    let books = book_repo::list_all_include_deleted(conn)?;
+    uow.audit("SELECT", "books", "full export via repo".to_string(), file!(), line!());
+    let books = book_repo::list_all_include_deleted(uow.conn())?;
 
-    emit_sql_log(
-        app,
-        "SELECT",
-        "volumes",
-        "full export via repo",
-        file!(),
-        line!(),
-    );
-    let volumes = volume_repo::list_all_include_deleted(conn)?;
+    uow.audit("SELECT", "volumes", "full export via repo".to_string(), file!(), line!());
+    let volumes = volume_repo::list_all_include_deleted(uow.conn())?;
 
-    emit_sql_log(
-        app,
-        "SELECT",
-        "chapters",
-        "full export via repo",
-        file!(),
-        line!(),
-    );
-    let chapter_rows = chapter_repo::list_all_include_deleted_with_content(conn)?;
+    uow.audit("SELECT", "chapters", "full export via repo".to_string(), file!(), line!());
+    let chapter_rows = chapter_repo::list_all_include_deleted_with_content(uow.conn())?;
     let chapters: Vec<ChapterExport> = chapter_rows
         .into_iter()
         .map(
@@ -88,35 +67,14 @@ pub(crate) fn load_full_export_data(
         )
         .collect();
 
-    emit_sql_log(
-        app,
-        "SELECT",
-        "snapshots",
-        "full export via repo",
-        file!(),
-        line!(),
-    );
-    let snapshots = snapshot_repo::list_all(conn)?;
+    uow.audit("SELECT", "snapshots", "full export via repo".to_string(), file!(), line!());
+    let snapshots = snapshot_repo::list_all(uow.conn())?;
 
-    emit_sql_log(
-        app,
-        "SELECT",
-        "world_cards",
-        "full export via repo",
-        file!(),
-        line!(),
-    );
-    let world_cards = world_card_repo::list_all(conn)?;
+    uow.audit("SELECT", "world_cards", "full export via repo".to_string(), file!(), line!());
+    let world_cards = world_card_repo::list_all(uow.conn())?;
 
-    emit_sql_log(
-        app,
-        "SELECT",
-        "embeddings",
-        "full export via repo",
-        file!(),
-        line!(),
-    );
-    let emb_rows = embedding_repo::list_all_meta(conn)?;
+    uow.audit("SELECT", "embeddings", "full export via repo".to_string(), file!(), line!());
+    let emb_rows = embedding_repo::list_all_meta(uow.conn())?;
     let embeddings: Vec<EmbeddingMetaExport> = emb_rows
         .into_iter()
         .map(
