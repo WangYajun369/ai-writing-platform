@@ -14,6 +14,7 @@
 pub mod ddl;
 pub mod migrations;
 pub mod schema;
+pub mod schema_repo;
 
 use crate::repository::embedding_repo;
 use anyhow::Context as _;

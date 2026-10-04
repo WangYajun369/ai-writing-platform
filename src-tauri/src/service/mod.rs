@@ -28,6 +28,7 @@ pub mod world_card_service;
 pub mod writing_stats_service;
 // ── 任务卡模块 ──
 pub mod activity_log_service;
+pub mod agent_trace_service;
 pub mod attachment_service;
 pub mod migrate_service;
 pub mod project_service;

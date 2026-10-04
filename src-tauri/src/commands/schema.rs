@@ -13,7 +13,7 @@
 use serde::Serialize;
 use tauri::State;
 
-use crate::db::{migrations, schema::TABLE_SCHEMA, AppDb, SCHEMA_VERSION};
+use crate::db::{migrations, schema::TABLE_SCHEMA, schema_repo, AppDb, SCHEMA_VERSION};
 use crate::error::AppError;
 
 /// 待应用迁移(代码侧注册,库中尚未应用的版本)
@@ -71,10 +71,7 @@ pub struct SchemaDiff {
 #[tauri::command]
 pub async fn schema_status(db: State<'_, AppDb>) -> Result<SchemaStatus, AppError> {
     let conn = db.pool.get().map_err(|e| AppError::DbPool(e.to_string()))?;
-    let current_version: i64 = conn
-        .query_row("PRAGMA user_version", [], |r| r.get(0))
-        .map_err(AppError::Db)?;
-    let current_version = current_version as u32;
+    let current_version = schema_repo::get_user_version(&conn).map_err(AppError::from)?;
     let applied = migrations::list_applied(&conn).map_err(AppError::from)?;
 
     // 计算 pending:代码注册表中 version > current_version 且未在 applied 中的迁移
@@ -106,17 +103,8 @@ pub async fn schema_diff(db: State<'_, AppDb>) -> Result<SchemaDiff, AppError> {
     let conn = db.pool.get().map_err(|e| AppError::DbPool(e.to_string()))?;
     let mut issues = Vec::new();
 
-    // 1. 取当前所有表
-    let mut stmt = conn
-        .prepare(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-        )
-        .map_err(AppError::Db)?;
-    let actual_tables: Vec<String> = stmt
-        .query_map([], |r| r.get::<_, String>(0))
-        .map_err(AppError::Db)?
-        .filter_map(|r| r.ok())
-        .collect();
+    // 1. 取当前所有用户表
+    let actual_tables = schema_repo::list_user_tables(&conn).map_err(AppError::from)?;
     let actual_tables_count = actual_tables.len();
 
     // 2. 逐个声明的表对比列
@@ -131,14 +119,8 @@ pub async fn schema_diff(db: State<'_, AppDb>) -> Result<SchemaDiff, AppError> {
             });
             continue;
         }
-        // PRAGMA table_info 第二列是列名
-        let cols_sql = format!("PRAGMA table_info({})", table_name);
-        let mut col_stmt = conn.prepare(&cols_sql).map_err(AppError::Db)?;
-        let actual_cols: Vec<String> = col_stmt
-            .query_map([], |row| row.get::<_, String>(1))
-            .map_err(AppError::Db)?
-            .filter_map(|r| r.ok())
-            .collect();
+        let actual_cols = schema_repo::list_table_columns(&conn, table_name)
+            .map_err(AppError::from)?;
 
         for expected in *expected_cols {
             if !actual_cols.contains(&expected.to_string()) {
