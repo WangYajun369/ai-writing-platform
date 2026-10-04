@@ -30,7 +30,7 @@ pub fn parse_world_card(row: &rusqlite::Row) -> Result<WorldCard> {
 /// 列出所有世界观卡片，用于备份导出
 pub fn list_all(conn: &Connection) -> Result<Vec<WorldCard>> {
     let mut stmt = conn.prepare(&format!("SELECT {WORLD_CARD_COLS} FROM world_cards"))?;
-    let items = stmt.query_map([], |row| parse_world_card(row))?;
+    let items = stmt.query_map([], parse_world_card)?;
     items.collect()
 }
 
@@ -39,7 +39,7 @@ pub fn list_by_book(conn: &Connection, book_id: &str) -> Result<Vec<WorldCard>> 
     let mut stmt = conn.prepare(&format!(
         "SELECT {WORLD_CARD_COLS} FROM world_cards WHERE book_id=?1 ORDER BY updated_at DESC"
     ))?;
-    let items = stmt.query_map(params![book_id], |row| parse_world_card(row))?;
+    let items = stmt.query_map(params![book_id], parse_world_card)?;
     items.collect()
 }
 
@@ -48,7 +48,7 @@ pub fn find_by_id(conn: &Connection, id: &str) -> Result<WorldCard> {
     conn.query_row(
         &format!("SELECT {WORLD_CARD_COLS} FROM world_cards WHERE id=?1"),
         params![id],
-        |row| parse_world_card(row),
+        parse_world_card,
     )
 }
 

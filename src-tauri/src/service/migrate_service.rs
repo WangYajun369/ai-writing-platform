@@ -43,8 +43,7 @@ pub fn migrate_schedules(app: &AppHandle, db: &AppDb) -> Result<MigrateResult, A
     let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
     uow.begin_transaction()?;
 
-    let already =
-        task_meta_repo::get(uow.conn(), MIGRATION_META_KEY)?.as_deref() == Some("1");
+    let already = task_meta_repo::get(uow.conn(), MIGRATION_META_KEY)?.as_deref() == Some("1");
 
     // 默认项目：优先复用「个人事务」，否则新建
     let project_id = project_repo::find_id_by_name(uow.conn(), DEFAULT_PROJECT_NAME)?;

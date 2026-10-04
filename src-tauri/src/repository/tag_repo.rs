@@ -26,14 +26,14 @@ pub fn list_all(conn: &Connection) -> Result<Vec<Tag>> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {TAG_SELECT} FROM tags ORDER BY created_at ASC"
     ))?;
-    let rows = stmt.query_map([], |row| parse_tag(row))?;
+    let rows = stmt.query_map([], parse_tag)?;
     rows.collect()
 }
 
 /// 按名称精确查询（标签名唯一），不存在返回 None
 pub fn find_by_name(conn: &Connection, name: &str) -> Result<Option<Tag>> {
     let mut stmt = conn.prepare(&format!("SELECT {TAG_SELECT} FROM tags WHERE name=?1"))?;
-    let mut rows = stmt.query_map(params![name], |row| parse_tag(row))?;
+    let mut rows = stmt.query_map(params![name], parse_tag)?;
     match rows.next() {
         Some(r) => r.map(Some),
         None => Ok(None),
@@ -43,7 +43,7 @@ pub fn find_by_name(conn: &Connection, name: &str) -> Result<Option<Tag>> {
 /// 按 id 查询标签
 pub fn find_by_id(conn: &Connection, id: &str) -> Result<Option<Tag>> {
     let mut stmt = conn.prepare(&format!("SELECT {TAG_SELECT} FROM tags WHERE id=?1"))?;
-    let mut rows = stmt.query_map(params![id], |row| parse_tag(row))?;
+    let mut rows = stmt.query_map(params![id], parse_tag)?;
     // query_row 需命中恰好一行，标签按 id 查询唯一，改用迭代取首行即可表达「可空」
     match rows.next() {
         Some(r) => r.map(Some),

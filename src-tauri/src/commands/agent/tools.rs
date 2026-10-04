@@ -212,7 +212,7 @@ fn tool_read_chapter_chunk(conn: &Connection, args: &Value) -> Result<String, Ap
     let total_chunks = if total_len == 0 {
         0
     } else {
-        (total_len + chunk_size - 1) / chunk_size
+        total_len.div_ceil(chunk_size)
     };
 
     if chunk_index < 0 || chunk_index as usize >= total_chunks || total_chunks == 0 {
@@ -415,7 +415,10 @@ mod tests {
         // 每个映射工具都必须有 schema 定义
         for skill in ["writing", "analysis", "research", "polish"] {
             for name in tools_for_skill(skill) {
-                assert!(tool_schema(name).is_some(), "{skill} 的工具 {name} 缺少 schema");
+                assert!(
+                    tool_schema(name).is_some(),
+                    "{skill} 的工具 {name} 缺少 schema"
+                );
             }
         }
         // schema 结构符合 OpenAI function calling 契约

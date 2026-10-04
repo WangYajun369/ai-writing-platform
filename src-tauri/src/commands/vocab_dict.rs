@@ -311,7 +311,7 @@ pub async fn check_word_ai(args: ExplainWordArgs) -> Result<WordCheckResult, App
         // 检查是轻量任务，输出上限给小额度即可（flash 快且省）
         let max_tokens = if attempt == 0 { 512 } else { 1024 };
         let body = explain_request_body(&args.model, &system, &word, 0.0, max_tokens, attempt == 1);
-        let chat = request_chat_content("单词形态检查", &endpoint, &api_key, &word, &body).await?;
+        let chat = request_chat_content("单词形态检查", endpoint, &api_key, &word, &body).await?;
         match parse_word_check(&word, &chat.text) {
             Ok(v) => return Ok(v),
             Err(e) => {
@@ -433,7 +433,7 @@ pub async fn dict_explain_ai(args: ExplainWordArgs) -> Result<AiWordExplain, App
             max_tokens,
             attempt == 1,
         );
-        let chat = request_chat_content("释义", &endpoint, &api_key, word, &body).await?;
+        let chat = request_chat_content("释义", endpoint, &api_key, word, &body).await?;
         match parse_explain(word, &chat.text) {
             Ok(v) => return Ok(v),
             Err(e) => {

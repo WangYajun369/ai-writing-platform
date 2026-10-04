@@ -659,8 +659,15 @@ mod tests {
     #[test]
     fn crud_roundtrip() {
         let conn = test_conn();
-        let id = save_memory(&conn, "b1", "writing", "preference", "喜欢简洁文风", "文风,简洁")
-            .unwrap();
+        let id = save_memory(
+            &conn,
+            "b1",
+            "writing",
+            "preference",
+            "喜欢简洁文风",
+            "文风,简洁",
+        )
+        .unwrap();
         assert!(id > 0);
 
         let list = get_memories(&conn, "b1", Some("writing"), Some("preference"), 10).unwrap();
@@ -717,14 +724,24 @@ mod tests {
     #[test]
     fn retrieve_ranks_by_score_and_marks_hits() {
         let conn = test_conn();
-        let pref_id = save_memory(&conn, "b1", "writing", "preference", "偏好内容", "大纲,情节")
-            .unwrap();
+        let pref_id = save_memory(
+            &conn,
+            "b1",
+            "writing",
+            "preference",
+            "偏好内容",
+            "大纲,情节",
+        )
+        .unwrap();
         save_memory(&conn, "b1", "writing", "decision", "决策内容", "无关词").unwrap();
         save_memory(&conn, "b1", "writing", "lesson", "经验内容", "无关词").unwrap();
 
         let got = retrieve_memories(&conn, "b1", "writing", "大纲 设计", 600, 10);
         assert_eq!(got.len(), 3, "得分 > 0 的记忆都应返回");
-        assert_eq!(got[0].memory_type, "preference", "关键词交集 + 类型权重应排第一");
+        assert_eq!(
+            got[0].memory_type, "preference",
+            "关键词交集 + 类型权重应排第一"
+        );
         assert_eq!(got[1].memory_type, "decision");
         assert_eq!(got[2].memory_type, "lesson");
 

@@ -50,7 +50,11 @@ pub fn is_broadcast_enabled() -> bool {
 /// - `app` 为 None 时不广播(如纯 service 调用)
 /// - `conn` 为 None 时不持久化(如 SQL 审计高频率,默认不写表)
 /// - 广播受 `TELEMETRY_BROADCAST_ENABLED` 开关控制
-pub fn emit(app: Option<&AppHandle>, conn: Option<&rusqlite::Connection>, mut event: TelemetryEvent) {
+pub fn emit(
+    app: Option<&AppHandle>,
+    conn: Option<&rusqlite::Connection>,
+    mut event: TelemetryEvent,
+) {
     // 1. 内存缓冲(总是执行)
     if let Ok(mut buf) = buffer().lock() {
         if buf.len() >= BUFFER_CAPACITY {
@@ -100,7 +104,7 @@ pub fn emit_sql(
         format!("[SQL] {} → {} | {}", operation, table, detail),
     );
     event.file = Some(file.to_string());
-    event.file_name = Some(file.split('/').last().unwrap_or(file).to_string());
+    event.file_name = Some(file.split('/').next_back().unwrap_or(file).to_string());
     event.line = Some(line);
     event.payload = Some(payload);
     emit(app, None, event);
@@ -162,7 +166,7 @@ pub fn emit_io(app: Option<&AppHandle>, op: &str, detail: &str, file: &str, line
         format!("[IO] {} | {}", op, detail),
     );
     event.file = Some(file.to_string());
-    event.file_name = Some(file.split('/').last().unwrap_or(file).to_string());
+    event.file_name = Some(file.split('/').next_back().unwrap_or(file).to_string());
     event.line = Some(line);
     event.payload = Some(payload);
     emit(app, None, event);
@@ -182,6 +186,7 @@ pub fn emit_error(app: Option<&AppHandle>, code: &str, message: &str, source: Op
 }
 
 /// 系统事件(启动 / 关闭 / 调度 / 后台任务)
+#[allow(dead_code)] // 预留：系统级遥测入口，后续接入启动/调度事件
 pub fn emit_system(app: Option<&AppHandle>, level: &str, message: &str) {
     let event = TelemetryEvent::new(TelemetryKind::System, level, message);
     emit(app, None, event);
@@ -217,7 +222,11 @@ mod tests {
         // 清空(并发测试可能仍在写入,但本测试只验证上界)
         clear_buffer();
         for i in 0..BUFFER_CAPACITY + 50 {
-            emit(None, None, TelemetryEvent::new(TelemetryKind::System, "info", format!("e{i}")));
+            emit(
+                None,
+                None,
+                TelemetryEvent::new(TelemetryKind::System, "info", format!("e{i}")),
+            );
         }
         let all = list_buffered(None);
         // 上界断言:并发测试可能让其它 kind 的事件也写入,但总长度不应超容量
@@ -232,9 +241,21 @@ mod tests {
     #[test]
     fn list_filters_by_kind() {
         clear_buffer();
-        emit(None, None, TelemetryEvent::new(TelemetryKind::Sql, "info", "sql1"));
-        emit(None, None, TelemetryEvent::new(TelemetryKind::Error, "error", "err1"));
-        emit(None, None, TelemetryEvent::new(TelemetryKind::Agent, "info", "ag1"));
+        emit(
+            None,
+            None,
+            TelemetryEvent::new(TelemetryKind::Sql, "info", "sql1"),
+        );
+        emit(
+            None,
+            None,
+            TelemetryEvent::new(TelemetryKind::Error, "error", "err1"),
+        );
+        emit(
+            None,
+            None,
+            TelemetryEvent::new(TelemetryKind::Agent, "info", "ag1"),
+        );
 
         let sqls = list_buffered(Some(TelemetryKind::Sql));
         assert_eq!(sqls.len(), 1);

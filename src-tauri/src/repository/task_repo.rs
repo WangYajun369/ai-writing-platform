@@ -8,6 +8,9 @@ use crate::models::TaskCard;
 use crate::repository::soft_delete::{self, Table};
 use rusqlite::{params, Connection, OptionalExtension, Result};
 
+/// 任务统计元组：(total, todo, doing, done, overdue)
+pub type TaskCounts = (i64, i64, i64, i64, i64);
+
 /// 完整 SELECT 列名（不含 tags；tags 由 service 聚合）。用于无 JOIN 的单表查询。
 pub const TASK_SELECT: &str = "id,project_id,parent_id,title,description,status,priority,plan_start_time,due_time,planned_today,completed_time,note,completion_summary,remind_at,remind_type,recurrence,note_html,started_at,work_seconds,sort_order,deleted_at,created_at,updated_at";
 
@@ -58,8 +61,7 @@ pub fn count_active_ids_in_project(
          AND id IN ({})",
         placeholders.join(",")
     );
-    let mut values: Vec<Box<dyn rusqlite::types::ToSql>> =
-        vec![Box::new(project_id.to_string())];
+    let mut values: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(project_id.to_string())];
     for id in ids {
         values.push(Box::new(id.clone()));
     }
@@ -111,7 +113,7 @@ pub fn list_by_project(conn: &Connection, project_id: &str) -> Result<Vec<TaskCa
          WHERE project_id=?1 AND deleted_at IS NULL \
          ORDER BY status, sort_order ASC, created_at ASC"
     ))?;
-    let rows = stmt.query_map(params![project_id], |row| parse_task(row))?;
+    let rows = stmt.query_map(params![project_id], parse_task)?;
     rows.collect()
 }
 
@@ -123,7 +125,7 @@ pub fn list_all(conn: &Connection) -> Result<Vec<TaskCard>> {
          WHERE t.deleted_at IS NULL \
          ORDER BY t.status, t.sort_order ASC, t.created_at ASC"
     ))?;
-    let rows = stmt.query_map([], |row| parse_task(row))?;
+    let rows = stmt.query_map([], parse_task)?;
     rows.collect()
 }
 
@@ -132,7 +134,7 @@ pub fn find_by_id(conn: &Connection, id: &str) -> Result<TaskCard> {
     conn.query_row(
         &format!("SELECT {TASK_SELECT} FROM tasks WHERE id=?1"),
         params![id],
-        |row| parse_task(row),
+        parse_task,
     )
 }
 
@@ -141,7 +143,7 @@ pub fn find_active(conn: &Connection, id: &str) -> Result<TaskCard> {
     conn.query_row(
         &format!("SELECT {TASK_SELECT} FROM tasks WHERE id=?1 AND deleted_at IS NULL"),
         params![id],
-        |row| parse_task(row),
+        parse_task,
     )
 }
 
@@ -258,8 +260,10 @@ pub fn move_subtree_to_project(
         "UPDATE tasks SET project_id=?1, updated_at=?2 WHERE id IN ({})",
         placeholders.join(",")
     );
-    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> =
-        vec![Box::new(to_project_id.to_string()), Box::new(ts.to_string())];
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
+        Box::new(to_project_id.to_string()),
+        Box::new(ts.to_string()),
+    ];
     for tid in subtree_ids {
         params.push(Box::new(tid.clone()));
     }
@@ -403,11 +407,7 @@ pub fn add_task_tag(conn: &Connection, task_id: &str, tag_id: &str, ts: &str) ->
 }
 
 /// 项目任务统计（实时聚合）：返回 (total, todo, doing, done, overdue)
-pub fn project_counts(
-    conn: &Connection,
-    project_id: &str,
-    now_local: &str,
-) -> Result<(i64, i64, i64, i64, i64)> {
+pub fn project_counts(conn: &Connection, project_id: &str, now_local: &str) -> Result<TaskCounts> {
     conn.query_row(
         "SELECT \
             COUNT(*) AS total, \
@@ -426,7 +426,7 @@ pub fn project_counts(
 pub fn project_counts_all(
     conn: &Connection,
     now_local: &str,
-) -> Result<std::collections::HashMap<String, (i64, i64, i64, i64, i64)>> {
+) -> Result<std::collections::HashMap<String, TaskCounts>> {
     let mut stmt = conn.prepare(
         "SELECT project_id, \
             COUNT(*) AS total, \

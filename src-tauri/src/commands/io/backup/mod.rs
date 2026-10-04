@@ -22,25 +22,23 @@ mod types;
 
 // 子模块内部项的统一出口（命令与测试使用；prune_expired_rollbacks 另供 lib.rs 后台清理调用）
 pub(crate) use export::{build_and_write_payload, filter_single_book_data, load_full_export_data};
+#[cfg(test)]
+pub(crate) use import::{apply_upsert_data, check_supported_version};
 pub(crate) use import::{
     load_backup_payload, run_full_import, run_single_import, run_upsert_import, validate_references,
 };
-#[cfg(test)]
-pub(crate) use import::{apply_upsert_data, check_supported_version};
-pub(crate) use import_log::{record_import_success, verified_payload_hash};
 pub(crate) use import_log::lookup_import_log;
 #[cfg(test)]
 pub(crate) use import_log::{database_canonical_hash, record_import_log};
+pub(crate) use import_log::{record_import_success, verified_payload_hash};
 pub(crate) use reconcile::reconcile_backup;
 pub use rollback::prune_expired_rollbacks;
-pub(crate) use rollback::{
-    execute_rollback, insert_rollback_log, new_rollback_ts, snapshot_scope,
-};
 #[cfg(test)]
 pub(crate) use rollback::{clear_book_scope, clear_full_tables, get_rollback_log};
-pub(crate) use types::{ImportScope, ImportStrategy};
+pub(crate) use rollback::{execute_rollback, insert_rollback_log, new_rollback_ts, snapshot_scope};
 #[cfg(test)]
 pub(crate) use types::ExportPayload;
+pub(crate) use types::{ImportScope, ImportStrategy};
 
 use crate::db::AppDb;
 use crate::error::{AppError, ErrCode};
@@ -67,8 +65,9 @@ pub async fn export_all_data(
     let mut uow = UnitOfWork::new(&conn, Some(&app));
     let database = load_full_export_data(&mut uow)?;
     uow.commit()?;
-    let cache: serde_json::Value = serde_json::from_str(&cache_json)
-        .map_err(|e| AppError::business(ErrCode::BackupCache, format!("缓存数据解析失败: {}", e)))?;
+    let cache: serde_json::Value = serde_json::from_str(&cache_json).map_err(|e| {
+        AppError::business(ErrCode::BackupCache, format!("缓存数据解析失败: {}", e))
+    })?;
 
     build_and_write_payload("full", database, cache, &output_path)
 }
@@ -90,8 +89,9 @@ pub async fn export_single_book(
     let full_data = load_full_export_data(&mut uow)?;
     uow.commit()?;
     let database = filter_single_book_data(&full_data, &book_id);
-    let cache: serde_json::Value = serde_json::from_str(&cache_json)
-        .map_err(|e| AppError::business(ErrCode::BackupCache, format!("缓存数据解析失败: {}", e)))?;
+    let cache: serde_json::Value = serde_json::from_str(&cache_json).map_err(|e| {
+        AppError::business(ErrCode::BackupCache, format!("缓存数据解析失败: {}", e))
+    })?;
 
     build_and_write_payload("single", database, cache, &output_path)
 }
@@ -150,7 +150,11 @@ pub async fn import_backup(
 
         // vec0 镜像对齐 + 过期回退点清理（与 replace 路径保持一致）
         if let Err(e) = embedding_repo::rebuild_chunks_vec(&conn) {
-            crate::app_log_error!("[Backup] {} 后 vec 镜像对齐失败（忽略）: {}", import_strategy.as_str(), e);
+            crate::app_log_error!(
+                "[Backup] {} 后 vec 镜像对齐失败（忽略）: {}",
+                import_strategy.as_str(),
+                e
+            );
         }
         if let Err(e) = prune_expired_rollbacks(&conn) {
             crate::app_log_error!("[Rollback] 过期回退点清理失败（忽略）: {}", e);
@@ -163,8 +167,9 @@ pub async fn import_backup(
     match backup_type.as_str() {
         "full" => {
             let mut uow = UnitOfWork::new(&conn, Some(&app));
-            uow.begin_transaction()
-                .map_err(|e| AppError::business(ErrCode::BackupTxn, format!("开始事务失败: {}", e)))?;
+            uow.begin_transaction().map_err(|e| {
+                AppError::business(ErrCode::BackupTxn, format!("开始事务失败: {}", e))
+            })?;
 
             // 事务内、删除前创建回退点快照（与导入同事务：失败自动回滚消失）
             let scope = ImportScope::Full;
@@ -185,8 +190,9 @@ pub async fn import_backup(
                 )));
             }
 
-            uow.commit()
-                .map_err(|e| AppError::business(ErrCode::BackupTxn, format!("提交事务失败: {}", e)))?;
+            uow.commit().map_err(|e| {
+                AppError::business(ErrCode::BackupTxn, format!("提交事务失败: {}", e))
+            })?;
 
             // 导入日志：仅在事务成功提交后写入（幂等判定基础；仅 v2 载荷）
             record_import_success(&conn, &payload, &payload_hash, &file_name, file_size)?;
@@ -212,8 +218,9 @@ pub async fn import_backup(
             let book_id = payload.database.books[0].id.clone();
 
             let mut uow = UnitOfWork::new(&conn, Some(&app));
-            uow.begin_transaction()
-                .map_err(|e| AppError::business(ErrCode::BackupTxn, format!("开始事务失败: {}", e)))?;
+            uow.begin_transaction().map_err(|e| {
+                AppError::business(ErrCode::BackupTxn, format!("开始事务失败: {}", e))
+            })?;
 
             // 事务内、删除前创建回退点快照
             let scope = ImportScope::Single(book_id.clone());
@@ -234,8 +241,9 @@ pub async fn import_backup(
                 )));
             }
 
-            uow.commit()
-                .map_err(|e| AppError::business(ErrCode::BackupTxn, format!("提交事务失败: {}", e)))?;
+            uow.commit().map_err(|e| {
+                AppError::business(ErrCode::BackupTxn, format!("提交事务失败: {}", e))
+            })?;
 
             // 导入日志：仅在事务成功提交后写入（幂等判定基础；仅 v2 载荷）
             record_import_success(&conn, &payload, &payload_hash, &file_name, file_size)?;

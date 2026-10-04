@@ -4,7 +4,10 @@
 //! replace 清空重建（配合回退点），merge/fill-gaps 单事务逐行择优写入。
 
 use super::rollback::{clear_book_scope, clear_full_tables};
-use super::types::{backup_is_newer, stats_to_json, DatabaseExport, ExportPayload, ImportStrategy, WriteStats, MAX_BACKUP_FILE_BYTES, MAX_BACKUP_ROWS};
+use super::types::{
+    backup_is_newer, stats_to_json, DatabaseExport, ExportPayload, ImportStrategy, WriteStats,
+    MAX_BACKUP_FILE_BYTES, MAX_BACKUP_ROWS,
+};
 use crate::commands::io::crypto::{parse_encrypted_file, validate_payload_structure};
 use crate::error::{AppError, ErrCode};
 use crate::service::uow::UnitOfWork;
@@ -162,7 +165,11 @@ pub(crate) fn validate_references(dbx: &DatabaseExport) -> Vec<String> {
 }
 
 /// 判断某张表是否存在指定主键行
-pub(crate) fn existing_id(conn: &rusqlite::Connection, table: &str, id: &str) -> Result<bool, AppError> {
+pub(crate) fn existing_id(
+    conn: &rusqlite::Connection,
+    table: &str,
+    id: &str,
+) -> Result<bool, AppError> {
     let cnt: i64 = conn.query_row(
         &format!("SELECT COUNT(*) FROM {} WHERE id = ?1", table),
         params![id],
@@ -654,7 +661,11 @@ pub(crate) fn run_upsert_import(
         line!(),
     );
 
-    let stats = match apply_upsert_data(uow.conn(), &payload.database, strategy == ImportStrategy::FillGaps) {
+    let stats = match apply_upsert_data(
+        uow.conn(),
+        &payload.database,
+        strategy == ImportStrategy::FillGaps,
+    ) {
         Ok(s) => s,
         Err(e) => {
             // 出错时不手动回滚：Uow drop 自动回滚事务并丢弃审计条目

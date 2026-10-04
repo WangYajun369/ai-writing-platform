@@ -43,7 +43,7 @@ pub fn list_all(conn: &Connection) -> Result<Vec<TaskTemplate>> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {TEMPLATE_SELECT} FROM task_templates ORDER BY created_at DESC"
     ))?;
-    let rows = stmt.query_map([], |row| parse_template(row))?;
+    let rows = stmt.query_map([], parse_template)?;
     rows.collect()
 }
 
@@ -52,7 +52,7 @@ pub fn find_by_id(conn: &Connection, id: &str) -> Result<TaskTemplate> {
     conn.query_row(
         &format!("SELECT {TEMPLATE_SELECT} FROM task_templates WHERE id=?1"),
         params![id],
-        |row| parse_template(row),
+        parse_template,
     )
 }
 
@@ -131,8 +131,7 @@ pub fn update(
     let Some((sql, values)) = upd.build(id, ts) else {
         return Ok(0);
     };
-    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
-        values.iter().map(|p| p.as_ref()).collect();
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> = values.iter().map(|p| p.as_ref()).collect();
     conn.execute(&sql, params_refs.as_slice())
 }
 
@@ -240,10 +239,15 @@ mod tests {
     #[test]
     fn delete_by_deleted_projects_cleans_orphan_templates() {
         let conn = setup();
-        conn.execute("INSERT INTO projects (id, deleted_at) VALUES ('p1', '2026-01-01')", []).unwrap();
+        conn.execute(
+            "INSERT INTO projects (id, deleted_at) VALUES ('p1', '2026-01-01')",
+            [],
+        )
+        .unwrap();
         insert_template(&conn, "tpl1", Some("p1"));
         // 活跃项目的模板不受影响
-        conn.execute("INSERT INTO projects (id) VALUES ('p2')", []).unwrap();
+        conn.execute("INSERT INTO projects (id) VALUES ('p2')", [])
+            .unwrap();
         insert_template(&conn, "tpl2", Some("p2"));
 
         let n = delete_by_deleted_projects(&conn).unwrap();

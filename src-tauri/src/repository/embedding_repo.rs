@@ -208,11 +208,7 @@ pub fn clear_vec_table(conn: &Connection) -> Result<()> {
 ///
 /// 用于单条章节/世界观卡片删除时的精确清理（比全量 orphan 扫描更高效）。
 /// 返回被删除的 embeddings 行数。
-pub fn delete_by_source(
-    conn: &Connection,
-    source_type: &str,
-    source_id: &str,
-) -> Result<usize> {
+pub fn delete_by_source(conn: &Connection, source_type: &str, source_id: &str) -> Result<usize> {
     // 先取 embeddings.id 用于同步删 vec0 镜像
     let ids: Vec<i64> = conn
         .prepare("SELECT id FROM embeddings WHERE source_type=?1 AND source_id=?2")?

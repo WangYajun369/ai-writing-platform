@@ -173,7 +173,7 @@ pub fn update_world_card(
         upd.push_json("tags", v);
     }
 
-    if let Some((sql, values)) = upd.build(&id, &ts) {
+    if let Some((sql, values)) = upd.build(id, &ts) {
         crate::repository::execute_update(uow.conn(), &sql, values)?;
     }
     uow.commit()?;
@@ -186,10 +186,22 @@ pub fn delete_world_card(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), Ap
     // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
     let pooled = db.pool.get()?;
     let mut uow = UnitOfWork::new(&pooled, Some(app));
-    uow.audit("DELETE", "world_cards", format!("id={id}"), file!(), line!());
+    uow.audit(
+        "DELETE",
+        "world_cards",
+        format!("id={id}"),
+        file!(),
+        line!(),
+    );
     world_card_repo::delete(uow.conn(), id)?;
     // embeddings 无外键，显式清理该卡片的向量嵌入（含 chunks_vec 镜像行）
-    uow.audit("DELETE", "embeddings", format!("source=world_card/{id}"), file!(), line!());
+    uow.audit(
+        "DELETE",
+        "embeddings",
+        format!("source=world_card/{id}"),
+        file!(),
+        line!(),
+    );
     embedding_repo::delete_by_source(uow.conn(), "world_card", id)?;
     uow.commit()?;
     Ok(())
@@ -218,7 +230,8 @@ pub fn search_world_cards(
             file!(),
             line!(),
         );
-        let hits = world_card_repo::search_fts5(uow.conn(), book_id, &fts_query, SEARCH_DEFAULT_LIMIT)?;
+        let hits =
+            world_card_repo::search_fts5(uow.conn(), book_id, &fts_query, SEARCH_DEFAULT_LIMIT)?;
         if !hits.is_empty() {
             uow.commit()?;
             return Ok(hits);
@@ -236,12 +249,8 @@ pub fn search_world_cards(
         line!(),
     );
     let pattern = like_pattern(query, 100);
-    let results = world_card_repo::search_like(
-        uow.conn(),
-        book_id,
-        &pattern,
-        SEARCH_DEFAULT_LIMIT,
-    )?;
+    let results =
+        world_card_repo::search_like(uow.conn(), book_id, &pattern, SEARCH_DEFAULT_LIMIT)?;
     uow.commit()?;
     Ok(results)
 }

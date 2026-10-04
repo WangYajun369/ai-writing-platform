@@ -123,7 +123,11 @@ mod tests {
             super::super::model::ConfigSection::AiToolCategories,
         ] {
             let v = default_value(s);
-            assert!(v.is_object() || v.is_array(), "{:?} 默认值应为对象或数组", s);
+            assert!(
+                v.is_object() || v.is_array(),
+                "{:?} 默认值应为对象或数组",
+                s
+            );
         }
     }
 }

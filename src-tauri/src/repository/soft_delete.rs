@@ -63,7 +63,11 @@ pub trait Table {
 pub fn soft_delete<T: Table>(conn: &Connection, id: &str, ts: &str) -> Result<usize> {
     let sql = format!(
         "UPDATE {} SET {}=?1, {}=?1 WHERE {}=?2 AND {} IS NULL",
-        T::NAME, T::DELETED_AT_COL, T::UPDATED_AT_COL, T::ID_COL, T::DELETED_AT_COL
+        T::NAME,
+        T::DELETED_AT_COL,
+        T::UPDATED_AT_COL,
+        T::ID_COL,
+        T::DELETED_AT_COL
     );
     conn.execute(&sql, params![ts, id])
 }
@@ -75,7 +79,11 @@ pub fn soft_delete<T: Table>(conn: &Connection, id: &str, ts: &str) -> Result<us
 pub fn restore<T: Table>(conn: &Connection, id: &str, ts: &str) -> Result<usize> {
     let sql = format!(
         "UPDATE {} SET {}=NULL, {}=?1 WHERE {}=?2 AND {} IS NOT NULL",
-        T::NAME, T::DELETED_AT_COL, T::UPDATED_AT_COL, T::ID_COL, T::DELETED_AT_COL
+        T::NAME,
+        T::DELETED_AT_COL,
+        T::UPDATED_AT_COL,
+        T::ID_COL,
+        T::DELETED_AT_COL
     );
     conn.execute(&sql, params![ts, id])
 }
@@ -96,7 +104,9 @@ pub fn hard_delete<T: Table>(conn: &Connection, id: &str) -> Result<usize> {
 pub fn hard_delete_trashed<T: Table>(conn: &Connection, id: &str) -> Result<usize> {
     let sql = format!(
         "DELETE FROM {} WHERE {}=?1 AND {} IS NOT NULL",
-        T::NAME, T::ID_COL, T::DELETED_AT_COL
+        T::NAME,
+        T::ID_COL,
+        T::DELETED_AT_COL
     );
     conn.execute(&sql, params![id])
 }
@@ -105,7 +115,8 @@ pub fn hard_delete_trashed<T: Table>(conn: &Connection, id: &str) -> Result<usiz
 pub fn count_deleted<T: Table>(conn: &Connection) -> Result<u32> {
     let sql = format!(
         "SELECT COUNT(*) FROM {} WHERE {} IS NOT NULL",
-        T::NAME, T::DELETED_AT_COL
+        T::NAME,
+        T::DELETED_AT_COL
     );
     conn.query_row(&sql, [], |row| row.get(0))
 }
@@ -117,7 +128,8 @@ pub fn count_deleted<T: Table>(conn: &Connection) -> Result<u32> {
 pub fn clear_trash<T: Table>(conn: &Connection) -> Result<()> {
     let sql = format!(
         "DELETE FROM {} WHERE {} IS NOT NULL",
-        T::NAME, T::DELETED_AT_COL
+        T::NAME,
+        T::DELETED_AT_COL
     );
     conn.execute(&sql, [])?;
     Ok(())
@@ -130,7 +142,9 @@ pub fn clear_trash<T: Table>(conn: &Connection) -> Result<()> {
 pub fn purge_expired<T: Table>(conn: &Connection, cutoff: &str) -> Result<usize> {
     let sql = format!(
         "DELETE FROM {} WHERE {} IS NOT NULL AND {} < ?1",
-        T::NAME, T::DELETED_AT_COL, T::DELETED_AT_COL
+        T::NAME,
+        T::DELETED_AT_COL,
+        T::DELETED_AT_COL
     );
     conn.execute(&sql, params![cutoff])
 }
@@ -220,11 +234,9 @@ mod tests {
         assert!(widget_deleted(&conn, "w1"));
         // updated_at 应同步刷新
         let ts: String = conn
-            .query_row(
-                "SELECT updated_at FROM widgets WHERE id='w1'",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT updated_at FROM widgets WHERE id='w1'", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(ts, "t1");
     }
@@ -287,8 +299,14 @@ mod tests {
         insert_widget(&conn, "live", None);
         insert_widget(&conn, "dead", Some("t0"));
         // 仅清回收站
-        assert_eq!(hard_delete_trashed::<WidgetTable>(&conn, "live").unwrap(), 0);
-        assert_eq!(hard_delete_trashed::<WidgetTable>(&conn, "dead").unwrap(), 1);
+        assert_eq!(
+            hard_delete_trashed::<WidgetTable>(&conn, "live").unwrap(),
+            0
+        );
+        assert_eq!(
+            hard_delete_trashed::<WidgetTable>(&conn, "dead").unwrap(),
+            1
+        );
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM widgets", [], |r| r.get(0))
             .unwrap();
@@ -349,20 +367,16 @@ mod tests {
         assert_eq!(n, 1);
         // 验证 trashed_at 列被设置
         let trashed: Option<String> = conn
-            .query_row(
-                "SELECT trashed_at FROM customs WHERE wid='c1'",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT trashed_at FROM customs WHERE wid='c1'", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(trashed.as_deref(), Some("tc"));
         // 验证 modified_at 列被同步
         let modified: String = conn
-            .query_row(
-                "SELECT modified_at FROM customs WHERE wid='c1'",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT modified_at FROM customs WHERE wid='c1'", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(modified, "tc");
         // restore 也用自定义列名

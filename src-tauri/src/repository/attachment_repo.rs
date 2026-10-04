@@ -32,7 +32,7 @@ pub fn list_by_task(conn: &Connection, task_id: &str) -> Result<Vec<Attachment>>
         "SELECT {ATTACHMENT_SELECT} FROM attachments \
          WHERE task_id=?1 AND deleted=0 ORDER BY created_at DESC"
     ))?;
-    let rows = stmt.query_map(params![task_id], |row| parse_attachment(row))?;
+    let rows = stmt.query_map(params![task_id], parse_attachment)?;
     rows.collect()
 }
 

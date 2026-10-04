@@ -315,7 +315,7 @@ async fn run_skill_inner(
     let api_key = cfg
         .and_then(|c| c.api_key.clone())
         .map(|k| k.trim().to_string());
-    if api_key.as_deref().map_or(true, |k| k.is_empty()) {
+    if api_key.as_deref().is_none_or(|k| k.is_empty()) {
         let hint = if endpoint.to_lowercase().contains("deepseek") {
             "（当前使用 DeepSeek，可在 https://platform.deepseek.com 获取）"
         } else if endpoint.to_lowercase().contains("bigmodel") {
@@ -637,7 +637,7 @@ async fn react_loop(
         // v1.9：trace 持久化 — 记录本轮 assistant 响应（含 tool_calls 计划）
         // v1.9+：通过 telemetry::bus::emit_agent_trace 写表 + 实时推 telemetry-event 事件,
         // 前端调试控制台无需轮询 list_agent_traces 即可看到推理过程
-        let _ = crate::observability::bus::emit_agent_trace(
+        crate::observability::bus::emit_agent_trace(
             Some(&app),
             &conn,
             request_id,
@@ -657,7 +657,7 @@ async fn react_loop(
             let args_value: Value =
                 serde_json::from_str(&tc.arguments).unwrap_or(serde_json::json!({}));
             // v1.9：trace 持久化 — 记录工具调用
-            let _ = crate::observability::bus::emit_agent_trace(
+            crate::observability::bus::emit_agent_trace(
                 Some(&app),
                 &conn,
                 request_id,
@@ -678,7 +678,7 @@ async fn react_loop(
             };
             let result = clamp_text(&result, MAX_TOOL_RESULT_CHARS);
             // v1.9：trace 持久化 — 记录工具结果
-            let _ = crate::observability::bus::emit_agent_trace(
+            crate::observability::bus::emit_agent_trace(
                 Some(&app),
                 &conn,
                 request_id,

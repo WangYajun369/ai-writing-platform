@@ -47,7 +47,9 @@ fn spawn_job(
                 Ok(_) => (true, String::new()),
                 Err(e) => {
                     failures += 1;
-                    crate::app_log_error!("[scheduler:{name}] 第 {failures} 次失败（自动忽略）: {e}");
+                    crate::app_log_error!(
+                        "[scheduler:{name}] 第 {failures} 次失败（自动忽略）: {e}"
+                    );
                     (false, e.clone())
                 }
             };
@@ -91,8 +93,8 @@ fn run_reminder(app: &AppHandle) -> Result<(), String> {
 
 fn run_trash_purge(app: &AppHandle) -> Result<(), String> {
     let db = app.state::<AppDb>();
-    let purged = crate::service::task_service::purge_expired_trash(app, &db)
-        .map_err(|e| e.to_string())?;
+    let purged =
+        crate::service::task_service::purge_expired_trash(app, &db).map_err(|e| e.to_string())?;
     if purged > 0 {
         crate::app_log!("[scheduler:trash_purge] 本轮清理 {purged} 条过期回收站记录");
     }

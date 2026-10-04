@@ -51,7 +51,7 @@ pub fn list_all(conn: &Connection) -> Result<Vec<Book>> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {BOOK_SELECT} FROM books WHERE deleted_at IS NULL ORDER BY updated_at DESC"
     ))?;
-    let books = stmt.query_map([], |row| parse_book(row))?;
+    let books = stmt.query_map([], parse_book)?;
     books.collect()
 }
 
@@ -60,7 +60,7 @@ pub fn find_by_id(conn: &Connection, id: &str) -> Result<Book> {
     conn.query_row(
         &format!("SELECT {BOOK_SELECT} FROM books WHERE id=?1"),
         params![id],
-        |row| parse_book(row),
+        parse_book,
     )
 }
 
@@ -69,7 +69,7 @@ pub fn list_deleted(conn: &Connection) -> Result<Vec<Book>> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {BOOK_SELECT} FROM books WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC"
     ))?;
-    let books = stmt.query_map([], |row| parse_book(row))?;
+    let books = stmt.query_map([], parse_book)?;
     books.collect()
 }
 
@@ -220,7 +220,7 @@ pub fn recalc_word_count(conn: &Connection, book_id: &str, ts: &str) -> Result<(
 /// 列出所有书籍（含已删除），用于备份导出
 pub fn list_all_include_deleted(conn: &Connection) -> Result<Vec<Book>> {
     let mut stmt = conn.prepare(&format!("SELECT {BOOK_SELECT} FROM books"))?;
-    let books = stmt.query_map([], |row| parse_book(row))?;
+    let books = stmt.query_map([], parse_book)?;
     books.collect()
 }
 
@@ -267,10 +267,7 @@ fn orphan_embedding_ids(conn: &Connection, source_type: &str) -> Result<Vec<i64>
 ///
 /// memories.book_id 无外键约束，需显式清理避免孤儿记忆。
 pub fn delete_memories_by_book(conn: &Connection, book_id: &str) -> Result<usize> {
-    conn.execute(
-        "DELETE FROM memories WHERE book_id=?1",
-        params![book_id],
-    )
+    conn.execute("DELETE FROM memories WHERE book_id=?1", params![book_id])
 }
 
 /// 删除全部已软删书籍的 Agent 记忆（清空书籍回收站前置调用）

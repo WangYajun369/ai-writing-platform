@@ -180,10 +180,7 @@ impl AppDb {
         if added_columns.is_empty() {
             crate::app_log!("[SQL] ALTER TABLE → 表结构已是最新，无需变更");
         } else {
-            crate::app_log!(
-                "[SQL] ALTER TABLE → 新增字段: {}",
-                added_columns.join(", ")
-            );
+            crate::app_log!("[SQL] ALTER TABLE → 新增字段: {}", added_columns.join(", "));
         }
 
         // sqlite-vec KNN 镜像表：已有向量数据时建表并回填（幂等）；

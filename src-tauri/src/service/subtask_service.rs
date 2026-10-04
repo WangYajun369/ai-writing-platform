@@ -193,10 +193,11 @@ pub fn reorder_subtasks(
     let mut uow = crate::service::uow::UnitOfWork::new(&pooled, Some(app));
     uow.begin_transaction()?;
     // 归属校验：重排列表只允许包含该任务现存的子任务，防止越权改写无关行排序
-    let existing: std::collections::HashSet<String> = subtask_repo::list_by_task(uow.conn(), task_id)?
-        .into_iter()
-        .map(|s| s.id)
-        .collect();
+    let existing: std::collections::HashSet<String> =
+        subtask_repo::list_by_task(uow.conn(), task_id)?
+            .into_iter()
+            .map(|s| s.id)
+            .collect();
     if ordered_ids.iter().any(|sid| !existing.contains(sid)) {
         return Err(AppError::Validation(
             "重排序列表包含不属于该任务的子任务".into(),

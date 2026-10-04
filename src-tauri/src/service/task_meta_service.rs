@@ -25,7 +25,13 @@ pub fn set_meta(app: &AppHandle, db: &AppDb, key: &str, value: &str) -> Result<(
     let ts = now();
     let pooled = db.pool.get()?;
     let mut uow = UnitOfWork::new(&pooled, Some(app));
-    uow.audit("UPSERT", "task_meta", format!("key={key}"), file!(), line!());
+    uow.audit(
+        "UPSERT",
+        "task_meta",
+        format!("key={key}"),
+        file!(),
+        line!(),
+    );
     task_meta_repo::set(uow.conn(), key, value, &ts)?;
     uow.commit()?;
     Ok(())
