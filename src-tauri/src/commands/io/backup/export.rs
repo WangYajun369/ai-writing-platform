@@ -6,7 +6,7 @@
 use super::types::{sha256_hex, ChapterExport, DatabaseExport, EmbeddingMetaExport, ExportPayload, MAX_BACKUP_FILE_BYTES};
 use crate::commands::io::crypto::build_encrypted_file;
 use crate::commands::window::emit_sql_log;
-use crate::error::AppError;
+use crate::error::{AppError, ErrCode};
 use crate::repository::{
     book_repo, chapter_repo, embedding_repo, snapshot_repo, volume_repo, world_card_repo,
 };
@@ -198,7 +198,7 @@ pub(crate) fn build_and_write_payload(
     // v2 载荷（Spec §3.2 / §4.2）：payloadHash = database 规范化 JSON 的 SHA-256，
     // 排除 exportedAt / cache / backupType / appVersion 等导出侧元数据
     let db_bytes = serde_json::to_vec(&database)
-        .map_err(|e| AppError::Business(format!("E_BACKUP_SERIALIZE：JSON 序列化失败: {}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::BackupSerialize, format!("JSON 序列化失败: {}", e)))?;
     let payload_hash = sha256_hex(&db_bytes);
 
     let payload = ExportPayload {
@@ -212,7 +212,7 @@ pub(crate) fn build_and_write_payload(
         cache,
     };
     let json = serde_json::to_string(&payload)
-        .map_err(|e| AppError::Business(format!("E_BACKUP_SERIALIZE：JSON 序列化失败: {}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::BackupSerialize, format!("JSON 序列化失败: {}", e)))?;
     // Spec §8.2：序列化后估算，超 200 MB 拒绝（提示分书导出）
     if json.len() > MAX_BACKUP_FILE_BYTES as usize {
         return Err(AppError::Business(format!(
@@ -224,7 +224,7 @@ pub(crate) fn build_and_write_payload(
     // Spec §8.2：先写临时文件，成功后 rename 原子替换（避免中断留下半截文件）
     let tmp_path = format!("{}.tw.tmp", output_path);
     std::fs::write(&tmp_path, &encrypted)
-        .map_err(|e| AppError::Business(format!("E_BACKUP_WRITE：写入临时文件失败: {}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::BackupWrite, format!("写入临时文件失败: {}", e)))?;
     if let Err(e) = std::fs::rename(&tmp_path, output_path) {
         let _ = std::fs::remove_file(&tmp_path);
         return Err(AppError::Business(format!(

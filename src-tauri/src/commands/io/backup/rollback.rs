@@ -4,7 +4,7 @@
 //! 供 rollback_import 消费撤销；过期点由 prune_expired_rollbacks 清理。
 
 use super::types::ImportScope;
-use crate::error::AppError;
+use crate::error::{AppError, ErrCode};
 use crate::repository::embedding_repo;
 use chrono::Utc;
 use rusqlite::params;
@@ -233,7 +233,7 @@ pub fn execute_rollback(
 
     let tx = conn
         .transaction()
-        .map_err(|e| AppError::Business(format!("E_BACKUP_TXN：开始回滚事务失败: {}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::BackupTxn, format!("开始回滚事务失败: {}", e)))?;
 
     // 1) 删除当前导入后的数据（撤销 replace 的效果）
     clear_scope_data(&tx, &scope)?;
@@ -242,7 +242,7 @@ pub fn execute_rollback(
     // 3) 消费回退点
     drop_rollback_point(&tx, ts)?;
     tx.commit()
-        .map_err(|e| AppError::Business(format!("E_BACKUP_TXN：提交回滚事务失败: {}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::BackupTxn, format!("提交回滚事务失败: {}", e)))?;
 
     // 4) vec 镜像与 embeddings 对齐（回滚恢复的 embedding 行可能为空或非空）
     if let Err(e) = embedding_repo::rebuild_chunks_vec(conn) {

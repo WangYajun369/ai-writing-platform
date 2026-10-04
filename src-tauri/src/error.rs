@@ -91,6 +91,14 @@ pub enum ErrCode {
     BackupStrategy,
     /// 备份载荷序列化失败（`E_BACKUP_SERIALIZE`）。
     BackupSerialize,
+    /// 备份文件写入失败（`E_BACKUP_WRITE`）。
+    BackupWrite,
+    /// 备份缓存数据解析失败（`E_BACKUP_CACHE`）。
+    BackupCache,
+    /// 备份文件读取失败（`E_BACKUP_READ`）。
+    BackupRead,
+    /// 备份事务开始/提交失败（`E_BACKUP_TXN`）。
+    BackupTxn,
     /// 不支持的导出格式（`E_EXPORT_FORMAT`）。
     ExportFormat,
     /// 导出文件写入失败（`E_EXPORT_WRITE`）。
@@ -133,6 +141,10 @@ impl ErrCode {
             Self::BackupVersion => "E_BACKUP_VERSION",
             Self::BackupStrategy => "E_BACKUP_STRATEGY",
             Self::BackupSerialize => "E_BACKUP_SERIALIZE",
+            Self::BackupWrite => "E_BACKUP_WRITE",
+            Self::BackupCache => "E_BACKUP_CACHE",
+            Self::BackupRead => "E_BACKUP_READ",
+            Self::BackupTxn => "E_BACKUP_TXN",
             Self::ExportFormat => "E_EXPORT_FORMAT",
             Self::ExportWrite => "E_EXPORT_WRITE",
             Self::ExportCanceled => "E_EXPORT_CANCELED",
@@ -388,6 +400,10 @@ mod tests {
             (ErrCode::BackupVersion, "E_BACKUP_VERSION"),
             (ErrCode::BackupStrategy, "E_BACKUP_STRATEGY"),
             (ErrCode::BackupSerialize, "E_BACKUP_SERIALIZE"),
+            (ErrCode::BackupWrite, "E_BACKUP_WRITE"),
+            (ErrCode::BackupCache, "E_BACKUP_CACHE"),
+            (ErrCode::BackupRead, "E_BACKUP_READ"),
+            (ErrCode::BackupTxn, "E_BACKUP_TXN"),
             (ErrCode::ExportFormat, "E_EXPORT_FORMAT"),
             (ErrCode::ExportWrite, "E_EXPORT_WRITE"),
             (ErrCode::ExportCanceled, "E_EXPORT_CANCELED"),

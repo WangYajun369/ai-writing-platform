@@ -44,7 +44,7 @@ pub(crate) use types::ExportPayload;
 
 use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
-use crate::error::AppError;
+use crate::error::{AppError, ErrCode};
 use crate::repository::embedding_repo;
 #[cfg(test)]
 use chrono::Utc;
@@ -66,7 +66,7 @@ pub async fn export_all_data(
     let conn = db.pool.get()?;
     let database = load_full_export_data(&app, &conn)?;
     let cache: serde_json::Value = serde_json::from_str(&cache_json)
-        .map_err(|e| AppError::Business(format!("E_BACKUP_CACHE：缓存数据解析失败: {}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::BackupCache, format!("缓存数据解析失败: {}", e)))?;
 
     build_and_write_payload("full", database, cache, &output_path)
 }
@@ -87,7 +87,7 @@ pub async fn export_single_book(
     let full_data = load_full_export_data(&app, &conn)?;
     let database = filter_single_book_data(&full_data, &book_id);
     let cache: serde_json::Value = serde_json::from_str(&cache_json)
-        .map_err(|e| AppError::Business(format!("E_BACKUP_CACHE：缓存数据解析失败: {}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::BackupCache, format!("缓存数据解析失败: {}", e)))?;
 
     build_and_write_payload("single", database, cache, &output_path)
 }
@@ -158,7 +158,7 @@ pub async fn import_backup(
             );
             let tx = conn
                 .transaction()
-                .map_err(|e| AppError::Business(format!("E_BACKUP_TXN：开始事务失败: {}", e)))?;
+                .map_err(|e| AppError::business(ErrCode::BackupTxn, format!("开始事务失败: {}", e)))?;
 
             // 事务内、删除前创建回退点快照（与导入同事务：失败自动回滚消失）
             let scope = ImportScope::Full;
@@ -183,7 +183,7 @@ pub async fn import_backup(
                         line!(),
                     );
                     tx.commit().map_err(|e| {
-                        AppError::Business(format!("E_BACKUP_TXN：提交事务失败: {}", e))
+                        AppError::business(ErrCode::BackupTxn, format!("提交事务失败: {}", e))
                     })?;
                 }
                 Err(e) => {
@@ -235,7 +235,7 @@ pub async fn import_backup(
             );
             let tx = conn
                 .transaction()
-                .map_err(|e| AppError::Business(format!("E_BACKUP_TXN：开始事务失败: {}", e)))?;
+                .map_err(|e| AppError::business(ErrCode::BackupTxn, format!("开始事务失败: {}", e)))?;
 
             // 事务内、删除前创建回退点快照
             let scope = ImportScope::Single(book_id.clone());
@@ -260,7 +260,7 @@ pub async fn import_backup(
                         line!(),
                     );
                     tx.commit().map_err(|e| {
-                        AppError::Business(format!("E_BACKUP_TXN：提交事务失败: {}", e))
+                        AppError::business(ErrCode::BackupTxn, format!("提交事务失败: {}", e))
                     })?;
                 }
                 Err(e) => {

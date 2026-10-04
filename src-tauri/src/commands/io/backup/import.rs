@@ -7,7 +7,7 @@ use super::rollback::{clear_book_scope, clear_full_tables, prune_expired_rollbac
 use super::types::{backup_is_newer, stats_to_json, DatabaseExport, ExportPayload, ImportStrategy, WriteStats, MAX_BACKUP_FILE_BYTES, MAX_BACKUP_ROWS};
 use crate::commands::io::crypto::{parse_encrypted_file, validate_payload_structure};
 use crate::commands::window::emit_sql_log;
-use crate::error::AppError;
+use crate::error::{AppError, ErrCode};
 use crate::repository::embedding_repo;
 use rusqlite::params;
 use std::collections::HashSet;
@@ -576,7 +576,7 @@ pub(crate) fn check_supported_version(version: &str) -> Result<(), AppError> {
 pub(crate) fn load_backup_payload(file_path: &str) -> Result<(ExportPayload, u64), AppError> {
     // 0) 文件大小上限：先查 metadata 拒绝超大文件，避免一次性读入内存
     let meta = std::fs::metadata(file_path)
-        .map_err(|e| AppError::Business(format!("E_BACKUP_READ：读取文件失败：{}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::BackupRead, format!("读取文件失败：{}", e)))?;
     if meta.len() > MAX_BACKUP_FILE_BYTES {
         return Err(AppError::Business(format!(
             "E_BACKUP_TOO_LARGE：备份文件大小 {:.1} MB 超过上限 200 MB",
@@ -585,7 +585,7 @@ pub(crate) fn load_backup_payload(file_path: &str) -> Result<(ExportPayload, u64
     }
 
     let file_bytes = std::fs::read(file_path)
-        .map_err(|e| AppError::Business(format!("E_BACKUP_READ：读取文件失败：{}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::BackupRead, format!("读取文件失败：{}", e)))?;
 
     let json_str = parse_encrypted_file(&file_bytes)?;
     validate_payload_structure(&json_str)?;
@@ -648,7 +648,7 @@ pub(crate) fn run_upsert_import(
     );
     let tx = conn
         .transaction()
-        .map_err(|e| AppError::Business(format!("E_BACKUP_TXN：开始事务失败: {}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::BackupTxn, format!("开始事务失败: {}", e)))?;
 
     emit_sql_log(
         app,
@@ -695,7 +695,7 @@ pub(crate) fn run_upsert_import(
         line!(),
     );
     tx.commit()
-        .map_err(|e| AppError::Business(format!("E_BACKUP_TXN：提交事务失败: {}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::BackupTxn, format!("提交事务失败: {}", e)))?;
 
     // 非破坏性策略不产生新向量，但统一对齐 vec0 镜像，防止内容变更后镜像残留/缺失（G13）
     if let Err(e) = embedding_repo::rebuild_chunks_vec(conn) {

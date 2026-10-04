@@ -9,7 +9,7 @@
 
 use crate::commands::window::emit_sql_log;
 use crate::db::AppDb;
-use crate::error::AppError;
+use crate::error::{AppError, ErrCode};
 use crate::repository::{book_repo, chapter_repo};
 use crate::utils::{escape_html, now};
 use std::collections::HashMap;
@@ -91,7 +91,7 @@ fn parse_txt_stream(
 
     while let Some(line) = lines.next() {
         let line =
-            line.map_err(|e| AppError::Business(format!("E_TXT_READ：读取 TXT 失败：{e}")))?;
+            line.map_err(|e| AppError::business(ErrCode::TxtRead, format!("读取 TXT 失败：{e}")))?;
         let line = line.trim_end_matches('\r').to_string();
         if line.trim().is_empty() {
             continue; // 空行折叠
@@ -234,17 +234,20 @@ pub async fn import_txt(
     let _guard = super::try_acquire_io_lock()?;
     // 规模上限：先看文件大小，超限直接拒绝（避免读入内存）
     let meta = std::fs::metadata(&file_path)
-        .map_err(|e| AppError::Business(format!("E_TXT_READ：读取文件信息失败：{}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::TxtRead, format!("读取文件信息失败：{}", e)))?;
     if meta.len() > MAX_FILE_BYTES {
-        return Err(AppError::Business(format!(
-            "E_TXT_TOO_LARGE：TXT 文件超过 {} MB 上限，请拆分后分批导入",
-            MAX_FILE_BYTES / 1024 / 1024
-        )));
+        return Err(AppError::business(
+            ErrCode::TxtTooLarge,
+            format!(
+                "TXT 文件超过 {} MB 上限，请拆分后分批导入",
+                MAX_FILE_BYTES / 1024 / 1024
+            ),
+        ));
     }
 
     // 流式解析（> 2 MB 也仅按行读取，不一次性整文件进内存）
     let file = File::open(&file_path)
-        .map_err(|e| AppError::Business(format!("E_TXT_READ：打开文件失败：{}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::TxtRead, format!("打开文件失败：{}", e)))?;
     let mut lines_iter = BufReader::new(file).lines();
     let (mut chapters, mut preface, heading_seen) = parse_txt_stream(&mut lines_iter)?;
 
@@ -259,7 +262,7 @@ pub async fn import_txt(
     if chapters.is_empty() && preface.is_empty() && heading_seen {
         // 全为无正文的标题行：退化为整文件单章
         let raw = std::fs::read_to_string(&file_path)
-            .map_err(|e| AppError::Business(format!("E_TXT_READ：读取文件失败：{}", e)))?;
+            .map_err(|e| AppError::business(ErrCode::TxtRead, format!("读取文件失败：{}", e)))?;
         let trimmed = raw.trim();
         if !trimmed.is_empty() {
             let body: Vec<String> = trimmed
@@ -327,7 +330,7 @@ pub async fn import_txt(
     // 单事务写入：全部分章 + recalc_word_count 原子提交（Spec §6.4，G5）
     let tx = conn
         .transaction()
-        .map_err(|e| AppError::Business(format!("E_TXT_TXN：开始 TXT 导入事务失败: {}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::TxtTxn, format!("开始 TXT 导入事务失败: {}", e)))?;
     {
         emit_sql_log(
             &app,
@@ -350,7 +353,7 @@ pub async fn import_txt(
                 [&book_id],
                 |r| r.get(0),
             )
-            .map_err(|e| AppError::Business(format!("E_TXT_QUERY：查询章节排序失败: {}", e)))?;
+            .map_err(|e| AppError::business(ErrCode::TxtQuery, format!("查询章节排序失败: {}", e)))?;
         for ch in &to_write {
             let id = uuid::Uuid::new_v4().to_string();
             let ts = now();
@@ -377,7 +380,7 @@ pub async fn import_txt(
         book_repo::recalc_word_count(&tx, &book_id, &now())?;
     }
     tx.commit()
-        .map_err(|e| AppError::Business(format!("E_TXT_COMMIT：TXT 导入提交失败: {}", e)))?;
+        .map_err(|e| AppError::business(ErrCode::TxtCommit, format!("TXT 导入提交失败: {}", e)))?;
 
     Ok(serde_json::json!({
         "chaptersCreated": to_write.len(),
