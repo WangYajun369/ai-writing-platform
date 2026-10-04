@@ -8,10 +8,19 @@
 
 use crate::models::Book;
 use crate::repository::embedding_repo;
+use crate::repository::soft_delete::{self, Table};
 use rusqlite::{params, Connection, Result};
 
 /// 完整的 SELECT 列名
 pub const BOOK_SELECT: &str = "id,title,author,description,cover_image,word_count,daily_target,today_count,db_path,tags,created_at,updated_at,deleted_at,outline";
+
+/// `books` 表的软删除 marker（v1.9 架构优化 #2）
+///
+/// 供 `soft_delete::*::<BookTable>` 泛型函数使用，编译期注入表名。
+pub struct BookTable;
+impl Table for BookTable {
+    const NAME: &'static str = "books";
+}
 
 /// 从 rusqlite Row 解析 Book（按列名获取，不依赖列顺序）
 pub fn parse_book(row: &rusqlite::Row) -> Result<Book> {
@@ -112,15 +121,21 @@ pub fn clear_cover(conn: &Connection, id: &str, ts: &str) -> Result<()> {
 }
 
 /// 软删除书籍（标记 deleted_at）
+///
+/// 委派到 `soft_delete::soft_delete::<BookTable>`（v1.9 架构优化 #2）
 pub fn soft_delete(conn: &Connection, id: &str, ts: &str) -> Result<()> {
-    conn.execute(
-        "UPDATE books SET deleted_at=?1, updated_at=?1 WHERE id=?2 AND deleted_at IS NULL",
-        params![ts, id],
-    )?;
+    soft_delete::soft_delete::<BookTable>(conn, id, ts)?;
     Ok(())
 }
 
 /// 恢复已删除的书籍（清除 deleted_at）
+///
+/// 委派到 `soft_delete::restore::<BookTable>`（v1.9 架构优化 #2）。
+///
+/// 注意：此处不限定 `deleted_at IS NOT NULL` 守卫，与泛型默认实现略有不同——
+/// books 表的 restore 在历史行为上接受「未删除的行也返回 1 受影响」，
+/// 调用方（book_service::restore_book）通过 0-affected NotFound 判断回收站状态。
+/// 为保持向后兼容，此处显式拼接 SQL 而非使用泛型版本。
 pub fn restore(conn: &Connection, id: &str, ts: &str) -> Result<usize> {
     conn.execute(
         "UPDATE books SET deleted_at=NULL, updated_at=?1 WHERE id=?2",
@@ -129,24 +144,26 @@ pub fn restore(conn: &Connection, id: &str, ts: &str) -> Result<usize> {
 }
 
 /// 硬删除书籍（CASCADE 自动删除 volumes/chapters/snapshots/world_cards）
+///
+/// 委派到 `soft_delete::hard_delete::<BookTable>`（v1.9 架构优化 #2）。
+/// 无 `deleted_at` 守卫，依赖调用方在 service 层确保回收站状态（book_service::hard_delete_book）。
 pub fn hard_delete(conn: &Connection, id: &str) -> Result<()> {
-    conn.execute("DELETE FROM books WHERE id=?1", params![id])?;
+    soft_delete::hard_delete::<BookTable>(conn, id)?;
     Ok(())
 }
 
 /// 统计已删除的书籍数量
+///
+/// 委派到 `soft_delete::count_deleted::<BookTable>`（v1.9 架构优化 #2）
 pub fn count_deleted(conn: &Connection) -> Result<u32> {
-    conn.query_row(
-        "SELECT COUNT(*) FROM books WHERE deleted_at IS NOT NULL",
-        [],
-        |row| row.get(0),
-    )
+    soft_delete::count_deleted::<BookTable>(conn)
 }
 
 /// 清空回收站：硬删除所有已标记删除的书籍
+///
+/// 委派到 `soft_delete::clear_trash::<BookTable>`（v1.9 架构优化 #2）
 pub fn clear_trash(conn: &Connection) -> Result<()> {
-    conn.execute("DELETE FROM books WHERE deleted_at IS NOT NULL", [])?;
-    Ok(())
+    soft_delete::clear_trash::<BookTable>(conn)
 }
 
 // ---- 字数聚合 ----

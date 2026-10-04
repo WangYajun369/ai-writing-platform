@@ -5,10 +5,17 @@
 //! 包裹，repo 仅提供聚焦的单条 SQL 操作。
 
 use crate::models::TaskCard;
+use crate::repository::soft_delete::{self, Table};
 use rusqlite::{params, Connection, OptionalExtension, Result};
 
 /// 完整 SELECT 列名（不含 tags；tags 由 service 聚合）。用于无 JOIN 的单表查询。
 pub const TASK_SELECT: &str = "id,project_id,parent_id,title,description,status,priority,plan_start_time,due_time,planned_today,completed_time,note,completion_summary,remind_at,remind_type,recurrence,note_html,started_at,work_seconds,sort_order,deleted_at,created_at,updated_at";
+
+/// `tasks` 表的软删除 marker（v1.9 架构优化 #2）
+pub struct TaskTable;
+impl Table for TaskTable {
+    const NAME: &'static str = "tasks";
+}
 
 /// 带 `t.` 前缀的列名版本，用于 JOIN projects 的查询，避免列名歧义。
 pub const TASK_SELECT_T: &str = "t.id,t.project_id,t.parent_id,t.title,t.description,t.status,t.priority,t.plan_start_time,t.due_time,t.planned_today,t.completed_time,t.note,t.completion_summary,t.remind_at,t.remind_type,t.recurrence,t.note_html,t.started_at,t.work_seconds,t.sort_order,t.deleted_at,t.created_at,t.updated_at";
@@ -180,53 +187,48 @@ pub fn insert(
 }
 
 /// 软删除任务
+///
+/// 委派到 `soft_delete::soft_delete::<TaskTable>`（v1.9 架构优化 #2）
 pub fn soft_delete(conn: &Connection, id: &str, ts: &str) -> Result<usize> {
-    conn.execute(
-        "UPDATE tasks SET deleted_at=?1, updated_at=?1 WHERE id=?2 AND deleted_at IS NULL",
-        params![ts, id],
-    )
+    soft_delete::soft_delete::<TaskTable>(conn, id, ts)
 }
 
 /// 恢复任务，返回影响行数
+///
+/// 委派到 `soft_delete::restore::<TaskTable>`（v1.9 架构优化 #2）
 pub fn restore(conn: &Connection, id: &str, ts: &str) -> Result<usize> {
-    conn.execute(
-        "UPDATE tasks SET deleted_at=NULL, updated_at=?1 WHERE id=?2 AND deleted_at IS NOT NULL",
-        params![ts, id],
-    )
+    soft_delete::restore::<TaskTable>(conn, id, ts)
 }
 
 /// 硬删除任务（task_tags 由外键级联删除；仅限回收站中的任务，返回影响行数）
+///
+/// 委派到 `soft_delete::hard_delete_trashed::<TaskTable>`（v1.9 架构优化 #2）
 pub fn hard_delete(conn: &Connection, id: &str) -> Result<usize> {
-    Ok(conn.execute(
-        "DELETE FROM tasks WHERE id=?1 AND deleted_at IS NOT NULL",
-        params![id],
-    )?)
+    soft_delete::hard_delete_trashed::<TaskTable>(conn, id)
 }
 
 /// 统计回收站中的任务数量
+///
+/// 委派到 `soft_delete::count_deleted::<TaskTable>`（v1.9 架构优化 #2）
 pub fn count_deleted(conn: &Connection) -> Result<u32> {
-    conn.query_row(
-        "SELECT COUNT(*) FROM tasks WHERE deleted_at IS NOT NULL",
-        [],
-        |row| row.get(0),
-    )
+    soft_delete::count_deleted::<TaskTable>(conn)
 }
 
 /// 清空任务回收站
+///
+/// 委派到 `soft_delete::clear_trash::<TaskTable>`（v1.9 架构优化 #2）
 pub fn clear_trash(conn: &Connection) -> Result<()> {
-    conn.execute("DELETE FROM tasks WHERE deleted_at IS NOT NULL", [])?;
-    Ok(())
+    soft_delete::clear_trash::<TaskTable>(conn)
 }
 
 /// 回收站自动清理：硬删除删除时间早于 cutoff 的任务（PRD 9.12.2 保留 30 天）。
 /// task_tags / task_subtasks / attachments 由外键级联删除；
 /// task_activity_logs 无外键，由 service 层在同事务内显式清理。
 /// deleted_at 为 UTC RFC3339 字符串（与 cutoff 同格式，可字典序比较）。
+///
+/// 委派到 `soft_delete::purge_expired::<TaskTable>`（v1.9 架构优化 #2）
 pub fn purge_expired(conn: &Connection, cutoff: &str) -> Result<usize> {
-    conn.execute(
-        "DELETE FROM tasks WHERE deleted_at IS NOT NULL AND deleted_at < ?1",
-        params![cutoff],
-    )
+    soft_delete::purge_expired::<TaskTable>(conn, cutoff)
 }
 
 /// 更新任务单行 sort_order（用于列内重排 / 追加到列尾）
