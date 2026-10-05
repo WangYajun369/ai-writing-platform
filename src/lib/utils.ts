@@ -44,6 +44,8 @@ export function formatRelativeTime(isoDate: string): string {
 export function countWordsFromHtml(html: string): number {
   // 使用 DOMParser 正确提取纯文本（自动解码所有 HTML 实体）
   const doc = new DOMParser().parseFromString(html, 'text/html')
+  // 移除数学公式节点（data-latex 中的源码不应计入字数）
+  doc.querySelectorAll('[data-type="inline-math"], [data-type="block-math"]').forEach((el) => el.remove())
   const text = doc.body.textContent ?? ''
   return text.replace(/\s/g, '').length
 }

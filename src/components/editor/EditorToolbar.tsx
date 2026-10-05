@@ -13,7 +13,7 @@
  *  - CodeLanguageSelect  → 代码块语言切换
  *  - constants           → 预设颜色 / 代码语言列表
  */
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { useNavigate } from 'react-router-dom'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { WindowEvent } from '@/lib/window-events'
@@ -43,6 +43,7 @@ import {
   ListOrderedIcon,
   ListTodoIcon,
   WrenchIcon,
+  SigmaIcon,
 } from 'lucide-react'
 import {
   sidebarOpenAtom,
@@ -53,6 +54,8 @@ import {
   worldWindowOpenAtom,
   summaryWindowOpenAtom,
   aiToolboxWindowOpenAtom,
+  mathEditRequestAtom,
+  type MathEditRequest,
 } from '@/stores/uiAtoms.ts'
 import { useCurrentBook, useCurrentChapter } from '@/stores/appStore'
 import { useBooksStore } from '@/stores/booksStore'
@@ -67,6 +70,7 @@ import { ColorPickerPopover } from './toolbar/ColorPickerPopover'
 import { TablePopover } from './toolbar/TablePopover'
 import { CodeLanguageSelect } from './toolbar/CodeLanguageSelect'
 import { HeadingSelect } from './toolbar/HeadingSelect'
+import { MathDialog } from './toolbar/MathDialog'
 import { canMergeCells, hasSplittableCell } from './toolbar/table-utils'
 import { isEditorUsable } from '@/lib/editor-guard'
 
@@ -166,6 +170,23 @@ export default function EditorToolbar() {
   // --- 图片裁剪 ---
   const [cropperOpen, setCropperOpen] = useState(false)
   const [cropperFilePath, setCropperFilePath] = useState('')
+  // 数学公式弹窗
+  const [mathDialogOpen, setMathDialogOpen] = useState(false)
+  // 双击公式节点时的编辑上下文（null 表示新建插入）
+  const [mathEditing, setMathEditing] = useState<MathEditRequest | null>(null)
+  const mathEditRequest = useAtomValue(mathEditRequestAtom)
+  const setMathEditRequest = useSetAtom(mathEditRequestAtom)
+
+  // 监听双击公式节点事件：接管并打开编辑弹窗
+  useEffect(() => {
+    if (!mathEditRequest) return
+    setMathEditing(mathEditRequest)
+    setMathDialogOpen(true)
+    // 关闭其他弹窗
+    setColorPickerOpen(false)
+    setTablePickerOpen(false)
+    setMathEditRequest(null)
+  }, [mathEditRequest, setMathEditRequest])
 
   // 监听编辑器选区变化，实时更新表格状态（isInTable / 可合并 / 可拆分）
   useEffect(() => {
@@ -196,7 +217,7 @@ export default function EditorToolbar() {
     setColorPickerOpen((v) => !v)
   }, [colorPickerOpen, usableEditor])
 
-  // 点击外部关闭颜色/表格选择器
+  // 点击外部关闭颜色/表格选择器（数学公式弹窗自带遮罩，不在此处处理）
   useEffect(() => {
     if (!colorPickerOpen && !tablePickerOpen) return
     function handleClick(e: MouseEvent) {
@@ -409,6 +430,32 @@ export default function EditorToolbar() {
         icon={<Code2Icon className="w-4 h-4" />}
       />
       {(usableEditor?.isActive('codeBlock') ?? false) && <CodeLanguageSelect editor={usableEditor} />}
+
+      {/* 数学公式 */}
+      <div className="relative flex items-center shrink-0">
+        <ToolbarBtn
+          active={mathDialogOpen}
+          onClick={() => {
+            // 弹窗互斥：打开公式弹窗时同步关闭其他弹窗
+            setMathEditing(null) // 工具栏按钮始终进入新建模式
+            setMathDialogOpen((v) => !v)
+            setColorPickerOpen(false)
+            setTablePickerOpen(false)
+          }}
+          title="数学公式"
+          icon={<SigmaIcon className="w-4 h-4" />}
+        />
+        {mathDialogOpen && (
+          <MathDialog
+            editor={usableEditor}
+            editing={mathEditing}
+            onClose={() => {
+              setMathDialogOpen(false)
+              setMathEditing(null)
+            }}
+          />
+        )}
+      </div>
 
       {/* 表格 */}
       <div ref={tableAnchorRef} className="relative flex items-center gap-1 shrink-0">
