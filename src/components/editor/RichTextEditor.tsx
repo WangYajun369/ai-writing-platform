@@ -225,16 +225,22 @@ export default function RichTextEditor() {
             return false
           }
 
-          // nodeAt 可能落在文本位置，尝试 pos / pos-1
-          let node = view.state.doc.nodeAt(pos)
-          if (!node || (node.type.name !== 'inlineMath' && node.type.name !== 'blockMath')) {
-            node = view.state.doc.nodeAt(pos - 1)
+          // nodeAt 可能落在文本位置，尝试 pos / pos-1；
+          // 命中哪个位置就用哪个（update*Math 命令按 pos 定位节点，传错会静默失败）
+          let resolvedPos = pos
+          let node = view.state.doc.nodeAt(resolvedPos)
+          // 用推断类型避免引入 @tiptap/pm 依赖
+          const isMathNode = (n: typeof node): n is NonNullable<typeof node> =>
+            !!n && (n.type.name === 'inlineMath' || n.type.name === 'blockMath')
+          if (!isMathNode(node)) {
+            resolvedPos = pos - 1
+            node = view.state.doc.nodeAt(resolvedPos)
           }
-          if (!node) return false
+          if (!isMathNode(node)) return false
 
           const isBlock = node.type.name === 'blockMath'
           setMathEditRequest({
-            pos,
+            pos: resolvedPos,
             latex: (node.attrs.latex as string) ?? '',
             type: isBlock ? 'block' : 'inline',
           })
