@@ -1,6 +1,6 @@
 # IPC 命令速查
 
-> **适用版本**：`1.9.1`　|　**最后核对**：2026-10-04
+> **适用版本**：`1.20.0`　|　**最后核对**：2026-10-05
 
 TimeWrite 共注册 **173 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用。桥接层导出 **19 个 API 对象**（`bookApi` `volumeApi` `chapterApi` `snapshotApi` `worldCardApi` `diaryApi` `scheduleApi` `windowApi` `aiApi` `agentApi` `imageApi` `importExportApi` `debugApi` `systemApi` `vocabApi` `ttsApi` `dictApi` `taskCardApi` `writingApi`）。
 

@@ -5346,7 +5346,7 @@ dependencies = [
 
 [[package]]
 name = "time-write"
-version = "1.9.1"
+version = "1.20.0"
 dependencies = [
  "aes-gcm",
  "anyhow",

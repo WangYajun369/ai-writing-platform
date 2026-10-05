@@ -4,9 +4,9 @@
 
 面向网络小说作者和文学创作者，提供从书库管理、章节编辑到 AI 辅助创作的完整写作工作流。
 
-**当前版本：`1.9.1`**　|　🌐 **项目介绍**：[https://wangyajun369.github.io/ai-writing-platform/](https://wangyajun369.github.io/ai-writing-platform/)　|　📦 **下载**：[GitHub Releases](https://github.com/WangYajun369/ai-writing-platform/releases)
+**当前版本：`1.20.0`**　|　🌐 **项目介绍**：[https://wangyajun369.github.io/ai-writing-platform/](https://wangyajun369.github.io/ai-writing-platform/)　|　📦 **下载**：[GitHub Releases](https://github.com/WangYajun369/ai-writing-platform/releases)
 
-> **v1.9.1 亮点**：Rust 代码质量全面升级——Clippy 警告 96 → 18、编译警告 5 → 0、全量格式化、175 测试通过。详见 [更新日志](./docs/CHANGELOG.md)。
+> **v1.20.0 亮点**：新增数学公式输入——KaTeX 实时渲染的行内 / 块级公式，477 个符号的分类符号面板带锚点导航与实时预览，双击公式节点可重新编辑。详见 [更新日志](./docs/CHANGELOG.md)。
 
 ## 技术栈
 
@@ -201,7 +201,7 @@ Agent 引擎已完全内置于 Rust 后端（无 Python / 外部进程依赖）�
 |------|------|
 | 应用名称 | TimeWrite |
 | 应用标识 | `com.ukcoder.timewrite` |
-| 版本 | 1.9.1 |
+| 版本 | 1.20.0 |
 | 窗口默认尺寸 | 1280 × 800 |
 | 窗口最小尺寸 | 960 × 600 |
 | 深度链接协议 | `com.ukcoder.timewrite://` |
