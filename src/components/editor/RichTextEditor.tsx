@@ -25,6 +25,8 @@ import TableRow from '@tiptap/extension-table-row'
 import TableHeader from '@tiptap/extension-table-header'
 import TableCell from '@tiptap/extension-table-cell'
 import CharacterCount from '@tiptap/extension-character-count'
+import Mathematics from '@tiptap/extension-mathematics'
+import 'katex/dist/katex.min.css'
 import { useAtom } from 'jotai'
 import { useShortcut } from '@/hooks/useShortcut'
 import {
@@ -36,6 +38,7 @@ import {
   contentRefreshAtom,
   editorScrollPositionAtom,
   editorCursorPositionAtom,
+  mathEditRequestAtom,
 } from '@/stores/uiAtoms.ts'
 import { useCurrentChapter, getEditorState } from '@/stores/appStore'
 import { useBooksStore } from '@/stores/booksStore'
@@ -111,6 +114,7 @@ export default function RichTextEditor() {
   const contentRefreshNonce = contentRefresh.nonce
   const [, setScrollPosition] = useAtom(editorScrollPositionAtom)
   const [, setCursorPosition] = useAtom(editorCursorPositionAtom)
+  const [, setMathEditRequest] = useAtom(mathEditRequestAtom)
   const autoSaveTimer = useRef<ReturnType<typeof setInterval>>(null)
   // 编辑器滚动容器 ref（用于保存/恢复滚动位置）
   const editorScrollRef = useRef<HTMLDivElement>(null)
@@ -194,12 +198,54 @@ export default function RichTextEditor() {
       TableHeader,
       TableCell,
       CharacterCount,
+      Mathematics.configure({
+        katexOptions: {
+          throwOnError: false, // 非法 LaTeX 不抛异常，红色回显源码
+        },
+      }),
     ],
     content: currentChapter?.contentHtml ?? '<p></p>',
     editorProps: {
       attributes: {
         class: 'tiptap-editor min-h-[60vh] px-8 py-6 outline-none',
         'data-placeholder': '开始你的故事…',
+      },
+      handleDOMEvents: {
+        // 双击数学公式节点 → 打开编辑弹窗
+        dblclick: (view, event) => {
+          const dom = (event.target as HTMLElement).closest?.(
+            '[data-type="inline-math"], [data-type="block-math"]',
+          ) as HTMLElement | null
+          if (!dom) return false
+
+          let pos: number
+          try {
+            pos = view.posAtDOM(dom, 0)
+          } catch {
+            return false
+          }
+
+          // nodeAt 可能落在文本位置，尝试 pos / pos-1；
+          // 命中哪个位置就用哪个（update*Math 命令按 pos 定位节点，传错会静默失败）
+          let resolvedPos = pos
+          let node = view.state.doc.nodeAt(resolvedPos)
+          // 用推断类型避免引入 @tiptap/pm 依赖
+          const isMathNode = (n: typeof node): n is NonNullable<typeof node> =>
+            !!n && (n.type.name === 'inlineMath' || n.type.name === 'blockMath')
+          if (!isMathNode(node)) {
+            resolvedPos = pos - 1
+            node = view.state.doc.nodeAt(resolvedPos)
+          }
+          if (!isMathNode(node)) return false
+
+          const isBlock = node.type.name === 'blockMath'
+          setMathEditRequest({
+            pos: resolvedPos,
+            latex: (node.attrs.latex as string) ?? '',
+            type: isBlock ? 'block' : 'inline',
+          })
+          return true
+        },
       },
     },
     onUpdate: ({ editor }) => {

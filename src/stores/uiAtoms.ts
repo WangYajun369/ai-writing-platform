@@ -160,6 +160,17 @@ export const hoverKeywordAtom = atom<string | null, [string | null], void>(
  *  独立保留：模态栈是 push/pop 语义，与开关状态模型不同，不并入 layoutStateAtom。 */
 export const modalStackAtom = atom<string[]>([])
 
+/** 数学公式编辑请求（双击公式节点触发）。
+ *  RichTextEditor 的 dblclick 处理器写入此 atom；
+ *  EditorToolbar 订阅后打开 MathDialog 进入编辑模式并清空此 atom。
+ *  pos 为节点在文档中的位置，latex 为当前源码，type 区分行内/块级。 */
+export interface MathEditRequest {
+  pos: number
+  latex: string
+  type: 'inline' | 'block'
+}
+export const mathEditRequestAtom = atom<MathEditRequest | null>(null)
+
 /** 正在保存（派生 atom，委托到 editorStateAtom） */
 export const isSavingAtom = atom<boolean, [boolean], void>(
   (get) => get(editorStateAtom).isSaving,
