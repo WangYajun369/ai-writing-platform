@@ -112,6 +112,18 @@ git merge dev                 # 将 dev 的变更合并到 main
 git --no-pager log --oneline -5
 ```
 
+**场景 A′：当前在 WorkBuddy 工作区分支（如 `workbuddy/dev-xxxx`，无 upstream，且本地 `dev` 被另一工作区占用）**
+
+```bash
+# ⚠️ 现象：`git branch -f dev <commit>` 报 "cannot force update ... used by worktree"（正常，勿强改）
+git push origin HEAD:dev      # 推送本分支内容到远端 dev（不能裸 git push，无 upstream）
+git checkout main             # 切到 main 发版
+git merge origin/dev          # 合并远端 dev（内容等价于本地 dev）
+
+# 发版结束后同步回 dev：
+git checkout <工作区分支> && git merge main && git push origin HEAD:dev
+```
+
 **场景 B：当前已在 `main` 分支，尚未合并 dev**
 
 ```bash
@@ -148,6 +160,16 @@ python3 .codebuddy/skills/version-release/scripts/bump_version.py patch --dry-ru
 # 按 git log（自上一 Tag）自动生成更新日志正文草稿（Step 2 的人工环节可省一半）
 python3 .codebuddy/skills/version-release/scripts/bump_version.py minor --auto-changelog
 ```
+
+> 🔺 **`set` 模式的 CHANGELOG 陷阱（实测踩过，务必注意）**：用 `set <新版本>` 做发版时，脚本会把 `docs/CHANGELOG.md` 里**已存在的顶部版本标题**（如上一个 `## v1.9.1`）**就地改名**成新版本，等于把上一版的历史据为己有，而不是插入新条目。
+> 处理办法（发版场景）：
+> ```bash
+> # 1. 若已误改，先还原 CHANGELOG
+> git checkout HEAD -- docs/CHANGELOG.md
+> # 2. 手动在文件顶部（"# 更新日志" 之后、上一版条目之前）插入新标题再写正文
+> #    ## vX.Y.Z (YYYY-MM-DD) — <版本副标题>
+> ```
+> `set` 只适合「重置版本号」场景；**正式发版推荐 `major/minor/patch`**（会自动在 CHANGELOG 顶部插入新条目头部），确需跳到指定版本时用 `set` 后按上述办法补条目。
 
 > ⚠️ **发版强制步骤（不可跳过）**：`bump_version.py` 只更新 7 个核心文件的 10 个引用点，**不会**触及 `docs/**/*.md` 中的「适用版本 / 最后核对」标记。发版时必须紧接着执行文档版本同步：
 
