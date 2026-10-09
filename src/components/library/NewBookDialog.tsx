@@ -11,7 +11,7 @@ import { bookApi } from '@/lib/tauri-bridge'
 import { useBooksStore } from '@/stores/booksStore'
 import { showError } from '@/lib/errors'
 import CoverPicker from './CoverPicker'
-import { isRenderableSrc } from '@/lib/image-utils.ts'
+import { isRenderableSrc, generateBookCoverSvg } from '@/lib/image-utils.ts'
 import type { Book } from '@/types'
 
 interface NewBookDialogProps {
@@ -54,8 +54,11 @@ export default function NewBookDialog({ onClose, onCreated }: NewBookDialogProps
         addBook(updated)
         onCreated(updated)
       } else {
-        addBook(book)
-        onCreated(book)
+        // 未上传封面：自动生成 SVG 封面并入库（随备份/导出携带，展示永不空白）
+        const svg = generateBookCoverSvg({ id: book.id, title: book.title, author: book.author })
+        const updated = await bookApi.setCoverData(book.id, svg)
+        addBook(updated)
+        onCreated(updated)
       }
     } catch (err) {
       console.error('创建书籍失败', err)

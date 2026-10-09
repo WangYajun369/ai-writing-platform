@@ -4,7 +4,7 @@
  * 网格模式展示封面、日更进度环及右键菜单。
  * 支持修改封面（悬停显示编辑按钮）。
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { MoreVerticalIcon, EditIcon, Trash2Icon, CalendarIcon, ImageIcon, PencilIcon, UploadIcon } from 'lucide-react'
 import { open, save, confirm } from '@tauri-apps/plugin-dialog'
 import { stat } from '@tauri-apps/plugin-fs'
@@ -14,7 +14,7 @@ import { formatWordCount, formatRelativeTime } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 import { showError } from '@/lib/errors'
 import { useBooksStore } from '@/stores/booksStore'
-import { resolveCoverSrc, processCroppedCoverImage, COVER_ASPECT } from '@/lib/image-utils.ts'
+import { resolveCoverSrc, processCroppedCoverImage, COVER_ASPECT, generateBookCoverSvg } from '@/lib/image-utils.ts'
 import type { CropArea } from '@/lib/image-utils'
 import ImageCropperDialog from '@/components/editor/ImageCropperDialog'
 import EditBookDialog from './EditBookDialog'
@@ -48,6 +48,12 @@ export default function BookCard({ book, onOpen, onRefresh }: BookCardProps) {
     })
     return () => { cancelled = true }
   }, [book.coverImage])
+
+  // 展示用封面：有真实封面用真实封面，否则确定性生成 SVG 封面（永不空白）
+  const displaySrc = useMemo(
+    () => coverSrc || generateBookCoverSvg({ id: book.id, title: book.title, author: book.author }),
+    [coverSrc, book.id, book.title, book.author],
+  )
 
   // 日更进度百分比
   const dailyProgress = book.dailyTarget > 0
@@ -188,20 +194,7 @@ export default function BookCard({ book, onOpen, onRefresh }: BookCardProps) {
     >
       {/* 封面区域 — 固定宽高比，不受 flex 挤压 */}
       <div className="aspect-3/4 bg-muted/50 relative shrink-0 overflow-hidden">
-        {coverSrc ? (
-          <img src={coverSrc} alt={book.title} className="w-full h-full object-cover" />
-        ) : (
-          <div className="absolute inset-0 bg-linear-to-br from-primary/10 via-transparent to-accent/5 flex items-center justify-center">
-            <div className="flex flex-col items-center gap-1.5">
-              {/* 书本图标为主视觉 */}
-              <svg className="w-8 h-8 text-primary/20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-              </svg>
-              {/* 小号首字点缀 */}
-              <span className="text-lg font-semibold text-primary/20 select-none">{book.title.charAt(0)}</span>
-            </div>
-          </div>
-        )}
+        <img src={displaySrc} alt={book.title} className="w-full h-full object-cover" />
 
         {/* 日更进度环 */}
         {book.dailyTarget > 0 && (

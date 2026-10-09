@@ -11,7 +11,7 @@ import { bookApi } from '@/lib/tauri-bridge'
 import { useBooksStore } from '@/stores/booksStore'
 import { showError } from '@/lib/errors'
 import CoverPicker from './CoverPicker'
-import { isRenderableSrc } from '@/lib/image-utils.ts'
+import { isRenderableSrc, generateBookCoverSvg } from '@/lib/image-utils.ts'
 import type { Book } from '@/types'
 
 interface EditBookDialogProps {
@@ -39,10 +39,10 @@ export default function EditBookDialog({ book, onClose, onSaved }: EditBookDialo
     )
   }, [book.coverImage])
 
-  /** 显示的封面预览：优先展示新选的，其次当前封面 */
+  /** 显示的封面预览：优先展示新选的，其次当前封面，最后确定性生成 SVG 封面（移除后回退到生成封面而非空白） */
   const displayCoverPreview = coverRemoved
     ? undefined
-    : coverDataUrl || currentCoverPreview
+    : coverDataUrl || currentCoverPreview || generateBookCoverSvg({ id: book.id, title, author })
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
