@@ -1,6 +1,6 @@
 # 文档地图
 
-> **最后更新**：2026-10-04　|　**当前版本**：`1.9.1`
+> **最后更新**：2026-10-09　|　**当前版本**：`1.20.0`
 
 本页是 TimeWrite 文档的**索引与维护规范**。如果你想找某篇文档、或想知道该如何新增/更新文档，从这一页开始。
 
@@ -79,17 +79,17 @@
 
 `feature-list` · `ai-assistant`
 
-### `development/`（10 篇）
+### `development/`（11 篇）
 
-`project-structure` · `ipc-api` · `tech-stack` · `state-management` · `plugin-system` · `debug-console` · `github-integration` · `import-export-spec` · `import-export-plan` · `contributing`
+`project-structure` · `ipc-api` · `tech-stack` · `state-management` · `plugin-system` · `debug-console` · `github-integration` · `import-export-spec` · `import-export-plan` · `agent-profile-plan` · `contributing`
 
 ### `architecture/`（4 篇）
 
 `overview` · `code-architecture` · `AI-architecture` · `agent-architecture`
 
-### `architecture/adr/`（4 篇）
+### `architecture/adr/`（5 篇）
 
-`README`（ADR 机制与索引）· `ADR-001-tauri-rust-backend` · `ADR-002-agent-bridge-readonly` · `ADR-003-dual-state-management`
+`README`（ADR 机制与索引）· `ADR-001-tauri-rust-backend` · `ADR-002-agent-bridge-readonly` · `ADR-003-dual-state-management` · `ADR-004-domain-aware-agent-profiles`
 
 > ADR 通过 `adr/README` 索引页访问，不在侧边栏逐一列出，避免导航臃肿。
 
@@ -99,7 +99,7 @@
 
 ---
 
-**合计 40 篇**（根级 6 + `user-guide/` 13 + `features/` 2 + `development/` 10 + `architecture/` 4 + `architecture/adr/` 4 + `meta/` 1）
+**合计 42 篇**（根级 6 + `user-guide/` 13 + `features/` 2 + `development/` 11 + `architecture/` 4 + `architecture/adr/` 5 + `meta/` 1）
 
 ---
 

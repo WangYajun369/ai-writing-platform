@@ -26,6 +26,7 @@
   - [GitHub 集成](development/github-integration)
   - [导入导出规范](development/import-export-spec)
   - [导入导出开发计划](development/import-export-plan)
+  - [领域感知 Agent 实施计划](development/agent-profile-plan)
   - [贡献指南](development/contributing)
 - 🏗️ 架构说明
   - [架构总览](architecture/overview)
