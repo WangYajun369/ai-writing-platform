@@ -111,6 +111,42 @@ export interface SaveDiaryParams {
   keywords: string[]
 }
 
+/** 日记搜索命中（全文检索返回，含纯文本片段） */
+export interface DiarySearchHit {
+  id: string
+  /** 日记日期 YYYY-MM-DD */
+  diaryDate: string
+  wordCount: number
+  /** 关键字列表 */
+  keywords: string[]
+  /** 纯文本片段（去 HTML 后的摘要） */
+  excerpt: string
+}
+
+/** 日记月度聚合（最近 12 个月，旧→新） */
+export interface DiaryMonthStat {
+  /** 月份键 YYYY-MM */
+  month: string
+  /** 当月累计字数 */
+  words: number
+  /** 当月篇数 */
+  days: number
+}
+
+/** 日记统计：连续天数 / 累计篇数 / 字数趋势 */
+export interface DiaryStats {
+  /** 当前连续打卡天数 */
+  currentStreak: number
+  /** 历史最长连续天数 */
+  longestStreak: number
+  /** 累计写作天数 */
+  totalDays: number
+  /** 累计字数 */
+  totalWords: number
+  /** 最近 12 个月（含本月）按月聚合 */
+  monthly: DiaryMonthStat[]
+}
+
 /** 日程 — 对应 schedules 表，某天可有多条 */
 export interface Schedule {
   id: string

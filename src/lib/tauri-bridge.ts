@@ -7,7 +7,7 @@
  */
 import { invoke } from '@tauri-apps/api/core'
 import type { IpcCommand } from '@/types/ipc-commands'
-import type { Book, Chapter, Volume, Snapshot, WorldCard, Diary, DiaryMeta, CreateBookParams, UpdateBookParams, SaveDiaryParams, Schedule, SaveScheduleParams, VocabWord, VocabStats, VocabReviewLog, AddVocabWordArgs, UpdateVocabWordArgs, DictStatus, DictLookupResult, AiWordExplain, ExplainWordArgs, WordCheckResult, TtsSpeakResult, TaskProject, ProjectView, TaskCard, TaskSubtask, TaskTag, TaskStatus, TaskTemplate, TodayOverview, MigrateResult, DeletedTaskItem, ProjectStatus, CreateProjectArgs, UpdateProjectArgs, CreateTaskArgs, UpdateTaskArgs, CreateTemplateArgs, UpdateTemplateArgs, Attachment, ActivityLog, ProjectWeeklyStat, UpdateTagArgs, AgentTrace } from '@/types'
+import type { Book, Chapter, Volume, Snapshot, WorldCard, Diary, DiaryMeta, DiarySearchHit, DiaryStats, CreateBookParams, UpdateBookParams, SaveDiaryParams, Schedule, SaveScheduleParams, VocabWord, VocabStats, VocabReviewLog, AddVocabWordArgs, UpdateVocabWordArgs, DictStatus, DictLookupResult, AiWordExplain, ExplainWordArgs, WordCheckResult, TtsSpeakResult, TaskProject, ProjectView, TaskCard, TaskSubtask, TaskTag, TaskStatus, TaskTemplate, TodayOverview, MigrateResult, DeletedTaskItem, ProjectStatus, CreateProjectArgs, UpdateProjectArgs, CreateTaskArgs, UpdateTaskArgs, CreateTemplateArgs, UpdateTemplateArgs, Attachment, ActivityLog, ProjectWeeklyStat, UpdateTagArgs, AgentTrace } from '@/types'
 
 /**
  * 类型化 invoke：命令名接受 IpcCommand 联合类型约束。
@@ -268,6 +268,14 @@ export const diaryApi = {
   /** 按日期删除日记 */
   async delete(date: string): Promise<void> {
     return typedInvoke<void>('delete_diary', { date })
+  },
+  /** 全文检索日记（FTS5 优先，无命中降级 LIKE），返回带片段的命中列表 */
+  async search(query: string, limit?: number): Promise<DiarySearchHit[]> {
+    return typedInvoke<DiarySearchHit[]>('search_diaries', { query, limit })
+  },
+  /** 日记统计：连续天数 / 累计篇数 / 字数趋势 */
+  async stats(): Promise<DiaryStats> {
+    return typedInvoke<DiaryStats>('diary_stats')
   },
 }
 

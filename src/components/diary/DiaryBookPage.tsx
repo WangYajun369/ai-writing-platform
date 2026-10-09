@@ -20,15 +20,17 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   FeatherIcon,
+  FlameIcon,
   Loader2Icon,
   NotebookPenIcon,
+  SearchIcon,
   XIcon,
 } from 'lucide-react'
 import { diaryApi, windowApi } from '@/lib/tauri-bridge'
 import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
-import { formatDiaryTime, formatFullDateLabel, toDateKey } from '@/lib/diary-utils'
-import type { Diary, DiaryMeta } from '@/types'
+import { formatDiaryTime, formatFullDateLabel, sanitizeDiaryHtml, toDateKey } from '@/lib/diary-utils'
+import type { Diary, DiaryMeta, DiarySearchHit, DiaryStats } from '@/types'
 
 /** 缓存中日记内容的状态：'pending' = 加载中，null = 该日无记录 */
 type CachedDiary = Diary | null | 'pending'
@@ -218,6 +220,60 @@ export default function DiaryBookPage() {
     [metas, n, pages, pageIdx],
   )
 
+  // ── 检索 / 统计 ──
+  const [query, setQuery] = useState('')
+  const [hits, setHits] = useState<DiarySearchHit[] | null>(null)
+  const [stats, setStats] = useState<DiaryStats | null>(null)
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const searching = hits !== null
+
+  // 统计：metas 就绪后拉取一次
+  useEffect(() => {
+    if (!metas) return
+    void diaryApi
+      .stats()
+      .then(setStats)
+      .catch(() => {})
+  }, [metas])
+
+  // 检索：输入防抖 250ms
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    const q = query.trim()
+    if (!q) {
+      setHits(null)
+      return
+    }
+    searchTimerRef.current = setTimeout(() => {
+      void diaryApi
+        .search(q, 50)
+        .then((r) => setHits(r))
+        .catch((err) => {
+          console.error('日记检索失败', err)
+          setHits([])
+        })
+    }, 250)
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    }
+  }, [query])
+
+  /** 跳转到指定日期所在书页（用于搜索结果点击） */
+  const jumpToDate = useCallback(
+    (date: string) => {
+      if (!metas || n === 0 || pages.length === 0) return
+      const i = metas.findIndex((m) => m.diaryDate === date)
+      if (i < 0) return
+      const target = pages.findIndex((pg) => pg.left === i || pg.right === i)
+      if (target < 0) return
+      setQuery('')
+      setHits(null)
+      setDir(target > pageIdx ? 'next' : 'prev')
+      setPageIdx(target)
+    },
+    [metas, n, pages, pageIdx],
+  )
+
   const closeWindowRef = useRef(closeWindow)
   closeWindowRef.current = closeWindow
   const goPrevRef = useRef(goPrev)
@@ -296,11 +352,11 @@ export default function DiaryBookPage() {
                 ))}
               </div>
             )}
-            {/* 内容为本地存储的 TipTap HTML（自生成，含内嵌图），只读渲染 */}
+            {/* 内容为本地存储的 TipTap HTML（自生成，含内嵌图），只读渲染前净化 */}
             <div
               className="tiptap-editor"
               style={{ fontSize: 'var(--font-editor-size, 15px)' }}
-              dangerouslySetInnerHTML={{ __html: diary.contentHtml }}
+              dangerouslySetInnerHTML={{ __html: sanitizeDiaryHtml(diary.contentHtml) }}
             />
           </div>
         ) : (
@@ -444,6 +500,27 @@ export default function DiaryBookPage() {
         <span className="text-[10px] px-1.5 py-px rounded-full bg-muted text-muted-foreground shrink-0">
           仅展示
         </span>
+
+        {/* 搜索 */}
+        <div className="relative flex items-center">
+          <SearchIcon className="w-3.5 h-3.5 text-muted-foreground absolute left-2 pointer-events-none" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜索日记…"
+            className="h-7 w-40 rounded-lg bg-muted pl-7 pr-6 text-xs text-foreground outline-none placeholder:text-muted-foreground/60 focus:ring-1 focus:ring-primary/50"
+          />
+          {query && (
+            <button
+              onClick={() => setQuery('')}
+              className="absolute right-1 p-0.5 rounded text-muted-foreground hover:text-foreground"
+              title="清除"
+            >
+              <XIcon className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+
         <div className="flex-1" />
 
         {/* 翻页控件 */}
@@ -457,7 +534,9 @@ export default function DiaryBookPage() {
             <ChevronLeftIcon className="w-4 h-4" />
           </button>
           <span className="text-xs text-muted-foreground/90 tabular-nums whitespace-nowrap px-1">
-            第 {pageNo} / {pageTotal} 页 · 共 {n} 篇
+            {searching
+              ? `找到 ${hits?.length ?? 0} 条`
+              : `第 ${pageNo} / ${pageTotal} 页 · 共 ${n} 篇`}
           </span>
           <button
             onClick={goNext}
@@ -496,7 +575,64 @@ export default function DiaryBookPage() {
         </button>
       </div>
 
-      {/* ─── 书页主体 ─── */}
+      {/* ─── 统计条 ─── */}
+      {!searching && stats && (
+        <div className="flex items-center gap-4 px-4 py-1.5 border-b bg-card/50 text-[11px] text-muted-foreground/80 shrink-0 overflow-x-auto">
+          <span className="inline-flex items-center gap-1 whitespace-nowrap">
+            <FlameIcon className="w-3.5 h-3.5 text-orange-500" />
+            {stats.currentStreak} 天连续
+          </span>
+          <span className="whitespace-nowrap">最长 {stats.longestStreak} 天</span>
+          <span className="whitespace-nowrap">共 {stats.totalDays} 篇</span>
+          <span className="whitespace-nowrap">{stats.totalWords.toLocaleString()} 字</span>
+          <span className="whitespace-nowrap text-muted-foreground/50">
+            近 12 月 {stats.monthly.filter((m) => m.days > 0).length} 篇有记录
+          </span>
+        </div>
+      )}
+
+      {/* ─── 书页主体：检索结果 / 书页二选一 ─── */}
+      {searching ? (
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 bg-muted/15">
+          {hits && hits.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-10">没有找到匹配的日记</p>
+          ) : (
+            <ul className="max-w-[760px] mx-auto space-y-2">
+              {(hits ?? []).map((h) => (
+                <li key={h.id}>
+                  <button
+                    onClick={() => jumpToDate(h.diaryDate)}
+                    className="w-full text-left rounded-xl border bg-background p-3 hover:border-primary/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-medium">{formatFullDateLabel(h.diaryDate)}</span>
+                      {h.diaryDate === todayKey && (
+                        <span className="text-[10px] px-1.5 py-px rounded-full bg-primary/15 text-primary">今天</span>
+                      )}
+                      <span className="text-[11px] text-muted-foreground/60 tabular-nums">{h.wordCount.toLocaleString()} 字</span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground leading-relaxed line-clamp-2">
+                      {h.excerpt || '（无文字内容）'}
+                    </p>
+                    {h.keywords.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {h.keywords.map((kw) => (
+                          <span
+                            key={kw}
+                            className="px-1.5 py-px text-[10px] rounded bg-primary/10 text-primary/80 border border-primary/15"
+                          >
+                            {kw}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : (
       <div className="flex-1 min-h-0 relative flex items-center justify-center px-12 py-5 bg-muted/15">
         {/* 左右浮动翻页大按钮 */}
         <button
@@ -553,6 +689,7 @@ export default function DiaryBookPage() {
           .diary-anim-prev { animation: diaryPageInPrev 260ms ease-out; }
         `}</style>
       </div>
+      )}
 
       {/* ─── 底栏 ─── */}
       <div className="h-8 px-4 border-t bg-card flex items-center justify-center gap-3 text-[11px] text-muted-foreground/70 shrink-0">

@@ -51,7 +51,7 @@ import { toast } from '@/lib/toast'
 import { countWordsFromHtml } from '@/lib/utils'
 import { isEditorUsable } from '@/lib/editor-guard'
 import { processEditorImage, processCroppedEditorImage } from '@/lib/image-utils'
-import { extractKeywords, formatDiaryTime, formatFullDateLabel, toDateKey } from '@/lib/diary-utils'
+import { extractKeywords, formatDiaryTime, formatFullDateLabel, sanitizeDiaryHtml, toDateKey } from '@/lib/diary-utils'
 import { usePreferencesStore } from '@/stores/preferencesStore'
 import { ToolbarBtn, TooltipWrap } from '@/components/editor/toolbar/ToolbarBtn'
 import { HeadingSelect } from '@/components/editor/toolbar/HeadingSelect'
@@ -181,7 +181,7 @@ export default function DiaryDialog({ diaryDate, onClose, onChanged }: DiaryDial
         const html = data?.contentHtml ?? ''
         const nextHtml = html || '<p></p>'
         existedRef.current = !!data
-        initialContentRef.current = nextHtml
+        initialContentRef.current = sanitizeDiaryHtml(nextHtml)
         latestHtmlRef.current = nextHtml
         setLastSavedAt(data ? new Date(data.updatedAt) : null)
         setKeywordPreview(extractKeywords(htmlToText(html)))
@@ -217,7 +217,8 @@ export default function DiaryDialog({ diaryDate, onClose, onChanged }: DiaryDial
     }
     persistBusyRef.current = true
     try {
-      const html = latestHtmlRef.current
+      const raw = latestHtmlRef.current
+      const html = sanitizeDiaryHtml(raw)
       const empty = htmlToText(html).length === 0
 
       // 内容清空：删除该日日记（若已存在）
@@ -307,13 +308,14 @@ export default function DiaryDialog({ diaryDate, onClose, onChanged }: DiaryDial
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
       const html = latestHtmlRef.current
       if (html && html !== initialContentRef.current) {
+        const clean = sanitizeDiaryHtml(html)
         void (async () => {
           try {
             await diaryApi.save({
               diaryDate,
-              contentHtml: html,
-              wordCount: countWordsFromHtml(html),
-              keywords: extractKeywords(htmlToText(html)),
+              contentHtml: clean,
+              wordCount: countWordsFromHtml(clean),
+              keywords: extractKeywords(htmlToText(clean)),
             })
           } catch (err) {
             console.error('卸载兜底保存失败', err)

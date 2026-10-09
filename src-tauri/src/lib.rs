@@ -249,6 +249,8 @@ pub fn run() {
             commands::diary::get_diary,
             commands::diary::save_diary,
             commands::diary::delete_diary,
+            commands::diary::search_diaries,
+            commands::diary::diary_stats,
             // ══════ 日程管理 ══════
             commands::schedule::list_schedules_by_date,
             commands::schedule::list_schedules_by_month,

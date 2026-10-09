@@ -7,7 +7,7 @@ use crate::models::{Diary, DiaryMeta};
 use rusqlite::{params, Connection, OptionalExtension, Result};
 
 /// 解析数据库中的 keywords JSON 字符串为 Vec<String>
-fn parse_keywords(raw: String) -> Vec<String> {
+pub fn parse_keywords(raw: String) -> Vec<String> {
     serde_json::from_str(&raw).unwrap_or_default()
 }
 
@@ -101,4 +101,91 @@ pub fn upsert(
 pub fn delete_by_date(conn: &Connection, date: &str) -> Result<()> {
     conn.execute("DELETE FROM diaries WHERE diary_date = ?1", params![date])?;
     Ok(())
+}
+
+/// 日记全文检索（FTS5）：返回 (id, diary_date, word_count, keywords_json, content_html)
+pub fn search_fts5(
+    conn: &Connection,
+    fts_query: &str,
+    limit: usize,
+) -> Result<Vec<(String, String, i64, String, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT d.id, d.diary_date, d.word_count, d.keywords, d.content_html \
+         FROM diaries d \
+         INNER JOIN diaries_fts fts ON d.rowid = fts.rowid \
+         WHERE diaries_fts MATCH ?1 \
+         ORDER BY rank \
+         LIMIT ?2",
+    )?;
+    let items = stmt.query_map(params![fts_query, limit as i64], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
+        ))
+    })?;
+    items.collect()
+}
+
+/// 日记搜索降级（LIKE）：返回 (id, diary_date, word_count, keywords_json, content_html)
+pub fn search_like(
+    conn: &Connection,
+    pattern: &str,
+    limit: usize,
+) -> Result<Vec<(String, String, i64, String, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, diary_date, word_count, keywords, content_html \
+         FROM diaries \
+         WHERE content_html LIKE ?1 OR keywords LIKE ?1 \
+         ORDER BY diary_date DESC \
+         LIMIT ?2",
+    )?;
+    let items = stmt.query_map(params![pattern, limit as i64], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
+        ))
+    })?;
+    items.collect()
+}
+
+/// 日记聚合：返回 (累计天数, 累计字数)
+pub fn aggregate_totals(conn: &Connection) -> Result<(i64, i64)> {
+    let row = conn.query_row(
+        "SELECT COUNT(*), COALESCE(SUM(word_count), 0) FROM diaries",
+        [],
+        |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+    )?;
+    Ok(row)
+}
+
+/// 全部日记日期（升序），用于连续天数计算
+pub fn all_dates(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT diary_date FROM diaries ORDER BY diary_date ASC")?;
+    let items = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    items.collect()
+}
+
+/// 最近 N 个月（from `since` 月起）按月聚合：(month, words, days)
+pub fn monthly_words(conn: &Connection, since: &str) -> Result<Vec<(String, i64, i64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT substr(diary_date, 1, 7) AS m, COALESCE(SUM(word_count), 0), COUNT(*) \
+         FROM diaries \
+         WHERE diary_date >= ?1 \
+         GROUP BY m \
+         ORDER BY m ASC",
+    )?;
+    let items = stmt.query_map(params![since], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    })?;
+    items.collect()
 }

@@ -4,6 +4,7 @@
  * 提供日记日期格式化、日历计算与关键字提取等纯函数，
  * 供 DiaryPanel（日历 + 列表）与 DiaryDialog（编辑器）复用。
  */
+import DOMPurify from 'dompurify'
 
 /** 补零 */
 function pad2(n: number): string {
@@ -145,4 +146,20 @@ export function extractKeywords(text: string, max = 4): string[] {
     )
     .slice(0, max)
     .map(([k]) => k)
+}
+
+/**
+ * 净化日记富文本 HTML：保留 Tiptap 标签与行内颜色 / 图片（含 base64 data URL），
+ * 剥离 `<script>`、事件处理器（on*）、危险协议等。
+ *
+ * 用于落库前（DiaryDialog.persist）与只读渲染前（DiaryBookPage），降低 XSS 风险。
+ * DOMPurify 在浏览器 / Tauri webview 上下文运行，data: URI 默认允许（img 安全）。
+ */
+export function sanitizeDiaryHtml(html: string): string {
+  if (!html) return html
+  return DOMPurify.sanitize(html, {
+    ADD_TAGS: ['img'],
+    ADD_ATTR: ['style', 'src', 'alt'],
+    ALLOW_DATA_ATTR: true,
+  })
 }

@@ -5,8 +5,9 @@
 
 use crate::db::AppDb;
 use crate::error::AppError;
-use crate::models::{Diary, DiaryMeta};
+use crate::models::{Diary, DiaryMeta, DiarySearchHit, DiaryStats};
 use crate::service::diary_service;
+use crate::utils::SEARCH_DEFAULT_LIMIT;
 use serde::Deserialize;
 use tauri::{AppHandle, State};
 
@@ -79,4 +80,25 @@ pub async fn delete_diary(
     date: String,
 ) -> Result<(), AppError> {
     diary_service::delete_diary(&app, &db, &date)
+}
+
+/// 全文检索日记（FTS5 优先，无命中降级 LIKE）
+#[tauri::command]
+pub async fn search_diaries(
+    app: AppHandle,
+    db: State<'_, AppDb>,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<DiarySearchHit>, AppError> {
+    let limit = limit.unwrap_or(SEARCH_DEFAULT_LIMIT);
+    diary_service::search_diaries(&app, &db, &query, limit)
+}
+
+/// 日记统计：连续天数 / 累计篇数 / 字数趋势
+#[tauri::command]
+pub async fn diary_stats(
+    app: AppHandle,
+    db: State<'_, AppDb>,
+) -> Result<DiaryStats, AppError> {
+    diary_service::diary_stats(&app, &db)
 }

@@ -154,6 +154,51 @@ pub struct DiaryMeta {
     pub updated_at: String,
 }
 
+/// 日记搜索命中 — 全文检索返回（含纯文本片段）
+#[derive(Debug, Serialize, Clone)]
+pub struct DiarySearchHit {
+    pub id: String,
+    /// 日记日期 YYYY-MM-DD
+    #[serde(rename = "diaryDate")]
+    pub diary_date: String,
+    #[serde(rename = "wordCount")]
+    pub word_count: i64,
+    /// 关键字列表
+    pub keywords: Vec<String>,
+    /// 纯文本片段（去 HTML 后的摘要，约 80 字）
+    pub excerpt: String,
+}
+
+/// 日记月度聚合 — 最近 N 个月（含本月）按月统计
+#[derive(Debug, Serialize, Clone)]
+pub struct DiaryMonthStat {
+    /// 月份键 YYYY-MM
+    pub month: String,
+    /// 当月累计字数
+    pub words: i64,
+    /// 当月篇数
+    pub days: i64,
+}
+
+/// 日记统计 — 连续天数 / 累计篇数 / 字数趋势
+#[derive(Debug, Serialize, Clone)]
+pub struct DiaryStats {
+    /// 当前连续打卡天数（含今日未写则顺延至昨日的口径）
+    #[serde(rename = "currentStreak")]
+    pub current_streak: i64,
+    /// 历史最长连续天数
+    #[serde(rename = "longestStreak")]
+    pub longest_streak: i64,
+    /// 累计写作天数
+    #[serde(rename = "totalDays")]
+    pub total_days: i64,
+    /// 累计字数
+    #[serde(rename = "totalWords")]
+    pub total_words: i64,
+    /// 最近 12 个月（含本月）按月聚合，旧→新
+    pub monthly: Vec<DiaryMonthStat>,
+}
+
 /// 日程 — 对应 schedules 表，某天可有多条日程
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Schedule {

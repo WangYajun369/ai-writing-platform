@@ -60,6 +60,27 @@ pub fn apply(conn: &Connection) -> anyhow::Result<()> {
                 SELECT rowid, title, content_html FROM chapters WHERE deleted_at IS NULL;
             INSERT OR REPLACE INTO world_cards_fts(rowid, title, content)
                 SELECT rowid, title, content || ' ' || content_html FROM world_cards;
+
+            -- 日记 FTS 同步触发器（日记无 title，仅索引 content_html + keywords）
+            CREATE VIRTUAL TABLE IF NOT EXISTS diaries_fts USING fts5(
+                content, tokenize='unicode61'
+            );
+            DROP TRIGGER IF EXISTS diaries_fts_ai;
+            DROP TRIGGER IF EXISTS diaries_fts_ad;
+            DROP TRIGGER IF EXISTS diaries_fts_au;
+            CREATE TRIGGER diaries_fts_ai AFTER INSERT ON diaries BEGIN
+                INSERT OR REPLACE INTO diaries_fts(rowid, content)
+                    VALUES (new.rowid, new.content_html || ' ' || new.keywords);
+            END;
+            CREATE TRIGGER diaries_fts_ad AFTER DELETE ON diaries BEGIN
+                DELETE FROM diaries_fts WHERE rowid = old.rowid;
+            END;
+            CREATE TRIGGER diaries_fts_au AFTER UPDATE ON diaries BEGIN
+                INSERT OR REPLACE INTO diaries_fts(rowid, content)
+                    VALUES (new.rowid, new.content_html || ' ' || new.keywords);
+            END;
+            INSERT OR REPLACE INTO diaries_fts(rowid, content)
+                SELECT rowid, content_html || ' ' || keywords FROM diaries;
         "#,
     )
     .context("创建 FTS5 全文搜索表失败")

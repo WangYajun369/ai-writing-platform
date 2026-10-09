@@ -10,10 +10,11 @@
 
 use crate::db::AppDb;
 use crate::error::AppError;
-use crate::models::{Diary, DiaryMeta};
+use crate::models::{Diary, DiaryMeta, DiarySearchHit, DiaryStats, DiaryMonthStat};
 use crate::repository::diary_repo;
 use crate::service::uow::UnitOfWork;
-use crate::utils::{now, validate_len, MAX_CHAPTER_CONTENT_LEN};
+use crate::utils::{escape_fts5_query, like_pattern, now, snippet, strip_html, validate_len, MAX_CHAPTER_CONTENT_LEN};
+use chrono::Datelike;
 use tauri::AppHandle;
 use uuid::Uuid;
 
@@ -188,4 +189,174 @@ pub fn delete_diary(app: &AppHandle, db: &AppDb, date: &str) -> Result<(), AppEr
     diary_repo::delete_by_date(uow.conn(), date)?;
     uow.commit()?;
     Ok(())
+}
+
+/// 全文检索日记（FTS5 优先，无命中降级 LIKE），返回带纯文本片段的命中列表
+pub fn search_diaries(
+    app: &AppHandle,
+    db: &AppDb,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<DiarySearchHit>, AppError> {
+    if query.trim().is_empty() {
+        return Ok(vec![]);
+    }
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    let rows = {
+        let fts_query = escape_fts5_query(query);
+        if !fts_query.is_empty() {
+            match diary_repo::search_fts5(uow.conn(), &fts_query, limit) {
+                Ok(r) => {
+                    uow.audit(
+                        "SELECT",
+                        "diaries_fts",
+                        format!("FTS5 MATCH '{query}'"),
+                        file!(),
+                        line!(),
+                    );
+                    r
+                }
+                Err(_) => {
+                    let pattern = like_pattern(query, 64);
+                    uow.audit(
+                        "SELECT",
+                        "diaries",
+                        format!("FTS5 无命中，降级 LIKE: {query}"),
+                        file!(),
+                        line!(),
+                    );
+                    diary_repo::search_like(uow.conn(), &pattern, limit)?
+                }
+            }
+        } else {
+            let pattern = like_pattern(query, 64);
+            uow.audit(
+                "SELECT",
+                "diaries",
+                format!("LIKE fallback: {query}"),
+                file!(),
+                line!(),
+            );
+            diary_repo::search_like(uow.conn(), &pattern, limit)?
+        }
+    };
+    uow.commit()?;
+
+    let hits = rows
+        .into_iter()
+        .map(|(id, date, wc, kw_json, html)| DiarySearchHit {
+            id,
+            diary_date: date,
+            word_count: wc,
+            keywords: diary_repo::parse_keywords(kw_json),
+            excerpt: snippet(&strip_html(&html), 80),
+        })
+        .collect();
+    Ok(hits)
+}
+
+/// 日记统计：当前/最长连续天数、累计篇数、累计字数、最近 12 个月趋势
+pub fn diary_stats(app: &AppHandle, db: &AppDb) -> Result<DiaryStats, AppError> {
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit("SELECT", "diaries", "stats", file!(), line!());
+
+    let (total_days, total_words) = diary_repo::aggregate_totals(uow.conn())?;
+    let dates = diary_repo::all_dates(uow.conn())?;
+    let (current_streak, longest_streak) = compute_streaks(&dates);
+
+    let months = last_12_months();
+    let since = format!("{}", months.first().map(|m| format!("{m}-01")).unwrap_or_else(|| "0000-01-01".to_string()));
+    let monthly_map: std::collections::HashMap<String, (i64, i64)> = diary_repo::monthly_words(uow.conn(), &since)?
+        .into_iter()
+        .map(|(m, w, d)| (m, (w, d)))
+        .collect();
+    let monthly = months
+        .into_iter()
+        .map(|m| {
+            let (words, days) = monthly_map.get(&m).copied().unwrap_or((0, 0));
+            DiaryMonthStat { month: m, words, days }
+        })
+        .collect();
+
+    uow.commit()?;
+    Ok(DiaryStats {
+        current_streak,
+        longest_streak,
+        total_days,
+        total_words,
+        monthly,
+    })
+}
+
+/// 本地今日日期键 YYYY-MM-DD
+fn local_today_key() -> String {
+    chrono::Local::now().format("%Y-%m-%d").to_string()
+}
+
+/// 日期键前一天（本地）
+fn prev_day(key: &str) -> String {
+    if let Ok(d) = chrono::NaiveDate::parse_from_str(key, "%Y-%m-%d") {
+        (d - chrono::Days::new(1)).format("%Y-%m-%d").to_string()
+    } else {
+        key.to_string()
+    }
+}
+
+/// a 是否为 b 的前一天（本地）
+fn is_prev_day(a: &str, b: &str) -> bool {
+    prev_day(b) == a
+}
+
+/// 计算当前连续天数（含今日未写顺延至昨日的口径）与历史最长连续天数
+fn compute_streaks(dates: &[String]) -> (i64, i64) {
+    if dates.is_empty() {
+        return (0, 0);
+    }
+    let set: std::collections::HashSet<&str> = dates.iter().map(|s| s.as_str()).collect();
+
+    // 最长连续
+    let mut sorted = dates.to_vec();
+    sorted.sort();
+    sorted.dedup();
+    let mut longest = 1i64;
+    let mut cur = 1i64;
+    for w in sorted.windows(2) {
+        if is_prev_day(&w[0], &w[1]) {
+            cur += 1;
+            longest = longest.max(cur);
+        } else {
+            cur = 1;
+        }
+    }
+
+    // 当前连续（宽限：今日未写则顺延至昨日）
+    let today = local_today_key();
+    let mut start = today.clone();
+    if !set.contains(start.as_str()) {
+        let y = prev_day(&today);
+        if !set.contains(y.as_str()) {
+            return (0, longest);
+        }
+        start = y;
+    }
+    let mut streak = 0i64;
+    let mut d = start.clone();
+    while set.contains(d.as_str()) {
+        streak += 1;
+        d = prev_day(&d);
+    }
+    (streak, longest)
+}
+
+/// 最近 12 个月键（旧→新），含本月
+fn last_12_months() -> Vec<String> {
+    let now = chrono::Local::now().date_naive();
+    let mut out = Vec::with_capacity(12);
+    for i in 0..12 {
+        let m = now - chrono::Months::new((11 - i) as u32);
+        out.push(format!("{:04}-{:02}", m.year(), m.month()));
+    }
+    out
 }
