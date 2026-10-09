@@ -7,14 +7,15 @@
  * - 编辑（编辑器显示宽度）
  * - 存储（占位，后续版本推出统计功能）
  * - 版本（当前版本 / 检查更新）
- * （注：上方列表为早期说明；实际标签页见下方 TABS，共七个，另有
- * 「AI 工具箱」「系统检查」两项。）
+ * （注：上方列表为早期说明；实际标签页见下方 BASE_TABS，共七个，另有
+ * 「AI 工具箱」「系统检查」两项。其中「系统检查」受开发者模式控制，
+ * 仅在 版本 页开启「开发者模式」开关后显示。）
  *
  * 数据来源：AI 配置与连接状态来自 useAiStore；外观/编辑偏好来自
  * usePreferencesStore（各 setter 内部 savePreferences 持久化）；
  * 「AI 配置」的测试连接由本页动态 import aiApi.testConnection 执行。
  */
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { errText } from '@/lib/errors'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeftIcon, BotIcon, PaletteIcon, DatabaseIcon, ArrowUpCircleIcon, PenLineIcon, WrenchIcon, MonitorCheckIcon } from 'lucide-react'
@@ -30,21 +31,38 @@ import { SystemCheckSection } from './SystemCheckSection'
 
 type Tab = 'ai' | 'toolbox' | 'appearance' | 'editor' | 'storage' | 'version' | 'system'
 
-const TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }> }[] = [
+const BASE_TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }> }[] = [
   { id: 'ai', label: 'AI 配置', icon: BotIcon },
   { id: 'toolbox', label: 'AI 工具箱', icon: WrenchIcon },
   { id: 'appearance', label: '外观', icon: PaletteIcon },
   { id: 'editor', label: '编辑', icon: PenLineIcon },
   { id: 'storage', label: '存储', icon: DatabaseIcon },
   { id: 'version', label: '版本', icon: ArrowUpCircleIcon },
-  { id: 'system', label: '系统检查', icon: MonitorCheckIcon },
 ]
+
+/** 「系统检查」仅在开发者模式（版本页开关）开启时可见 */
+const SYSTEM_TAB: { id: Tab; label: string; icon: React.FC<{ className?: string }> } = {
+  id: 'system',
+  label: '系统检查',
+  icon: MonitorCheckIcon,
+}
 
 export default function SettingsPage() {
   const navigate = useNavigate()
   const { aiConfig, setAiConfig, aiConnectionStatus, aiConnectionDetail, setAiConnectionStatus } = useAiStore()
-  const { theme, setTheme, eyeCareMode, setEyeCareMode, fontFamily, setFontFamily, fontSize, setFontSize, gridSize, setGridSize, editorWidth, setEditorWidth } = usePreferencesStore()
+  const { theme, setTheme, eyeCareMode, setEyeCareMode, fontFamily, setFontFamily, fontSize, setFontSize, gridSize, setGridSize, editorWidth, setEditorWidth, developerMode } = usePreferencesStore()
   const [activeTab, setActiveTab] = useState<Tab>('ai')
+
+  /** 开发者模式关闭时，隐藏「系统检查」标签页 */
+  const tabs = useMemo(
+    () => (developerMode ? [...BASE_TABS, SYSTEM_TAB] : BASE_TABS),
+    [developerMode],
+  )
+
+  // 开发者模式关闭后若停留在「系统检查」，回退到版本页，避免内容区空白
+  useEffect(() => {
+    if (!developerMode && activeTab === 'system') setActiveTab('version')
+  }, [developerMode, activeTab])
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background">
@@ -63,7 +81,7 @@ export default function SettingsPage() {
         <div className="max-w-3xl mx-auto p-6 flex gap-6 h-full">
           {/* 侧边选项卡 */}
           <nav className="w-48 flex flex-col gap-1 shrink-0">
-            {TABS.map(({ id, label, icon: Icon }) => (
+            {tabs.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
                 onClick={() => setActiveTab(id)}
@@ -124,7 +142,7 @@ export default function SettingsPage() {
             )}
             {activeTab === 'storage' && <StorageSection />}
             {activeTab === 'version' && <VersionSection />}
-            {activeTab === 'system' && <SystemCheckSection />}
+            {activeTab === 'system' && developerMode && <SystemCheckSection />}
           </div>
         </div>
       </div>

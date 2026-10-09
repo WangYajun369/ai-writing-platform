@@ -5,14 +5,17 @@
  * 本组件只负责呈现：手动检查会清除「跳过此版本」记录，确保用户主动检查必有反馈。
  */
 import { useAiStore } from '@/stores/aiStore'
+import { usePreferencesStore } from '@/stores/preferencesStore'
 import { useUpdateCheck } from '@/hooks/useUpdateCheck'
 import { clearSkippedVersion } from '@/lib/version'
-import { RefreshCwIcon, RocketIcon, SkipForwardIcon } from 'lucide-react'
+import { RefreshCwIcon, RocketIcon, SkipForwardIcon, TerminalIcon } from 'lucide-react'
 
 export function VersionSection() {
   const APP_VERSION = useAiStore((s) => s.appVersion)
   const { status, message, update, progress, installing, installed, check, skip, install } =
     useUpdateCheck()
+  const developerMode = usePreferencesStore((s) => s.developerMode)
+  const setDeveloperMode = usePreferencesStore((s) => s.setDeveloperMode)
 
   const handleCheckUpdate = () => {
     // 主动检查视为用户想了解最新情况：清除跳过记录
@@ -45,16 +48,55 @@ export function VersionSection() {
         </div>
       </div>
 
-      {/* 检查更新 */}
+      {/* 检查更新 + 开发者模式 */}
       <div className="space-y-3">
-        <button
-          onClick={handleCheckUpdate}
-          disabled={status === 'checking'}
-          className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <RefreshCwIcon className={`w-4 h-4 ${status === 'checking' ? 'animate-spin' : ''}`} />
-          {status === 'checking' ? '正在检查...' : '检查更新'}
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={handleCheckUpdate}
+            disabled={status === 'checking'}
+            className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCwIcon className={`w-4 h-4 ${status === 'checking' ? 'animate-spin' : ''}`} />
+            {status === 'checking' ? '正在检查...' : '检查更新'}
+          </button>
+
+          {/* 开发者模式开关：开启后显示「系统检查」设置项与首页「调试控制台」 */}
+          <button
+            onClick={() => setDeveloperMode(!developerMode)}
+            role="switch"
+            aria-checked={developerMode}
+            title={
+              developerMode
+                ? '关闭后隐藏「系统检查」设置项与首页「调试控制台」'
+                : '开启后显示「系统检查」设置项与首页「调试控制台」'
+            }
+            className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium border transition-colors ${
+              developerMode
+                ? 'border-primary/30 bg-primary/10 text-primary'
+                : 'border-border text-muted-foreground hover:bg-muted'
+            }`}
+          >
+            <TerminalIcon className="w-4 h-4" />
+            开发者模式
+            <span
+              className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
+                developerMode ? 'bg-primary' : 'bg-muted-foreground/30'
+              }`}
+            >
+              <span
+                className={`inline-block h-3 w-3 rounded-full bg-white transition-transform ${
+                  developerMode ? 'translate-x-3.5' : 'translate-x-0.5'
+                }`}
+              />
+            </span>
+          </button>
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          {developerMode
+            ? '开发者模式已开启：设置页新增「系统检查」标签页，首页显示「调试控制台」入口。'
+            : '开启开发者模式后可查看「系统检查」与首页「调试控制台」。'}
+        </p>
 
         {status !== 'idle' && (
           <div className={`p-3 rounded-lg text-sm ${statusStyles[status] ?? ''}`}>

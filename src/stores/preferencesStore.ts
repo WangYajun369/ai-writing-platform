@@ -32,6 +32,8 @@ export type PreferenceValues = {
   editorWidth: EditorWidthOption
   libraryViewMode: LibraryViewModeOption
   librarySortBy: LibrarySortByOption
+  /** 开发者模式：开启后显示「系统检查」设置页与首页「调试控制台」入口 */
+  developerMode: boolean
 }
 
 export const prefsDefaults: PreferenceValues = {
@@ -43,6 +45,7 @@ export const prefsDefaults: PreferenceValues = {
   editorWidth: 'standard',
   libraryViewMode: 'grid',
   librarySortBy: 'updatedAt',
+  developerMode: false,
 }
 
 export type PreferencesState = PreferenceValues & {
@@ -56,6 +59,7 @@ export type PreferencesState = PreferenceValues & {
   setEditorWidth: (editorWidth: EditorWidthOption) => void
   setLibraryViewMode: (libraryViewMode: LibraryViewModeOption) => void
   setLibrarySortBy: (librarySortBy: LibrarySortByOption) => void
+  setDeveloperMode: (developerMode: boolean) => void
   saveCurrentEditorState: (
     bookId: string,
     chapterId: string,
@@ -115,6 +119,10 @@ export const usePreferencesStore = create<PreferencesState>()((set, get) => ({
   },
   setLibrarySortBy: (librarySortBy) => {
     set({ librarySortBy })
+    persistToBackend(get())
+  },
+  setDeveloperMode: (developerMode) => {
+    set({ developerMode })
     persistToBackend(get())
   },
   saveCurrentEditorState: (bookId, chapterId, scrollTop, cursorPos) => {

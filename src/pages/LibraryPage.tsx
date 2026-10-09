@@ -74,7 +74,7 @@ export default function LibraryPage() {
   } = useBooksStore()
   const { appVersion } = useAiStore()
   const availableUpdate = useAtomValue(availableUpdateAtom)
-  const { gridSize, librarySortBy, setLibrarySortBy } = usePreferencesStore()
+  const { gridSize, librarySortBy, setLibrarySortBy, developerMode } = usePreferencesStore()
   const sortBy = librarySortBy
   const [searchQuery, setSearchQuery] = useState('')
   const [showNewBookDialog, setShowNewBookDialog] = useState(false)
@@ -492,18 +492,20 @@ export default function LibraryPage() {
         {/* home-header 扩展点：插件入口（英语字典·生词本等） */}
         <HomeHeaderPlugins />
 
-        {/* 调试控制台 */}
-        <TooltipWrap title="调试控制台">
-          <button
-            onClick={handleToggleDebugWindow}
-            className={cn(
-              'p-2 rounded-lg transition-colors shrink-0',
-              debugWindowOpen ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-muted-foreground',
-            )}
-          >
-            <BugIcon className="w-5 h-5" />
-          </button>
-        </TooltipWrap>
+        {/* 调试控制台（仅在开发者模式下可见，开关位于 设置 → 版本） */}
+        {developerMode && (
+          <TooltipWrap title="调试控制台">
+            <button
+              onClick={handleToggleDebugWindow}
+              className={cn(
+                'p-2 rounded-lg transition-colors shrink-0',
+                debugWindowOpen ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-muted-foreground',
+              )}
+            >
+              <BugIcon className="w-5 h-5" />
+            </button>
+          </TooltipWrap>
+        )}
 
         <TooltipWrap title="设置">
           <button
