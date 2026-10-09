@@ -12,6 +12,7 @@
  * v1.9 可观测性体系收敛:替代原 DebugPanel 的纯 LogEntry 列表视图。
  */
 import { useEffect, useRef, useState, useCallback } from 'react'
+import type { ReactNode } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import {
   Trash2Icon,
@@ -57,7 +58,8 @@ const LEVEL_OPTIONS: { label: string; value: LevelFilter }[] = [
   { label: '错误', value: 'error' },
 ]
 
-export default function TelemetryExplorer() {
+/** 调试控制台顶栏扩展按钮插槽（Schema / 校验数据库等，由宿主 DebugPanel 传入） */
+export default function TelemetryExplorer({ toolbar }: { toolbar?: ReactNode }) {
   const [events, setEvents] = useState<TelemetryEvent[]>([])
   const [kindFilter, setKindFilter] = useState<KindFilter>('all')
   const [levelFilter, setLevelFilter] = useState<LevelFilter>('all')
@@ -180,9 +182,9 @@ export default function TelemetryExplorer() {
     <div className="h-screen flex flex-col bg-background">
       {/* 顶栏:标题 + 统计 + 广播指示 + 清空 */}
       <header className="flex items-center gap-3 px-4 py-2.5 border-b bg-card shrink-0 select-none">
-        <BugIcon className="w-4.5 h-4.5 text-primary" />
-        <h1 className="text-sm font-semibold">调试控制台</h1>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <BugIcon className="w-4.5 h-4.5 text-primary shrink-0" />
+        <h1 className="text-sm font-semibold shrink-0">调试控制台</h1>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0 whitespace-nowrap">
           <span>{events.length} 事件</span>
           {errorCount > 0 && (
             <span className="text-red-500 font-medium">{errorCount} 错误</span>
@@ -192,7 +194,7 @@ export default function TelemetryExplorer() {
           )}
         </div>
         {/* 广播状态 */}
-        <div className="flex items-center gap-1 text-xs">
+        <div className="flex items-center gap-1 text-xs shrink-0">
           <span
             className={`inline-block w-2 h-2 rounded-full ${
               broadcasting ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/40'
@@ -204,7 +206,7 @@ export default function TelemetryExplorer() {
         <div className="flex-1" />
 
         {/* 级别过滤 */}
-        <div className="flex rounded-md overflow-hidden border text-xs">
+        <div className="flex rounded-md overflow-hidden border text-xs shrink-0">
           {LEVEL_OPTIONS.map(({ label, value }) => (
             <button
               key={value}
@@ -219,6 +221,9 @@ export default function TelemetryExplorer() {
             </button>
           ))}
         </div>
+
+        {/* 扩展工具按钮（宿主传入，渲染在级别过滤与清空之间） */}
+        {toolbar}
 
         {/* 清空 */}
         <button

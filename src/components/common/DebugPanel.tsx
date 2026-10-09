@@ -44,31 +44,6 @@ export default function DebugPanel() {
 
   return (
     <div className="relative h-screen flex flex-col bg-background">
-      {/* 工具栏按钮 — 浮在 TelemetryExplorer 顶栏右上角 */}
-      <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5">
-        <button
-          onClick={() => setShowSchema(true)}
-          className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-md hover:bg-primary/10 text-primary transition-colors bg-card border"
-          title="Schema 演进工具:版本/迁移历史/PRAGMA diff"
-        >
-          <GitBranchIcon className="w-3.5 h-3.5" />
-          Schema
-        </button>
-        <button
-          onClick={handleValidate}
-          disabled={validating}
-          className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-md hover:bg-primary/10 text-primary transition-colors disabled:opacity-50 bg-card border"
-          title="校验本地 SQLite 数据库表结构和数据完整性"
-        >
-          {validating ? (
-            <Loader2Icon className="w-3.5 h-3.5 animate-spin" />
-          ) : (
-            <DatabaseIcon className="w-3.5 h-3.5" />
-          )}
-          校验数据库
-        </button>
-      </div>
-
       {/* 校验结果面板(显示时覆盖在事件列表上方) */}
       {showValidation && (
         <ValidationPanel
@@ -82,7 +57,34 @@ export default function DebugPanel() {
       {showSchema && <SchemaPanel onClose={() => setShowSchema(false)} />}
 
       {/* 主视图:统一 Telemetry 事件查看器 */}
-      <TelemetryExplorer />
+      {/* Schema / 校验数据库经 toolbar 插槽嵌入顶栏(替代原 absolute 浮层,避免遮挡过滤控件) */}
+      <TelemetryExplorer
+        toolbar={
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setShowSchema(true)}
+              className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-md hover:bg-primary/10 text-primary transition-colors bg-card border"
+              title="Schema 演进工具:版本/迁移历史/PRAGMA diff"
+            >
+              <GitBranchIcon className="w-3.5 h-3.5" />
+              Schema
+            </button>
+            <button
+              onClick={handleValidate}
+              disabled={validating}
+              className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-md hover:bg-primary/10 text-primary transition-colors disabled:opacity-50 bg-card border"
+              title="校验本地 SQLite 数据库表结构和数据完整性"
+            >
+              {validating ? (
+                <Loader2Icon className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <DatabaseIcon className="w-3.5 h-3.5" />
+              )}
+              校验数据库
+            </button>
+          </div>
+        }
+      />
     </div>
   )
 }
