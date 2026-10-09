@@ -197,4 +197,12 @@ pub const TABLE_SCHEMA: &[(&str, &[&str])] = &[
         "schema_migrations",
         &["version", "name", "applied_at", "checksum", "down_sql"],
     ),
+    // 统一配置表（AI 配置 / TTS / 偏好 / AI 工具箱分类）。
+    // DDL 由 config::store::apply_ddl 在 setup 阶段幂等创建（不走 migration），
+    // 这里纳入声明后 validate_database / schema_diff 才能覆盖它，
+    // 避免 DDL 失败时配置静默不可用（历史上失败仅告警不阻塞启动）。
+    (
+        "app_config",
+        &["section", "value", "version", "updated_at"],
+    ),
 ];

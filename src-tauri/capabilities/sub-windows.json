@@ -1,6 +1,6 @@
 {
   "identifier": "sub-windows-minimal",
-  "description": "Minimal capability for debug console and diary-book viewer windows (core event APIs only, no fs/dialog)",
-  "windows": ["debug", "diary-book"],
+  "description": "Minimal capability for read-mostly side windows: debug console / diary-book viewer / AI toolbox (core event APIs only, no fs/dialog/shell)",
+  "windows": ["debug", "diary-book", "ai-toolbox"],
   "permissions": ["core:default"]
 }

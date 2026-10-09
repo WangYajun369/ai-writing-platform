@@ -23,11 +23,13 @@ import { ToolboxOutputPanel } from './panel/ToolboxOutputPanel'
 import type { RequestDetail } from './panel/ToolboxOutputPanel'
 
 export default function AiToolboxPanel({ initialToolId }: { initialToolId?: string }) {
-  const { aiToolCategories, aiConfig } = useAiStore()
+  const { aiToolCategories, aiConfig, updateAiToolPrompt } = useAiStore()
   const [selectedTool, setSelectedTool] = useState<AiToolPrompt | null>(null)
   const initialized = useRef(false)
 
-  // 首次挂载时，若指定 initialToolId 且在分类中存在，则自动选中
+  // 首次挂载时，若指定 initialToolId 且在分类中存在，则自动选中；
+  // 若该工具已被重命名/删除，则回退到首个可用工具（排除有独立窗口的章节总结），
+  // 避免打开后停留在「请在左侧选择一个工具」的空白态。
   useEffect(() => {
     if (initialized.current || selectedTool || !initialToolId) return
     for (const cat of aiToolCategories) {
@@ -37,6 +39,13 @@ export default function AiToolboxPanel({ initialToolId }: { initialToolId?: stri
         setSelectedTool(tool)
         return
       }
+    }
+    const fallback = aiToolCategories
+      .flatMap((c) => c.tools)
+      .find((t) => t.id !== 'chapter-summary')
+    if (fallback) {
+      initialized.current = true
+      setSelectedTool(fallback)
     }
   }, [aiToolCategories, selectedTool, initialToolId])
 
@@ -84,6 +93,29 @@ export default function AiToolboxPanel({ initialToolId }: { initialToolId?: stri
     setSelectedTool(tool)
     setSystemPromptDraft(null)
   }
+
+  /**
+   * System Prompt 变更：更新会话内草稿 **并** 落盘到后端配置。
+   *
+   * 修复前：draft 只是本地 useState，切工具/关窗口即丢失，用户会误以为已保存。
+   * 现在保存即写入 `aiToolCategories`（经 updateAiToolPrompt → app_config），
+   * 与设置页编辑等价。传 null 表示「恢复默认」，落盘为空字符串（渲染时回退默认提示）。
+   */
+  const handleSystemPromptChange = useCallback(
+    (next: string | null) => {
+      setSystemPromptDraft(next)
+      if (!selectedTool) return
+      const category = aiToolCategories.find((c) =>
+        c.tools.some((t) => t.id === selectedTool.id),
+      )
+      if (!category) return
+      const systemPrompt = next ?? ''
+      updateAiToolPrompt(category.id, selectedTool.id, { systemPrompt })
+      // 同步本地快照，避免 selectedTool 持有旧值导致展示与存储不一致
+      setSelectedTool((prev) => (prev ? { ...prev, systemPrompt } : prev))
+    },
+    [selectedTool, aiToolCategories, updateAiToolPrompt],
+  )
 
   /** 复制生成内容 */
   const handleCopy = async () => {
@@ -245,7 +277,7 @@ export default function AiToolboxPanel({ initialToolId }: { initialToolId?: stri
             status={status}
             modelName={aiConfig.chat.model}
             systemPromptDraft={systemPromptDraft}
-            onSystemPromptChange={setSystemPromptDraft}
+            onSystemPromptChange={handleSystemPromptChange}
           />
 
           {/* 右侧：生成内容 */}

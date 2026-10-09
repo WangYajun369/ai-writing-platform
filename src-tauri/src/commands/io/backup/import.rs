@@ -25,6 +25,7 @@ pub(crate) fn validate_backup_row_limits(dbx: &DatabaseExport) -> Result<(), App
         ("snapshots", dbx.snapshots.len()),
         ("worldCards", dbx.world_cards.len()),
         ("embeddings", dbx.embeddings.len()),
+        ("appConfig", dbx.app_config.len()),
     ];
     for (name, count) in counts {
         let max = MAX_BACKUP_ROWS
@@ -521,6 +522,45 @@ pub(crate) fn write_backup_data(
 /// 执行全量数据写入（事务内：清空所有表 → 写入备份数据）
 ///
 /// v1.9：迁移到 UnitOfWork（调用方已开启事务，本函数不自行 commit）。
+/// 恢复 app_config 配置段（仅全量导入调用）
+///
+/// 采用 **upsert 合并**语义而非 replace：只覆盖备份中出现的段，绝不删除目标库
+/// 已有但备份里缺失的段。理由：
+/// 1. `app_config` 不在 `RB_TABLES` 内（不被 `clear_full_tables` 清空），若这里再
+///    做删除，旧版备份（无 appConfig 字段）会把用户现有配置清空回退成默认值；
+/// 2. 配置是跨作品的全局状态，单作品导入本就不应触碰，全量导入也应保守合并。
+/// 未知段名（未来新增段 / 降级导入）直接跳过，不阻断整体导入。
+pub(crate) fn restore_app_config(
+    uow: &mut UnitOfWork,
+    rows: &[super::types::AppConfigExport],
+) -> Result<usize, AppError> {
+    if rows.is_empty() {
+        return Ok(0);
+    }
+    let mut restored = 0usize;
+    for row in rows {
+        let Ok(section) = row.section.parse::<crate::config::model::ConfigSection>() else {
+            // 未知段：跳过而非报错，保证向前/向后兼容
+            continue;
+        };
+        uow.audit(
+            "UPSERT",
+            "app_config",
+            format!("restore section={}", row.section),
+            file!(),
+            line!(),
+        );
+        crate::config::store::upsert(
+            uow.conn(),
+            section,
+            &row.value,
+            crate::config::CONFIG_VERSION,
+        )?;
+        restored += 1;
+    }
+    Ok(restored)
+}
+
 pub(crate) fn run_full_import(
     uow: &mut UnitOfWork,
     payload: &ExportPayload,
@@ -534,7 +574,11 @@ pub(crate) fn run_full_import(
     );
     clear_full_tables(uow.conn())?;
 
-    write_backup_data(uow, &payload.database)
+    write_backup_data(uow, &payload.database)?;
+
+    // 业务数据写完后恢复配置段（AI 配置 / TTS / 偏好 / AI 工具箱分类）
+    restore_app_config(uow, &payload.database.app_config)?;
+    Ok(())
 }
 
 /// 执行单作品数据写入（事务内：仅删除目标作品数据 → 写入备份数据）

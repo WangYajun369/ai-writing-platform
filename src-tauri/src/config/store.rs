@@ -70,6 +70,35 @@ pub fn load(conn: &Connection, section: ConfigSection) -> Result<Option<ConfigRe
     })
 }
 
+/// 读取全部配置段(含 value,供备份导出使用)。
+///
+/// 与 [`list_meta`] 的区别:这里会读出 value(载荷较大),仅备份导出场景调用。
+pub fn load_all(conn: &Connection) -> Result<Vec<ConfigRecord>, AppError> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT section, value, version, updated_at
+             FROM app_config ORDER BY section",
+        )
+        .map_err(AppError::Db)?;
+    let rows = stmt
+        .query_map([], |r| {
+            let value_str: String = r.get(1)?;
+            let value: Value = serde_json::from_str(&value_str).unwrap_or(Value::Null);
+            Ok(ConfigRecord {
+                section: r.get(0)?,
+                value,
+                version: r.get::<_, i64>(2)? as u32,
+                updated_at: r.get(3)?,
+            })
+        })
+        .map_err(AppError::Db)?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(AppError::Db)?);
+    }
+    Ok(out)
+}
+
 /// 删除一段配置(供调试 / 重置场景使用)。返回是否实际删除。
 pub fn delete(conn: &Connection, section: ConfigSection) -> Result<bool, AppError> {
     let affected = conn

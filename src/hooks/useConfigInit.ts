@@ -16,6 +16,20 @@ import { useAiStore } from '@/stores/aiStore'
 import { usePreferencesStore } from '@/stores/preferencesStore'
 import { useTtsConfigStore } from '@/stores/ttsConfig'
 
+/**
+ * 模块级一次性标记：legacy localStorage 迁移只需在**首个**窗口执行一次。
+ *
+ * 修复前 AppInit 在每个窗口（主窗口 + AI 工具箱 / 字典 / 任务卡 等 7 个子窗口）
+ * 都会调用本 hook，导致每次开子窗口都重复跑一遍迁移 IPC 并再次清理 localStorage，
+ * 存在并发竞态。后端幂等不代表前端无代价 —— 这里用模块级 flag 收敛为一次。
+ */
+let legacyMigrationDone = false
+
+/** 测试用途：重置迁移标记 */
+export function __resetLegacyMigrationFlag(): void {
+  legacyMigrationDone = false
+}
+
 export function useConfigInit() {
   const initAi = useAiStore((s) => s.initFromConfig)
   const initPrefs = usePreferencesStore((s) => s.initFromConfig)
@@ -25,8 +39,11 @@ export function useConfigInit() {
     let cancelled = false
     ;(async () => {
       try {
-        // 1. 一次性迁移旧 localStorage 数据(幂等,无旧数据则空跑)
-        await migrateLegacyLocalStorage()
+        // 1. 一次性迁移旧 localStorage 数据(幂等,无旧数据则空跑);仅首个窗口执行
+        if (!legacyMigrationDone) {
+          legacyMigrationDone = true
+          await migrateLegacyLocalStorage()
+        }
       } catch {
         /* 迁移失败不阻塞启动 */
       }

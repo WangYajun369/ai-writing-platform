@@ -41,7 +41,7 @@ export const DEFAULT_AI_TOOL_CATEGORIES: AiToolCategory[] = [
     color: 'linear-gradient(180deg, #E1F8FF 0%, #CEE7EE 69.22%)',
     tools: [
       { id: 'fight-description', name: '打斗描写', description: '依据人物境界与招式生成对招节奏和场景细节，分镜化刻画肢体与术法碰撞', systemPrompt: '' },
-      { id: 'detail-description', name: '细节描写', description: '从"物—人—场"精确展开，捕捉触感、声光、气味与微动作，质感倍增', systemPrompt: '' },
+      { id: 'detail-description', name: '细节描写', description: '从“物—人—场”精确展开，捕捉触感、声光、气味与微动作，质感倍增', systemPrompt: '' },
       { id: 'sense-description', name: '感官描写', description: '联动视/听/嗅/味/触多通道生成表达，匹配心理回响，沉浸感拉满', systemPrompt: '' },
       { id: 'appearance-description', name: '外貌描写', description: '从五官、体态到穿搭色彩逐项生成，结合年龄与角色定位选择用词与比喻', systemPrompt: '' },
       { id: 'emotion-description', name: '情感描写', description: '刻画人物内心情绪波动，捕捉微妙心理变化与外显行为', systemPrompt: '' },

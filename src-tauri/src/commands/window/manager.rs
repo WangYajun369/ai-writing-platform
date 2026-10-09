@@ -208,6 +208,16 @@ pub async fn close_ai_toolbox_window(app: AppHandle) -> Result<(), AppError> {
     close_sub_window(&app, AI_TOOLBOX_CONFIG.label, AI_TOOLBOX_CONFIG.close_event)
 }
 
+/// 查询 AI 工具箱窗口是否打开
+///
+/// 补全与 vocab / tasks 一致的状态查询能力：用户若直接用系统关闭按钮关窗，
+/// `ai-toolbox-window-closed` 事件不会发出，主窗口按钮状态会停留在「已打开」。
+/// 有了该命令，主窗口可在切换前主动校正状态。
+#[tauri::command]
+pub fn is_ai_toolbox_window_open(app: AppHandle) -> bool {
+    app.get_webview_window(AI_TOOLBOX_CONFIG.label).is_some()
+}
+
 // ---- 英语字典（生词本 / 艾宾浩斯复习）----
 
 const VOCAB_CONFIG: WindowConfig = WindowConfig {

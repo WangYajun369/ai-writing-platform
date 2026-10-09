@@ -102,6 +102,8 @@ export default function AppInit() {
   }
 
   if (aiToolboxWin.isAiToolbox) {
+    // 首选「大纲生成」；若用户已重命名/删除该工具，面板内部回退到首个可用工具，
+    // 避免窗口打开后停留在「请在左侧选择一个工具」的空白态。
     return (
       <WindowShell>
         <AiToolboxPanel initialToolId="outline-generation" />

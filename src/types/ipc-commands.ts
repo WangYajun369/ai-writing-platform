@@ -67,6 +67,7 @@ export type IpcCommand =
   | 'import_backup'
   | 'import_txt'
   | 'inspect_backup'
+  | 'is_ai_toolbox_window_open'
   | 'is_tasks_window_open'
   | 'is_telemetry_broadcasting'
   | 'is_vocab_window_open'

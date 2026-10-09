@@ -19,6 +19,7 @@ pub(crate) const MAX_BACKUP_ROWS: &[(&str, usize)] = &[
     ("snapshots", 200_000),
     ("worldCards", 100_000),
     ("embeddings", 200_000),
+    ("appConfig", 1_000),
 ];
 
 /// 导入作用域：全库或单个作品（与备份类型解耦，覆盖「replace 语义」的受影响范围）
@@ -88,6 +89,19 @@ pub(crate) struct EmbeddingMetaExport {
     pub(crate) created_at: String,
 }
 
+/// app_config 导出行(KV 配置段:AI 配置 / TTS / 偏好 / AI 工具箱分类)
+///
+/// v1.9 起这四类配置从 localStorage 迁到 `app_config` 表,若不随备份携带,
+/// 用户「导出 → 导入」后会静默丢失自定义提示词与偏好,故纳入备份载荷。
+#[derive(Clone, Serialize, Deserialize)]
+pub(crate) struct AppConfigExport {
+    pub(crate) section: String,
+    pub(crate) value: serde_json::Value,
+    pub(crate) version: i64,
+    #[serde(rename = "updatedAt")]
+    pub(crate) updated_at: String,
+}
+
 /// 数据库全量导出子模块
 #[derive(Serialize, Deserialize)]
 pub(crate) struct DatabaseExport {
@@ -98,6 +112,9 @@ pub(crate) struct DatabaseExport {
     #[serde(rename = "worldCards")]
     pub(crate) world_cards: Vec<WorldCard>,
     pub(crate) embeddings: Vec<EmbeddingMetaExport>,
+    /// app_config 段（`#[serde(default)]` 保证旧版备份缺字段时反序列化为空，导入即跳过）
+    #[serde(rename = "appConfig", default)]
+    pub(crate) app_config: Vec<AppConfigExport>,
 }
 
 /// 全量导出总载荷（v1 字段兼容保留；v2 新增 schemaVersion / appVersion / payloadHash，均缺失时自动兼容旧文件）

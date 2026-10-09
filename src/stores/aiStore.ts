@@ -118,7 +118,11 @@ export const useAiStore = create<AiState>()((set, get) => {
       }
       try {
         const remoteCats = await configClient.aiToolCategories.get()
-        if (Array.isArray(remoteCats) && remoteCats.length > 0) {
+        // 只校验「是数组」，不再要求 length > 0。
+        // 后端对数组段是「有持久化记录则整体替换默认值」（config/commands.rs:49-51），
+        // 因此 [] 是用户主动删空分类的真实状态；旧写法会把删空的分类在重启后「复活」。
+        // 无持久化记录时后端返回内置默认分类（29 个工具），不会走到这里。
+        if (Array.isArray(remoteCats)) {
           set({ aiToolCategories: remoteCats })
         }
       } catch {
@@ -227,14 +231,18 @@ export const useAiStore = create<AiState>()((set, get) => {
       }),
 
     // —— AI 工具箱分类管理 ——
+    // 写入策略：结构性变更（新增/删除分类或工具、整段替换）立即落盘，保证用户操作
+    // 不丢；文本编辑（重命名 / System Prompt）走 500ms 防抖，避免逐键全量
+    // JSON.stringify(29+ 工具) + IPC 造成写放大。
     setAiToolCategories: (categories) => {
-      persistAiToolCategoriesToBackend(categories)
       set({ aiToolCategories: categories })
+      // 必须先覆盖待写快照再 flush，否则会把上一次未触发的防抖旧值写回后端
+      setAiToolCategoriesPersist(categories)
     },
     addAiToolCategory: (category) =>
       set((s) => {
         const categories = [...s.aiToolCategories, category]
-        persistAiToolCategoriesToBackend(categories)
+        setAiToolCategoriesPersist(categories)
         return { aiToolCategories: categories }
       }),
     updateAiToolCategory: (categoryId, patch) =>
@@ -242,13 +250,13 @@ export const useAiStore = create<AiState>()((set, get) => {
         const categories = s.aiToolCategories.map((c) =>
           c.id === categoryId ? { ...c, ...patch } : c,
         )
-        persistAiToolCategoriesToBackend(categories)
+        scheduleAiToolCategoriesPersist(categories)
         return { aiToolCategories: categories }
       }),
     deleteAiToolCategory: (categoryId) =>
       set((s) => {
         const categories = s.aiToolCategories.filter((c) => c.id !== categoryId)
-        persistAiToolCategoriesToBackend(categories)
+        setAiToolCategoriesPersist(categories)
         return { aiToolCategories: categories }
       }),
     addAiToolPrompt: (categoryId, prompt) =>
@@ -256,7 +264,7 @@ export const useAiStore = create<AiState>()((set, get) => {
         const categories = s.aiToolCategories.map((c) =>
           c.id === categoryId ? { ...c, tools: [...c.tools, prompt] } : c,
         )
-        persistAiToolCategoriesToBackend(categories)
+        setAiToolCategoriesPersist(categories)
         return { aiToolCategories: categories }
       }),
     updateAiToolPrompt: (categoryId, promptId, patch) =>
@@ -266,7 +274,7 @@ export const useAiStore = create<AiState>()((set, get) => {
             ? { ...c, tools: c.tools.map((p) => (p.id === promptId ? { ...p, ...patch } : p)) }
             : c,
         )
-        persistAiToolCategoriesToBackend(categories)
+        scheduleAiToolCategoriesPersist(categories)
         return { aiToolCategories: categories }
       }),
     deleteAiToolPrompt: (categoryId, promptId) =>
@@ -274,7 +282,7 @@ export const useAiStore = create<AiState>()((set, get) => {
         const categories = s.aiToolCategories.map((c) =>
           c.id === categoryId ? { ...c, tools: c.tools.filter((p) => p.id !== promptId) } : c,
         )
-        persistAiToolCategoriesToBackend(categories)
+        setAiToolCategoriesPersist(categories)
         return { aiToolCategories: categories }
       }),
 
@@ -283,6 +291,41 @@ export const useAiStore = create<AiState>()((set, get) => {
     setAppVersion: (appVersion) => set({ appVersion }),
   }
 })
+
+// ============================================================================
+// AI 工具箱分类持久化调度
+// ============================================================================
+// 设置页的分类名 / 工具名 / 工具描述 / System Prompt 均为 onChange 直连 store，
+// 每次按键都会全量序列化整个分类树。结构性操作（增删）要求即时可靠，文本编辑
+// 只需最终一致，故分成「立即写」与「防抖写」两条路径。
+const AI_TOOL_CATEGORIES_DEBOUNCE_MS = 500
+let aiToolCategoriesPersistTimer: ReturnType<typeof setTimeout> | null = null
+/** 防抖窗口内待落盘的最新快照（避免闭包捕获旧值） */
+let pendingAiToolCategories: AiToolCategory[] | null = null
+
+/** 立即把当前内存分类写后端（结构性变更与卸载兜底调用） */
+export function flushAiToolCategories(): void {
+  if (aiToolCategoriesPersistTimer !== null) {
+    clearTimeout(aiToolCategoriesPersistTimer)
+    aiToolCategoriesPersistTimer = null
+  }
+  const categories = pendingAiToolCategories ?? useAiStore.getState().aiToolCategories
+  pendingAiToolCategories = null
+  persistAiToolCategoriesToBackend(categories)
+}
+
+/** 防抖调度一次分类持久化（文本编辑场景，连续输入只落一次盘） */
+function scheduleAiToolCategoriesPersist(categories: AiToolCategory[]): void {
+  pendingAiToolCategories = categories
+  if (aiToolCategoriesPersistTimer !== null) clearTimeout(aiToolCategoriesPersistTimer)
+  aiToolCategoriesPersistTimer = setTimeout(flushAiToolCategories, AI_TOOL_CATEGORIES_DEBOUNCE_MS)
+}
+
+/** 结构性变更：立即落盘（先取消挂起的防抖，避免重复写） */
+function setAiToolCategoriesPersist(categories: AiToolCategory[]): void {
+  pendingAiToolCategories = categories
+  flushAiToolCategories()
+}
 
 // ============================================================================
 // AI 对话防抖持久化（Phase 4 问题 4）
@@ -313,8 +356,15 @@ function scheduleAiConversationPersist(): void {
 // 页面卸载 / 进入后台前兜底 flush（webview 关闭时防抖回调可能被吞，无法依赖 setTimeout）
 if (typeof window !== 'undefined') {
   const flushOnHidden = () => {
-    if (document.visibilityState === 'hidden') flushAiConversations()
+    if (document.visibilityState === 'hidden') {
+      flushAiConversations()
+      flushAiToolCategories()
+    }
   }
-  window.addEventListener('beforeunload', flushAiConversations)
+  const flushAll = () => {
+    flushAiConversations()
+    flushAiToolCategories()
+  }
+  window.addEventListener('beforeunload', flushAll)
   document.addEventListener('visibilitychange', flushOnHidden)
 }

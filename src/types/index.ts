@@ -241,7 +241,11 @@ export interface AiToolPrompt {
   name: string
   /** 工具简短描述，说明该工具的用途 */
   description: string
-  /** 自定义 System Prompt，留空则使用后端默认提示词 */
+  /**
+   * 自定义 System Prompt。
+   * 留空时**前端**兜底（AiToolboxPanel：`draft → 本字段 → 通用默认提示`），
+   * 后端不提供按工具的默认提示词（内置 29 个工具的该字段均为空字符串）。
+   */
   systemPrompt: string
 }
 

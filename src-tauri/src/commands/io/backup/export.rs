@@ -4,7 +4,7 @@
 //! 写出走「临时文件 + rename」原子替换。
 
 use super::types::{
-    sha256_hex, ChapterExport, DatabaseExport, EmbeddingMetaExport, ExportPayload,
+    sha256_hex, AppConfigExport, ChapterExport, DatabaseExport, EmbeddingMetaExport, ExportPayload,
     MAX_BACKUP_FILE_BYTES,
 };
 use crate::commands::io::crypto::build_encrypted_file;
@@ -124,6 +124,25 @@ pub(crate) fn load_full_export_data(uow: &mut UnitOfWork) -> Result<DatabaseExpo
         )
         .collect();
 
+    // app_config：AI 配置 / TTS / 偏好 / AI 工具箱分类（v1.9 起的配置持久化层）。
+    // 不随单作品备份导出（配置非作品级），仅进入全量备份。
+    uow.audit(
+        "SELECT",
+        "app_config",
+        "full export via repo".to_string(),
+        file!(),
+        line!(),
+    );
+    let app_config = crate::config::store::load_all(uow.conn())?
+        .into_iter()
+        .map(|r| AppConfigExport {
+            section: r.section,
+            value: r.value,
+            version: r.version as i64,
+            updated_at: r.updated_at,
+        })
+        .collect();
+
     Ok(DatabaseExport {
         books,
         volumes,
@@ -131,6 +150,7 @@ pub(crate) fn load_full_export_data(uow: &mut UnitOfWork) -> Result<DatabaseExpo
         snapshots,
         world_cards,
         embeddings,
+        app_config,
     })
 }
 
@@ -178,6 +198,8 @@ pub(crate) fn filter_single_book_data(data: &DatabaseExport, book_id: &str) -> D
             })
             .cloned()
             .collect(),
+        // 单作品备份不携带全局配置（导入方也不会恢复），保持作用域纯净
+        app_config: Vec::new(),
     }
 }
 

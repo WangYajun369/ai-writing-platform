@@ -33,6 +33,73 @@ impl ConfigSection {
             Self::AiToolCategories => "ai_tool_categories",
         }
     }
+
+    /// 校验写入载荷的结构(宽松校验)
+    ///
+    /// 只卡「关键结构」：对象段必须是对象、分类段必须是数组且每项具备渲染必需的
+    /// id / name / tools 字段。允许出现未知附加字段(向前兼容新增字段)，
+    /// 不做全字段严格反序列化 —— 避免老前端写入新结构时被误拒导致配置静默丢失。
+    pub fn validate_value(self, value: &serde_json::Value) -> Result<(), String> {
+        match self {
+            Self::Ai | Self::Tts | Self::Preferences => {
+                if !value.is_object() {
+                    return Err(format!("应为 JSON 对象，实际为 {}", json_kind(value)));
+                }
+                Ok(())
+            }
+            Self::AiToolCategories => {
+                let arr = value
+                    .as_array()
+                    .ok_or_else(|| format!("应为 JSON 数组，实际为 {}", json_kind(value)))?;
+                for (i, cat) in arr.iter().enumerate() {
+                    let obj = cat
+                        .as_object()
+                        .ok_or_else(|| format!("第 {} 个分类应为 JSON 对象", i + 1))?;
+                    require_str(obj, "id")
+                        .map_err(|d| format!("第 {} 个分类: {}", i + 1, d))?;
+                    require_str(obj, "name")
+                        .map_err(|d| format!("第 {} 个分类: {}", i + 1, d))?;
+                    let tools = obj
+                        .get("tools")
+                        .and_then(|v| v.as_array())
+                        .ok_or_else(|| format!("第 {} 个分类缺少数组字段 tools", i + 1))?;
+                    for (j, tool) in tools.iter().enumerate() {
+                        let t = tool.as_object().ok_or_else(|| {
+                            format!("第 {} 个分类的第 {} 个工具应为 JSON 对象", i + 1, j + 1)
+                        })?;
+                        require_str(t, "id").map_err(|d| {
+                            format!("第 {} 个分类的第 {} 个工具: {}", i + 1, j + 1, d)
+                        })?;
+                        require_str(t, "name").map_err(|d| {
+                            format!("第 {} 个分类的第 {} 个工具: {}", i + 1, j + 1, d)
+                        })?;
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+/// 校验对象中某个字段存在且为字符串
+fn require_str(obj: &serde_json::Map<String, serde_json::Value>, key: &str) -> Result<(), String> {
+    match obj.get(key) {
+        Some(v) if v.is_string() => Ok(()),
+        Some(v) => Err(format!("字段 {} 应为字符串，实际为 {}", key, json_kind(v))),
+        None => Err(format!("缺少字符串字段 {}", key)),
+    }
+}
+
+/// 供错误文案使用的 JSON 类型名
+fn json_kind(value: &serde_json::Value) -> &'static str {
+    match value {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "布尔",
+        serde_json::Value::Number(_) => "数字",
+        serde_json::Value::String(_) => "字符串",
+        serde_json::Value::Array(_) => "数组",
+        serde_json::Value::Object(_) => "对象",
+    }
 }
 
 impl std::fmt::Display for ConfigSection {

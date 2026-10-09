@@ -74,6 +74,14 @@ pub async fn set_config(
     let section: ConfigSection = section.parse().map_err(|_| {
         AppError::business(ErrCode::ConfigSection, format!("未知配置段: {}", section))
     })?;
+    // 结构校验：拒绝明显损坏的载荷（如把对象段写成标量、分类段缺 id/tools），
+    // 避免坏数据入库后直到前端渲染才暴露。
+    section.validate_value(&value).map_err(|detail| {
+        AppError::business(
+            ErrCode::ConfigSection,
+            format!("配置结构校验失败（{} 段）：{}", section.as_str(), detail),
+        )
+    })?;
     let conn = db.pool.get().map_err(|e| AppError::DbPool(e.to_string()))?;
     store::upsert(&conn, section, &value, super::CONFIG_VERSION)?;
     Ok(())

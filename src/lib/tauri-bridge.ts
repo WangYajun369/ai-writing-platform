@@ -355,6 +355,11 @@ export const windowApi = {
     return typedInvoke<void>('close_ai_toolbox_window')
   },
 
+  /** AI 工具箱窗口当前是否打开（校正主窗口按钮状态，避免系统关窗导致状态失同步） */
+  async isAiToolboxOpen(): Promise<boolean> {
+    return typedInvoke<boolean>('is_ai_toolbox_window_open')
+  },
+
   /** 打开英语字典（生词本）独立窗口（已打开则关闭，即 toggle） */
   async openVocab(): Promise<void> {
     return typedInvoke<void>('open_vocab_window')

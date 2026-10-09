@@ -310,6 +310,7 @@ pub fn run() {
             commands::window::manager::close_summary_window,
             commands::window::manager::open_ai_toolbox_window,
             commands::window::manager::close_ai_toolbox_window,
+            commands::window::manager::is_ai_toolbox_window_open,
             commands::window::manager::open_vocab_window,
             commands::window::manager::close_vocab_window,
             commands::window::manager::is_vocab_window_open,

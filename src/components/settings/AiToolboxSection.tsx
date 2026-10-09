@@ -23,8 +23,10 @@ import {
   FolderPlusIcon,
   PencilIcon,
   XIcon,
+  RotateCcwIcon,
 } from 'lucide-react'
 import { useAiStore } from '@/stores/aiStore'
+import { configClient } from '@/lib/configClient'
 import type { AiToolPrompt } from '@/types'
 
 /** 内置可选分类颜色方案 */
@@ -185,6 +187,7 @@ export function AiToolboxSection() {
     addAiToolPrompt,
     updateAiToolPrompt,
     deleteAiToolPrompt,
+    setAiToolCategories,
   } = useAiStore()
 
   // 展开的分类 ID 集合
@@ -241,6 +244,24 @@ export function AiToolboxSection() {
     setIsAddingCategory(false)
   }
 
+  /**
+   * 恢复内置默认分类：调后端 `reset_config`（删除持久化记录）拿回内置 JSON，
+   * 再整体写回 store。用户误删内置工具后可一键还原。
+   */
+  const handleResetToDefaults = async () => {
+    if (!window.confirm('确定要恢复内置默认分类吗？你新增/修改的分类与提示词将被覆盖。')) return
+    try {
+      const defaults = await configClient.aiToolCategories.reset()
+      if (Array.isArray(defaults)) {
+        setAiToolCategories(defaults)
+        setExpandedCategories(new Set())
+        setExpandedTools(new Set())
+      }
+    } catch {
+      /* 恢复失败静默：保持当前分类不变 */
+    }
+  }
+
   const handleDeleteCategory = (categoryId: string, name: string) => {
     if (!window.confirm(`确定要删除分类「${name}」及其所有工具吗？此操作不可撤销。`)) return
     deleteAiToolCategory(categoryId)
@@ -272,14 +293,24 @@ export function AiToolboxSection() {
             按分类管理 AI 工具的 System Prompt，留空则使用默认提示词。
           </p>
         </div>
-        <button
-          onClick={() => setIsAddingCategory(true)}
-          disabled={isAddingCategory}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-primary text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-50"
-        >
-          <FolderPlusIcon className="w-3.5 h-3.5" />
-          新建分类
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={handleResetToDefaults}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border hover:bg-muted transition-colors"
+            title="恢复内置默认分类（当前自定义内容将被覆盖）"
+          >
+            <RotateCcwIcon className="w-3.5 h-3.5" />
+            恢复默认
+          </button>
+          <button
+            onClick={() => setIsAddingCategory(true)}
+            disabled={isAddingCategory}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-primary text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            <FolderPlusIcon className="w-3.5 h-3.5" />
+            新建分类
+          </button>
+        </div>
       </div>
 
       {/* 新建分类 */}
