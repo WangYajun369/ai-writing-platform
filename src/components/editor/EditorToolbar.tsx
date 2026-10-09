@@ -44,6 +44,7 @@ import {
   ListTodoIcon,
   WrenchIcon,
   SigmaIcon,
+  FlaskConicalIcon,
 } from 'lucide-react'
 import {
   sidebarOpenAtom,
@@ -172,12 +173,14 @@ export default function EditorToolbar() {
   const [cropperFilePath, setCropperFilePath] = useState('')
   // 数学公式弹窗
   const [mathDialogOpen, setMathDialogOpen] = useState(false)
+  // 新建插入时的默认模式（数学 / 化学），由入口按钮决定；编辑时以节点内容为准
+  const [mathDefaultMode, setMathDefaultMode] = useState<'math' | 'chemistry'>('math')
   // 双击公式节点时的编辑上下文（null 表示新建插入）
   const [mathEditing, setMathEditing] = useState<MathEditRequest | null>(null)
   const mathEditRequest = useAtomValue(mathEditRequestAtom)
   const setMathEditRequest = useSetAtom(mathEditRequestAtom)
 
-  // 监听双击公式节点事件：接管并打开编辑弹窗
+  // 监听双击公式节点事件：接管并打开编辑弹窗（模式由节点内容 \ce{} 自动识别）
   useEffect(() => {
     if (!mathEditRequest) return
     setMathEditing(mathEditRequest)
@@ -431,24 +434,41 @@ export default function EditorToolbar() {
       />
       {(usableEditor?.isActive('codeBlock') ?? false) && <CodeLanguageSelect editor={usableEditor} />}
 
-      {/* 数学公式 */}
-      <div className="relative flex items-center shrink-0">
+      {/* 数学 / 化学公式：两个独立入口，各自打开对应模式 */}
+      <div className="relative flex items-center gap-1 shrink-0">
+        {/* 数学公式 */}
         <ToolbarBtn
-          active={mathDialogOpen}
+          active={mathDialogOpen && mathDefaultMode === 'math' && !mathEditing}
           onClick={() => {
             // 弹窗互斥：打开公式弹窗时同步关闭其他弹窗
+            setMathDefaultMode('math') // 数学入口
             setMathEditing(null) // 工具栏按钮始终进入新建模式
             setMathDialogOpen((v) => !v)
             setColorPickerOpen(false)
             setTablePickerOpen(false)
           }}
-          title="公式（数学 / 化学）"
+          title="数学公式"
           icon={<SigmaIcon className="w-4 h-4" />}
+        />
+        {/* 化学公式 */}
+        <ToolbarBtn
+          active={mathDialogOpen && mathDefaultMode === 'chemistry' && !mathEditing}
+          onClick={() => {
+            // 弹窗互斥：打开化学弹窗时同步关闭其他弹窗
+            setMathDefaultMode('chemistry') // 化学入口
+            setMathEditing(null) // 工具栏按钮始终进入新建模式
+            setMathDialogOpen((v) => !v)
+            setColorPickerOpen(false)
+            setTablePickerOpen(false)
+          }}
+          title="化学公式"
+          icon={<FlaskConicalIcon className="w-4 h-4" />}
         />
         {mathDialogOpen && (
           <MathDialog
             editor={usableEditor}
             editing={mathEditing}
+            defaultMode={mathDefaultMode}
             onClose={() => {
               setMathDialogOpen(false)
               setMathEditing(null)

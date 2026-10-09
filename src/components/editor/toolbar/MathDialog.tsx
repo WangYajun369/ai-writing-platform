@@ -22,6 +22,8 @@ interface MathDialogProps {
   onClose: () => void
   /** 编辑模式：双击已有公式节点时传入；null 表示新建插入 */
   editing?: MathEditRequest | null
+  /** 新建插入时的默认模式（数学 / 化学），由工具栏入口按钮决定；编辑时以节点内容为准 */
+  defaultMode?: Mode
 }
 
 type MathType = 'inline' | 'block'
@@ -39,11 +41,12 @@ export const MathDialog = memo(function MathDialog({
   editor,
   onClose,
   editing = null,
+  defaultMode = 'math',
 }: MathDialogProps) {
   const [mathType, setMathType] = useState<MathType>(editing?.type ?? 'inline')
-  // 模式：编辑已有 \ce{} 节点时自动识别为化学；新建时默认数学
-  const [mode, setMode] = useState<Mode>(
-    editing?.latex?.startsWith('\\ce{') ? 'chemistry' : 'math',
+  // 模式：编辑已有 \ce{} 节点时自动识别为化学；否则以入口按钮决定的 defaultMode 为准
+  const [mode] = useState<Mode>(
+    editing?.latex?.startsWith('\\ce{') ? 'chemistry' : defaultMode,
   )
   const [latex, setLatex] = useState(editing ? stripCe(editing.latex ?? '') : '')
   // 当前模式对应的符号分类（数学 / 化学）
@@ -188,8 +191,13 @@ export const MathDialog = memo(function MathDialog({
           {/* 标题栏 */}
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">
-              {editing ? '编辑公式' : '插入公式'}
-              <span className="text-muted-foreground font-normal">（{mode === 'chemistry' ? '化学' : '数学'}）</span>
+              {editing
+                ? mode === 'chemistry'
+                  ? '编辑化学公式'
+                  : '编辑数学公式'
+                : mode === 'chemistry'
+                  ? '插入化学公式'
+                  : '插入数学公式'}
             </span>
             <button
               onClick={onClose}
@@ -199,32 +207,6 @@ export const MathDialog = memo(function MathDialog({
               ✕
             </button>
           </div>
-
-          {/* 模式切换：数学 / 化学（编辑已有节点时锁定，由节点内容推断） */}
-          {!editing && (
-            <div className="flex gap-1 p-1 bg-muted rounded-md">
-              <button
-                onClick={() => setMode('math')}
-                className={`flex-1 px-3 py-1.5 text-sm rounded transition-colors ${
-                  mode === 'math'
-                    ? 'bg-background shadow-sm font-medium'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                数学
-              </button>
-              <button
-                onClick={() => setMode('chemistry')}
-                className={`flex-1 px-3 py-1.5 text-sm rounded transition-colors ${
-                  mode === 'chemistry'
-                    ? 'bg-background shadow-sm font-medium'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                化学
-              </button>
-            </div>
-          )}
 
           {/* 类型切换：编辑模式下隐藏（节点类型不可变） */}
           {!editing && (
