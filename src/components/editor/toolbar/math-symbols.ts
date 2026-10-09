@@ -20,6 +20,12 @@ export interface MathSymbolCategory {
   /** 英文副标题（分类标题行展示用） */
   titleEn: string
   symbols: MathSymbol[]
+  /**
+   * 预览渲染方式：
+   *  - 'math'（默认）：直接用 KaTeX 渲染 label（数学符号）
+   *  - 'ce'：用 KaTeX 内置 mhchem 以 \ce{label} 渲染（化学符号 / 反应式）
+   */
+  renderAs?: 'math' | 'ce'
 }
 
 /* ─────────────────────────────────────────────── */
@@ -629,4 +635,130 @@ export const MATH_SYMBOL_CATEGORIES: MathSymbolCategory[] = [
   { key: 'accents', title: '重音符', titleEn: 'Accents', symbols: ACCENTS },
   { key: 'matrices', title: '矩阵', titleEn: 'Matrices & arrays', symbols: MATRICES },
   { key: 'others', title: '其他', titleEn: 'Others', symbols: OTHERS },
+]
+
+/* ════════════════════════════════════════════════════ */
+/* 化学符号分类（mhchem \ce{} 渲染）                      */
+/* 每个符号的 label 均为 mhchem 语法，预览时统一包裹 \ce{}  */
+/* ════════════════════════════════════════════════════ */
+
+/** 1. 元素 — 常见元素符号（H₂O 式下标由 mhchem 自动处理） */
+const CH_ELEMENTS: MathSymbol[] = [
+  { label: 'H', insert: 'H', name: '氢' },
+  { label: 'He', insert: 'He', name: '氦' },
+  { label: 'Li', insert: 'Li', name: '锂' },
+  { label: 'Be', insert: 'Be', name: '铍' },
+  { label: 'B', insert: 'B', name: '硼' },
+  { label: 'C', insert: 'C', name: '碳' },
+  { label: 'N', insert: 'N', name: '氮' },
+  { label: 'O', insert: 'O', name: '氧' },
+  { label: 'F', insert: 'F', name: '氟' },
+  { label: 'Ne', insert: 'Ne', name: '氖' },
+  { label: 'Na', insert: 'Na', name: '钠' },
+  { label: 'Mg', insert: 'Mg', name: '镁' },
+  { label: 'Al', insert: 'Al', name: '铝' },
+  { label: 'Si', insert: 'Si', name: '硅' },
+  { label: 'P', insert: 'P', name: '磷' },
+  { label: 'S', insert: 'S', name: '硫' },
+  { label: 'Cl', insert: 'Cl', name: '氯' },
+  { label: 'Ar', insert: 'Ar', name: '氩' },
+  { label: 'K', insert: 'K', name: '钾' },
+  { label: 'Ca', insert: 'Ca', name: '钙' },
+  { label: 'Mn', insert: 'Mn', name: '锰' },
+  { label: 'Fe', insert: 'Fe', name: '铁' },
+  { label: 'Cu', insert: 'Cu', name: '铜' },
+  { label: 'Zn', insert: 'Zn', name: '锌' },
+  { label: 'Br', insert: 'Br', name: '溴' },
+  { label: 'Ag', insert: 'Ag', name: '银' },
+  { label: 'I', insert: 'I', name: '碘' },
+  { label: 'Ba', insert: 'Ba', name: '钡' },
+  { label: 'Au', insert: 'Au', name: '金' },
+  { label: 'Pb', insert: 'Pb', name: '铅' },
+]
+
+/** 2. 反应箭头 — mhchem 箭头语法 */
+const CH_ARROWS: MathSymbol[] = [
+  { label: '->', insert: '->', name: '反应箭头 →' },
+  { label: '<->', insert: '<->', name: '可逆箭头 ⇌' },
+  { label: '<=>', insert: '<=>', name: '平衡箭头' },
+  { label: '<=>>', insert: '<=>>', name: '平衡双箭头' },
+  { label: '<-', insert: '<-', name: '逆反应箭头' },
+  { label: '->[\\Delta]', insert: '->[\\Delta]', name: '加热条件箭头' },
+  { label: '\\uparrow', insert: '\\uparrow', name: '气体逸出 ↑' },
+  { label: '\\downarrow', insert: '\\downarrow', name: '沉淀生成 ↓' },
+]
+
+/** 3. 物态 — 反应式中的状态标注 */
+const CH_STATES: MathSymbol[] = [
+  { label: '(g)', insert: '(g)', name: '气态' },
+  { label: '(l)', insert: '(l)', name: '液态' },
+  { label: '(s)', insert: '(s)', name: '固态' },
+  { label: '(aq)', insert: '(aq)', name: '水溶液' },
+]
+
+/** 4. 电荷 — 离子电荷（^ 引入电荷，数字为计数） */
+const CH_CHARGES: MathSymbol[] = [
+  { label: '^{+}', insert: '^{+}', name: '正一价' },
+  { label: '^{2+}', insert: '^{2+}', name: '正二价' },
+  { label: '^{3+}', insert: '^{3+}', name: '正三价' },
+  { label: '^{-}', insert: '^{-}', name: '负一价' },
+  { label: '^{2-}', insert: '^{2-}', name: '负二价' },
+  { label: '^{3-}', insert: '^{3-}', name: '负三价' },
+  { label: '^{4+}', insert: '^{4+}', name: '正四价' },
+]
+
+/** 5. 常用化合物 / 离子 — 直接插入整段化学式 */
+const CH_COMPOUNDS: MathSymbol[] = [
+  { label: 'H2O', insert: 'H2O', name: '水' },
+  { label: 'CO2', insert: 'CO2', name: '二氧化碳' },
+  { label: 'O2', insert: 'O2', name: '氧气' },
+  { label: 'N2', insert: 'N2', name: '氮气' },
+  { label: 'H2', insert: 'H2', name: '氢气' },
+  { label: 'Cl2', insert: 'Cl2', name: '氯气' },
+  { label: 'NaCl', insert: 'NaCl', name: '氯化钠' },
+  { label: 'HCl', insert: 'HCl', name: '氯化氢' },
+  { label: 'H2SO4', insert: 'H2SO4', name: '硫酸' },
+  { label: 'H2CO3', insert: 'H2CO3', name: '碳酸' },
+  { label: 'HNO3', insert: 'HNO3', name: '硝酸' },
+  { label: 'H3PO4', insert: 'H3PO4', name: '磷酸' },
+  { label: 'NaOH', insert: 'NaOH', name: '氢氧化钠' },
+  { label: 'Ca(OH)2', insert: 'Ca(OH)2', name: '氢氧化钙' },
+  { label: 'CaCO3', insert: 'CaCO3', name: '碳酸钙' },
+  { label: 'Na2CO3', insert: 'Na2CO3', name: '碳酸钠' },
+  { label: 'NaHCO3', insert: 'NaHCO3', name: '碳酸氢钠' },
+  { label: 'CH4', insert: 'CH4', name: '甲烷' },
+  { label: 'NH3', insert: 'NH3', name: '氨气' },
+  { label: 'NH4Cl', insert: 'NH4Cl', name: '氯化铵' },
+  { label: 'C6H12O6', insert: 'C6H12O6', name: '葡萄糖' },
+  { label: 'H2O2', insert: 'H2O2', name: '过氧化氢' },
+  { label: 'KMnO4', insert: 'KMnO4', name: '高锰酸钾' },
+  { label: 'CuSO4', insert: 'CuSO4', name: '硫酸铜' },
+  { label: 'Fe2O3', insert: 'Fe2O3', name: '氧化铁' },
+  { label: 'Fe3O4', insert: 'Fe3O4', name: '四氧化三铁' },
+  { label: 'HClO', insert: 'HClO', name: '次氯酸' },
+  { label: 'MgO', insert: 'MgO', name: '氧化镁' },
+  { label: 'Al2O3', insert: 'Al2O3', name: '氧化铝' },
+  { label: 'SiO2', insert: 'SiO2', name: '二氧化硅' },
+  { label: 'SO2', insert: 'SO2', name: '二氧化硫' },
+  { label: 'SO3', insert: 'SO3', name: '三氧化硫' },
+  { label: 'NO2', insert: 'NO2', name: '二氧化氮' },
+]
+
+/** 6. 反应条件 / 符号 */
+const CH_CONDITIONS: MathSymbol[] = [
+  { label: '\\Delta', insert: '\\Delta', name: '加热' },
+  { label: '\\odot', insert: '\\odot', name: '催化剂' },
+  { label: '\\infty', insert: '\\infty', name: '无限' },
+  { label: '\\bullet', insert: '\\bullet', name: '点燃' },
+  { label: '+', insert: '+', name: '加号（反应分隔）' },
+  { label: '=', insert: '=', name: '等号 / 双键' },
+]
+
+export const CHEMISTRY_SYMBOL_CATEGORIES: MathSymbolCategory[] = [
+  { key: 'ch-elements', title: '元素', titleEn: 'Elements', renderAs: 'ce', symbols: CH_ELEMENTS },
+  { key: 'ch-arrows', title: '反应箭头', titleEn: 'Reaction arrows', renderAs: 'ce', symbols: CH_ARROWS },
+  { key: 'ch-states', title: '物态', titleEn: 'States', renderAs: 'ce', symbols: CH_STATES },
+  { key: 'ch-charges', title: '电荷', titleEn: 'Charges', renderAs: 'ce', symbols: CH_CHARGES },
+  { key: 'ch-compounds', title: '常用化合物', titleEn: 'Compounds', renderAs: 'ce', symbols: CH_COMPOUNDS },
+  { key: 'ch-conditions', title: '条件/符号', titleEn: 'Conditions', renderAs: 'ce', symbols: CH_CONDITIONS },
 ]

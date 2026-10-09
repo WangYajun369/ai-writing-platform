@@ -27,6 +27,8 @@ import TableCell from '@tiptap/extension-table-cell'
 import CharacterCount from '@tiptap/extension-character-count'
 import Mathematics from '@tiptap/extension-mathematics'
 import 'katex/dist/katex.min.css'
+// 注册 KaTeX mhchem 扩展，使 \ce{} 化学式（含反应箭头/物态/电荷）可在编辑器与弹窗中渲染
+import 'katex/contrib/mhchem'
 import { useAtom } from 'jotai'
 import { useShortcut } from '@/hooks/useShortcut'
 import {

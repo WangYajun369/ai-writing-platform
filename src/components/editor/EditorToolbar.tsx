@@ -442,7 +442,7 @@ export default function EditorToolbar() {
             setColorPickerOpen(false)
             setTablePickerOpen(false)
           }}
-          title="数学公式"
+          title="公式（数学 / 化学）"
           icon={<SigmaIcon className="w-4 h-4" />}
         />
         {mathDialogOpen && (

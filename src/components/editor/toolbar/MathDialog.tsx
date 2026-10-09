@@ -1,18 +1,20 @@
 /**
- * MathDialog — 数学公式插入弹窗（含符号面板）
+ * MathDialog — 公式插入弹窗（含符号面板，支持数学 / 化学两种模式）
  *
  * 居中模态弹窗：左侧为 LaTeX 输入框 + 实时预览，右侧为分类符号面板。
  * 符号面板为「分类堆叠」布局：所有分类在同一滚动区域内垂直排列，
  * 每个分类带吸顶标题行（中文 + 英文），顶部分类标签为锚点导航，
  * 点击平滑滚动到对应分类；滚动时自动高亮当前可见分类。
  * 点击符号直接插入到光标位置；每个符号均用 KaTeX 实时渲染。
+ * 模式切换：数学（KaTeX 原生）／化学（KaTeX mhchem \ce{} 渲染化学式与反应式）。
  * 通过 createPortal 渲染到 document.body，点击遮罩或按 Esc 关闭。
  */
 import { useState, useEffect, useMemo, memo, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import katex from 'katex'
 import type { Editor } from '@tiptap/react'
-import { MATH_SYMBOL_CATEGORIES } from './math-symbols'
+import { MATH_SYMBOL_CATEGORIES, CHEMISTRY_SYMBOL_CATEGORIES } from './math-symbols'
+import type { MathSymbolCategory } from './math-symbols'
 import type { MathEditRequest } from '@/stores/uiAtoms'
 
 interface MathDialogProps {
@@ -23,6 +25,15 @@ interface MathDialogProps {
 }
 
 type MathType = 'inline' | 'block'
+type Mode = 'math' | 'chemistry'
+
+/** 剥离 \ce{...} 外层，提取化学式的内部源（用于编辑已有化学式节点） */
+function stripCe(latex: string): string {
+  if (latex.startsWith('\\ce{') && latex.endsWith('}')) {
+    return latex.slice(4, -1)
+  }
+  return latex
+}
 
 export const MathDialog = memo(function MathDialog({
   editor,
@@ -30,9 +41,19 @@ export const MathDialog = memo(function MathDialog({
   editing = null,
 }: MathDialogProps) {
   const [mathType, setMathType] = useState<MathType>(editing?.type ?? 'inline')
-  const [latex, setLatex] = useState(editing?.latex ?? '')
+  // 模式：编辑已有 \ce{} 节点时自动识别为化学；新建时默认数学
+  const [mode, setMode] = useState<Mode>(
+    editing?.latex?.startsWith('\\ce{') ? 'chemistry' : 'math',
+  )
+  const [latex, setLatex] = useState(editing ? stripCe(editing.latex ?? '') : '')
+  // 当前模式对应的符号分类（数学 / 化学）
+  const categories = mode === 'chemistry' ? CHEMISTRY_SYMBOL_CATEGORIES : MATH_SYMBOL_CATEGORIES
   // 符号面板：当前高亮的分类（锚点导航同步）
-  const [activeKey, setActiveKey] = useState(MATH_SYMBOL_CATEGORIES[0].key)
+  const [activeKey, setActiveKey] = useState(categories[0].key)
+  // 切换模式时重置高亮分类到该模式的第一个分类
+  useEffect(() => {
+    setActiveKey(categories[0].key)
+  }, [mode, categories])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const symbolScrollRef = useRef<HTMLDivElement>(null)
 
@@ -60,11 +81,11 @@ export const MathDialog = memo(function MathDialog({
         // 滚动到底部时直接高亮最后一个分类
         // （末分类内容可能不够高，标题永远到不了判定区）
         if (container.scrollTop + container.clientHeight >= container.scrollHeight - 8) {
-          setActiveKey(MATH_SYMBOL_CATEGORIES[MATH_SYMBOL_CATEGORIES.length - 1].key)
+          setActiveKey(categories[categories.length - 1].key)
           return
         }
         const containerTop = container.getBoundingClientRect().top
-        let current = MATH_SYMBOL_CATEGORIES[0].key
+        let current = categories[0].key
         for (const el of Array.from(container.querySelectorAll('[data-cat-heading]'))) {
           // 标题越过容器顶部 80px 内即视为当前分类
           if (el.getBoundingClientRect().top - containerTop <= 80) {
@@ -81,20 +102,21 @@ export const MathDialog = memo(function MathDialog({
       container.removeEventListener('scroll', onScroll)
       cancelAnimationFrame(raf)
     }
-  }, [])
+  }, [categories])
 
-  // 实时预览
+  // 实时预览（化学模式自动用 \ce{} 包裹）
   const previewHtml = useMemo(() => {
     if (!latex.trim()) return ''
+    const src = mode === 'chemistry' ? `\\ce{${latex}}` : latex
     try {
-      return katex.renderToString(latex, {
+      return katex.renderToString(src, {
         displayMode: mathType === 'block',
         throwOnError: false,
       })
     } catch {
       return ''
     }
-  }, [latex, mathType])
+  }, [latex, mathType, mode])
 
   /** 将符号插入到光标位置 */
   const insertSymbol = useCallback(
@@ -119,19 +141,21 @@ export const MathDialog = memo(function MathDialog({
 
   const handleInsert = () => {
     if (!editor || !latex.trim()) return
+    // 化学模式：存储时统一包裹 \ce{}；数学模式原样存储
+    const finalLatex = mode === 'chemistry' ? `\\ce{${latex}}` : latex
     if (editing) {
       // 编辑模式：更新已有节点
       if (mathType === 'inline') {
-        editor.chain().focus().updateInlineMath({ latex, pos: editing.pos }).run()
+        editor.chain().focus().updateInlineMath({ latex: finalLatex, pos: editing.pos }).run()
       } else {
-        editor.chain().focus().updateBlockMath({ latex, pos: editing.pos }).run()
+        editor.chain().focus().updateBlockMath({ latex: finalLatex, pos: editing.pos }).run()
       }
     } else {
       // 插入模式：新建节点
       if (mathType === 'inline') {
-        editor.chain().focus().insertInlineMath({ latex }).run()
+        editor.chain().focus().insertInlineMath({ latex: finalLatex }).run()
       } else {
-        editor.chain().focus().insertBlockMath({ latex }).run()
+        editor.chain().focus().insertBlockMath({ latex: finalLatex }).run()
       }
     }
     onClose()
@@ -164,7 +188,8 @@ export const MathDialog = memo(function MathDialog({
           {/* 标题栏 */}
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">
-              {editing ? '编辑数学公式' : '插入数学公式'}
+              {editing ? '编辑公式' : '插入公式'}
+              <span className="text-muted-foreground font-normal">（{mode === 'chemistry' ? '化学' : '数学'}）</span>
             </span>
             <button
               onClick={onClose}
@@ -174,6 +199,32 @@ export const MathDialog = memo(function MathDialog({
               ✕
             </button>
           </div>
+
+          {/* 模式切换：数学 / 化学（编辑已有节点时锁定，由节点内容推断） */}
+          {!editing && (
+            <div className="flex gap-1 p-1 bg-muted rounded-md">
+              <button
+                onClick={() => setMode('math')}
+                className={`flex-1 px-3 py-1.5 text-sm rounded transition-colors ${
+                  mode === 'math'
+                    ? 'bg-background shadow-sm font-medium'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                数学
+              </button>
+              <button
+                onClick={() => setMode('chemistry')}
+                className={`flex-1 px-3 py-1.5 text-sm rounded transition-colors ${
+                  mode === 'chemistry'
+                    ? 'bg-background shadow-sm font-medium'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                化学
+              </button>
+            </div>
+          )}
 
           {/* 类型切换：编辑模式下隐藏（节点类型不可变） */}
           {!editing && (
@@ -203,12 +254,18 @@ export const MathDialog = memo(function MathDialog({
 
           {/* LaTeX 输入 */}
           <div>
-            <div className="text-xs text-muted-foreground mb-1.5">LaTeX 源码</div>
+            <div className="text-xs text-muted-foreground mb-1.5">
+              {mode === 'chemistry' ? '化学式（mhchem \\ce{}）' : 'LaTeX 源码'}
+            </div>
             <textarea
               ref={textareaRef}
               value={latex}
               onChange={(e) => setLatex(e.target.value)}
-              placeholder="在此输入 LaTeX 源码，或从右侧点击符号插入…"
+              placeholder={
+                mode === 'chemistry'
+                  ? '输入化学式，如 H2O + CO2 -> H2CO3（自动渲染为 \\ce{}）…'
+                  : '在此输入 LaTeX 源码，或从右侧点击符号插入…'
+              }
               className="w-full h-32 px-3 py-2 text-sm font-mono bg-background border rounded-md resize-none outline-none focus:ring-2 focus:ring-primary/50"
             />
           </div>
@@ -250,7 +307,7 @@ export const MathDialog = memo(function MathDialog({
         <div className="w-[380px] border-l flex flex-col shrink-0">
           {/* 分类锚点导航 */}
           <div className="flex flex-wrap gap-1.5 p-3 border-b bg-muted/30">
-            {MATH_SYMBOL_CATEGORIES.map((cat) => (
+            {categories.map((cat) => (
               <button
                 key={cat.key}
                 onClick={() => scrollToCategory(cat.key)}
@@ -267,7 +324,7 @@ export const MathDialog = memo(function MathDialog({
 
           {/* 全部分类垂直堆叠，统一滚动；分类标题吸顶 */}
           <div ref={symbolScrollRef} className="flex-1 overflow-y-auto min-h-0">
-            {MATH_SYMBOL_CATEGORIES.map((cat) => (
+            {categories.map((cat) => (
               <section key={cat.key} id={`math-cat-${cat.key}`}>
                 <div
                   data-cat-heading={cat.key}
@@ -295,15 +352,17 @@ export const MathDialog = memo(function MathDialog({
  * 每个符号用 KaTeX 实时渲染为预览图，点击插入。
  */
 interface SymbolGridProps {
-  category: (typeof MATH_SYMBOL_CATEGORIES)[0]
+  category: MathSymbolCategory
   onInsert: (text: string) => void
 }
 
 function SymbolGrid({ category, onInsert }: SymbolGridProps) {
   const rendered = useMemo(() => {
     return category.symbols.map((s) => {
+      // 化学分类用 \ce{} 包裹渲染；数学分类直接渲染
+      const src = category.renderAs === 'ce' ? `\\ce{${s.label}}` : s.label
       try {
-        return katex.renderToString(s.label, {
+        return katex.renderToString(src, {
           displayMode: false,
           throwOnError: false,
         })
