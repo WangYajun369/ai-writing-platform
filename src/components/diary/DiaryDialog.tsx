@@ -51,7 +51,7 @@ import { toast } from '@/lib/toast'
 import { countWordsFromHtml } from '@/lib/utils'
 import { isEditorUsable } from '@/lib/editor-guard'
 import { processEditorImage, processCroppedEditorImage } from '@/lib/image-utils'
-import { extractKeywords, formatDiaryTime, formatFullDateLabel, sanitizeDiaryHtml, toDateKey } from '@/lib/diary-utils'
+import { formatDiaryTime, formatFullDateLabel, sanitizeDiaryHtml, toDateKey } from '@/lib/diary-utils'
 import { usePreferencesStore } from '@/stores/preferencesStore'
 import { ToolbarBtn, TooltipWrap } from '@/components/editor/toolbar/ToolbarBtn'
 import { HeadingSelect } from '@/components/editor/toolbar/HeadingSelect'
@@ -102,7 +102,12 @@ export default function DiaryDialog({ diaryDate, onClose, onChanged }: DiaryDial
   const [loaded, setLoaded] = useState(false)
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
   const [wordCount, setWordCount] = useState(0)
-  const [keywordPreview, setKeywordPreview] = useState<string[]>([])
+  const [keywords, setKeywords] = useState<string[]>([])
+  /** 关键字输入框草稿（回车 / 逗号提交为标签） */
+  const [keywordDraft, setKeywordDraft] = useState('')
+  /** 手动关键字上限，与后端 diary_service MAX_KEYWORDS_COUNT / MAX_KEYWORD_LEN 对齐 */
+  const MAX_KEYWORDS = 10
+  const MAX_KEYWORD_LEN = 20
   const latestHtmlRef = useRef('<p></p>')
   /** 保存基线：与当前存储内容一致时跳过保存 */
   const initialContentRef = useRef('<p></p>')
@@ -111,6 +116,34 @@ export default function DiaryDialog({ diaryDate, onClose, onChanged }: DiaryDial
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const persistBusyRef = useRef(false)
   const persistQueuedRef = useRef(false)
+  /** 关键字当前值（始终最新，供异步保存读取，避免 useCallback 闭包内的过期 state） */
+  const latestKeywordsRef = useRef<string[]>([])
+  /** 关键字保存基线：与当前存储一致时跳过保存 */
+  const initialKeywordsRef = useRef<string[]>([])
+
+  // ── 手动关键字编辑（纯手动填写，无自动提取）──
+  function commitKeywordDraft() {
+    const raw = keywordDraft.trim()
+    if (!raw) return
+    const tokens = raw.split(/[,，、\s]+/).map((s) => s.trim()).filter(Boolean)
+    const next = [...keywords]
+    for (const t of tokens) {
+      const kw = t.length > MAX_KEYWORD_LEN ? t.slice(0, MAX_KEYWORD_LEN) : t
+      if (kw && !next.includes(kw) && next.length < MAX_KEYWORDS) next.push(kw)
+    }
+    setKeywords(next)
+    latestKeywordsRef.current = next
+    setKeywordDraft('')
+    scheduleSave()
+  }
+  function removeKeyword(kw: string) {
+    setKeywords((prev) => {
+      const next = prev.filter((k) => k !== kw)
+      latestKeywordsRef.current = next
+      return next
+    })
+    scheduleSave()
+  }
 
   // ── 表格 / 颜色 / 裁剪 UI 状态 ──
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
@@ -166,7 +199,6 @@ export default function DiaryDialog({ diaryDate, onClose, onChanged }: DiaryDial
     onUpdate: ({ editor: ed }) => {
       latestHtmlRef.current = ed.getHTML()
       setWordCount(countWordsFromHtml(latestHtmlRef.current))
-      setKeywordPreview(extractKeywords(htmlToText(latestHtmlRef.current)))
       scheduleSave()
     },
   })
@@ -184,7 +216,11 @@ export default function DiaryDialog({ diaryDate, onClose, onChanged }: DiaryDial
         initialContentRef.current = sanitizeDiaryHtml(nextHtml)
         latestHtmlRef.current = nextHtml
         setLastSavedAt(data ? new Date(data.updatedAt) : null)
-        setKeywordPreview(extractKeywords(htmlToText(html)))
+        const loadedKw = data?.keywords ?? []
+        setKeywords(loadedKw)
+        setKeywordDraft('')
+        latestKeywordsRef.current = loadedKw
+        initialKeywordsRef.current = loadedKw
         editor.commands.setContent(nextHtml)
         setWordCount(countWordsFromHtml(html))
       } catch (err) {
@@ -229,7 +265,10 @@ export default function DiaryDialog({ diaryDate, onClose, onChanged }: DiaryDial
             existedRef.current = false
             initialContentRef.current = '<p></p>'
             setLastSavedAt(null)
-            setKeywordPreview([])
+            setKeywords([])
+            setKeywordDraft('')
+            latestKeywordsRef.current = []
+            initialKeywordsRef.current = []
             onChangedRef.current(diaryDate)
           } catch (err) {
             console.error('清空日记删除失败', err)
@@ -239,18 +278,21 @@ export default function DiaryDialog({ diaryDate, onClose, onChanged }: DiaryDial
         return
       }
 
-      // 内容未变化则跳过
-      if (html === initialContentRef.current) return
+      // 内容与关键字均未变化则跳过
+      const kws = latestKeywordsRef.current
+      const kwSame =
+        initialKeywordsRef.current.length === kws.length &&
+        initialKeywordsRef.current.every((v, i) => v === kws[i])
+      if (html === initialContentRef.current && kwSame) return
 
       setSaving(true)
       try {
         const count = countWordsFromHtml(html)
-        const keywords = extractKeywords(htmlToText(html))
-        await diaryApi.save({ diaryDate, contentHtml: html, wordCount: count, keywords })
+        await diaryApi.save({ diaryDate, contentHtml: html, wordCount: count, keywords: kws })
         initialContentRef.current = html
+        initialKeywordsRef.current = kws
         existedRef.current = true
         setLastSavedAt(new Date())
-        setKeywordPreview(keywords)
         onChangedRef.current(diaryDate)
       } catch (err) {
         console.error('保存日记失败', err)
@@ -307,7 +349,11 @@ export default function DiaryDialog({ diaryDate, onClose, onChanged }: DiaryDial
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
       const html = latestHtmlRef.current
-      if (html && html !== initialContentRef.current) {
+      const kws = latestKeywordsRef.current
+      const kwSame =
+        initialKeywordsRef.current.length === kws.length &&
+        initialKeywordsRef.current.every((v, i) => v === kws[i])
+      if (html && (html !== initialContentRef.current || !kwSame)) {
         const clean = sanitizeDiaryHtml(html)
         void (async () => {
           try {
@@ -315,7 +361,7 @@ export default function DiaryDialog({ diaryDate, onClose, onChanged }: DiaryDial
               diaryDate,
               contentHtml: clean,
               wordCount: countWordsFromHtml(clean),
-              keywords: extractKeywords(htmlToText(clean)),
+              keywords: kws,
             })
           } catch (err) {
             console.error('卸载兜底保存失败', err)
@@ -711,26 +757,42 @@ export default function DiaryDialog({ diaryDate, onClose, onChanged }: DiaryDial
 
         {/* ─── 底部状态栏 ─── */}
         <div className="h-9 px-4 border-t bg-card flex items-center gap-2 text-xs text-muted-foreground shrink-0">
-          {keywordPreview.length > 0 ? (
-            <>
-              <span className="shrink-0">关键字</span>
-              <div className="flex items-center gap-1 min-w-0 overflow-hidden">
-                {keywordPreview.slice(0, 6).map((kw) => (
-                  <span
-                    key={kw}
-                    className="px-1.5 py-px text-[10px] rounded bg-primary/10 text-primary/80 border border-primary/15 whitespace-nowrap"
-                  >
-                    {kw}
-                  </span>
-                ))}
-              </div>
-            </>
-          ) : (
-            <span className="text-muted-foreground/60 truncate">
-              {loaded ? '写完后自动提取关键字，方便日后回顾' : '正在加载…'}
-            </span>
-          )}
-          <div className="flex-1" />
+          <span className="shrink-0">关键字</span>
+          <div className="flex items-center gap-1 min-w-0 flex-1 overflow-x-auto">
+            {keywords.map((kw) => (
+              <span
+                key={kw}
+                className="flex items-center gap-0.5 px-1.5 py-px text-[10px] rounded bg-primary/10 text-primary/80 border border-primary/15 whitespace-nowrap"
+              >
+                {kw}
+                <button
+                  type="button"
+                  title="移除"
+                  onClick={() => removeKeyword(kw)}
+                  className="opacity-50 hover:opacity-100 leading-none"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            <input
+              value={keywordDraft}
+              onChange={(e) => setKeywordDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ',') {
+                  e.preventDefault()
+                  commitKeywordDraft()
+                } else if (e.key === 'Backspace' && keywordDraft === '' && keywords.length > 0) {
+                  e.preventDefault()
+                  setKeywords((prev) => prev.slice(0, -1))
+                }
+              }}
+              onBlur={commitKeywordDraft}
+              disabled={!loaded}
+              placeholder={keywords.length ? '' : '手动填写，回车添加'}
+              className="bg-transparent outline-none text-[11px] w-24 min-w-[3rem] placeholder:text-muted-foreground/50 disabled:opacity-50"
+            />
+          </div>
           <span className="tabular-nums shrink-0">{wordCount.toLocaleString()} 字</span>
         </div>
       </div>
