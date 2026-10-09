@@ -754,6 +754,57 @@ const CH_CONDITIONS: MathSymbol[] = [
   { label: '=', insert: '=', name: '等号 / 双键' },
 ]
 
+/** 7. 有机化合物 — 常见有机物（烷/烯/炔、醇、酸、苯系、氨基酸等） */
+const CH_ORGANIC: MathSymbol[] = [
+  { label: 'CH4', insert: 'CH4', name: '甲烷' },
+  { label: 'CH3CH3', insert: 'CH3CH3', name: '乙烷' },
+  { label: 'CH3CH2CH3', insert: 'CH3CH2CH3', name: '丙烷' },
+  { label: 'CH3(CH2)2CH3', insert: 'CH3(CH2)2CH3', name: '丁烷' },
+  { label: 'CH3(CH2)3CH3', insert: 'CH3(CH2)3CH3', name: '戊烷' },
+  { label: 'CH2=CH2', insert: 'CH2=CH2', name: '乙烯' },
+  { label: 'CH3CH=CH2', insert: 'CH3CH=CH2', name: '丙烯' },
+  { label: 'CH#CH', insert: 'CH#CH', name: '乙炔' },
+  { label: 'CH2=CH-CH=CH2', insert: 'CH2=CH-CH=CH2', name: '1,3-丁二烯' },
+  { label: 'C6H6', insert: 'C6H6', name: '苯（分子式）' },
+  { label: 'C6H5CH3', insert: 'C6H5CH3', name: '甲苯' },
+  { label: 'C6H12', insert: 'C6H12', name: '环己烷' },
+  { label: 'CH3OH', insert: 'CH3OH', name: '甲醇' },
+  { label: 'CH3CH2OH', insert: 'CH3CH2OH', name: '乙醇' },
+  { label: 'HOCH2CH2OH', insert: 'HOCH2CH2OH', name: '乙二醇' },
+  { label: 'C3H5(OH)3', insert: 'C3H5(OH)3', name: '丙三醇（甘油）' },
+  { label: 'C6H5OH', insert: 'C6H5OH', name: '苯酚' },
+  { label: 'HCHO', insert: 'HCHO', name: '甲醛' },
+  { label: 'CH3CHO', insert: 'CH3CHO', name: '乙醛' },
+  { label: 'CH3COCH3', insert: 'CH3COCH3', name: '丙酮' },
+  { label: 'HCOOH', insert: 'HCOOH', name: '甲酸' },
+  { label: 'CH3COOH', insert: 'CH3COOH', name: '乙酸' },
+  { label: 'HOOC-COOH', insert: 'HOOC-COOH', name: '乙二酸（草酸）' },
+  { label: 'C6H5COOH', insert: 'C6H5COOH', name: '苯甲酸' },
+  { label: 'CH3COOCH2CH3', insert: 'CH3COOCH2CH3', name: '乙酸乙酯' },
+  { label: 'C6H5NH2', insert: 'C6H5NH2', name: '苯胺' },
+  { label: 'CO(NH2)2', insert: 'CO(NH2)2', name: '尿素' },
+  { label: 'NH2CH2COOH', insert: 'NH2CH2COOH', name: '甘氨酸' },
+  { label: 'C12H22O11', insert: 'C12H22O11', name: '蔗糖' },
+  { label: 'CH3(CH2)16COOH', insert: 'CH3(CH2)16COOH', name: '硬脂酸' },
+  { label: 'CH3(CH2)7CH=CH(CH2)7COOH', insert: 'CH3(CH2)7CH=CH(CH2)7COOH', name: '油酸' },
+]
+
+/** 8. 官能团 — 可插入到公式中的结构片段 */
+const CH_FUNCTIONAL: MathSymbol[] = [
+  { label: '-OH', insert: '-OH', name: '羟基' },
+  { label: '-COOH', insert: '-COOH', name: '羧基' },
+  { label: '-CHO', insert: '-CHO', name: '醛基' },
+  { label: '-NH2', insert: '-NH2', name: '氨基' },
+  { label: '-CO-', insert: '-CO-', name: '羰基' },
+  { label: '-O-', insert: '-O-', name: '醚键' },
+  { label: '-COO-', insert: '-COO-', name: '酯基' },
+  { label: 'C=C', insert: 'C=C', name: '碳碳双键' },
+  { label: 'C#C', insert: 'C#C', name: '碳碳三键' },
+  { label: 'C6H5-', insert: 'C6H5-', name: '苯基' },
+  { label: '-R', insert: '-R', name: '烷基（通式）' },
+  { label: '-X', insert: '-X', name: '卤素（通式）' },
+]
+
 export const CHEMISTRY_SYMBOL_CATEGORIES: MathSymbolCategory[] = [
   { key: 'ch-elements', title: '元素', titleEn: 'Elements', renderAs: 'ce', symbols: CH_ELEMENTS },
   { key: 'ch-arrows', title: '反应箭头', titleEn: 'Reaction arrows', renderAs: 'ce', symbols: CH_ARROWS },
@@ -761,4 +812,6 @@ export const CHEMISTRY_SYMBOL_CATEGORIES: MathSymbolCategory[] = [
   { key: 'ch-charges', title: '电荷', titleEn: 'Charges', renderAs: 'ce', symbols: CH_CHARGES },
   { key: 'ch-compounds', title: '常用化合物', titleEn: 'Compounds', renderAs: 'ce', symbols: CH_COMPOUNDS },
   { key: 'ch-conditions', title: '条件/符号', titleEn: 'Conditions', renderAs: 'ce', symbols: CH_CONDITIONS },
+  { key: 'ch-organic', title: '有机化合物', titleEn: 'Organic compounds', renderAs: 'ce', symbols: CH_ORGANIC },
+  { key: 'ch-functional', title: '官能团', titleEn: 'Functional groups', renderAs: 'ce', symbols: CH_FUNCTIONAL },
 ]
