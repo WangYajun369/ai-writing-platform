@@ -27,6 +27,13 @@ export interface Book {
   deletedAt?: string
   /** 作品大纲 */
   outline?: string
+  /**
+   * 作品类型：novel 小说 / thesis 论文 / breakdown 拆书 / note 学科笔记
+   *
+   * 对齐后端 `books.book_type` 列。存量作品为空字符串，
+   * 读取时应经 `normalizeBookType()` 归一化（空值回退 `novel`）。
+   */
+  bookType: string
 }
 
 /** 卷信息 */
@@ -348,6 +355,8 @@ export interface CreateBookParams {
   description: string
   dailyTarget: number
   tags: string[]
+  /** 作品类型，值为 `BookTypeId`；不传时后端存空串，读取时回退 novel */
+  bookType?: string
 }
 
 /** 更新书籍参数（对齐 Rust UpdateBookParams，仅允许更新这些字段） */
@@ -359,6 +368,8 @@ export interface UpdateBookParams {
   outline?: string
   dailyTarget?: number
   tags?: string[]
+  /** 作品类型，值为 `BookTypeId` */
+  bookType?: string
 }
 
 // ==================== 英语生词本（艾宾浩斯 / SM-2）====================

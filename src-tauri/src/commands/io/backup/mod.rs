@@ -567,7 +567,7 @@ mod tests {
                 daily_target INTEGER NOT NULL DEFAULT 0, today_count INTEGER NOT NULL DEFAULT 0,
                 db_path TEXT NOT NULL DEFAULT '', tags TEXT NOT NULL DEFAULT '[]',
                 created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted_at TEXT,
-                outline TEXT NOT NULL DEFAULT ''
+                outline TEXT NOT NULL DEFAULT '', book_type TEXT NOT NULL DEFAULT ''
             );
             CREATE TABLE volumes (
                 id TEXT PRIMARY KEY, book_id TEXT NOT NULL, title TEXT NOT NULL,
@@ -752,6 +752,65 @@ mod tests {
             "tags": [], "createdAt": "2026-01-01T00:00:00Z", "updatedAt": updated_at,
             "deletedAt": null, "outline": ""
         })
+    }
+
+    /// 带 bookType 的作品行（阶段三新增字段）
+    fn book_row_typed(id: &str, title: &str, updated_at: &str, book_type: &str) -> serde_json::Value {
+        let mut row = book_row(id, title, updated_at);
+        row["bookType"] = serde_json::json!(book_type);
+        row
+    }
+
+    /// 阶段三验收：book_type 必须随备份往返（INSERT + UPDATE 两条路径都要覆盖）
+    ///
+    /// 背景：备份链路曾出现「导出 → 导入丢字段」事故，故新增列必须在此显式断言。
+    #[test]
+    fn book_type_survives_import_upsert() {
+        let conn = full_conn();
+
+        // 1) INSERT 路径：全新导入
+        let db_json = serde_json::json!({
+            "books": [book_row_typed("b1", "论文作品", "2026-09-05T00:00:00Z", "thesis")],
+            "volumes": [], "chapters": [], "snapshots": [], "worldCards": [], "embeddings": []
+        });
+        let payload = payload_from_db(db_json);
+        let stats = apply_upsert_data(&conn, &payload.database, false).unwrap();
+        assert_eq!(stats["books"]["inserted"], 1, "books 应为插入");
+
+        let t: String = conn
+            .query_row("SELECT book_type FROM books WHERE id='b1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(t, "thesis", "导入后 book_type 应保留");
+
+        // 2) UPDATE 路径：改类型后再次导入
+        let db_json2 = serde_json::json!({
+            "books": [book_row_typed("b1", "论文作品", "2026-09-06T00:00:00Z", "note")],
+            "volumes": [], "chapters": [], "snapshots": [], "worldCards": [], "embeddings": []
+        });
+        let payload2 = payload_from_db(db_json2);
+        apply_upsert_data(&conn, &payload2.database, false).unwrap();
+
+        let t2: String = conn
+            .query_row("SELECT book_type FROM books WHERE id='b1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(t2, "note", "覆盖导入后 book_type 应被更新");
+    }
+
+    /// 旧备份（无 bookType 字段）必须能正常导入，且回退为空串
+    #[test]
+    fn book_type_defaults_empty_for_legacy_backup() {
+        let conn = full_conn();
+        let db_json = serde_json::json!({
+            "books": [book_row("b1", "存量作品", "2026-09-05T00:00:00Z")],
+            "volumes": [], "chapters": [], "snapshots": [], "worldCards": [], "embeddings": []
+        });
+        let payload = payload_from_db(db_json);
+        apply_upsert_data(&conn, &payload.database, false).unwrap();
+
+        let t: String = conn
+            .query_row("SELECT book_type FROM books WHERE id='b1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(t, "", "旧备份缺字段时应回退空串（前端再归一化为 novel）");
     }
 
     #[test]

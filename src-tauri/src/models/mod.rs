@@ -31,6 +31,12 @@ pub struct Book {
     pub deleted_at: Option<String>,
     /// 作品大纲（纯文本）
     pub outline: String,
+    /// 作品类型（领域 Agent 的选择依据）：`novel` / `thesis` / `breakdown` / `note`
+    ///
+    /// `#[serde(default)]` 不可省略：旧版备份 JSON 没有 `bookType` 字段，
+    /// 缺了它反序列化整份备份会失败（存量作品视为空串，回退 `novel` 画像）。
+    #[serde(rename = "bookType", default)]
+    pub book_type: String,
 }
 
 /// 卷 — 对应 `volumes` 表，按 sort_order 排序，支持软删除 (deleted_at)

@@ -82,7 +82,7 @@ pub(crate) fn reconcile_books(
     rows: &[Book],
 ) -> Result<RowReconcile, AppError> {
     let mut stmt = conn.prepare(
-        "SELECT updated_at, title, author, description, cover_image, db_path, tags, deleted_at, outline \
+        "SELECT updated_at, title, author, description, cover_image, db_path, tags, deleted_at, outline, book_type \
          FROM books WHERE id = ?1",
     )?;
     let mut out = RowReconcile::default();
@@ -101,6 +101,7 @@ pub(crate) fn reconcile_books(
                         r.get::<_, String>(6)?,
                         fp_opt(r.get::<_, Option<String>>(7)?),
                         r.get::<_, String>(8)?,
+                        r.get::<_, String>(9)?,
                     ]
                     .join("\u{1}");
                     Some((r.get::<_, String>(0)?, target_fp))
@@ -117,6 +118,7 @@ pub(crate) fn reconcile_books(
             tags_json,
             fp_opt(b.deleted_at.clone()),
             b.outline.clone(),
+            b.book_type.clone(),
         ]
         .join("\u{1}");
         classify_ts_row(&mut out, &b.updated_at, &backup_fp, target);

@@ -28,6 +28,7 @@ pub const TABLE_SCHEMA: &[(&str, &[&str])] = &[
             "updated_at",
             "deleted_at",
             "outline",
+            "book_type",
         ],
     ),
     (

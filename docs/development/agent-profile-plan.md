@@ -27,7 +27,7 @@
 |------|------|------|
 | 一 | L0 工具注册表 | ✅ **已完成**（2026-10-10） |
 | 二 | L1 画像注册表 | ✅ **已完成**（2026-10-10） |
-| 三 | `book_type` 落库 | ⬜ 未开始 |
+| 三 | `book_type` 落库 | ✅ **已完成**（2026-10-10） |
 | 四 | 领域画像 + Prompt 组装 | ⬜ 未开始 |
 | 五 | L3 前端自动发现 | ⬜ 未开始 |
 | 六 | L2 `RuntimeMode` / Pipeline | ⬜ 未开始 |
@@ -148,7 +148,7 @@
 
 ---
 
-## 阶段三：`book_type` 字段落库
+## 阶段三：`book_type` 字段落库 ✅ 已完成
 
 > 目标：给作品加上「类型」属性，并让它随备份迁移。改动面约 18 处，**务必逐项核对**，漏一处会导致「导出 → 导入」丢字段（这类事故在备份审查中已出现过一次）。
 
@@ -192,12 +192,41 @@
 
 | # | 文件 | 改动 |
 |---|------|------|
-| 13 | `src/types/index.ts` | `Book` 加 `bookType` |
-| 14 | `src/components/library/NewBookDialog.tsx` | 加类型选择器（小说 / 论文 / 拆书 / 学科笔记），提交时带上；学科笔记建议附一句说明「按学科组织的结构化学习笔记，区别于日记」 |
-| 15 | **新建** `src/components/library/EditBookDialog.tsx` | 编辑作品弹窗（当前项目**只有新建弹窗**，没有编辑入口），至少支持改类型、书名、作者 |
-| 16 | 书库卡片右键菜单 | 挂上「编辑作品」入口 |
+| 13 | `src/types/index.ts` | `Book` 加 `bookType`；`CreateBookParams` / `UpdateBookParams` 同步加可选字段 |
+| 14 | `src/components/library/NewBookDialog.tsx` | 加类型选择器（小说 / 论文 / 拆书 / 学科笔记），提交时带上；学科笔记附说明「按学科组织的结构化学习笔记，区别于日记」 |
+| 15 | `src/components/library/EditBookDialog.tsx` | **改造**（原计划误写为「新建」）：加类型选择器，支持改类型 / 书名 / 作者 |
+| 16 | 书库卡片右键菜单 | **无需改动**：`BookCard.tsx:106` 已有「编辑信息」入口 |
 
-> ⚠️ 任务 14 的类型选项建议**不要硬编码**，改为阶段五 L3 自动发现后从 IPC 拉取；此处先硬编码以保证阶段三可独立验收，**阶段五任务 9 必须回头替换**（该任务为必做项，非可选）。
+> ⚠️ 任务 14 的类型选项建议**不要在各弹窗内硬编码**，改为阶段五 L3 自动发现后从 IPC 拉取；此处先硬编码以保证阶段三可独立验收，**阶段五任务 9 必须回头替换**（该任务为必做项，非可选）。
+
+### 完成情况（2026-10-10）
+
+**原计划任务 15 / 16 的前提有误**——`EditBookDialog.tsx` 早已存在（commit `34e11d5`），且 `BookCard.tsx:106` 右键菜单已挂「编辑信息」入口，「项目只有新建弹窗、没有编辑入口」的判断不成立。故任务 15 改为改造既有弹窗，任务 16 取消。
+
+落地改动：
+
+| 层 | 文件 | 改动 |
+|----|------|------|
+| DB | `ddl/core.rs` / `ddl/migrations.rs` / `db/schema.rs` | `books` 加 `book_type TEXT NOT NULL DEFAULT ''`（建表 + 补列 + 列清单三处同步，否则 `validate_database` 误报缺列） |
+| 模型 | `models/mod.rs` | `Book` 加 `pub book_type: String`，`#[serde(rename = "bookType", default)]` —— `default` 保证**旧备份 JSON 缺该字段时仍能反序列化** |
+| 仓储 | `repository/book_repo.rs` | `BOOK_SELECT` 加列、`parse_book` 取值、`insert` 加第 9 参数 |
+| 服务 | `service/book_service.rs` | `UpdateBookParams` 加 `Option<String>`，`upd.push("book_type", v)` |
+| 命令 | `commands/book.rs` | `CreateBookParams` 加字段并透传 |
+| 备份 | `backup/import.rs` | UPDATE 加 `?15`、两条 INSERT 加列（**丢字段事故重灾区**） |
+| 备份 | `backup/reconcile.rs` | SELECT 加列 + 两处指纹数组同步（否则一致性比对永远「全匹配」） |
+| 备份 | `backup/mod.rs`、`commands/agent/tools.rs` | 测试用建表语句补列 |
+| 前端 | `types/index.ts` | `Book` / `CreateBookParams` / `UpdateBookParams` 三处 |
+| 前端 | **`lib/book-types.ts`（新建）** | 值域表 + `normalizeBookType()` 归一化；作为阶段五 L3 的**唯一替换点** |
+| 前端 | **`components/library/BookTypePicker.tsx`（新建）** | 两弹窗共用的类型选择控件，避免在两处重复硬编码 |
+| 前端 | `NewBookDialog.tsx` / `EditBookDialog.tsx` | 接入选择器；编辑弹窗用 `normalizeBookType(book.bookType)` 初始化，存量空串显示為「小说」 |
+
+**导出侧无需改动**：`export.rs` 走 `book_repo::list_all_include_deleted`，复用 `BOOK_SELECT`，新列自动带上。
+
+**回归防线（新增 3 组测试）**：
+
+- `book_type_survives_import_upsert` —— 覆盖备份 INSERT 与 UPDATE 两条路径，断言类型往返不丢
+- `book_type_defaults_empty_for_legacy_backup` —— 旧备份缺 `bookType` 字段时导入不报错，回退空串
+- `src/test/bookTypes.test.ts` —— 空串 / `undefined` / `null` / 未知值 / 大小写不一致均回退 `novel`
 
 ### 验收
 
@@ -276,7 +305,7 @@
 | 6 | 头部布局重排 | `src/components/ai/panel/Header.tsx` | 现有「模式切换（聊天 / Agent）+ 4 个技能 chips」已较拥挤，需重新规划，注意窄栏溢出（此前调试控制台头部就出现过浮层遮挡过滤控件的溢出问题） |
 | 7 | 选择持久化 | `AiSidePanel.tsx` 或偏好 store | 当前模式与技能选择都是纯 `useState`，刷新即回默认；建议至少持久化技能选择 |
 | 8 | 书库卡片类型徽标（可选） | 书库卡片 | 在卡片上显示类型徽标 |
-| 9 | 类型选项去硬编码（**必做**） | `NewBookDialog.tsx` / `EditBookDialog.tsx` | 阶段三任务 14 为可独立验收而临时硬编码的 4 个类型选项，改从 `list_agent_profiles`（取 `kind = Domain`）拉取。**不做的后果**：将来新增领域要同时改后端注册表与前端弹窗，「后端改一处」的收益被抵消 |
+| 9 | 类型选项去硬编码（**必做**） | `src/lib/book-types.ts` | 阶段三为可独立验收而硬编码的 4 个类型选项，改从 `list_agent_profiles`（取 `kind = Domain`）拉取。**替换点已收敛到单一文件**——阶段三新建了 `lib/book-types.ts` 集中值域、`components/library/BookTypePicker.tsx` 只渲染不定义，届时只需改 `book-types.ts`，两个弹窗无需改动。**不做的后果**：将来新增领域要同时改后端注册表与前端弹窗，「后端改一处」的收益被抵消 |
 
 > 图标沿用现有**字符串图标名**约定（`pen-tool` / `search` 等），前端只做「图标名 → 组件」映射，不引入新的映射表。
 

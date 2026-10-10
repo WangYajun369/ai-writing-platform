@@ -11,6 +11,8 @@ import { bookApi } from '@/lib/tauri-bridge'
 import { useBooksStore } from '@/stores/booksStore'
 import { showError } from '@/lib/errors'
 import CoverPicker from './CoverPicker'
+import BookTypePicker from './BookTypePicker'
+import { DEFAULT_BOOK_TYPE } from '@/lib/book-types'
 import { isRenderableSrc, generateBookCoverSvg } from '@/lib/image-utils.ts'
 import type { Book } from '@/types'
 
@@ -25,6 +27,7 @@ export default function NewBookDialog({ onClose, onCreated }: NewBookDialogProps
   const [author, setAuthor] = useState('')
   const [description, setDescription] = useState('')
   const [dailyTarget, setDailyTarget] = useState(1000)
+  const [bookType, setBookType] = useState<string>(DEFAULT_BOOK_TYPE)
   const [coverDataUrl, setCoverDataUrl] = useState('') // 裁剪后的 Base64 data URL
   const [coverPreview, setCoverPreview] = useState<string | undefined>(undefined)
   const [submitting, setSubmitting] = useState(false)
@@ -46,6 +49,7 @@ export default function NewBookDialog({ onClose, onCreated }: NewBookDialogProps
         description: description.trim(),
         dailyTarget,
         tags: [],
+        bookType,
       })
 
       // 如果选择了封面，通过 setCoverData 直接保存 data URL
@@ -101,6 +105,12 @@ export default function NewBookDialog({ onClose, onCreated }: NewBookDialogProps
               placeholder="请输入书名"
               autoFocus
             />
+          </div>
+
+          {/* 作品类型：决定 AI 助手使用的领域画像（可在编辑信息中随时修改） */}
+          <div className="space-y-1">
+            <label className="text-sm font-medium">作品类型</label>
+            <BookTypePicker value={bookType} onChange={setBookType} />
           </div>
 
           <div className="space-y-1">

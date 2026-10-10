@@ -25,6 +25,8 @@ pub struct UpdateBookParams {
     pub outline: Option<String>,
     pub daily_target: Option<i64>,
     pub tags: Option<Vec<String>>,
+    /// 作品类型：`novel` / `thesis` / `breakdown` / `note`（领域 Agent 的选择依据）
+    pub book_type: Option<String>,
 }
 
 /// 列出所有未删除的书籍
@@ -75,6 +77,7 @@ pub fn create_book(
     description: &str,
     daily_target: i64,
     tags: &[String],
+    book_type: &str,
 ) -> Result<Book, AppError> {
     validate_len("书名", title, MAX_TITLE_LEN)?;
     validate_len("作者", author, MAX_AUTHOR_LEN)?;
@@ -103,6 +106,7 @@ pub fn create_book(
         daily_target,
         &tags_json,
         &ts,
+        book_type,
     )?;
     uow.commit()?;
 
@@ -122,6 +126,7 @@ pub fn create_book(
         updated_at: ts,
         deleted_at: None,
         outline: String::new(),
+        book_type: book_type.to_string(),
     })
 }
 
@@ -160,6 +165,9 @@ pub fn update_book(
         }
         if let Some(v) = params.tags {
             upd.push_json("tags", v);
+        }
+        if let Some(v) = params.book_type {
+            upd.push("book_type", v);
         }
 
         let fields = upd.field_count();

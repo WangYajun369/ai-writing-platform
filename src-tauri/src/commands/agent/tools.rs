@@ -383,7 +383,8 @@ mod tests {
                 word_count INTEGER NOT NULL DEFAULT 0, daily_target INTEGER NOT NULL DEFAULT 0,
                 today_count INTEGER NOT NULL DEFAULT 0, db_path TEXT NOT NULL DEFAULT '',
                 tags TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-                deleted_at TEXT, outline TEXT NOT NULL DEFAULT ''
+                deleted_at TEXT, outline TEXT NOT NULL DEFAULT '',
+                book_type TEXT NOT NULL DEFAULT ''
             );
             CREATE TABLE chapters (
                 id TEXT PRIMARY KEY, book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,

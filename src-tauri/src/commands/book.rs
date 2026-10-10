@@ -40,6 +40,9 @@ pub struct CreateBookParams {
     #[serde(rename = "dailyTarget")]
     pub daily_target: i64,
     pub tags: Vec<String>,
+    /// 作品类型。`default` 保证旧版前端不传时不报错（空串 → 回退 novel 画像）
+    #[serde(rename = "bookType", default)]
+    pub book_type: String,
 }
 
 /// 创建新书，生成 UUID，返回完整 Book 结构
@@ -57,6 +60,7 @@ pub async fn create_book(
         &params.description,
         params.daily_target,
         &params.tags,
+        &params.book_type,
     )
 }
 

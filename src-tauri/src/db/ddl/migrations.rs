@@ -35,6 +35,8 @@ pub const COLUMN_MIGRATIONS: &[(&str, &str, &str)] = &[
     ("tasks", "completion_summary", "TEXT NOT NULL DEFAULT ''"),
     // 记忆库命中时间（过期清理依据；旧库 ALTER 补列，默认 NULL 表示从未命中）
     ("memories", "last_hit_at", "TEXT"),
+    // 作品类型（领域 Agent 的选择依据；存量作品为空串，回退 novel 画像）
+    ("books", "book_type", "TEXT NOT NULL DEFAULT ''"),
 ];
 
 /// 依次执行补列。返回本次实际新增的列名列表（形如 `table.column`），

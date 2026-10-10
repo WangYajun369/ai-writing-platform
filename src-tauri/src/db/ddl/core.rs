@@ -27,7 +27,8 @@ pub fn apply(conn: &Connection) -> anyhow::Result<()> {
                 created_at  TEXT NOT NULL,
                 updated_at  TEXT NOT NULL,
                 deleted_at  TEXT,
-                outline     TEXT NOT NULL DEFAULT ''
+                outline     TEXT NOT NULL DEFAULT '',
+                book_type   TEXT NOT NULL DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS volumes (

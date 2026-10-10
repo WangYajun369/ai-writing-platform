@@ -12,7 +12,7 @@ use crate::repository::soft_delete::{self, Table};
 use rusqlite::{params, Connection, Result};
 
 /// 完整的 SELECT 列名
-pub const BOOK_SELECT: &str = "id,title,author,description,cover_image,word_count,daily_target,today_count,db_path,tags,created_at,updated_at,deleted_at,outline";
+pub const BOOK_SELECT: &str = "id,title,author,description,cover_image,word_count,daily_target,today_count,db_path,tags,created_at,updated_at,deleted_at,outline,book_type";
 
 /// `books` 表的软删除 marker（v1.9 架构优化 #2）
 ///
@@ -41,6 +41,8 @@ pub fn parse_book(row: &rusqlite::Row) -> Result<Book> {
         updated_at: row.get("updated_at")?,
         deleted_at: row.get("deleted_at")?,
         outline: row.get("outline")?,
+        // 兼容旧库：列存在但值为 NULL 时按空串处理（存量作品回退 novel 画像）
+        book_type: row.get::<_, Option<String>>("book_type")?.unwrap_or_default(),
     })
 }
 
@@ -94,10 +96,11 @@ pub fn insert(
     daily_target: i64,
     tags_json: &str,
     created_at: &str,
+    book_type: &str,
 ) -> Result<()> {
     conn.execute(
-        "INSERT INTO books (id,title,author,description,daily_target,tags,created_at,updated_at,word_count,today_count,db_path,outline) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,0,0,'','')",
-        params![id, title, author, description, daily_target, tags_json, created_at, created_at],
+        "INSERT INTO books (id,title,author,description,daily_target,tags,created_at,updated_at,word_count,today_count,db_path,outline,book_type) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,0,0,'','',?9)",
+        params![id, title, author, description, daily_target, tags_json, created_at, created_at, book_type],
     )?;
     Ok(())
 }

@@ -230,7 +230,7 @@ pub(crate) fn apply_upsert_data(
                 conn.execute(
                     "UPDATE books SET title=?2, author=?3, description=?4, cover_image=?5, \
                      word_count=?6, daily_target=?7, today_count=?8, db_path=?9, tags=?10, \
-                     created_at=?11, updated_at=?12, deleted_at=?13, outline=?14 WHERE id=?1",
+                     created_at=?11, updated_at=?12, deleted_at=?13, outline=?14, book_type=?15 WHERE id=?1",
                     params![
                         book.id,
                         book.title,
@@ -246,6 +246,7 @@ pub(crate) fn apply_upsert_data(
                         book.updated_at,
                         book.deleted_at,
                         book.outline,
+                        book.book_type,
                     ],
                 )?;
                 books_st.updated += 1;
@@ -255,13 +256,13 @@ pub(crate) fn apply_upsert_data(
             }
             None => {
                 conn.execute(
-                    "INSERT INTO books (id,title,author,description,cover_image,word_count,daily_target,today_count,db_path,tags,created_at,updated_at,deleted_at,outline) \
-                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+                    "INSERT INTO books (id,title,author,description,cover_image,word_count,daily_target,today_count,db_path,tags,created_at,updated_at,deleted_at,outline,book_type) \
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
                     params![
                         book.id, book.title, book.author, book.description,
                         book.cover_image, book.word_count, book.daily_target, book.today_count,
                         book.db_path, tags_json, book.created_at, book.updated_at,
-                        book.deleted_at, book.outline,
+                        book.deleted_at, book.outline, book.book_type,
                     ],
                 )?;
                 books_st.inserted += 1;
@@ -421,13 +422,13 @@ pub(crate) fn write_backup_data(
     for book in &dbx.books {
         let tags_json = serde_json::to_string(&book.tags).unwrap_or_else(|_| "[]".to_string());
         uow.conn().execute(
-            "INSERT INTO books (id,title,author,description,cover_image,word_count,daily_target,today_count,db_path,tags,created_at,updated_at,deleted_at,outline) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+            "INSERT INTO books (id,title,author,description,cover_image,word_count,daily_target,today_count,db_path,tags,created_at,updated_at,deleted_at,outline,book_type) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
             params![
                 book.id, book.title, book.author, book.description,
                 book.cover_image, book.word_count, book.daily_target, book.today_count,
                 book.db_path, tags_json, book.created_at, book.updated_at,
-                book.deleted_at, book.outline,
+                book.deleted_at, book.outline, book.book_type,
             ],
         )?;
     }
