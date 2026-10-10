@@ -28,7 +28,7 @@
 | 一 | L0 工具注册表 | ✅ **已完成**（2026-10-10） |
 | 二 | L1 画像注册表 | ✅ **已完成**（2026-10-10） |
 | 三 | `book_type` 落库 | ✅ **已完成**（2026-10-10） |
-| 四 | 领域画像 + Prompt 组装 | ⬜ 未开始 |
+| 四 | 领域画像 + Prompt 组装 | ✅ **已完成**（2026-10-10） |
 | 五 | L3 前端自动发现 | ⬜ 未开始 |
 | 六 | L2 `RuntimeMode` / Pipeline | ⬜ 未开始 |
 | 七 | 插件宿主 | ⬜ 未开始 |
@@ -237,7 +237,7 @@
 
 ---
 
-## 阶段四：领域画像 + Prompt 组装
+## 阶段四：领域画像 + Prompt 组装 ✅ 已完成
 
 > 目标：让模型知道自己在处理什么类型的作品。
 
@@ -273,6 +273,47 @@
 - 合并函数单测覆盖四种维度
 
 > ⚠️ **任务 6 的「拆章 / 生成卡片」不是全程可选**。阶段六任务 5「拆书 Agent 切 Pipeline」是 Pipeline 的首个真实用例，而拆书流水线（读章节 → 提炼要点 → 生成卡片）的后两步就依赖这两个工具。若本阶段不做，阶段六会因缺工具而无法验收。**建议最晚与阶段六同批完成。**
+
+### 完成情况（2026-10-10）
+
+任务 1–5、7 已完成；**任务 6（领域工具）按上述说明延后至阶段六**，理由见下。
+
+#### 落地改动
+
+| 文件 | 改动 |
+|------|------|
+| `profiles.rs` | 加 `ProfileKind`（`Ability` / `Domain`）；`AgentProfile` 加 `kind` 字段；新增 4 个领域画像（novel / thesis / breakdown / note，id 对齐 `book_type` 值域）；新增 `find_ability` / `find_domain` / `ability_or_writing` / `domain_or_novel`；新增 `EffectiveProfile` + `merge()` |
+| `prompts.rs` | `get_dynamic_prompt(skill, msg)` → `compose_system_prompt(eff, msg)`；按「领域基准 → 能力基准 → 领域 hints → 能力 hints」四段拼接；两类 hints 各上限 3 条 |
+| `engine.rs` | `run_skill_inner` 新增第 1 步：**从 `book_id` 反查 `book_type`**（走 `book_repo::find_by_id`，前端不传参）；预算改取 `AgentBudget::from_effective`；工具集改传 `eff.tools`；新增画像调试日志 |
+| `tools.rs` | `build_tools_schema` 入参由 `skill: &str` 改为 `tool_names: &[&str]`（不再自行查表）；删除 `tools_for_skill` 与 `FALLBACK_TOOLS`（兜底语义改由 `merge` 承载） |
+| `logging.rs` | 新增 `app_log_warn!` 宏（项目此前只有 `app_log!` / `app_log_error!`），用于未知 `book_type` 告警 |
+
+#### ⚠️ 两处刻意偏离原计划
+
+**1. `extends`（继承）不实现。** 原计划阶段二注明「`kind` 与 `extends` 推迟到阶段四一并加入」。实际只有 `kind` 落地：`extend` 会让四个平级的领域画像多一个**无人读取**的字段，即死代码，破坏「`cargo check` 零警告」。将来真出现「某领域继承自另一领域」时再补。
+
+**2. 任务 6（领域工具）延后至阶段六。** 领域画像的 `tools` 恒为 `&[]`（领域定义世界观、不定义动作），合并取并集时等价于能力工具集。这样阶段四可独立验收，且阶段六新增领域工具时只需在 `DOMAIN_TOOLS` 登记。
+
+#### ⚠️ 关键发现：未知能力的兜底语义必须按维度分别保住
+
+`merge()` 会把未知能力 id 兜底为 writing（基准提示需要内容），但这**不能**连带套用 writing 的个性化配置——否则两处行为会漂移：
+
+| 维度 | 未知能力 id 的兜底 | 保护手段 |
+|------|------------------|---------|
+| 基准提示 | writing（必须有内容） | — |
+| 工具集 | writing 的 5 项 | — |
+| 执行预算 | **(15 轮 / 600s)**，不是 writing 的 (5 / 300) | `EffectiveProfile::ability_matched` |
+| 动态 hints | **不注入** writing 的 hints | 同上 |
+
+因此 `EffectiveProfile` 新增 `ability_matched: bool` 记录「能力 id 是否命中」——只看 `ability.id` 无法区分「显式选了 writing」与「未知 id 兜底成 writing」。两个维度各有单测锁死。
+
+#### 顺带消除的 4 处死代码
+
+改造后 `cargo check` 报出 4 个 `never used`（`AgentBudget::for_skill`、`FALLBACK_TOOLS`、`tools_for_skill`、`estimate_prompt_tokens`）——均为「改造后失去生产消费端」。按前两阶段的 YAGNI 教训逐个收敛：前三个删除或改由 `merge` 承载；`estimate_prompt_tokens` 则**接到调试日志里输出基准提示的估算 token 数**（任务 7 本就要求画像调试输出），既消除死代码又增加可观测性。
+
+#### 测试
+
+新增 12 条（`cargo test --lib` **199/199**）：拼接顺序、四类 hints 命中、关键词重叠时领域在前、每类 hints 上限 3 条、四种领域产出互不相同的提示词、工具并集、预算取大值、未知能力在预算与 hints 两个维度的兜底、`book_type` 值域覆盖、kind 隔离查找、全命中时提示词 token 上限（<2000）。
 
 ### 补充：学科笔记复用现有数据模型，无需新表
 

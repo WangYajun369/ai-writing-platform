@@ -19,9 +19,10 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::Notify;
 use tokio::time::timeout;
 
-use crate::commands::agent::{memory, prompts, tools};
+use crate::commands::agent::{memory, profiles, prompts, tools};
 use crate::db::SqliteConnectionManager;
 use crate::error::AppError;
+use crate::repository;
 use crate::utils::get_sse_client;
 
 /// SSE 流事件（推送到前端，契约与 python::client::AgentStreamEvent 一致）
@@ -54,7 +55,7 @@ pub struct HistoryMsg {
     pub content: String,
 }
 
-/// Agent 最大工具推理轮数（兜底默认值；优先使用 AgentBudget::for_skill 的自适应值）
+/// Agent 最大工具推理轮数（兜底默认值；优先使用 `AgentBudget::from_effective` 的自适应值）
 const MAX_ITERATIONS: usize = 15;
 /// 单轮 SSE 无数据读取超时（秒）
 const SSE_READ_TIMEOUT_SECS: u64 = 60;
@@ -70,7 +71,7 @@ const SSE_TOTAL_TIMEOUT_SECS: u64 = 600;
 /// - research：研究场景，多工具调用，20 轮
 /// - polish：润色场景，几乎不调工具，3 轮
 ///
-/// 未知 Skill 回退 `MAX_ITERATIONS` / `SSE_TOTAL_TIMEOUT_SECS`（**不是** writing 的预算）。
+/// 未知**能力** id 回退 `MAX_ITERATIONS` / `SSE_TOTAL_TIMEOUT_SECS`（**不是** writing 的预算）。
 ///
 /// 后续可由调用方（命令层）传入自定义预算覆盖 Skill 默认值。
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -84,16 +85,20 @@ pub struct AgentBudget {
 }
 
 impl AgentBudget {
-    /// 按 Skill 名返回自适应预算；未知 Skill 回退 MAX_ITERATIONS 兜底
-    pub fn for_skill(skill: &str) -> Self {
-        let (max_rounds, total) = match crate::commands::agent::profiles::find_profile(skill) {
-            Some(p) => (p.max_rounds, p.timeout_secs),
-            None => (MAX_ITERATIONS, SSE_TOTAL_TIMEOUT_SECS),
-        };
+    /// 由已合并的有效画像构造预算（阶段四起 engine 走此路径）
+    ///
+    /// ⚠️ 未知能力 id 走 `Default`（`MAX_ITERATIONS` / `SSE_TOTAL_TIMEOUT_SECS`），
+    /// **不是** writing 的 (5 轮 / 300s)——与改造前 `for_skill` 的语义一致。
+    /// `merge` 虽已把能力兜底为 writing（提示词与工具需要），但预算必须保留这层区分，
+    /// 故 `EffectiveProfile::ability_matched` 不可省。
+    pub fn from_effective(eff: &crate::commands::agent::profiles::EffectiveProfile) -> Self {
+        if !eff.ability_matched {
+            return Self::default();
+        }
         Self {
-            max_rounds,
+            max_rounds: eff.max_rounds,
             sse_read_timeout_secs: SSE_READ_TIMEOUT_SECS,
-            sse_total_timeout_secs: total,
+            sse_total_timeout_secs: eff.timeout_secs,
         }
     }
 }
@@ -261,8 +266,37 @@ async fn run_skill_inner(
     conversation_summary: Option<&str>,
     cancel_token: &Arc<CancelToken>,
 ) -> Result<String, AppError> {
-    // ========== 1. 组装 System Prompt ==========
-    let dynamic_prompt = prompts::get_dynamic_prompt(skill, message);
+    // ========== 1. 解析有效画像（领域 × 能力）==========
+    // 领域由作品的 book_type 决定，在 Rust 侧反查——前端不传参，
+    // 避免「前端忘了传 / 传错」导致模型用错画像（阶段四任务 3）。
+    let book_type = {
+        let conn = pool.get().map_err(|e| AppError::DbPool(e.to_string()))?;
+        repository::book_repo::find_by_id(&conn, book_id)
+            .map(|b| b.book_type)
+            // 作品不存在（如已彻底删除）时按空处理，领域回退 novel
+            .unwrap_or_default()
+    };
+    let effective = profiles::merge(skill, &book_type);
+    // v1.9：按 Skill 自适应预算（取代硬编码 15 轮上限）
+    // 阶段四起取「领域 × 能力」合并后的预算（取较大值）
+    let budget = AgentBudget::from_effective(&effective);
+    // 阶段四任务 7：输出「解析后的最终画像」，便于排查「模型用了错画像」类问题
+    let effective_tokens = prompts::estimate_prompt_tokens(&effective.base_prompt);
+    crate::app_log!(
+        "[Agent] 有效画像: 能力={}({}) 领域={}(book_type=`{}`) 工具={} 预算={}轮/{}s 基准提示≈{}tok",
+        effective.ability.id,
+        if effective.ability_matched { "命中" } else { "兜底" },
+        effective.domain.id,
+        book_type,
+        effective.tools.len(),
+        budget.max_rounds,
+        budget.sse_total_timeout_secs,
+        effective_tokens,
+    );
+
+    // ========== 2. 组装 System Prompt ==========
+    // 四段拼接：领域基准 → 能力基准 → 领域动态提示 → 能力动态提示
+    let dynamic_prompt = prompts::compose_system_prompt(&effective, message);
 
     let memory_section = {
         let conn = pool.get().map_err(|e| AppError::DbPool(e.to_string()))?;
@@ -273,15 +307,12 @@ async fn run_skill_inner(
         .map(|s| format!("\n## 历史对话摘要\n{s}\n"))
         .unwrap_or_default();
 
-    // v1.9：按 Skill 自适应预算（取代硬编码 15 轮上限）
-    let budget = AgentBudget::for_skill(skill);
-
     let now = chrono::Local::now().format("%Y年%m月%d日 %H:%M");
     let system_prompt = format!(
         "{dynamic_prompt}\n{memory_section}{summary_section}当前书籍 ID: {book_id}\n当前时间: {now}\n\n重要提示：\n- 使用工具读取数据时，务必传入正确的 book_id\n- 优先使用 read_chapter_summary 了解概况，只在需要细节时才用完整读取\n- 大章节（超过 2000 字）请使用 read_chapter_chunk 分段读取\n- 生成内容保持与原著风格一致\n"
     );
 
-    // ========== 2. 组装消息列表 ==========
+    // ========== 3. 组装消息列表 ==========
     let mut messages: Vec<Value> = Vec::new();
     messages.push(serde_json::json!({ "role": "system", "content": system_prompt }));
 
@@ -302,7 +333,7 @@ async fn run_skill_inner(
     }
     messages.push(serde_json::json!({ "role": "user", "content": message }));
 
-    // ========== 3. 模型端点与参数 ==========
+    // ========== 4. 模型端点与参数 ==========
     let cfg = ai_config;
     let endpoint = cfg
         .map(|c| c.endpoint.trim().trim_end_matches('/').to_string())
@@ -330,11 +361,12 @@ async fn run_skill_inner(
     let temperature = cfg.and_then(|c| c.temperature).unwrap_or(0.7);
     let max_tokens = cfg.and_then(|c| c.max_tokens).unwrap_or(8192);
 
-    let tools_schema = tools::build_tools_schema(skill);
+    // 工具集取「能力 ∪ 领域」并集（阶段四）
+    let tools_schema = tools::build_tools_schema(&effective.tools);
 
     let url = format!("{endpoint}/chat/completions");
 
-    // ========== 4. SSE ReAct 循环 ==========
+    // ========== 5. SSE ReAct 循环 ==========
     let mut full_response = String::new();
     let mut tool_rounds = 0usize;
 
@@ -900,32 +932,49 @@ mod tests {
         assert_eq!(outcome, "cancelled");
     }
 
+    /// 按「能力 × 领域」合并后取预算
+    fn budget_for(ability: &str, domain: &str) -> AgentBudget {
+        AgentBudget::from_effective(&profiles::merge(ability, domain))
+    }
+
     #[test]
-    fn agent_budget_for_skill_writing_is_conservative() {
-        let b = AgentBudget::for_skill("writing");
+    fn agent_budget_writing_is_conservative() {
+        let b = budget_for("writing", "novel");
         assert_eq!(b.max_rounds, 5);
         assert_eq!(b.sse_total_timeout_secs, 300);
         assert_eq!(b.sse_read_timeout_secs, SSE_READ_TIMEOUT_SECS);
     }
 
     #[test]
-    fn agent_budget_for_skill_research_is_generous() {
-        let b = AgentBudget::for_skill("research");
+    fn agent_budget_research_is_generous() {
+        let b = budget_for("research", "thesis");
         assert_eq!(b.max_rounds, 20);
         assert_eq!(b.sse_total_timeout_secs, 600);
     }
 
     #[test]
-    fn agent_budget_for_skill_analysis_and_polish() {
-        assert_eq!(AgentBudget::for_skill("analysis").max_rounds, 10);
-        assert_eq!(AgentBudget::for_skill("polish").max_rounds, 3);
+    fn agent_budget_analysis_and_polish() {
+        assert_eq!(budget_for("analysis", "breakdown").max_rounds, 10);
+        assert_eq!(budget_for("polish", "note").max_rounds, 3);
     }
 
+    /// 领域画像预算为 0（不约束），故预算与领域无关、只由能力决定
     #[test]
-    fn agent_budget_for_unknown_skill_falls_back_to_max_iterations() {
-        let b = AgentBudget::for_skill("unknown_skill");
+    fn agent_budget_is_independent_of_domain() {
+        for d in ["novel", "thesis", "breakdown", "note"] {
+            assert_eq!(budget_for("research", d).max_rounds, 20);
+        }
+    }
+
+    /// ⚠️ 未知能力回退 `(MAX_ITERATIONS, SSE_TOTAL_TIMEOUT_SECS)`，
+    /// **不是** writing 的 (5, 300)——这是改造前的既有语义，不可漂移
+    #[test]
+    fn agent_budget_for_unknown_ability_falls_back_to_max_iterations() {
+        let b = budget_for("unknown_ability", "novel");
         assert_eq!(b.max_rounds, MAX_ITERATIONS);
         assert_eq!(b.sse_total_timeout_secs, SSE_TOTAL_TIMEOUT_SECS);
+        // 与显式选 writing 的结果**必须不同**，否则 ability_matched 标记形同虚设
+        assert_ne!(b.max_rounds, budget_for("writing", "novel").max_rounds);
     }
 
     #[test]

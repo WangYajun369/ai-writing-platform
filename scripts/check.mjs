@@ -434,6 +434,7 @@ const rustAgentFiles = [
   'src-tauri/src/commands/agent/mod.rs',
   'src-tauri/src/commands/agent/skills.rs',
   'src-tauri/src/commands/agent/prompts.rs',
+  'src-tauri/src/commands/agent/profiles.rs',
   'src-tauri/src/commands/agent/tools.rs',
   'src-tauri/src/commands/agent/memory.rs',
   'src-tauri/src/commands/agent/engine.rs',
@@ -442,8 +443,14 @@ const rustAgentFiles = [
 for (const f of rustAgentFiles) check(`Rust Agent 模块 ${f}`, fileExists(f))
 
 // 关键逻辑关键字检查
-check('prompts.rs 含 4 个 Skill Prompt', fileContains('src-tauri/src/commands/agent/prompts.rs',
+// ⚠️ 提示词常量定义在 profiles.rs（L1 注册表）而非 prompts.rs——后者只做组装。
+// 早期此检查指向 prompts.rs，实际是靠测试里的 import 行偶然命中，属假通过。
+check('profiles.rs 含 4 个能力画像 Prompt', fileContains('src-tauri/src/commands/agent/profiles.rs',
   'WRITING_PROMPT', 'ANALYSIS_PROMPT', 'RESEARCH_PROMPT', 'POLISH_PROMPT'))
+check('profiles.rs 含 4 个领域画像 Prompt', fileContains('src-tauri/src/commands/agent/profiles.rs',
+  'NOVEL_PROMPT', 'THESIS_PROMPT', 'BREAKDOWN_PROMPT', 'NOTE_PROMPT'))
+check('profiles.rs 含领域×能力合并', fileContains('src-tauri/src/commands/agent/profiles.rs',
+  'EffectiveProfile', 'pub fn merge', 'ProfileKind'))
 check('engine.rs 含 SSE ReAct 循环', fileContains('src-tauri/src/commands/agent/engine.rs',
   'agent-stream-chunk', 'react_loop'))
 check('tools.rs 含 6 个数据库工具', fileContains('src-tauri/src/commands/agent/tools.rs',

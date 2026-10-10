@@ -70,6 +70,14 @@ macro_rules! app_log {
     ($($arg:tt)*) => { $crate::app_log_inner!("info", $($arg)*) };
 }
 
+/// warn 级别日志：控制台 + 调试窗口
+///
+/// 用于「不阻断流程但值得关注」的情况，如未知枚举值回退、降级路径被触发。
+#[macro_export]
+macro_rules! app_log_warn {
+    ($($arg:tt)*) => { $crate::app_log_inner!("warn", $($arg)*) };
+}
+
 /// error 级别日志：控制台 + 调试窗口
 #[macro_export]
 macro_rules! app_log_error {

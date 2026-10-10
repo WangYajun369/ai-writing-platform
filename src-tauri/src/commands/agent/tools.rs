@@ -9,29 +9,23 @@ use serde_json::Value;
 use crate::error::AppError;
 use crate::repository;
 
-use super::profiles;
-
 /// 单次工具执行的最大内容长度（防御异常数据）
 const MAX_TOOL_CONTENT_CHARS: usize = 200_000;
 
-/// Skill → 工具子集（查 L1 画像注册表；未知 skill 回退 `FALLBACK_TOOLS`）
-pub fn tools_for_skill(skill: &str) -> Vec<&'static str> {
-    profiles::find_profile(skill)
-        .map(|p| p.tools.to_vec())
-        .unwrap_or_else(|| profiles::FALLBACK_TOOLS.to_vec())
-}
-
 /// 生成 OpenAI function calling 的 tools 参数
-pub fn build_tools_schema(skill: &str) -> Vec<Value> {
+///
+/// 传入的是**已合并的工具名列表**（阶段四起由 `EffectiveProfile::tools` 提供，
+/// 即「能力工具 ∪ 领域工具」）；此处不再自行按 skill 查表。
+pub fn build_tools_schema(tool_names: &[&str]) -> Vec<Value> {
     let mut out = Vec::new();
-    for name in tools_for_skill(skill) {
+    for name in tool_names {
         match tool_schema(name) {
             Some(schema) => out.push(serde_json::json!({
                 "type": "function",
                 "function": schema,
             })),
             // 未注册的工具名：跳过并告警，不 panic（改造前是静默跳过）
-            None => eprintln!("[agent] skill `{skill}` 引用了未注册的工具 `{name}`，已跳过"),
+            None => eprintln!("[agent] 引用了未注册的工具 `{name}`，已跳过"),
         }
     }
     out
@@ -371,6 +365,7 @@ fn tool_get_book_context(conn: &Connection, args: &Value) -> Result<String, AppE
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::agent::profiles;
 
     /// 与生产 schema 一致的 books / chapters / world_cards 表（db/mod.rs 同款 DDL）
     fn test_conn() -> Connection {
@@ -473,12 +468,12 @@ mod tests {
             assert!(p["properties"].is_object(), "{} 缺少 properties", t.name);
             assert!(p["required"].is_array(), "{} 缺少 required", t.name);
         }
-        // 每个 skill 引用的工具名都必须在注册表中（防止引用了不存在的工具）
+        // 每个能力画像引用的工具名都必须在注册表中（防止引用了不存在的工具）
         for skill in ["writing", "analysis", "research", "polish"] {
-            for name in tools_for_skill(skill) {
+            for name in profiles::merge(skill, "novel").tools {
                 assert!(
                     tool_def(name).is_some(),
-                    "skill `{skill}` 引用了未注册的工具 `{name}`"
+                    "能力 `{skill}` 引用了未注册的工具 `{name}`"
                 );
             }
         }
@@ -486,13 +481,13 @@ mod tests {
 
     #[test]
     fn skill_tool_mapping_and_schemas() {
-        assert_eq!(tools_for_skill("polish").len(), 3);
-        assert_eq!(tools_for_skill("research").len(), 4);
-        // 未知 skill 回退默认五工具
-        assert_eq!(tools_for_skill("no_such").len(), 5);
+        assert_eq!(profiles::merge("polish", "novel").tools.len(), 3);
+        assert_eq!(profiles::merge("research", "novel").tools.len(), 4);
+        // 未知能力回退 writing，故工具集为 writing 的 5 项
+        assert_eq!(profiles::merge("no_such", "novel").tools.len(), 5);
         // 每个映射工具都必须有 schema 定义
         for skill in ["writing", "analysis", "research", "polish"] {
-            for name in tools_for_skill(skill) {
+            for name in profiles::merge(skill, "novel").tools {
                 assert!(
                     tool_schema(name).is_some(),
                     "{skill} 的工具 {name} 缺少 schema"
@@ -500,7 +495,7 @@ mod tests {
             }
         }
         // schema 结构符合 OpenAI function calling 契约
-        let schemas = build_tools_schema("research");
+        let schemas = build_tools_schema(&profiles::merge("research", "novel").tools);
         assert_eq!(schemas.len(), 4);
         for s in &schemas {
             assert_eq!(s["type"], "function");

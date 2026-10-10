@@ -4,11 +4,20 @@
 //! `engine.rs`（执行预算）三处的 Skill 定义收敛为**单一真相源**：新增一个 Skill
 //! 只需在下方 `PROFILES` 追加一项。
 //!
-//! ⚠️ 阶段二尚未引入 `kind`（能力 / 领域）与 `extends`（继承）：当前只有 4 个能力
-//! 画像，`kind` 字段无实际区分对象、`extends` 无使用者，提前加入会变成死代码。
-//! 阶段四引入领域画像时一并加入（届时 `kind` 立即有两类实例）。
+//! ## 两类画像（阶段四）
+//!
+//! | 类别 | 回答什么 | 实例 | 来源 |
+//! |------|---------|------|------|
+//! | `Ability` 能力 | 「做什么动作」 | writing / analysis / research / polish | 用户在 AI 面板选择 |
+//! | `Domain` 领域 | 「处理什么作品」 | novel / thesis / breakdown / note | 作品的 `book_type` |
+//!
+//! 两者正交，运行时由 [`merge`] 合并为 [`EffectiveProfile`]。
+//!
+//! ⚠️ `extends`（画像继承）**刻意未实现**：四个领域画像彼此平级，没有继承需求；
+//! 加入此字段会无人读取而成为死代码，破坏「`cargo check` 零警告」。
+//! 将来真出现「某领域继承自另一领域」时再补。
 
-// ── 基准提示 ────────────────────────────────────────────────────────────────
+// ── 能力画像：基准提示 ──────────────────────────────────────────────────────
 
 /// 小说创作助手 Prompt（writing）
 pub const WRITING_PROMPT: &str = r#"你是一位专业的小说创作助手，精通各种文学类型（玄幻、都市、科幻、悬疑、言情等）。
@@ -103,6 +112,64 @@ pub const POLISH_PROMPT: &str = r#"你是一位资深的文字编辑，精通中
 - 用 ~~删除线~~ 标注删除内容
 - 用 **加粗** 标注新增内容"#;
 
+// ── 领域画像：基准提示 ──────────────────────────────────────────────────────
+//
+// 领域画像只定义「世界观」（这是什么样的作品、关注什么），
+// **不定义动作**（做什么）——后者由能力画像负责。故下方提示词一律不提工具用法。
+
+/// 小说领域（novel）
+pub const NOVEL_PROMPT: &str = r#"## 当前作品类型：小说
+
+### 本领域关注点
+1. **情节**：因果链是否闭合、转折是否有铺垫、悬念的埋设与回收
+2. **人物**：性格一致性、动机合理性、成长弧线
+3. **文风**：叙事视角、语言基调、描写密度
+
+### 本领域约定
+- 章节是叙事单位，按时间线或视角推进
+- 「设定」指世界观与角色设定卡片
+- 讨论情节时优先看因果链是否成立，而非文句优劣"#;
+
+/// 论文领域（thesis）
+pub const THESIS_PROMPT: &str = r#"## 当前作品类型：论文
+
+### 本领域关注点
+1. **论点**：中心论题是否明确、可证伪、边界清晰
+2. **论据**：数据来源、实验设计、推理链条是否完整
+3. **引用**：文献标注规范，避免抄袭与过度转述
+
+### 本领域约定
+- 章节是论证单位（引言 / 方法 / 结果 / 讨论），按逻辑推进
+- 严格区分「作者观点」与「文献观点」，引用处须标明来源
+- 避免文学化修辞与主观情绪表达，保持客观陈述"#;
+
+/// 拆书领域（breakdown）
+pub const BREAKDOWN_PROMPT: &str = r#"## 当前作品类型：拆书
+
+### 本领域关注点
+1. **拆解**：按章节或主题切分，保留原书结构
+2. **卡片**：每条要点独立成卡，可脱离原文理解
+3. **要点**：提炼核心主张与论据，剔除铺陈与例子
+
+### 本领域约定
+- **忠实于原著**：不加入拆解者自己的评价与延伸
+- 每条卡片应能独立成立（自带必要的背景说明）
+- 优先保留作者的核心论证链，其次才是金句与案例"#;
+
+/// 学科笔记领域（note）
+pub const NOTE_PROMPT: &str = r#"## 当前作品类型：学科笔记
+
+### 本领域关注点
+1. **概念**：术语定义与概念间关系
+2. **公式**：定理、公式及其适用条件
+3. **例题**：典型题目与解题步骤
+4. **复习**：易错点与自测线索
+
+### 本领域约定
+- 笔记条目按学科章节组织，**不是日记或流水账**
+- 公式必须标注适用条件与符号含义
+- 给一段杂乱的课堂内容时，输出应为「概念定义 + 公式 + 例题」的结构，而非叙事性文字"#;
+
 // ── 动态场景提示表 ──────────────────────────────────────────────────────────
 
 const WRITING_HINTS: &[(&str, &str)] = &[
@@ -134,6 +201,37 @@ const POLISH_HINTS: &[(&str, &str)] = &[
     ("对话", "\n\n## 对话润色指引\n- 检查对话是否符合角色性格\n- 优化对话节奏和信息密度\n- 减少不必要的对话标签"),
 ];
 
+// ── 领域画像：动态场景提示表 ────────────────────────────────────────────────
+//
+// 与能力 hints **各自独立命中**（同一关键词可同时命中两类，领域提示排在前），
+// 因为两者的关键词域虽部分重叠，但关注角度不同：领域谈「这类作品要什么」，
+// 能力谈「这个动作怎么做」。
+
+const NOVEL_HINTS: &[(&str, &str)] = &[
+    ("情节", "\n\n## 小说·情节指引\n- 检查因果链是否闭合，转折是否有铺垫\n- 标注悬念的埋设与回收位置"),
+    ("人物", "\n\n## 小说·人物指引\n- 检查行为是否符合已建立的性格\n- 关注人物关系网的变化"),
+    ("文风", "\n\n## 小说·文风指引\n- 保持叙事视角一致（第一/第三人称不混用）\n- 描写密度与情节节奏匹配"),
+];
+
+const THESIS_HINTS: &[(&str, &str)] = &[
+    ("论点", "\n\n## 论文·论点指引\n- 中心论题应可证伪、边界清晰\n- 检查各章是否都服务于中心论题"),
+    ("论据", "\n\n## 论文·论据指引\n- 标注数据来源与采集方法\n- 检查推理链是否存在跳跃"),
+    ("引用", "\n\n## 论文·引用指引\n- 引用格式须全文统一（GB/T 7714 或 APA 等）\n- 区分直接引用与间接转述"),
+];
+
+const BREAKDOWN_HINTS: &[(&str, &str)] = &[
+    ("拆解", "\n\n## 拆书·拆解指引\n- 先列出章节结构再逐章提炼\n- 保留原书的论证顺序，不重排"),
+    ("卡片", "\n\n## 拆书·卡片指引\n- 每条卡片自带背景，可脱离原文阅读\n- 卡片标题用原书主张，不用评价性措辞"),
+    ("要点", "\n\n## 拆书·要点指引\n- 剔除铺陈、重复与过渡段落\n- 保留作者的核心论证链"),
+];
+
+const NOTE_HINTS: &[(&str, &str)] = &[
+    ("概念", "\n\n## 笔记·概念指引\n- 给出术语的精确定义与相邻概念区分\n- 标注概念间的依赖与层级关系"),
+    ("公式", "\n\n## 笔记·公式指引\n- 公式须标注适用条件与符号含义\n- 补充一个最小可算的代入示例"),
+    ("例题", "\n\n## 笔记·例题指引\n- 按「已知 → 思路 → 步骤 → 结论」组织\n- 标注易错步骤与常见误区"),
+    ("复习", "\n\n## 笔记·复习指引\n- 提炼易错点与自测线索\n- 给出可自检的判断性问题"),
+];
+
 // ── 工具子集 ────────────────────────────────────────────────────────────────
 // 引用 L0 注册表（tools.rs）中的工具名
 
@@ -162,31 +260,46 @@ const RESEARCH_TOOLS: &[&str] = &[
 
 const POLISH_TOOLS: &[&str] = &["read_chapter", "read_chapter_chunk", "get_book_context"];
 
-/// 未知画像 id 的兜底工具集（与既有 `tools_for_skill` 默认分支一致）
-pub const FALLBACK_TOOLS: &[&str] = WRITING_TOOLS;
+/// 领域画像的工具集：领域只定义世界观、**不定义动作**，故恒为空。
+///
+/// 领域专属工具（如拆书的「拆章」「生成卡片」）待阶段六随 Pipeline 引入时在此登记，
+/// 合并时与能力工具取并集。
+const DOMAIN_TOOLS: &[&str] = &[];
 
 // ── 注册表 ──────────────────────────────────────────────────────────────────
+
+/// 画像类别：能力（做什么）或领域（处理什么）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileKind {
+    /// 能力画像：定义「做什么动作」，由用户在 AI 面板选择
+    Ability,
+    /// 领域画像：定义「处理什么类型的作品」，由作品的 `book_type` 决定
+    Domain,
+}
 
 /// 单个画像的完整定义：提示词 / 场景提示 / 工具集 / 执行预算四合一
 #[derive(Debug, Clone, Copy)]
 pub struct AgentProfile {
     pub id: &'static str,
+    pub kind: ProfileKind,
     /// 基准 System Prompt
     pub base_prompt: &'static str,
     /// 动态场景提示（关键词 → 追加提示），按用户消息关键词命中注入
     pub hints: &'static [(&'static str, &'static str)],
     /// 工具子集，引用 L0 注册表中的工具名
     pub tools: &'static [&'static str],
-    /// 最大工具推理轮数
+    /// 最大工具推理轮数（领域画像填 0 表示「不约束」，合并时取较大值）
     pub max_rounds: usize,
-    /// 整个 Agent 执行总超时（秒）
+    /// 整个 Agent 执行总超时（秒）（领域画像填 0 表示「不约束」）
     pub timeout_secs: u64,
 }
 
-/// 全部画像（单一真相源）。新增一个 Skill 只需在此追加一项。
+/// 全部画像（单一真相源）。新增一个 Skill 或领域只需在此追加一项。
 static PROFILES: &[AgentProfile] = &[
+    // ── 能力画像 ──
     AgentProfile {
         id: "writing",
+        kind: ProfileKind::Ability,
         base_prompt: WRITING_PROMPT,
         hints: WRITING_HINTS,
         tools: WRITING_TOOLS,
@@ -195,6 +308,7 @@ static PROFILES: &[AgentProfile] = &[
     },
     AgentProfile {
         id: "analysis",
+        kind: ProfileKind::Ability,
         base_prompt: ANALYSIS_PROMPT,
         hints: ANALYSIS_HINTS,
         tools: ANALYSIS_TOOLS,
@@ -203,6 +317,7 @@ static PROFILES: &[AgentProfile] = &[
     },
     AgentProfile {
         id: "research",
+        kind: ProfileKind::Ability,
         base_prompt: RESEARCH_PROMPT,
         hints: RESEARCH_HINTS,
         tools: RESEARCH_TOOLS,
@@ -211,35 +326,166 @@ static PROFILES: &[AgentProfile] = &[
     },
     AgentProfile {
         id: "polish",
+        kind: ProfileKind::Ability,
         base_prompt: POLISH_PROMPT,
         hints: POLISH_HINTS,
         tools: POLISH_TOOLS,
         max_rounds: 3,
         timeout_secs: 240,
     },
+    // ── 领域画像（id 对齐 `books.book_type` 的值域）──
+    AgentProfile {
+        id: "novel",
+        kind: ProfileKind::Domain,
+        base_prompt: NOVEL_PROMPT,
+        hints: NOVEL_HINTS,
+        tools: DOMAIN_TOOLS,
+        max_rounds: 0,
+        timeout_secs: 0,
+    },
+    AgentProfile {
+        id: "thesis",
+        kind: ProfileKind::Domain,
+        base_prompt: THESIS_PROMPT,
+        hints: THESIS_HINTS,
+        tools: DOMAIN_TOOLS,
+        max_rounds: 0,
+        timeout_secs: 0,
+    },
+    AgentProfile {
+        id: "breakdown",
+        kind: ProfileKind::Domain,
+        base_prompt: BREAKDOWN_PROMPT,
+        hints: BREAKDOWN_HINTS,
+        tools: DOMAIN_TOOLS,
+        max_rounds: 0,
+        timeout_secs: 0,
+    },
+    AgentProfile {
+        id: "note",
+        kind: ProfileKind::Domain,
+        base_prompt: NOTE_PROMPT,
+        hints: NOTE_HINTS,
+        tools: DOMAIN_TOOLS,
+        max_rounds: 0,
+        timeout_secs: 0,
+    },
 ];
 
-/// 按 id 精确查表（不存在返回 `None`）。
+/// 按 (id, kind) 精确查表（不存在返回 `None`）
+fn find_kind(id: &str, kind: ProfileKind) -> Option<&'static AgentProfile> {
+    PROFILES.iter().find(|p| p.id == id && p.kind == kind)
+}
+
+/// 查能力画像（不存在返回 `None`）。
 ///
 /// 刻意不做「未知 id 回退 writing」的统一兜底：改造前四处的兜底语义**并不一致**
 /// ——基准提示回退 writing、动态提示回退空表、工具集回退默认五项、预算回退常量。
 /// 统一回退会改变行为，故由各调用点自行选择。
-pub fn find_profile(id: &str) -> Option<&'static AgentProfile> {
-    PROFILES.iter().find(|p| p.id == id)
+pub fn find_ability(id: &str) -> Option<&'static AgentProfile> {
+    find_kind(id, ProfileKind::Ability)
 }
 
-/// 查表 + 回退 writing（供「应当回退」的调用点使用，如基准提示）
-pub fn profile_or_writing(id: &str) -> &'static AgentProfile {
-    find_profile(id).unwrap_or(&PROFILES[0])
+/// 查领域画像（不存在返回 `None`）
+pub fn find_domain(id: &str) -> Option<&'static AgentProfile> {
+    find_kind(id, ProfileKind::Domain)
+}
+
+/// 查能力画像 + 回退 writing（供「应当回退」的调用点使用，如基准提示）
+pub fn ability_or_writing(id: &str) -> &'static AgentProfile {
+    find_ability(id).unwrap_or(&PROFILES[0])
+}
+
+/// 领域画像的兜底类型（`book_type` 为空或未知时使用）
+pub const DEFAULT_DOMAIN_ID: &str = "novel";
+
+/// 查领域画像 + 回退 novel；`book_type` 为**非空**未知值时记一条告警
+///
+/// 不引入「通用」画像（ADR-004 决策 5）：多一个画像就多一份维护成本，
+/// 且「通用」与「小说」的差异对模型而言不明确。
+pub fn domain_or_novel(book_type: &str) -> &'static AgentProfile {
+    match find_domain(book_type) {
+        Some(p) => p,
+        None => {
+            // 空串是存量作品的正常状态（阶段三迁移前创建），不告警
+            if !book_type.is_empty() {
+                crate::app_log_warn!(
+                    "[agent] 未知作品类型 `{book_type}`，回退 `{DEFAULT_DOMAIN_ID}` 画像"
+                );
+            }
+            find_domain(DEFAULT_DOMAIN_ID).expect("DEFAULT_DOMAIN_ID 必须在注册表中存在")
+        }
+    }
+}
+
+// ── 领域 × 能力合并 ─────────────────────────────────────────────────────────
+
+/// 合并后的有效画像（阶段四）
+///
+/// 「领域 × 能力」相遇时的合并规则（ADR-004 / 实施计划阶段四）：
+///
+/// | 维度 | 规则 | 理由 |
+/// |------|------|------|
+/// | 基准提示词 | 领域基准 → 能力基准，纯拼接 | 领域定义世界观，能力定义动作，后者更具体应靠后 |
+/// | 工具集 | 取并集（能力在前，领域新增在后） | 互补，取交集会导致某一侧工具不可用 |
+/// | 执行预算 | 取较大值 | 保守策略，避免领域需要的多轮被能力的小预算截断 |
+#[derive(Debug, Clone)]
+pub struct EffectiveProfile {
+    /// 能力画像（用户选择的动作）
+    pub ability: &'static AgentProfile,
+    /// 能力 id 是否在注册表中命中（`false` 表示已兜底为 writing）
+    ///
+    /// 必须保留此标记：未知能力的**预算**兜底是 `(15, 600)` 而**不是** writing 的
+    /// `(5, 300)`（改造前即如此）。若只看 `ability.id` 就无法区分「显式选了 writing」
+    /// 与「未知 id 兜底成 writing」，会把两者的预算混为一谈。
+    pub ability_matched: bool,
+    /// 领域画像（作品类型决定）
+    pub domain: &'static AgentProfile,
+    /// 领域基准 + 能力基准（**不含动态场景提示**，由 `prompts` 层注入）
+    pub base_prompt: String,
+    /// 合并后的工具集（并集）
+    pub tools: Vec<&'static str>,
+    /// 合并后的最大推理轮数
+    pub max_rounds: usize,
+    /// 合并后的总超时（秒）
+    pub timeout_secs: u64,
+}
+
+/// 合并能力画像与领域画像
+///
+/// 两侧 id 都会走各自的兜底（能力回退 writing、领域回退 novel），
+/// 因此**不会失败**——调用方无需处理「画像不存在」。
+pub fn merge(ability_id: &str, domain_id: &str) -> EffectiveProfile {
+    let ability = ability_or_writing(ability_id);
+    let domain = domain_or_novel(domain_id);
+
+    // 工具并集：能力工具保序在前，领域新增的追加在后（去重）
+    let mut tools: Vec<&'static str> = ability.tools.to_vec();
+    for t in domain.tools {
+        if !tools.contains(t) {
+            tools.push(t);
+        }
+    }
+
+    EffectiveProfile {
+        ability,
+        ability_matched: find_ability(ability_id).is_some(),
+        domain,
+        base_prompt: format!("{}\n\n{}", domain.base_prompt, ability.base_prompt),
+        tools,
+        max_rounds: ability.max_rounds.max(domain.max_rounds),
+        timeout_secs: ability.timeout_secs.max(domain.timeout_secs),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// 阶段二重构前导出的基线（2026-10-10）。
+    /// 阶段二重构前导出的**能力画像**基线（2026-10-10）。
     /// 任何画像字段的**非预期**变更都会在此失败。
-    const BASELINE: &[(&str, usize, usize, usize, u64)] = &[
+    /// 领域画像是阶段四新增的，无历史基线，故不在此表。
+    const ABILITY_BASELINE: &[(&str, usize, usize, usize, u64)] = &[
         // (id, base_prompt 字符数, hints 条数, tools 条数, timeout_secs)
         ("writing", 418, 5, 5, 300),
         ("analysis", 398, 4, 5, 480),
@@ -248,25 +494,29 @@ mod tests {
     ];
 
     #[test]
-    fn profiles_match_pre_refactor_baseline() {
-        for (id, prompt_len, hints_len, tools_len, timeout) in BASELINE {
-            let p = find_profile(id).unwrap_or_else(|| panic!("画像 `{id}` 未注册"));
+    fn ability_profiles_match_pre_refactor_baseline() {
+        for (id, prompt_len, hints_len, tools_len, timeout) in ABILITY_BASELINE {
+            let p = find_ability(id).unwrap_or_else(|| panic!("能力画像 `{id}` 未注册"));
             assert_eq!(p.base_prompt.chars().count(), *prompt_len, "{id} 提示词长度");
             assert_eq!(p.hints.len(), *hints_len, "{id} hints 条数");
             assert_eq!(p.tools.len(), *tools_len, "{id} 工具数");
             assert_eq!(p.timeout_secs, *timeout, "{id} 总超时");
         }
-        // 快照条数须与注册表一致，新增画像时必须补基线
-        assert_eq!(BASELINE.len(), PROFILES.len(), "新增画像须同步补基线");
+        // 新増能力画像时必须补基线
+        let ability_count = PROFILES
+            .iter()
+            .filter(|p| p.kind == ProfileKind::Ability)
+            .count();
+        assert_eq!(ABILITY_BASELINE.len(), ability_count, "新增能力画像须同步补基线");
     }
 
     #[test]
     fn baseline_rounds_are_explicit() {
         // max_rounds 单独断言，避免与 timeout 混淆
-        assert_eq!(find_profile("writing").unwrap().max_rounds, 5);
-        assert_eq!(find_profile("analysis").unwrap().max_rounds, 10);
-        assert_eq!(find_profile("research").unwrap().max_rounds, 20);
-        assert_eq!(find_profile("polish").unwrap().max_rounds, 3);
+        assert_eq!(find_ability("writing").unwrap().max_rounds, 5);
+        assert_eq!(find_ability("analysis").unwrap().max_rounds, 10);
+        assert_eq!(find_ability("research").unwrap().max_rounds, 20);
+        assert_eq!(find_ability("polish").unwrap().max_rounds, 3);
     }
 
     /// hint 关键词顺序决定「最多注入 3 条」的截断结果，必须与原表一致
@@ -277,9 +527,15 @@ mod tests {
             ("analysis", "文风,连贯,伏笔,节奏"),
             ("research", "设定,世界观,关系,校验"),
             ("polish", "语法,文笔,风格,对话"),
+            ("novel", "情节,人物,文风"),
+            ("thesis", "论点,论据,引用"),
+            ("breakdown", "拆解,卡片,要点"),
+            ("note", "概念,公式,例题,复习"),
         ];
         for (id, expected) in cases {
-            let keys: Vec<&str> = find_profile(id)
+            let keys: Vec<&str> = PROFILES
+                .iter()
+                .find(|p| p.id == *id)
                 .unwrap()
                 .hints
                 .iter()
@@ -298,21 +554,42 @@ mod tests {
             ("polish", "read_chapter,read_chapter_chunk,get_book_context"),
         ];
         for (id, expected) in cases {
-            assert_eq!(&find_profile(id).unwrap().tools.join(","), expected, "{id} 工具集变化");
+            assert_eq!(&find_ability(id).unwrap().tools.join(","), expected, "{id} 工具集变化");
         }
+        // 未知能力回退 writing，故工具集等于 writing 的五项
         assert_eq!(
-            FALLBACK_TOOLS.join(","),
+            &merge("no_such", "novel").tools.join(","),
             "read_chapter_summary,read_chapter_chunk,list_book_chapters,search_world_cards,get_book_context"
         );
     }
 
     #[test]
     fn unknown_id_lookup_semantics() {
-        assert!(find_profile("no_such").is_none(), "精确查表不应回退");
-        assert!(find_profile("").is_none());
-        // 但 profile_or_writing 回退 writing
-        assert_eq!(profile_or_writing("no_such").id, "writing");
-        assert_eq!(profile_or_writing("").id, "writing");
+        assert!(find_ability("no_such").is_none(), "精确查表不应回退");
+        assert!(find_ability("").is_none());
+        // 但 ability_or_writing 回退 writing
+        assert_eq!(ability_or_writing("no_such").id, "writing");
+        assert_eq!(ability_or_writing("").id, "writing");
+    }
+
+    /// 领域画像 id 必须与 `books.book_type` 的值域一一对应
+    #[test]
+    fn domain_ids_cover_book_type_values() {
+        for id in ["novel", "thesis", "breakdown", "note"] {
+            let p = find_domain(id).unwrap_or_else(|| panic!("领域画像 `{id}` 未注册"));
+            assert_eq!(p.kind, ProfileKind::Domain);
+        }
+        // 空 / 未知回退 novel
+        assert_eq!(domain_or_novel("").id, "novel");
+        assert_eq!(domain_or_novel("poetry").id, "novel");
+        assert_eq!(domain_or_novel(DEFAULT_DOMAIN_ID).id, "novel");
+    }
+
+    /// 按 kind 隔离：能力 id 不会误匹配到领域画像，反之亦然
+    #[test]
+    fn lookups_are_isolated_by_kind() {
+        assert!(find_domain("writing").is_none(), "writing 是能力画像，不该被领域查到");
+        assert!(find_ability("novel").is_none(), "novel 是领域画像，不该被能力查到");
     }
 
     #[test]
@@ -321,8 +598,21 @@ mod tests {
         for p in PROFILES {
             assert!(seen.insert(p.id), "重复画像 id: {}", p.id);
             assert!(!p.base_prompt.is_empty(), "{} 缺少基准提示", p.id);
-            assert!(!p.tools.is_empty(), "{} 工具集为空", p.id);
-            assert!(p.max_rounds > 0, "{} 轮数须为正", p.id);
+            assert!(!p.hints.is_empty(), "{} hints 为空", p.id);
+            match p.kind {
+                // 能力画像定义动作，必须有工具与正轮数
+                ProfileKind::Ability => {
+                    assert!(!p.tools.is_empty(), "{} 工具集为空", p.id);
+                    assert!(p.max_rounds > 0, "{} 轮数须为正", p.id);
+                    assert!(p.timeout_secs > 0, "{} 超时须为正", p.id);
+                }
+                // 领域画像定义世界观：不带工具、预算为 0 表示「不约束」
+                ProfileKind::Domain => {
+                    assert!(p.tools.is_empty(), "{} 领域画像不应带工具", p.id);
+                    assert_eq!(p.max_rounds, 0, "{} 领域画像不应约束轮数", p.id);
+                    assert_eq!(p.timeout_secs, 0, "{} 领域画像不应约束超时", p.id);
+                }
+            }
         }
     }
 
@@ -337,6 +627,55 @@ mod tests {
                     p.id
                 );
             }
+        }
+    }
+
+    // ── 合并规则（阶段四）──
+
+    #[test]
+    fn merge_prompt_is_domain_then_ability() {
+        let eff = merge("polish", "note");
+        assert!(eff.base_prompt.starts_with(NOTE_PROMPT));
+        assert!(eff.base_prompt.ends_with(POLISH_PROMPT));
+        assert_eq!(eff.ability.id, "polish");
+        assert_eq!(eff.domain.id, "note");
+    }
+
+    /// 工具集取并集：领域当前无工具，故并集 = 能力工具，顺序不变
+    #[test]
+    fn merge_tools_is_union_with_ability_first() {
+        let eff = merge("research", "breakdown");
+        assert_eq!(eff.tools, RESEARCH_TOOLS);
+        // 领域画像目前无工具，并集不应引入新项
+        let eff2 = merge("polish", "note");
+        assert_eq!(eff2.tools, POLISH_TOOLS);
+    }
+
+    /// 预算取较大值：领域为 0（不约束），故结果等于能力预算
+    #[test]
+    fn merge_budget_takes_larger() {
+        let eff = merge("research", "novel");
+        assert_eq!(eff.max_rounds, 20);
+        assert_eq!(eff.timeout_secs, 600);
+        let eff2 = merge("polish", "thesis");
+        assert_eq!(eff2.max_rounds, 3);
+        assert_eq!(eff2.timeout_secs, 240);
+    }
+
+    /// 未知两侧 id 都走兜底，不 panic
+    #[test]
+    fn merge_never_fails() {
+        let eff = merge("no_such", "");
+        assert_eq!(eff.ability.id, "writing");
+        assert_eq!(eff.domain.id, "novel");
+    }
+
+    /// 四种领域在同一能力下必须产出**不同**的基准提示（否则等于领域没生效）
+    #[test]
+    fn four_domains_produce_distinct_prompts() {
+        let mut seen = std::collections::HashSet::new();
+        for d in ["novel", "thesis", "breakdown", "note"] {
+            assert!(seen.insert(merge("writing", d).base_prompt.clone()), "领域 `{d}` 提示词重复");
         }
     }
 }
