@@ -120,10 +120,12 @@ type PluginHost = {
 | `id` | 与目录名一致，复用现有 `ID_PATTERN` |
 | `name` / `version` / `description` / `author` | 与现有 `PluginManifest` 保持一致 |
 | `grants` | **权限声明**，如 `["llm", "book.read", "card.search"]` |
-| `profiles` | 该插件贡献的 Agent 画像（提示词 + 工具引用 + 预算） |
+| `profiles` | 该插件贡献的 Agent 画像数组，元素形状与 L1 的 `AgentProfile` 一致，**须含 UI 元数据**（见下） |
 | `entry` | 入口文件，默认 `index.js` |
 
 `grants` 是核心：安装时向用户展示「该插件将获得以下能力」，运行时宿主**只注入 `grants` 内声明的字段**。
+
+`profiles[]` 的元素除 `id` / `base_prompt` / `tools` / `max_rounds` 外，**必须带 `label` / `icon` / `color` / `quick_actions`**——因为插件画像同样要经 ADR-005 的 L3 `list_agent_profiles` 下发给前端渲染，缺了 UI 元数据前端无法展示。图标沿用现有**字符串图标名**约定（如 `pen-tool` / `search`），不引入新映射表。
 
 ### 决策 4：加载方式——受控执行 + 安装确认
 
@@ -182,6 +184,8 @@ type PluginHost = {
 - 🔜 **CSP 放宽的具体形态**：`'unsafe-eval'` 与 `asset:` + `<script src>` 两条路线的取舍，建议在阶段七动手前实测
 - 🔜 是否引入**插件签名** —— 当前威胁模型下（用户主动安装、纯文本可审核）暂不引入，若将来有分发市场再评估
 - 🔜 **`grants` 的粒度**：按能力项（`book.read`）还是按工具名（`read_chapter`）？建议跟随 L0 注册表落地后再定，避免二次调整
+- ⚠️ **插件画像必须并入 L3 的 `list_agent_profiles` 返回值**，否则插件装了前端也看不见（前端画像列表只认这个 IPC）。本 ADR 未将此列入决策，已记入实施计划阶段七任务 10
+- 🔜 **画像 id 冲突**：插件若声明 `id = "novel"` 会与内置领域画像撞车。建议插件画像强制加命名空间前缀（如 `<plugin-id>:<profile-id>`），本 ADR 未定，待阶段七实现时定稿
 - 🔜 **插件目录是否纳入备份** —— 倾向于纳入，但需确认备份体积与导入时的覆盖策略
 - 🔜 **WASM 作为第二载体**：本 ADR 已把宿主注入抽象为 `PluginHost` 接口，将来换 WASM 执行器时前端注入面不变，但宿主侧需新增 host function 绑定
 - ⚠️ 现有 `src/plugins/` 与本 ADR 的插件宿主**是两套东西**，长期并存会造成概念混淆。建议阶段七落地时明确命名（如前者称「内置模块」，后者称「Agent 插件」），并在文档中划清边界

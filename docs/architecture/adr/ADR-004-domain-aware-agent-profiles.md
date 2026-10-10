@@ -136,13 +136,15 @@ Prompt 组装的唯一入口（`engine.rs` 的 `run_skill_inner`）相应扩展�
 - 🔜 补齐「作品大纲 / 章节大纲」读取工具 —— 拆书 Agent、论文 Agent、学科笔记 Agent 都强依赖大纲（学科笔记里大纲即「知识结构 / 目录」），当前工具集读不到，是比领域提示更实质的能力缺口。**须在 L0 工具注册表落地之后再做**，否则仍要改三处 `match`
 - 🔜 厘清「学科笔记」与既有日记、生词本的边界 —— 日记是每日随笔（`diaries` 表）、生词本是语言词汇（`vocab_*` 表）、学科笔记是按学科组织的结构化知识（复用 books / chapters / world_cards）。三者定位不同但用户可能混淆，需在新建入口给出说明
 - 🔜 领域选择是否允许「会话级临时覆盖」（不选作品默认类型，临时切成别的）—— 本 ADR 未定，建议二期按用户反馈决定
-- 🔜 AI 工具箱（单轮生成、无工具无记忆）是否也要感知 `book_type` —— 本 ADR 未覆盖，其链路走 `stream_ai_chat`，与 Agent 引擎不同源
+- 🔜 AI 工具箱（单轮生成、无工具无记忆）是否也要感知 `book_type` —— 本 ADR 未覆盖，其链路走 `stream_ai_chat`，与 Agent 引擎不同源。[ADR-005](architecture/adr/ADR-005-agent-extension-model) 的 `SingleShot` 模式提供了归并路径（实施计划阶段六任务 6），但迁移前需先对齐容错能力——工具箱当前有网络重试而 Agent 链路没有
 - 🔜 若后续领域数量增长（超过 5 个），再评估是否迁移到 `app_config` 配置化
 - ⚠️ 领域提示与能力提示的拼接顺序需要实测：不同模型对「系统提示前后位置」的敏感度不同，建议用同一组测试用例对比效果
 
 ## 相关文档
 
+- [ADR-005：Agent 扩展模型（工具注册表 / 执行模式 / 前端自动发现）](architecture/adr/ADR-005-agent-extension-model) —— 承接本 ADR 遗留的「工具未收敛、执行模式单一、前后端双份」三处缺口
+- [ADR-006：Agent 插件宿主（第三方 Agent 的安装与卸载）](architecture/adr/ADR-006-agent-plugin-host) —— 在本 ADR 与 ADR-005 之上支持第三方插件
+- [领域感知 Agent 实施计划](development/agent-profile-plan)
 - [Agent 引擎架构](architecture/agent-architecture)
 - [AI 模块架构](architecture/AI-architecture)
-- [领域感知 Agent 实施计划](development/agent-profile-plan)
 - [ADR-002：Python Agent 经 Bridge 只读回调](architecture/adr/ADR-002-agent-bridge-readonly) —— 已废弃，其遗留的 Python 链路正是本 ADR 所述 Rust 原生引擎的前身
