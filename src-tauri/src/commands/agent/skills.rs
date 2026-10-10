@@ -8,9 +8,20 @@
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
-use crate::commands::agent::{engine, memory};
+use crate::commands::agent::{engine, memory, profiles};
 use crate::db::AppDb;
 use crate::error::AppError;
+
+// ══════ 画像发现（L3）══════
+
+/// 列出全部 Agent 画像元数据（能力 + 领域）
+///
+/// 前端据此渲染技能选择器、领域徽标与快捷操作——**新增画像时前端零改动**。
+/// 无需访问数据库，纯查注册表常量。
+#[tauri::command]
+pub fn list_agent_profiles() -> Vec<profiles::ProfileMeta> {
+    profiles::profile_metas()
+}
 
 // ══════ Skill 执行 ══════
 

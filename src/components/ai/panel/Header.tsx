@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { SkillType } from '@/components/agent/types'
-import { SKILLS } from '@/components/agent/types'
+import type { ProfileMeta } from '@/types'
 import { STATUS_CONFIG, type StatusKey } from './constants'
 import { ModelCheckIcon } from './ModelCheckIcon'
 
@@ -22,8 +22,12 @@ interface HeaderProps {
   modelCheckDetail: string
   onCheckModel: () => void
   statusKey: StatusKey
+  /** 能力画像列表（后端下发）；`null` = 尚未加载完成，渲染骨架 */
+  abilities: ProfileMeta[] | null
   selectedSkill: SkillType
   onSkillChange: (skill: SkillType) => void
+  /** 当前作品的领域画像（null = 无作品或未加载） */
+  domain: ProfileMeta | null
   onClear: () => void
   /** Agent 记忆面板相关 */
   showMemory: boolean
@@ -54,7 +58,8 @@ export const Header = memo(function Header({
   providerLabel, modelName,
   modelCheckStatus, modelCheckDetail, onCheckModel,
   statusKey,
-  selectedSkill, onSkillChange,
+  abilities, selectedSkill, onSkillChange,
+  domain,
   onClear,
   showMemory, onToggleMemory,
   exportOpen, onExportToggle, onExportFormat,
@@ -172,22 +177,40 @@ export const Header = memo(function Header({
         </div>
       </div>
 
-      {/* 技能选择器 */}
-      <div className="flex gap-1">
-        {SKILLS.map((skill) => (
-          <button
-            key={skill.type}
-            onClick={() => onSkillChange(skill.type)}
-            title={skill.description}
-            className={cn('text-[10px] px-2 py-0.5 rounded-full transition-colors',
-              selectedSkill === skill.type
-                ? 'bg-primary/15 text-primary font-medium'
-                : 'text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/50',
-            )}
+      {/* 领域徽标 + 技能选择器（同一行，领域在前且固定不压缩） */}
+      <div className="flex items-center gap-1.5 min-w-0">
+        {domain && (
+          <span
+            title={`当前作品类型：${domain.label}（${domain.description}）`}
+            className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full border font-medium whitespace-nowrap"
+            style={{ color: domain.color, borderColor: `${domain.color}59` }}
           >
-            {skill.label}
-          </button>
-        ))}
+            {domain.label}
+          </span>
+        )}
+        <div className="flex gap-1 min-w-0 overflow-x-auto">
+          {abilities === null ? (
+            // 加载骨架：**不回退硬编码表**——否则后端新增画像永远显示不出来
+            [0, 1, 2, 3].map((i) => (
+              <span key={i} className="shrink-0 h-[18px] w-14 rounded-full bg-muted animate-pulse" />
+            ))
+          ) : abilities.length === 0 ? null : (
+            abilities.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => onSkillChange(p.id)}
+                title={p.description}
+                className={cn('shrink-0 text-[10px] px-2 py-0.5 rounded-full transition-colors whitespace-nowrap',
+                  selectedSkill === p.id
+                    ? 'bg-primary/15 text-primary font-medium'
+                    : 'text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/50',
+                )}
+              >
+                {p.label}
+              </button>
+            ))
+          )}
+        </div>
       </div>
     </div>
   )

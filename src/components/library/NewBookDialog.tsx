@@ -12,7 +12,7 @@ import { useBooksStore } from '@/stores/booksStore'
 import { showError } from '@/lib/errors'
 import CoverPicker from './CoverPicker'
 import BookTypePicker from './BookTypePicker'
-import { DEFAULT_BOOK_TYPE } from '@/lib/book-types'
+import { DEFAULT_BOOK_TYPE, useBookTypes } from '@/lib/book-types'
 import { isRenderableSrc, generateBookCoverSvg } from '@/lib/image-utils.ts'
 import type { Book } from '@/types'
 
@@ -27,6 +27,8 @@ export default function NewBookDialog({ onClose, onCreated }: NewBookDialogProps
   const [author, setAuthor] = useState('')
   const [description, setDescription] = useState('')
   const [dailyTarget, setDailyTarget] = useState(1000)
+  // 值域由后端画像注册表下发（阶段五 L3），加载期间用内置兜底值
+  const bookTypes = useBookTypes()
   const [bookType, setBookType] = useState<string>(DEFAULT_BOOK_TYPE)
   const [coverDataUrl, setCoverDataUrl] = useState('') // 裁剪后的 Base64 data URL
   const [coverPreview, setCoverPreview] = useState<string | undefined>(undefined)
@@ -110,7 +112,7 @@ export default function NewBookDialog({ onClose, onCreated }: NewBookDialogProps
           {/* 作品类型：决定 AI 助手使用的领域画像（可在编辑信息中随时修改） */}
           <div className="space-y-1">
             <label className="text-sm font-medium">作品类型</label>
-            <BookTypePicker value={bookType} onChange={setBookType} />
+            <BookTypePicker types={bookTypes} value={bookType} onChange={setBookType} />
           </div>
 
           <div className="space-y-1">

@@ -29,7 +29,7 @@
 | 二 | L1 画像注册表 | ✅ **已完成**（2026-10-10） |
 | 三 | `book_type` 落库 | ✅ **已完成**（2026-10-10） |
 | 四 | 领域画像 + Prompt 组装 | ✅ **已完成**（2026-10-10） |
-| 五 | L3 前端自动发现 | ⬜ 未开始 |
+| 五 | L3 前端自动发现 | ✅ **已完成**（2026-10-10） |
 | 六 | L2 `RuntimeMode` / Pipeline | ⬜ 未开始 |
 | 七 | 插件宿主 | ⬜ 未开始 |
 
@@ -330,7 +330,7 @@
 
 ---
 
-## 阶段五：L3 前端自动发现与交互
+## 阶段五：L3 前端自动发现与交互 ✅ 已完成
 
 > 目标：让用户看得见、选得着，且**新增画像时前端零改动**。
 
@@ -357,6 +357,62 @@
 - 刷新后选择状态保持
 - **关闭验证**：后端新增一个画像后，前端不改一行代码即可显示并使用
 - `pnpm check` 的 IPC 注册一致性检查通过
+
+### 完成情况（2026-10-10）
+
+9 项任务全部完成（任务 8 原标「可选」，一并做了——它让领域画像的 `icon` / `color` 有了消费端）。
+
+#### 落地改动
+
+**Rust 侧**
+
+| 文件 | 改动 |
+|------|------|
+| `profiles.rs` | `AgentProfile` 加 5 个展示字段（`label` / `description` / `icon` / `color` / `quick_actions`）；`ProfileKind` 加 `Serialize`（`rename_all = lowercase`）；新增 `ProfileMeta` + `profile_metas()`；快捷操作文案从前端 `constants.ts` 迁入注册表 |
+| `skills.rs` | 新增 `list_agent_profiles` 命令（纯查常量，无需 DB / AppHandle） |
+| `lib.rs` | 注册该命令 |
+
+**前端侧**
+
+| 文件 | 改动 |
+|------|------|
+| `types/index.ts` | 新增 `ProfileKind` / `ProfileMeta` |
+| `lib/tauri-bridge.ts` | `agentApi.listProfiles()` |
+| **`lib/agent-profiles.ts`（新建）** | 模块级缓存 + 飞行去抖 + `useSyncExternalStore` 订阅；图标名→组件映射（未知名回退 `BotIcon`） |
+| `lib/book-types.ts` | 值域改为从 IPC 派生（`getBookTypes()` / `useBookTypes()`），任务 9 完成 |
+| `components/agent/types.ts` | `SkillType` 由字面量联合改为 `string`；删除硬编码 `SKILLS` |
+| `components/ai/panel/constants.ts` | 删除 `QUICK_ACTIONS` / `getAgentQuickActions` |
+| `components/ai/panel/Header.tsx` | 接收 `abilities` / `domain`；领域徽标 + 技能 chips 同行（领域在前且 `shrink-0`）；未加载渲染骨架 |
+| `AiSidePanel.tsx` | 加载画像、解析领域、技能选择持久化（localStorage）+ 失效校验 |
+| `AgentInputArea` / `AgentMessageList` / `AgentMessageBubble` | 改用后端下发的元数据；删除气泡里的 emoji 硬编码映射 |
+| `BookTypePicker` / 两个弹窗 | 类型列表由 `useBookTypes()` 提供 |
+| `components/library/BookCard.tsx` | 封面左下角加类型徽标（左上角留给「更多菜单」按钮） |
+
+#### ⚠️ 两处设计决策
+
+**1. 「骨架」与「兜底表」按场景区分，不能一刀切。**
+
+初版想统一「IPC 未就绪就回退硬编码表」，但那会让 L3 的目标落空——回退表里永远没有新增的画像。按控件性质分别处理：
+
+| 场景 | 未就绪时 | 理由 |
+|------|---------|------|
+| AI 面板技能 chips | 渲染骨架 | 短暂空白可接受；回退表会让新画像永远不显示 |
+| 新建 / 编辑弹窗的类型选择器 | 用内置兜底值 | 表单控件没有选项就无法渲染，必须保证可用 |
+
+两者都在 IPC 返回后切换到后端值域，故「后端新增画像 → 前端零改动」均成立。
+
+**2. 领域是「展示」而非「切换器」。**
+
+原任务 5 写的是「领域切换」。实际做成**只读徽标**：领域由作品的 `book_type` 决定（阶段四已在 Rust 侧反查），用户改类型应去「编辑作品信息」。这样避免把面板上的一次误点变成写库操作，也符合「领域是作品属性」的建模。验收中的「切换作品时领域自动跟随」照常成立。
+
+#### 顺带发现
+
+- `observability::bus::tests::list_filters_by_kind` 是**偶发 flaky**（全局缓冲 + 多线程竞争）：单独跑通过，连跑三次全量也通过，但曾在某次全量中失败一次。与本次改动无关，记录备查。
+
+#### 测试
+
+- Rust `cargo test --lib` **202/202**（+3：元数据完整性、快捷操作文案比对、`ProfileMeta` 序列化后 `kind` 为小写且**不含提示词**）
+- `pnpm check` **231/231**（`list_agent_profiles` 已由 check 脚本自动同步进 `ipc-commands.ts`）
 
 ---
 

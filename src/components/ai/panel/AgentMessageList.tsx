@@ -8,15 +8,17 @@
  */
 import { memo } from 'react'
 import { BotIcon } from 'lucide-react'
-import type { AgentMessage, AgentStatus, SkillType } from '@/components/agent/types'
-import { SKILLS } from '@/components/agent/types'
+import type { AgentMessage, AgentStatus } from '@/components/agent/types'
+import type { ProfileMeta } from '@/types'
 import { AgentMessageBubble } from '@/components/agent/AgentMessageBubble'
-import { getAgentQuickActions } from './constants'
 
 interface AgentMessageListProps {
   messages: AgentMessage[]
   agentStatus: AgentStatus
-  selectedSkill: SkillType
+  /** 当前选中的能力画像（后端下发，含快捷操作文案） */
+  selectedAbility?: ProfileMeta
+  /** 能力画像列表，供消息气泡把 skill id 解析为展示名 */
+  abilities?: ProfileMeta[]
   error: string | null
   onSelectQuick: (text: string) => void
   bottomRef: React.RefObject<HTMLDivElement | null>
@@ -24,10 +26,9 @@ interface AgentMessageListProps {
 }
 
 export const AgentMessageList = memo(function AgentMessageList({
-  messages, agentStatus, selectedSkill, error,
+  messages, agentStatus, selectedAbility, abilities, error,
   onSelectQuick, bottomRef, scrollContainerRef,
 }: AgentMessageListProps) {
-  const selectedSkillMeta = SKILLS.find((s) => s.type === selectedSkill)
   return (
     <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 space-y-3 min-w-0">
       {messages.length === 0 && agentStatus === 'running' && (
@@ -35,11 +36,11 @@ export const AgentMessageList = memo(function AgentMessageList({
           <span className="text-3xl">✨</span>
           <h4 className="text-sm font-medium mt-2">你好，我是你的 AI 写作助手</h4>
           <p className="text-xs text-muted-foreground mt-1">
-            当前模式：<strong style={{ color: selectedSkillMeta?.color }}>{selectedSkillMeta?.label}</strong>
+            当前模式：<strong style={{ color: selectedAbility?.color }}>{selectedAbility?.label}</strong>
           </p>
-          <p className="text-xs text-muted-foreground">{selectedSkillMeta?.description}</p>
+          <p className="text-xs text-muted-foreground">{selectedAbility?.description}</p>
           <div className="flex flex-col gap-1.5 mt-3 max-w-[300px] mx-auto">
-            {getAgentQuickActions(selectedSkill).map((action, i) => (
+            {(selectedAbility?.quickActions ?? []).map((action, i) => (
               <button
                 key={i}
                 onClick={() => onSelectQuick(action)}
@@ -58,7 +59,7 @@ export const AgentMessageList = memo(function AgentMessageList({
         </div>
       )}
       {messages.map((msg) => (
-        <AgentMessageBubble key={msg.id} message={msg} />
+        <AgentMessageBubble key={msg.id} message={msg} abilities={abilities} />
       ))}
       {error && (
         <div className="px-3 py-2 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs">

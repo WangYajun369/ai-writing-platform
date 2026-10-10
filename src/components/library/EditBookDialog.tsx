@@ -12,7 +12,7 @@ import { useBooksStore } from '@/stores/booksStore'
 import { showError } from '@/lib/errors'
 import CoverPicker from './CoverPicker'
 import BookTypePicker from './BookTypePicker'
-import { normalizeBookType } from '@/lib/book-types'
+import { normalizeBookType, useBookTypes } from '@/lib/book-types'
 import { isRenderableSrc, generateBookCoverSvg } from '@/lib/image-utils.ts'
 import type { Book } from '@/types'
 
@@ -28,6 +28,8 @@ export default function EditBookDialog({ book, onClose, onSaved }: EditBookDialo
   const [author, setAuthor] = useState(book.author)
   const [description, setDescription] = useState(book.description)
   const [dailyTarget, setDailyTarget] = useState(book.dailyTarget)
+  // 值域由后端画像注册表下发（阶段五 L3），加载期间用内置兜底值
+  const bookTypes = useBookTypes()
   // 存量作品 bookType 为空串，归一化后展示为「小说」
   const [bookType, setBookType] = useState<string>(normalizeBookType(book.bookType))
   const [coverDataUrl, setCoverDataUrl] = useState('') // 新选择的封面 data URL
@@ -130,7 +132,7 @@ export default function EditBookDialog({ book, onClose, onSaved }: EditBookDialo
           {/* 作品类型：决定 AI 助手使用的领域画像 */}
           <div className="space-y-1">
             <label className="text-sm font-medium">作品类型</label>
-            <BookTypePicker value={bookType} onChange={setBookType} />
+            <BookTypePicker types={bookTypes} value={bookType} onChange={setBookType} />
           </div>
 
           <div className="space-y-1">

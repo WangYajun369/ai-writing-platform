@@ -232,6 +232,36 @@ const NOTE_HINTS: &[(&str, &str)] = &[
     ("复习", "\n\n## 笔记·复习指引\n- 提炼易错点与自测线索\n- 给出可自检的判断性问题"),
 ];
 
+// ── 快捷操作文案（阶段五：由后端下发，前端不再硬编码）────────────────────────
+// 原表位于 src/components/ai/panel/constants.ts，随 L3 自动发现一并迁入注册表。
+
+const WRITING_QUICK_ACTIONS: &[&str] = &[
+    "为当前章节生成下一章的详细大纲",
+    "分析主角的性格，设计一个合理的冲突情节",
+    "基于已有世界观，提供3个情节发展方向",
+];
+
+const ANALYSIS_QUICK_ACTIONS: &[&str] = &[
+    "分析最近5章的叙事节奏",
+    "检查当前章节与前面章节的伏笔关联",
+    "评估主要角色的性格一致性",
+];
+
+const RESEARCH_QUICK_ACTIONS: &[&str] = &[
+    "检索当前书籍的所有世界观设定",
+    "检查新章节内容是否与已有设定冲突",
+    "根据已有设定，扩展魔法体系的细节",
+];
+
+const POLISH_QUICK_ACTIONS: &[&str] = &[
+    "润色当前章节，保持原文风格",
+    "检查并修正语法和标点错误",
+    "优化当前章节的句式结构，增强可读性",
+];
+
+/// 领域画像不单独承担动作，故无快捷操作
+const DOMAIN_QUICK_ACTIONS: &[&str] = &[];
+
 // ── 工具子集 ────────────────────────────────────────────────────────────────
 // 引用 L0 注册表（tools.rs）中的工具名
 
@@ -269,7 +299,8 @@ const DOMAIN_TOOLS: &[&str] = &[];
 // ── 注册表 ──────────────────────────────────────────────────────────────────
 
 /// 画像类别：能力（做什么）或领域（处理什么）
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ProfileKind {
     /// 能力画像：定义「做什么动作」，由用户在 AI 面板选择
     Ability,
@@ -277,11 +308,21 @@ pub enum ProfileKind {
     Domain,
 }
 
-/// 单个画像的完整定义：提示词 / 场景提示 / 工具集 / 执行预算四合一
+/// 单个画像的完整定义：提示词 / 展示元数据 / 场景提示 / 工具集 / 执行预算
 #[derive(Debug, Clone, Copy)]
 pub struct AgentProfile {
     pub id: &'static str,
     pub kind: ProfileKind,
+    /// 中文名（前端 chips / 徽标展示）
+    pub label: &'static str,
+    /// 一句话说明（前端 tooltip / 空态描述）
+    pub description: &'static str,
+    /// 图标名（lucide 的 kebab-case 名，如 `pen-tool`；前端做名→组件映射）
+    pub icon: &'static str,
+    /// 主题色（十六进制，如 `#6366f1`）
+    pub color: &'static str,
+    /// 快捷操作文案（渲染在空会话占位区，点击即填入输入框）
+    pub quick_actions: &'static [&'static str],
     /// 基准 System Prompt
     pub base_prompt: &'static str,
     /// 动态场景提示（关键词 → 追加提示），按用户消息关键词命中注入
@@ -300,6 +341,11 @@ static PROFILES: &[AgentProfile] = &[
     AgentProfile {
         id: "writing",
         kind: ProfileKind::Ability,
+        label: "写作辅助",
+        description: "大纲生成、情节建议、角色对话模拟",
+        icon: "pen-tool",
+        color: "#6366f1",
+        quick_actions: WRITING_QUICK_ACTIONS,
         base_prompt: WRITING_PROMPT,
         hints: WRITING_HINTS,
         tools: WRITING_TOOLS,
@@ -309,6 +355,11 @@ static PROFILES: &[AgentProfile] = &[
     AgentProfile {
         id: "analysis",
         kind: ProfileKind::Ability,
+        label: "内容分析",
+        description: "文风分析、剧情连贯性、伏笔追踪",
+        icon: "search",
+        color: "#f59e0b",
+        quick_actions: ANALYSIS_QUICK_ACTIONS,
         base_prompt: ANALYSIS_PROMPT,
         hints: ANALYSIS_HINTS,
         tools: ANALYSIS_TOOLS,
@@ -318,6 +369,11 @@ static PROFILES: &[AgentProfile] = &[
     AgentProfile {
         id: "research",
         kind: ProfileKind::Ability,
+        label: "研究辅助",
+        description: "背景资料检索、世界观一致性校验",
+        icon: "book-open",
+        color: "#10b981",
+        quick_actions: RESEARCH_QUICK_ACTIONS,
         base_prompt: RESEARCH_PROMPT,
         hints: RESEARCH_HINTS,
         tools: RESEARCH_TOOLS,
@@ -327,6 +383,11 @@ static PROFILES: &[AgentProfile] = &[
     AgentProfile {
         id: "polish",
         kind: ProfileKind::Ability,
+        label: "润色优化",
+        description: "语法纠错、文笔润色、风格统一",
+        icon: "sparkles",
+        color: "#ec4899",
+        quick_actions: POLISH_QUICK_ACTIONS,
         base_prompt: POLISH_PROMPT,
         hints: POLISH_HINTS,
         tools: POLISH_TOOLS,
@@ -337,6 +398,11 @@ static PROFILES: &[AgentProfile] = &[
     AgentProfile {
         id: "novel",
         kind: ProfileKind::Domain,
+        label: "小说",
+        description: "情节 · 人物 · 文风",
+        icon: "book-open",
+        color: "#6366f1",
+        quick_actions: DOMAIN_QUICK_ACTIONS,
         base_prompt: NOVEL_PROMPT,
         hints: NOVEL_HINTS,
         tools: DOMAIN_TOOLS,
@@ -346,6 +412,11 @@ static PROFILES: &[AgentProfile] = &[
     AgentProfile {
         id: "thesis",
         kind: ProfileKind::Domain,
+        label: "论文",
+        description: "论点 · 论据 · 引用",
+        icon: "graduation-cap",
+        color: "#0ea5e9",
+        quick_actions: DOMAIN_QUICK_ACTIONS,
         base_prompt: THESIS_PROMPT,
         hints: THESIS_HINTS,
         tools: DOMAIN_TOOLS,
@@ -355,6 +426,11 @@ static PROFILES: &[AgentProfile] = &[
     AgentProfile {
         id: "breakdown",
         kind: ProfileKind::Domain,
+        label: "拆书",
+        description: "拆解 · 卡片 · 要点",
+        icon: "scissors",
+        color: "#f59e0b",
+        quick_actions: DOMAIN_QUICK_ACTIONS,
         base_prompt: BREAKDOWN_PROMPT,
         hints: BREAKDOWN_HINTS,
         tools: DOMAIN_TOOLS,
@@ -364,6 +440,11 @@ static PROFILES: &[AgentProfile] = &[
     AgentProfile {
         id: "note",
         kind: ProfileKind::Domain,
+        label: "学科笔记",
+        description: "概念 · 公式 · 例题 · 复习",
+        icon: "notebook-pen",
+        color: "#10b981",
+        quick_actions: DOMAIN_QUICK_ACTIONS,
         base_prompt: NOTE_PROMPT,
         hints: NOTE_HINTS,
         tools: DOMAIN_TOOLS,
@@ -416,6 +497,47 @@ pub fn domain_or_novel(book_type: &str) -> &'static AgentProfile {
             find_domain(DEFAULT_DOMAIN_ID).expect("DEFAULT_DOMAIN_ID 必须在注册表中存在")
         }
     }
+}
+
+// ── L3 前端自动发现（阶段五）───────────────────────────────────────────────
+
+/// 下发给前端的画像元数据（不含提示词——那是内部实现，不该暴露）
+///
+/// 前端据此渲染技能 chips / 领域徽标 / 快捷操作，
+/// 因此**新增画像时前端无需改动**（ADR-005 L3 的目标）。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileMeta {
+    pub id: &'static str,
+    /// `"ability"` 或 `"domain"`
+    pub kind: ProfileKind,
+    pub label: &'static str,
+    pub description: &'static str,
+    pub icon: &'static str,
+    pub color: &'static str,
+    pub quick_actions: &'static [&'static str],
+}
+
+impl From<&'static AgentProfile> for ProfileMeta {
+    fn from(p: &'static AgentProfile) -> Self {
+        Self {
+            id: p.id,
+            kind: p.kind,
+            label: p.label,
+            description: p.description,
+            icon: p.icon,
+            color: p.color,
+            quick_actions: p.quick_actions,
+        }
+    }
+}
+
+/// 全部画像的元数据（供 `list_agent_profiles` IPC 下发）
+///
+/// 能力画像在前、领域画像在后（与 `PROFILES` 注册顺序一致），
+/// 前端按 `kind` 分组使用，不依赖顺序。
+pub fn profile_metas() -> Vec<ProfileMeta> {
+    PROFILES.iter().map(ProfileMeta::from).collect()
 }
 
 // ── 领域 × 能力合并 ─────────────────────────────────────────────────────────
@@ -668,6 +790,52 @@ mod tests {
         let eff = merge("no_such", "");
         assert_eq!(eff.ability.id, "writing");
         assert_eq!(eff.domain.id, "novel");
+    }
+
+    // ── L3 展示元数据（阶段五）──
+
+    /// 前端依赖这些字段渲染 chips / 徽标 / 快捷操作，缺任一即出现空白 UI
+    #[test]
+    fn every_profile_has_display_metadata() {
+        for p in PROFILES {
+            assert!(!p.label.is_empty(), "{} 缺 label", p.id);
+            assert!(!p.description.is_empty(), "{} 缺 description", p.id);
+            assert!(!p.icon.is_empty(), "{} 缺 icon", p.id);
+            assert!(p.color.starts_with('#'), "{} 的 color 须为十六进制: {}", p.id, p.color);
+        }
+    }
+
+    #[test]
+    fn ability_quick_actions_match_frontend_baseline() {
+        // 原表在 src/components/ai/panel/constants.ts，迁入注册表后逐字比对
+        assert_eq!(find_ability("writing").unwrap().quick_actions.len(), 3);
+        assert_eq!(find_ability("analysis").unwrap().quick_actions.len(), 3);
+        assert_eq!(find_ability("research").unwrap().quick_actions.len(), 3);
+        assert_eq!(find_ability("polish").unwrap().quick_actions.len(), 3);
+        assert_eq!(
+            find_ability("polish").unwrap().quick_actions[0],
+            "润色当前章节，保持原文风格"
+        );
+        // 领域画像不单独承担动作，故无快捷操作
+        for d in ["novel", "thesis", "breakdown", "note"] {
+            assert!(find_domain(d).unwrap().quick_actions.is_empty());
+        }
+    }
+
+    #[test]
+    fn profile_metas_cover_registry_and_serialize_kind() {
+        let metas = profile_metas();
+        assert_eq!(metas.len(), PROFILES.len(), "元数据条数须覆盖注册表");
+        // kind 必须序列化为小写字符串（前端按此分组）
+        let json = serde_json::to_value(&metas).expect("序列化失败");
+        assert_eq!(json[0]["kind"], "ability");
+        assert_eq!(json[4]["kind"], "domain");
+        assert_eq!(json[4]["id"], "novel");
+        // camelCase 生效（前端字段名为 quickActions）
+        assert!(json[0]["quickActions"].is_array());
+        // 提示词属内部实现，不应下发
+        assert!(json[0].get("base_prompt").is_none());
+        assert!(json[0].get("basePrompt").is_none());
     }
 
     /// 四种领域在同一能力下必须产出**不同**的基准提示（否则等于领域没生效）

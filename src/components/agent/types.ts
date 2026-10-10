@@ -6,8 +6,15 @@
 
 import type { AgentMemoryInfo, AgentMemoryListResponse, AgentMemoryType } from '@/lib/tauri-bridge'
 
-/** 技能类型枚举 */
-export type SkillType = 'writing' | 'analysis' | 'research' | 'polish'
+/**
+ * 技能（能力画像）id
+ *
+ * 阶段五 L3 自动发现后**不再是字面量联合类型**：画像由后端 `list_agent_profiles`
+ * 下发，前端无法在编译期穷举。保留为 `string` 的别名只为标注语义。
+ *
+ * ⚠️ 取值合法性由后端兜底（未知 id 回退 writing），前端不做校验。
+ */
+export type SkillType = string
 
 /**
  * Agent 运行状态（供 Agent 面板展示）
@@ -40,47 +47,6 @@ export interface AgentMessage {
   isStreaming?: boolean
   error?: string
 }
-
-/** Skill 元数据 */
-export interface SkillMeta {
-  type: SkillType
-  label: string
-  description: string
-  icon: string
-  color: string
-}
-
-/** 所有可用技能 */
-export const SKILLS: SkillMeta[] = [
-  {
-    type: 'writing',
-    label: '写作辅助',
-    description: '大纲生成、情节建议、角色对话模拟',
-    icon: 'pen-tool',
-    color: '#6366f1',
-  },
-  {
-    type: 'analysis',
-    label: '内容分析',
-    description: '文风分析、剧情连贯性、伏笔追踪',
-    icon: 'search',
-    color: '#f59e0b',
-  },
-  {
-    type: 'research',
-    label: '研究辅助',
-    description: '背景资料检索、世界观一致性校验',
-    icon: 'book-open',
-    color: '#10b981',
-  },
-  {
-    type: 'polish',
-    label: '润色优化',
-    description: '语法纠错、文笔润色、风格统一',
-    icon: 'sparkles',
-    color: '#ec4899',
-  },
-]
 
 // ─── 记忆管理类型 ───
 // 后端契约类型已统一收敛至 tauri-bridge（单一 IPC 契约源），此处 re-export 保持旧引用兼容

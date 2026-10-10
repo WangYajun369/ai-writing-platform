@@ -1,12 +1,15 @@
 /**
  * BookTypePicker — 作品类型选择器
  *
- * 新建 / 编辑作品弹窗共用的类型选择控件，选项来自 `lib/book-types.ts` 值域表。
+ * 新建 / 编辑作品弹窗共用的类型选择控件，选项由调用方传入
+ * （来自 `lib/book-types.ts`，其数据源为后端画像注册表）。
  * 以卡片网格呈现，选中项高亮，并在下方显示当前选中类型的说明文案。
  */
-import { BOOK_TYPES, normalizeBookType } from '@/lib/book-types'
+import type { BookTypeMeta } from '@/lib/book-types'
 
 interface BookTypePickerProps {
+  /** 可选项（后端下发；为空时不渲染） */
+  types: BookTypeMeta[]
   /** 当前选中的类型原始值（可能是存量作品的空字符串） */
   value: string
   /** 选中变更回调，回传值域内的合法 id */
@@ -14,14 +17,14 @@ interface BookTypePickerProps {
 }
 
 // 组件：BookTypePicker 作品类型卡片选择器
-export default function BookTypePicker({ value, onChange }: BookTypePickerProps) {
-  const current = normalizeBookType(value)
+export default function BookTypePicker({ types, value, onChange }: BookTypePickerProps) {
+  const current = types.find((t) => t.id === value)
 
   return (
     <div className="space-y-1.5">
       <div className="grid grid-cols-2 gap-2">
-        {BOOK_TYPES.map((t) => {
-          const selected = t.id === current
+        {types.map((t) => {
+          const selected = t.id === value
           return (
             <button
               key={t.id}
@@ -47,9 +50,7 @@ export default function BookTypePicker({ value, onChange }: BookTypePickerProps)
           )
         })}
       </div>
-      <p className="text-xs text-muted-foreground leading-relaxed">
-        {BOOK_TYPES.find((t) => t.id === current)?.description}
-      </p>
+      {current && <p className="text-xs text-muted-foreground leading-relaxed">{current.description}</p>}
     </div>
   )
 }

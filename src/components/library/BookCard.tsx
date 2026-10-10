@@ -14,6 +14,7 @@ import { formatWordCount, formatRelativeTime } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 import { showError } from '@/lib/errors'
 import { useBooksStore } from '@/stores/booksStore'
+import { getBookTypeMeta } from '@/lib/book-types'
 import { resolveCoverSrc, processCroppedCoverImage, COVER_ASPECT, generateBookCoverSvg } from '@/lib/image-utils.ts'
 import type { CropArea } from '@/lib/image-utils'
 import ImageCropperDialog from '@/components/editor/ImageCropperDialog'
@@ -59,6 +60,9 @@ export default function BookCard({ book, onOpen, onRefresh }: BookCardProps) {
   const dailyProgress = book.dailyTarget > 0
     ? Math.min((book.todayCount / book.dailyTarget) * 100, 100)
     : 0
+
+  // 作品类型徽标（空值回退 novel 的展示元数据）
+  const typeMeta = getBookTypeMeta(book.bookType)
 
   /** 导出单个作品完整数据为加密 .tw 文件 */
   async function handleExportSingleBook() {
@@ -202,6 +206,14 @@ export default function BookCard({ book, onOpen, onRefresh }: BookCardProps) {
             <ProgressRing progress={dailyProgress} size={28} />
           </div>
         )}
+
+        {/* 类型徽标 — 封面左下角（左上角留给「更多菜单」按钮） */}
+        <span
+          className="absolute bottom-2 left-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-black/45 text-white backdrop-blur-sm"
+          title={`作品类型：${typeMeta.label}（${typeMeta.description}）`}
+        >
+          {typeMeta.label}
+        </span>
       </div>
 
       {/* 信息区 — flex-shrink-0 确保不被压缩 */}

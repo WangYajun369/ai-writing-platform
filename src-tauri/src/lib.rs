@@ -384,6 +384,7 @@ pub fn run() {
             // ══════ 窗口管理 — 数据库校验 ══════
             commands::window::validate::validate_database,
             // ══════ Agent Skills ══════
+            commands::agent::skills::list_agent_profiles,
             commands::agent::skills::execute_agent_skill,
             commands::agent::skills::cancel_agent_skill,
             // ══════ Agent 记忆管理 ══════

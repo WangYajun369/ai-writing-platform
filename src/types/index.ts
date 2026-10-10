@@ -359,6 +359,27 @@ export interface CreateBookParams {
   bookType?: string
 }
 
+/** Agent 画像类别：能力（做什么动作）/ 领域（处理什么作品） */
+export type ProfileKind = 'ability' | 'domain'
+
+/**
+ * Agent 画像元数据（对齐 Rust `ProfileMeta`）
+ *
+ * 由 `list_agent_profiles` 下发——前端据此渲染技能选择器、领域徽标与快捷操作，
+ * 因此**后端新增画像时前端无需改动**（ADR-005 L3）。
+ */
+export interface ProfileMeta {
+  id: string
+  kind: ProfileKind
+  label: string
+  description: string
+  /** lucide 图标名（kebab-case，如 `pen-tool`），前端做名→组件映射 */
+  icon: string
+  /** 主题色（十六进制，如 `#6366f1`） */
+  color: string
+  quickActions: string[]
+}
+
 /** 更新书籍参数（对齐 Rust UpdateBookParams，仅允许更新这些字段） */
 export interface UpdateBookParams {
   title?: string

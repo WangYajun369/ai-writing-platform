@@ -10,11 +10,13 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Loader2Icon, ClipboardPasteIcon, Trash2Icon, CheckIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { AgentMessage, SkillType } from './types'
-import { SKILLS } from './types'
+import type { ProfileMeta } from '@/types'
+import type { AgentMessage } from './types'
 
 interface AgentMessageBubbleProps {
   message: AgentMessage
+  /** 能力画像列表（后端下发），用于把 skill id 解析为展示名与配色 */
+  abilities?: ProfileMeta[]
   onCopy?: (content: string) => void
   onDelete?: () => void
 }
@@ -25,8 +27,8 @@ interface AgentMessageBubbleProps {
  * 按角色区分排版：用户消息纯文本右对齐、助手消息 Markdown 左对齐，
  * 支持思考中/流式/错误状态，以及 assistant 消息的复制与二次确认删除。
  */
-export const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({ message, onCopy, onDelete }) => {
-  const skillMeta = message.skill ? SKILLS.find((s) => s.type === message.skill) : null
+export const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({ message, abilities, onCopy, onDelete }) => {
+  const skillMeta = message.skill ? abilities?.find((p) => p.id === message.skill) : undefined
 
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
@@ -79,7 +81,7 @@ export const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({ message,
               className="px-1.5 py-0.5 rounded text-[10px] font-medium"
               style={{ backgroundColor: skillMeta.color + '20', color: skillMeta.color }}
             >
-              {getSkillIcon(message.skill!)} {skillMeta.label}
+              {skillMeta.label}
             </span>
           </div>
         )}
@@ -164,16 +166,3 @@ export const AgentMessageBubble: React.FC<AgentMessageBubbleProps> = ({ message,
   )
 }
 
-/** 技能类型 → 展示图标（emoji，与 types.ts 中 SKILLS 的 color 搭配使用） */
-function getSkillIcon(skill: SkillType): string {
-  switch (skill) {
-    case 'writing':
-      return '✍️'
-    case 'analysis':
-      return '🔍'
-    case 'research':
-      return '📖'
-    case 'polish':
-      return '✨'
-  }
-}

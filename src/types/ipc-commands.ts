@@ -72,6 +72,7 @@ export type IpcCommand =
   | 'is_telemetry_broadcasting'
   | 'is_vocab_window_open'
   | 'list_agent_memories'
+  | 'list_agent_profiles'
   | 'list_agent_traces'
   | 'list_all_diaries'
   | 'list_books'

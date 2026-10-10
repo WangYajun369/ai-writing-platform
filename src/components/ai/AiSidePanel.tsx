@@ -13,9 +13,9 @@
  *  - AgentMessageList → Agent 模式消息列表
  *  - AgentInputArea → Agent 模式输入区域
  *  - ModelCheckIcon → 模型检测图标
- *  - constants      → 状态配置 / getAgentQuickActions
+ *  - constants      → 连接状态配置
  */
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { errText } from '@/lib/errors'
 import { useCurrentAiMessages, useCurrentBook } from '@/stores/appStore'
 import { useAiStore } from '@/stores/aiStore'
@@ -23,6 +23,8 @@ import { useBooksStore } from '@/stores/booksStore'
 import type { ChatRequestPayload } from '@/types'
 import { getChatApiKey } from '@/types'
 import { aiApi } from '@/lib/tauri-bridge'
+import { useAgentProfiles, profilesOfKind, findProfile } from '@/lib/agent-profiles'
+import { normalizeBookType } from '@/lib/book-types'
 import { exportAiConversation, type AiExportFormat } from '@/lib/conversationExport'
 import { useAiChat, PROVIDER_LABELS } from './useAiChat'
 import { RequestDetailModal } from './RequestDetailModal'
@@ -39,13 +41,24 @@ import '@/styles/AgentPanel.css'
 
 type PanelMode = 'chat' | 'agent'
 
+/** 技能选择的持久化键（跨会话保留上次选择；画像由后端下发故不持久化画像本身） */
+const SKILL_STORAGE_KEY = 'time-write-agent-skill'
+
+function readStoredSkill(): string {
+  try {
+    return localStorage.getItem(SKILL_STORAGE_KEY) ?? 'writing'
+  } catch {
+    return 'writing'
+  }
+}
+
 export default function AiSidePanel() {
   const [mode, setMode] = useState<PanelMode>('chat')
   const [showMemory, setShowMemory] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
   const messages = useCurrentAiMessages()
   const [input, setInput] = useState('')
-  const [selectedSkill, setSelectedSkill] = useState<SkillType>('writing')
+  const [selectedSkill, setSelectedSkill] = useState<SkillType>(readStoredSkill)
   const [detailPayload, setDetailPayload] = useState<ChatRequestPayload | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRafRef = useRef<number | null>(null)
@@ -97,6 +110,39 @@ export default function AiSidePanel() {
 
   // Agent 为 Rust 原生实现（无外部进程），状态栏恒为已连接
   const statusKey: 'connected' = 'connected'
+
+  // ── L3 画像自动发现（阶段五）──
+  const profiles = useAgentProfiles()
+  /** 能力画像列表（后端下发）；null = 尚未加载完成 */
+  const abilities = useMemo(() => (profiles ? profilesOfKind(profiles, 'ability') : null), [profiles])
+  /** 当前作品的领域画像（跟随 bookType，切换作品自动变化） */
+  const domain = useMemo(
+    () => (profiles && book ? findProfile(profiles, normalizeBookType(book.bookType)) ?? null : null),
+    [profiles, book],
+  )
+  /** 当前选中的能力画像元数据 */
+  const selectedAbility = useMemo(
+    () => (abilities ? findProfile(abilities, selectedSkill) : undefined),
+    [abilities, selectedSkill],
+  )
+
+  /**
+   * 持久化值可能已失效（后端删除/重命名了该画像），
+   * 故需在下发列表中校验，失效时回退第一项。
+   */
+  const effectiveSkill = useMemo(() => {
+    if (!abilities || abilities.length === 0) return selectedSkill
+    return abilities.some((a) => a.id === selectedSkill) ? selectedSkill : abilities[0].id
+  }, [abilities, selectedSkill])
+
+  const handleSkillChange = useCallback((skill: SkillType) => {
+    setSelectedSkill(skill)
+    try {
+      localStorage.setItem(SKILL_STORAGE_KEY, skill)
+    } catch {
+      /* localStorage 不可用时静默降级为不持久化 */
+    }
+  }, [])
 
   // 稳定回调引用，避免子组件 memo 失效
   const onShowDetail = useCallback((payload: ChatRequestPayload) => {
@@ -153,8 +199,8 @@ export default function AiSidePanel() {
         role: m.role as 'user' | 'assistant',
         content: m.content,
       }))
-    await executeSkill(selectedSkill, book.id, trimmed, history)
-  }, [input, book?.id, agentStreaming, selectedSkill, agentMessages, executeSkill])
+    await executeSkill(effectiveSkill, book.id, trimmed, history)
+  }, [input, book?.id, agentStreaming, effectiveSkill, agentMessages, executeSkill])
 
   const onClear = mode === 'agent' ? clearAgentMessages : handleClear
 
@@ -188,8 +234,10 @@ export default function AiSidePanel() {
         modelCheckDetail={modelCheckDetail}
         onCheckModel={handleCheckModel}
         statusKey={statusKey}
-        selectedSkill={selectedSkill}
-        onSkillChange={setSelectedSkill}
+        abilities={abilities}
+        selectedSkill={effectiveSkill}
+        onSkillChange={handleSkillChange}
+        domain={domain}
         onClear={onClear}
         showMemory={showMemory}
         onToggleMemory={() => setShowMemory((v) => !v)}
@@ -214,11 +262,12 @@ export default function AiSidePanel() {
         <AgentMessageList
           messages={agentMessages}
           agentStatus="running"
-          selectedSkill={selectedSkill}
+          selectedAbility={selectedAbility}
           error={agentError}
           onSelectQuick={setInput}
           bottomRef={bottomRef}
           scrollContainerRef={scrollContainerRef}
+          abilities={abilities ?? undefined}
         />
       )}
 
@@ -242,7 +291,7 @@ export default function AiSidePanel() {
           onSend={onAgentSend}
           isStreaming={agentStreaming}
           agentStatus="running"
-          selectedSkill={selectedSkill}
+          selectedAbility={selectedAbility}
           onCancel={cancelSkill}
         />
       )

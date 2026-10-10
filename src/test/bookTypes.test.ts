@@ -3,11 +3,13 @@
  *
  * 重点覆盖「空值 / 未知值回退 novel」这一兜底语义——存量作品的 book_type 为空串，
  * 旧备份导入时字段也可能缺失，回退错了会让整批作品都走错画像。
+ *
+ * 阶段五起值域由后端画像注册表下发；本测试在未注入 IPC mock 时走内置兜底表。
  */
 import { describe, it, expect } from 'vitest'
 import {
-  BOOK_TYPES,
   DEFAULT_BOOK_TYPE,
+  getBookTypes,
   normalizeBookType,
   getBookTypeMeta,
 } from '@/lib/book-types'
@@ -39,21 +41,21 @@ describe('getBookTypeMeta', () => {
   })
 
   it('每个类型都有非空 label 与 description（UI 会直接渲染）', () => {
-    for (const t of BOOK_TYPES) {
+    for (const t of getBookTypes()) {
       expect(t.label.length).toBeGreaterThan(0)
       expect(t.description.length).toBeGreaterThan(0)
     }
   })
 })
 
-describe('BOOK_TYPES 值域表', () => {
+describe('值域表', () => {
   it('id 唯一且与 DEFAULT_BOOK_TYPE 一致存在', () => {
-    const ids = BOOK_TYPES.map((t) => t.id)
+    const ids = getBookTypes().map((t) => t.id)
     expect(new Set(ids).size).toBe(ids.length)
     expect(ids).toContain(DEFAULT_BOOK_TYPE)
   })
 
-  it('顺序稳定：小说 → 论文 → 拆书 → 学科笔记', () => {
-    expect(BOOK_TYPES.map((t) => t.id)).toEqual(['novel', 'thesis', 'breakdown', 'note'])
+  it('兜底表顺序稳定：小说 → 论文 → 拆书 → 学科笔记', () => {
+    expect(getBookTypes().map((t) => t.id)).toEqual(['novel', 'thesis', 'breakdown', 'note'])
   })
 })

@@ -7,7 +7,7 @@
  */
 import { invoke } from '@tauri-apps/api/core'
 import type { IpcCommand } from '@/types/ipc-commands'
-import type { Book, Chapter, Volume, Snapshot, WorldCard, Diary, DiaryMeta, DiarySearchHit, DiaryStats, CreateBookParams, UpdateBookParams, SaveDiaryParams, Schedule, SaveScheduleParams, VocabWord, VocabStats, VocabReviewLog, AddVocabWordArgs, UpdateVocabWordArgs, DictStatus, DictLookupResult, AiWordExplain, ExplainWordArgs, WordCheckResult, TtsSpeakResult, TaskProject, ProjectView, TaskCard, TaskSubtask, TaskTag, TaskStatus, TaskTemplate, TodayOverview, MigrateResult, DeletedTaskItem, ProjectStatus, CreateProjectArgs, UpdateProjectArgs, CreateTaskArgs, UpdateTaskArgs, CreateTemplateArgs, UpdateTemplateArgs, Attachment, ActivityLog, ProjectWeeklyStat, UpdateTagArgs, AgentTrace } from '@/types'
+import type { Book, Chapter, Volume, Snapshot, WorldCard, Diary, DiaryMeta, DiarySearchHit, DiaryStats, CreateBookParams, UpdateBookParams, SaveDiaryParams, Schedule, SaveScheduleParams, VocabWord, VocabStats, VocabReviewLog, AddVocabWordArgs, UpdateVocabWordArgs, DictStatus, DictLookupResult, AiWordExplain, ExplainWordArgs, WordCheckResult, TtsSpeakResult, TaskProject, ProjectView, TaskCard, TaskSubtask, TaskTag, TaskStatus, TaskTemplate, TodayOverview, MigrateResult, DeletedTaskItem, ProjectStatus, CreateProjectArgs, UpdateProjectArgs, CreateTaskArgs, UpdateTaskArgs, CreateTemplateArgs, UpdateTemplateArgs, Attachment, ActivityLog, ProjectWeeklyStat, UpdateTagArgs, AgentTrace, ProfileMeta } from '@/types'
 
 /**
  * 类型化 invoke：命令名接受 IpcCommand 联合类型约束。
@@ -618,6 +618,16 @@ export interface AgentMemoryListResponse {
 }
 
 export const agentApi = {
+  /**
+   * 列出全部 Agent 画像元数据（能力 + 领域）
+   *
+   * L3 自动发现的唯一数据源：前端据此渲染技能选择器与领域徽标，
+   * 后端新增画像时前端零改动。无 DB 依赖，可安全缓存。
+   */
+  async listProfiles(): Promise<ProfileMeta[]> {
+    return typedInvoke<ProfileMeta[]>('list_agent_profiles')
+  },
+
   /**
    * 执行 Agent Skill（SSE 流式）
    * 流式事件经 `agent-stream-chunk` 推送（携带 requestId），返回值为最终累积的完整文本
