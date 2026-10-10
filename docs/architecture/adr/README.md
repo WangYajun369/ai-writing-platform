@@ -1,6 +1,6 @@
 # 架构决策记录（ADR）
 
-> **最后更新**：2026-10-09
+> **最后更新**：2026-10-10
 
 ADR（Architecture Decision Record）用于记录 TimeWrite 中**具有长期影响的技术决策**：我们决定了什么、为什么这么决定、以及随之而来的取舍。
 
@@ -26,7 +26,8 @@ ADR（Architecture Decision Record）用于记录 TimeWrite 中**具有长期影
 | [ADR-001](architecture/adr/ADR-001-tauri-rust-backend) | 采用 Tauri v2 + Rust 后端承载数据与 AI 通信 | 已采纳 | 全局 |
 | [ADR-002](architecture/adr/ADR-002-agent-bridge-readonly) | Python Agent 经 Bridge 只读回调，不直连 SQLite | 已废弃（v1.1 迁 Rust 原生） | Agent / 数据层 |
 | [ADR-003](architecture/adr/ADR-003-dual-state-management) | Zustand 管业务状态 + Jotai 管 UI 瞬态 | 已采纳 | 前端 |
-| [ADR-004](architecture/adr/ADR-004-domain-aware-agent-profiles) | Agent 领域画像与能力技能正交分层（小说 / 论文 / 拆书） | 提议 | Agent 引擎 / 数据模型 / 前端 AI 面板 |
+| [ADR-004](architecture/adr/ADR-004-domain-aware-agent-profiles) | Agent 领域画像与能力技能正交分层（小说 / 论文 / 拆书 / 学科笔记） | 提议 | Agent 引擎 / 数据模型 / 前端 AI 面板 |
+| [ADR-005](architecture/adr/ADR-005-agent-extension-model) | Agent 扩展模型：工具注册表 / 执行模式 / 前端自动发现 | 提议 | Agent 引擎 / IPC 契约 / 前端 AI 面板 |
 
 **状态取值**：`提议` / `已采纳` / `已废弃` / `已被取代（ADR-00X）`
 
