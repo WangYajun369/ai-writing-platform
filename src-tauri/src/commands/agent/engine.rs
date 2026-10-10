@@ -64,10 +64,13 @@ const SSE_TOTAL_TIMEOUT_SECS: u64 = 600;
 /// Agent 执行预算：可控性与成本约束。
 ///
 /// v1.9：取代硬编码 15 轮上限，按 Skill 自适应。
+/// v1.20：数值改为查 L1 画像注册表（profiles.rs），本文件不再维护各 Skill 的预算：
 /// - writing：创作场景，少工具调用，5 轮足够
 /// - analysis：分析场景，中等工具调用，10 轮
 /// - research：研究场景，多工具调用，20 轮
 /// - polish：润色场景，几乎不调工具，3 轮
+///
+/// 未知 Skill 回退 `MAX_ITERATIONS` / `SSE_TOTAL_TIMEOUT_SECS`（**不是** writing 的预算）。
 ///
 /// 后续可由调用方（命令层）传入自定义预算覆盖 Skill 默认值。
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -83,12 +86,9 @@ pub struct AgentBudget {
 impl AgentBudget {
     /// 按 Skill 名返回自适应预算；未知 Skill 回退 MAX_ITERATIONS 兜底
     pub fn for_skill(skill: &str) -> Self {
-        let (max_rounds, total) = match skill {
-            "writing" => (5, 300),
-            "analysis" => (10, 480),
-            "research" => (20, 600),
-            "polish" => (3, 240),
-            _ => (MAX_ITERATIONS, SSE_TOTAL_TIMEOUT_SECS),
+        let (max_rounds, total) = match crate::commands::agent::profiles::find_profile(skill) {
+            Some(p) => (p.max_rounds, p.timeout_secs),
+            None => (MAX_ITERATIONS, SSE_TOTAL_TIMEOUT_SECS),
         };
         Self {
             max_rounds,

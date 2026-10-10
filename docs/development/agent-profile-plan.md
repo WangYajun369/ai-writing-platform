@@ -26,7 +26,7 @@
 | 阶段 | 内容 | 状态 |
 |------|------|------|
 | 一 | L0 工具注册表 | ✅ **已完成**（2026-10-10） |
-| 二 | L1 画像注册表 | ⬜ 未开始 |
+| 二 | L1 画像注册表 | ✅ **已完成**（2026-10-10） |
 | 三 | `book_type` 落库 | ⬜ 未开始 |
 | 四 | 领域画像 + Prompt 组装 | ⬜ 未开始 |
 | 五 | L3 前端自动发现 | ⬜ 未开始 |
@@ -93,23 +93,49 @@
 
 ---
 
-## 阶段二：L1 画像注册表
+## 阶段二：L1 画像注册表 ✅ 已完成
 
 > 目标：把「加一个 Skill 要改 7 处」降为「改 1 处」，同时为领域画像准备好数据结构。本阶段同样**不引入新功能**，仍是纯重构。
 
-### 任务
+### 完成情况（2026-10-10）
 
-| # | 任务 | 文件 | 说明 |
+新建 `profiles.rs`，把原先散落在三处的 Skill 定义收敛为 `static PROFILES` 单一真相源：
+
+| 改造点 | 改前 | 改后 |
+|--------|------|------|
+| 基准提示 + 场景提示 | `prompts.rs` 两处 `match` | 查 `AgentProfile.base_prompt` / `.hints` |
+| 工具子集 | `tools.rs` 的 `tools_for_skill` `match` | 查 `AgentProfile.tools`（引用 L0 工具名） |
+| 执行预算 | `engine.rs` 的 `AgentBudget::for_skill` `match` | 查 `AgentProfile.max_rounds` / `.timeout_secs` |
+| 前端快捷语 | `constants.ts` 穷举 `switch` | `QUICK_ACTIONS` 查表 |
+
+**⚠️ 一处关键发现：四处兜底语义并不一致**，不能统一「未知 id 回退 writing」：
+
+| 调用点 | 未知 id 的兜底 |
+|--------|---------------|
+| 基准提示 | 回退 writing ✅ |
+| 动态场景提示 | **空表**（不是 writing 的 5 条） |
+| 工具子集 | 默认 5 项（恰等于 writing） |
+| 执行预算 | **(15, 600)** —— 不是 writing 的 (5, 300) |
+
+因此注册表提供 `find_profile`（精确查表，`None` 表示未找到）+ `profile_or_writing`（回退 writing），**由各调用点自行选择兜底**，避免统一回退改变行为。
+
+**回归防线**：`profiles.rs` 内置重构前导出的基线（提示词字符数 / hints 条数 / 工具数 / 超时），并断言 `BASELINE.len() == PROFILES.len()`；另单测 hint 关键词顺序（决定「最多注入 3 条」的截断结果）、工具集、未知 id 语义，以及画像引用的工具名都存在于 L0 注册表。
+
+**两处刻意延后**（已在 ADR-005 注明）：`kind`（能力 / 领域）与 `extends`（继承）**推迟到阶段四**。阶段二只有 4 个能力画像，`kind` 无第二个取值对象、`extends` 无使用者，提前加入即成死代码，会破坏「`cargo check` 零警告」。阶段四引入领域画像时两者同时落地。
+
+### 任务（记录原始拆分，含延后项）
+
+| # | 任务 | 文件 | 状态 |
 |---|------|------|------|
-| 1 | 定义 `AgentProfile` | `src-tauri/src/commands/agent/profiles.rs`（**新建**） | `id` / `kind: Skill \| Domain` / `label` / `base_prompt` / `hints: Vec<(关键词, 追加提示)>` / `tools: Vec<&str>`（**引用 L0 工具名**）/ `max_rounds` / `timeout_secs` / `extends: Option<&str>` |
-| 2 | **用同一 struct + `kind` 区分** | 同上 | 不拆成 `SkillProfile` / `DomainProfile` 两个结构——形状几乎一致，拆开只会导致合并逻辑重复实现 |
-| 3 | 建立注册表与查表 | 同上 | `pub fn profile(id: &str) -> AgentProfile`；未知 id 回退 `writing`（保持既有兜底语义） |
-| 4 | 实现继承解析 | 同上 | `thesis` 可 `extends: "writing"` 只覆盖差异字段；**建议只允许单级继承**，避免菱形继承 |
-| 5 | 迁移现有 4 个 Skill | 同上 | `writing` / `analysis` / `research` / `polish`，字段值与现状逐字一致 |
-| 6 | 迁移基准提示与动态提示 | `commands/agent/prompts.rs` | 删除两处 `match`，改为查表 |
-| 7 | 迁移工具子集 | `commands/agent/tools.rs` | `tools_for_skill` 改为读画像的 `tools` 字段（已在 L0 落地后变为纯数据） |
-| 8 | 迁移执行预算 | `commands/agent/engine.rs` | `AgentBudget::for_skill` 改为查表 |
-| 9 | 快捷语改数据驱动 | `src/components/ai/panel/constants.ts` | `getAgentQuickActions` 的穷举 `switch` 改为按 id 查表，避免漏改编译失败 |
+| 1 | 定义 `AgentProfile` | `src-tauri/src/commands/agent/profiles.rs`（**新建**） | ✅ 完成（`id` / `base_prompt` / `hints` / `tools` / `max_rounds` / `timeout_secs`） |
+| 2 | **用同一 struct + `kind` 区分** | 同上 | ⏸ **延后至阶段四**（当前只有能力画像，`kind` 无区分对象） |
+| 3 | 建立注册表与查表 | 同上 | ✅ 完成（`find_profile` + `profile_or_writing`，兜底语义各调用点自定） |
+| 4 | 实现继承解析 | 同上 | ⏸ **延后至阶段四**（当前无画像使用继承） |
+| 5 | 迁移现有 4 个 Skill | 同上 | ✅ 完成，字段值与现状逐字一致 |
+| 6 | 迁移基准提示与动态提示 | `commands/agent/prompts.rs` | ✅ 完成，两处 `match` 已删 |
+| 7 | 迁移工具子集 | `commands/agent/tools.rs` | ✅ 完成 |
+| 8 | 迁移执行预算 | `commands/agent/engine.rs` | ✅ 完成 |
+| 9 | 快捷语改数据驱动 | `src/components/ai/panel/constants.ts` | ✅ 完成 |
 
 > 任务 9 是**过渡措施**：阶段五落地 L3 自动发现后，这份前端表会被 IPC 下发的数据取代并删除。此处先数据化是为了让阶段二可独立验收。
 

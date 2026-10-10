@@ -9,41 +9,16 @@ use serde_json::Value;
 use crate::error::AppError;
 use crate::repository;
 
+use super::profiles;
+
 /// 单次工具执行的最大内容长度（防御异常数据）
 const MAX_TOOL_CONTENT_CHARS: usize = 200_000;
 
-/// Skill → 工具子集映射（与 Python SKILL_TOOLS_MAP 一致）
+/// Skill → 工具子集（查 L1 画像注册表；未知 skill 回退 `FALLBACK_TOOLS`）
 pub fn tools_for_skill(skill: &str) -> Vec<&'static str> {
-    match skill {
-        "writing" => vec![
-            "read_chapter_summary",
-            "read_chapter_chunk",
-            "list_book_chapters",
-            "search_world_cards",
-            "get_book_context",
-        ],
-        "analysis" => vec![
-            "read_chapter",
-            "read_chapter_chunk",
-            "list_book_chapters",
-            "search_world_cards",
-            "get_book_context",
-        ],
-        "research" => vec![
-            "read_chapter_summary",
-            "list_book_chapters",
-            "search_world_cards",
-            "get_book_context",
-        ],
-        "polish" => vec!["read_chapter", "read_chapter_chunk", "get_book_context"],
-        _ => vec![
-            "read_chapter_summary",
-            "read_chapter_chunk",
-            "list_book_chapters",
-            "search_world_cards",
-            "get_book_context",
-        ],
-    }
+    profiles::find_profile(skill)
+        .map(|p| p.tools.to_vec())
+        .unwrap_or_else(|| profiles::FALLBACK_TOOLS.to_vec())
 }
 
 /// 生成 OpenAI function calling 的 tools 参数
