@@ -28,6 +28,7 @@ ADR（Architecture Decision Record）用于记录 TimeWrite 中**具有长期影
 | [ADR-003](architecture/adr/ADR-003-dual-state-management) | Zustand 管业务状态 + Jotai 管 UI 瞬态 | 已采纳 | 前端 |
 | [ADR-004](architecture/adr/ADR-004-domain-aware-agent-profiles) | Agent 领域画像与能力技能正交分层（小说 / 论文 / 拆书 / 学科笔记） | 提议 | Agent 引擎 / 数据模型 / 前端 AI 面板 |
 | [ADR-005](architecture/adr/ADR-005-agent-extension-model) | Agent 扩展模型：工具注册表 / 执行模式 / 前端自动发现 | 提议 | Agent 引擎 / IPC 契约 / 前端 AI 面板 |
+| [ADR-006](architecture/adr/ADR-006-agent-plugin-host) | Agent 插件宿主：第三方 Agent 的安装与卸载（JS 载体 · 宿主注入 · 只可编排） | 提议 | Agent 引擎 / IPC 契约 / 安全边界 / 前端插件 UI |
 
 **状态取值**：`提议` / `已采纳` / `已废弃` / `已被取代（ADR-00X）`
 

@@ -48,7 +48,9 @@
 |------|------|------|
 | A. Rust 静态注册表（struct 数组） | 类型安全；可写快照测试；执行体可直接是函数指针 | 改定义需重新编译 |
 | B. `app_config` 动态配置 | 运行时可改 | 工具执行体无法序列化，只能配置提示词；长文本编辑体验差 |
-| C. 复用插件系统 | 已有 PluginManager 基建 | ❌ 不可行：`'ai-prompt'` 扩展点**无任何消费端**；`PluginContext` 无 IPC / 数据库能力，插件无法注册 Rust 侧工具或提示词 |
+| C. 复用**现有前端插件系统** | 已有 PluginManager 基建 | ❌ 不可行：`'ai-prompt'` 扩展点**无任何消费端**；`PluginContext` 无 IPC / 数据库能力；且 `bootstrap.ts` 是编译期硬编码 `import`，**根本不支持运行时装卸**。复用它需重建整套后端桥接，成本高于收益 |
+
+> ⚠️ 本项排除的是「复用 `src/plugins/` 这套前端插件系统」，**不是排除插件化本身**。用户后续确认需要支持第三方编写的 Agent 插件，该诉求由 [ADR-006：Agent 插件宿主](architecture/adr/ADR-006-agent-plugin-host) 单独承载，且本 ADR 的 L0 / L1 / L2 正是它的前置地基。
 
 ### 执行模式
 
@@ -80,7 +82,7 @@
 1. **L0 阻力最小、收益最直接**。工具已按名字派发，合并三处 `match` 是纯重构、零行为变化，却让后续所有新增工具（ADR-004 已列出至少 4 个）从「改 3 处」降为「改 1 处」。
 2. **L2 是需求真实性的倒逼**。ADR-004 自己把「拆书」定义为「章节拆解 → 要点提炼 → 卡片化输出」，这已经是流水线的描述。只做提示词差异化，等于让模型自己猜流程，稳定性无法保证。
 3. **L3 是「扩展方便」的闭环**。只要前端还硬编码 `SkillType` 字面量联合与 `SKILLS` 数组，新增任何画像都必然要动前端，「后端改一处」的收益就被抵消一半。
-4. **插件方案直接排除**。审计确认 `'ai-prompt'` 扩展点无消费端、`PluginContext` 无后端能力，复用它需要重建整套后端桥接，成本高于收益。
+4. **不复用现有前端插件系统**。审计确认 `'ai-prompt'` 扩展点无消费端、`PluginContext` 无后端能力，且它是编译期硬编码的静态容器、不支持运行时装卸。第三方 Agent 插件的诉求改由 [ADR-006](architecture/adr/ADR-006-agent-plugin-host) 另建宿主演进——本 ADR 的 L0（原子能力清单）与 L2（编排层）正是它的地基。
 
 ## 后果
 
@@ -109,5 +111,6 @@
 ## 相关文档
 
 - [ADR-004：Agent 领域画像与能力技能正交分层](architecture/adr/ADR-004-domain-aware-agent-profiles)
+- [ADR-006：Agent 插件宿主（第三方 Agent 的安装与卸载）](architecture/adr/ADR-006-agent-plugin-host) —— 本 ADR 的 L0 / L1 / L2 是其前置地基
 - [领域感知 Agent 实施计划](development/agent-profile-plan)
 - [Agent 引擎架构](architecture/agent-architecture)

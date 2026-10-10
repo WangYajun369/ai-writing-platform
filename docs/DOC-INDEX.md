@@ -87,9 +87,9 @@
 
 `overview` · `code-architecture` · `AI-architecture` · `agent-architecture`
 
-### `architecture/adr/`（5 篇）
+### `architecture/adr/`（6 篇）
 
-`README`（ADR 机制与索引）· `ADR-001-tauri-rust-backend` · `ADR-002-agent-bridge-readonly` · `ADR-003-dual-state-management` · `ADR-004-domain-aware-agent-profiles`
+`README`（ADR 机制与索引）· `ADR-001-tauri-rust-backend` · `ADR-002-agent-bridge-readonly` · `ADR-003-dual-state-management` · `ADR-004-domain-aware-agent-profiles` · `ADR-005-agent-extension-model` · `ADR-006-agent-plugin-host`
 
 > ADR 通过 `adr/README` 索引页访问，不在侧边栏逐一列出，避免导航臃肿。
 
@@ -99,7 +99,7 @@
 
 ---
 
-**合计 42 篇**（根级 6 + `user-guide/` 13 + `features/` 2 + `development/` 11 + `architecture/` 4 + `architecture/adr/` 5 + `meta/` 1）
+**合计 43 篇**（根级 6 + `user-guide/` 13 + `features/` 2 + `development/` 11 + `architecture/` 4 + `architecture/adr/` 6 + `meta/` 1）
 
 ---
 

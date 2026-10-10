@@ -4,8 +4,14 @@
 > **决策依据**：
 > - [ADR-004：Agent 领域画像与能力技能正交分层](architecture/adr/ADR-004-domain-aware-agent-profiles)
 > - [ADR-005：Agent 扩展模型（工具注册表 / 执行模式 / 前端自动发现）](architecture/adr/ADR-005-agent-extension-model)
+> - [ADR-006：Agent 插件宿主（第三方 Agent 的安装与卸载）](architecture/adr/ADR-006-agent-plugin-host)
 
-本文档把 ADR-004 / ADR-005 拆成可执行的阶段任务。**建议严格按阶段顺序推进**——先还清「工具」与「画像」两笔技术债，后续阶段的改动面会显著缩小。
+本文档把 ADR-004 / ADR-005 / ADR-006 拆成可执行的阶段任务。**建议严格按阶段顺序推进**——先还清「工具」与「画像」两笔技术债，后续阶段的改动面会显著缩小。
+
+> ⚠️ **v3 修订说明**（2026-10-10）：用户确认需支持**第三方编写的 Agent 插件**（运行时装卸、带自定义逻辑），按 ADR-006 追加阶段七。相较 v2 的变化：
+> 1. **阶段一到五一个字不改**——ADR-006 的插件宿主 = 本计划的 L0 / L1 / L2 + 运行时加载器 + 权限模型，先做地基不返工；
+> 2. **阶段六 `Pipeline` 从 P3 提到 P2**——它现在是插件的编排层，不再只是拆书 Agent 的附属；
+> 3. 新增**阶段七 插件宿主**。
 
 > ⚠️ **v2 修订说明**（2026-10-10）：按 ADR-005 的四层扩展模型重排。相较 v1 的主要变化：
 > 1. 原「阶段一 Skill 注册表」拆为**阶段一 L0 工具注册表**与**阶段二 L1 画像注册表**，且顺序不可颠倒；
@@ -224,9 +230,11 @@
 
 ---
 
-## 阶段六：L2 `RuntimeMode`（后期，工作量最大）
+## 阶段六：L2 `RuntimeMode`（P2，工作量最大）
 
-> 目标：覆盖「固定流程类 Agent」。**可延后**，但拆书 / 学科笔记的完整体验依赖它。
+> 目标：覆盖「固定流程类 Agent」，并作为**插件的编排层**。
+>
+> ⚠️ **优先级已上调**：v2 中本阶段为 P3（「可延后」）。ADR-006 确认插件的自定义逻辑需要「编排层」承载，本阶段因此从「拆书 Agent 的附属」升为**插件宿主的前置依赖**。
 
 ### 背景
 
@@ -251,6 +259,48 @@
 
 ---
 
+## 阶段七：插件宿主（ADR-006）
+
+> 目标：让第三方（含用户自己）编写的 Agent 能**运行时安装 / 卸载**，且带自定义逻辑。
+>
+> ⚠️ **本阶段依赖阶段一（L0）与阶段六（Pipeline）**：L0 决定插件能调用哪些原子能力，Pipeline 决定插件的自定义逻辑能表达到什么程度。**跳过前两者直接建宿主会导致插件 API 频繁 breaking change。**
+
+### 设计要点（详见 ADR-006）
+
+| 项 | 决策 |
+|---|------|
+| 载体 | 前端 JS，**不引入 wasmtime**（零新增依赖）；Rust cdylib 已排除（无稳定 ABI） |
+| 边界 | 插件**只能编排**宿主原子能力，绝不接触数据库连接与 API Key |
+| 实现方式 | 宿主注入受限 `PluginHost` 对象。**不做 IPC 层白名单**——`withGlobalTauri: false` 使插件天然拿不到 invoke 能力 |
+| 存放 | `{app_data_dir}/plugins/<id>/` 含 `manifest.json` + `index.js` |
+| 权限 | `manifest.json` 的 `grants` 声明，安装时展示，运行时只注入声明项 |
+| ⚠️ CSP | `script-src 'self'` 无 `'unsafe-eval'`，加载第三方 JS **必须全局放宽**（Tauri v2 不支持按窗口隔离） |
+
+### 任务
+
+| # | 任务 | 文件 | 说明 |
+|---|------|------|------|
+| 1 | 放宽 CSP 并实测加载方式 | `src-tauri/tauri.conf.json` | `'unsafe-eval'` 与 `asset:` + `<script src>` 两路线实测后取舍（ADR-006 follow-up） |
+| 2 | 定义 `PluginHost` 注入面 | `src/plugins/host/`（新建） | `llm` / `book` / `card` / `log` / `storage`；`llm.complete` **必须走应用自身配置**，禁止插件传 endpoint 或 key |
+| 3 | 注入面单测固化 | 同上 | 断言「未声明的 `grants` 一律不注入」，防止高权限方法误挂载 |
+| 4 | 插件加载器 | Rust 侧新模块 | 扫描 `{app_data_dir}/plugins/`，解析 manifest 校验 `grants` 合法性 |
+| 5 | 新增 IPC 命令 | `commands/` + `lib.rs` 注册 | 枚举 / 安装 / 卸载 / 启用；需同步 `ipc-commands.ts` 契约 |
+| 6 | 安装确认 UI | `src/components/settings/`（新建） | **展示源码供审核** + 逐项列出 `grants` 供确认 |
+| 7 | 启用清单持久化 | `app_config` 或独立文件 | 现状 `PluginManager.statuses` 是内存 Map，重启即丢——必须补持久化 |
+| 8 | 插件纳入备份 | `commands/io/backup/` | 确认体积与导入覆盖策略（ADR-006 follow-up） |
+| 9 | 概念划界 | `docs/development/plugin-system.md` | 现有 `src/plugins/` 与本宿主是两套东西，需明确命名（前者「内置模块」，后者「Agent 插件」） |
+
+### 验收
+
+- 安装一个示例插件后，**不重启应用**即可在 AI 面板选择并使用它
+- 卸载后插件痕迹清除（含 `app_data_dir` 目录与启用清单）
+- `grants` 未声明的能力在插件内访问为 `undefined`，且单测覆盖
+- 插件内尝试 `fetch` 外部地址被 CSP 拦截（`connect-src` 已限制）
+- 启用状态在重启后保持
+- 往返备份后插件仍在
+
+---
+
 ## 优先级汇总
 
 | 级别 | 内容 | 建议时机 | 依赖 |
@@ -261,7 +311,8 @@
 | 🟡 **P2** | 补齐大纲读取工具 | **须在阶段一之后**（否则仍改 3 处） | L0 |
 | 🟡 **P2** | 阶段四 领域画像与组装 | 阶段三之后 | L1 + `book_type` |
 | 🟡 **P2** | 阶段五 L3 前端自动发现 | 与阶段四并行 | L1 |
-| 🔵 **P3** | 阶段六 `RuntimeMode` | 后期，按需启动 | L1 |
+| 🟡 **P2** | 阶段六 `RuntimeMode` / `Pipeline` | **已由 P3 上调**，插件的编排层 | L1 |
+| 🔵 **P3** | 阶段七 插件宿主 | 最后做，见下方说明 | L0 + L2 |
 
 ### 关于「大纲工具」的时机变化
 
@@ -283,6 +334,10 @@ v1 把补齐大纲工具列为**可与阶段一并行的独立 P0**。v2 修正�
 | 继承导致生效字段来源不明 | 只允许单级继承；提供「解析后的最终画像」调试输出（阶段四任务 7） |
 | Pipeline 工作量被低估 | 阶段六单列且优先级 P3；先用拆书一个用例验证，不一次性铺开 |
 | L3 新增 IPC 破坏契约检查 | `ipc-commands.ts` 由 `pnpm check` 自动同步，验收时确认注册一致性 |
+| 放宽 CSP 后安全边界下降 | 全局放宽无法按窗口隔离；靠「纯文本可审核 + 安装确认 + `grants` 最小化注入」三层缓解；`connect-src` 保持现状不放宽 |
+| 宿主注入面误挂高权限方法 | 注入面用单测固化，断言未声明 `grants` 一律不注入 |
+| 跳过 L0 / Pipeline 直接做插件宿主 | 阶段七明确列为依赖 L0 + L2；优先级排最后 |
+| `src/plugins/` 与插件宿主概念混淆 | 阶段七任务 9 明确命名与文档划界 |
 
 ---
 
@@ -290,6 +345,8 @@ v1 把补齐大纲工具列为**可与阶段一并行的独立 P0**。v2 修正�
 
 - [ADR-004：Agent 领域画像与能力技能正交分层](architecture/adr/ADR-004-domain-aware-agent-profiles)
 - [ADR-005：Agent 扩展模型（工具注册表 / 执行模式 / 前端自动发现）](architecture/adr/ADR-005-agent-extension-model)
+- [ADR-006：Agent 插件宿主（第三方 Agent 的安装与卸载）](architecture/adr/ADR-006-agent-plugin-host)
+- [插件系统](development/plugin-system) —— 现有 `src/plugins/` 的说明，与 ADR-006 的宿主是两套东西
 - [Agent 引擎架构](architecture/agent-architecture)
 - [AI 模块架构](architecture/AI-architecture)
 - [IPC 命令速查](development/ipc-api)
