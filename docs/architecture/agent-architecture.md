@@ -27,11 +27,13 @@ Agent 引擎与主进程**同进程运行**：Skill Prompt 组装 → 云端模�
                             │ Tauri IPC（invoke / event）
 ┌───────────────────────────┴────────────────────────────────┐
 │  Rust Core（Tauri v2）—— Agent 引擎 commands/agent/         │
-│  skills.rs  IPC 命令层（execute/cancel + 记忆 CRUD）         │
-│  engine.rs  SSE 流式 ReAct 循环 + 任务取消                    │
-│  prompts.rs 4 技能 Prompt + 动态场景提示                     │
-│  tools.rs   6 个数据库工具（schema + 执行）                  │
-│  memory.rs  memories 表存取 + 规则提取 + 检索                 │
+│  skills.rs    IPC 命令层（execute/cancel + 记忆 CRUD）         │
+│  engine.rs    SSE 流式 ReAct 循环 + 任务取消 + L2 模式分发     │
+│  pipeline.rs  L2 流水线执行器（固定步骤序列，阶段六）          │
+│  profiles.rs  L1 画像注册表（提示词/工具/预算/执行模式）        │
+│  prompts.rs   动态场景提示组装 + Token 估算                    │
+│  tools.rs     L0 工具注册表 —— 8 个数据库工具                  │
+│  memory.rs    memories 表存取 + 规则提取 + 检索                │
 │     │                                                        │
 │     ├── repository/（chapter / world_card / book 仓库）      │
 │     └── SQLite（time_write.db，含 memories 表）              │
@@ -43,8 +45,11 @@ Agent 引擎与主进程**同进程运行**：Skill Prompt 组装 → 云端模�
 ```
 前端 useAgent.executeSkill()
   → invoke('execute_agent_skill', { skill, bookId, message, aiConfig, requestId, ... })
-  → skills.rs → engine.rs（ReAct 循环）
-       ├─ prompts.rs 组装 System Prompt（基础 + 场景提示 + 记忆段）
+  → skills.rs → engine.rs（先由 book_id 反查 book_type，合成「领域 × 能力」有效画像）
+       ├─ 按 L2 执行模式分发（见 §3.3）
+       │    ├─ ReAct     → 单个 react_loop（现状默认）
+       │    └─ Pipeline  → pipeline.rs 按步骤跑多个「收窄工具/轮数」的 react_loop
+       ├─ prompts.rs 组装 System Prompt（基准提示 + 场景提示 + 记忆段）
        ├─ reqwest POST {endpoint}/chat/completions（OpenAI 兼容 SSE，默认 DeepSeek）
        ├─ 模型返回 tool_calls → tools.rs execute_tool → repository → SQLite
        └─ 流式增量 → emit('agent-stream-chunk', { event, data, requestId })
@@ -58,11 +63,13 @@ Agent 引擎与主进程**同进程运行**：Skill Prompt 组装 → 云端模�
 
 | 文件 | 职责 |
 |------|------|
-| `mod.rs` | 模块声明：engine / memory / prompts / skills / tools |
-| `skills.rs` | **IPC 命令层**：`execute_agent_skill`（流式执行）、`cancel_agent_skill`、记忆管理命令；参数类型 `AiConfigParams`（camelCase）→ `engine::AiModelConfig` |
-| `engine.rs` | **引擎核心**：`run_skill()` SSE 流式 ReAct 循环（工具调用 + 文本增量）、`CancelToken` 即时任务取消（`cancel_current_task()`） |
-| `prompts.rs` | 4 个技能 System Prompt（`skill_base_prompt`）、动态场景提示（`get_dynamic_prompt`）、Token 估算 |
-| `tools.rs` | 6 个数据库工具：按技能返回工具集（`tools_for_skill`）、构建 function-calling schema、`execute_tool` 分发执行 |
+| `mod.rs` | 模块声明：engine / memory / pipeline / profiles / prompts / skills / tools |
+| `skills.rs` | **IPC 命令层**：`execute_agent_skill`（流式执行）、`cancel_agent_skill`、`list_agent_profiles`、记忆管理命令；参数类型 `AiConfigParams`（camelCase）→ `engine::AiModelConfig` |
+| `profiles.rs` | **L1 画像注册表**（ADR-005 阶段二/四/六）：`static PROFILES` 单一真相源，按 `ProfileKind` 区分 `Ability`（4 个动作）与 `Domain`（4 个作品类型）；`Step` / `RuntimeMode`（L2 执行模式）、`merge()` 合成 `EffectiveProfile` |
+| `engine.rs` | **引擎核心**：`run_skill()` SSE 流式 ReAct 循环（工具调用 + 文本增量）、`CancelToken` 即时任务取消（`cancel_current_task()`）、按 `RuntimeMode` 分发执行路径 |
+| `pipeline.rs` | **L2 流水线执行器**（阶段六）：按画像声明的 `Step[]` 依次执行，每步复用 `engine::react_loop` 但收窄工具与轮数；单步失败即停并保留已完成产物 |
+| `prompts.rs` | 动态场景提示组装（`compose_system_prompt`，四段拼接 + 两类 hints 各 ≤3 条）、Token 估算 |
+| `tools.rs` | **L0 工具注册表**（ADR-005 阶段一）：`static TOOLS: &[ToolDef]` 8 个数据库工具，`build_tools_schema` 按名字列表生成 schema、`execute_tool` 按名分发 |
 | `memory.rs` | `memories` 表 CRUD、规则式记忆提取（`extract_and_save`）、关键词检索（`retrieve_memories`，命中打点 `last_hit_at`）、容量/过期清理（`prune_memories` / `prune_all_memories`）、旧库迁移（`migrate_legacy_db`） |
 
 ### IPC 命令清单（skills.rs）
@@ -101,19 +108,23 @@ Agent 引擎与主进程**同进程运行**：Skill Prompt 组装 → 云端模�
 ```
 run_skill()
   ├─ register_cancel_token()（全局取消令牌：标志 + Notify）
+  ├─ 由 book_id 反查 book_type → profiles::merge(能力, 领域) → EffectiveProfile
+  │    （领域/能力各有兜底：未知领域 → novel，未知能力 → writing；预算另有区分）
   ├─ 组装 System Prompt
-  │    ├─ skill_base_prompt(skill)          # 技能核心指令
-  │    ├─ get_dynamic_prompt(skill, msg)    # 关键词匹配场景提示（≤3 条）
+  │    ├─ compose_system_prompt(eff, msg)   # 领域基准 + 能力基准 + 两类 hints（各 ≤3 条）
   │    └─ memory_prompt(book, skill, msg)   # 注入相关记忆段（≤600 tokens）
   ├─ 清理历史消息（剥离 reasoning_content）
-  ├─ react_loop()
-  │    ├─ POST /chat/completions（tools = build_tools_schema(skill)）
+  ├─ 按 EffectiveProfile.runtime 分发（见 §3.3）
+  ├─ react_loop()（ReAct）／ run_pipeline()（Pipeline）
+  │    ├─ POST /chat/completions（tools = build_tools_schema(本次可见工具名)）
   │    ├─ 解析 SSE data 行（文本增量 → emit chunk；tool_calls → 提取参数）
-  │    ├─ 有工具调用 → tools::execute_tool() → 追加 tool 消息 → 继续循环（≤15 轮）
+  │    ├─ 有工具调用 → tools::execute_tool() → 追加 tool 消息 → 继续循环
   │    └─ 无工具调用 → 文本流结束
   ├─ emit('agent-stream-chunk', { event: 'done', ... })
   └─ 异步 extract_and_save()（记忆沉淀，不阻塞响应）
 ```
+
+> 轮数上限不再是固定 15：取 `EffectiveProfile.max_rounds`（writing 5 / analysis 10 / research 20 / polish 3）。未知能力回退 `MAX_ITERATIONS=15`，**不**沿用 writing 的 5 轮。
 
 **流式事件协议**（`agent-stream-chunk`，负载 `AgentStreamEvent { event, data, requestId }`）：
 
@@ -125,6 +136,22 @@ run_skill()
 | `cancelled` | 用户取消 |
 
 **超时与取消**：SSE 单行读取超时 60s、总超时 600s。取消采用 `CancelToken`（原子标志 + `tokio::Notify`）：`cancel_current_task()` 置位并 `notify_waiters()`，引擎在 SSE 流读取与 HTTP 发送两个阻塞点通过 `tokio::select!` 与取消通知竞争——**即时中断**，无需等待 60s 行超时或下一个 chunk；被放弃的流读取随即 drop、底层连接关闭，服务端感知后停止生成，任务以 `cancelled` 事件收尾（取消路径不再补发 `done`）。
+
+### 3.3 L2 执行模式（阶段六）
+
+`run_skill_inner` 组装完 System Prompt 后，按 `EffectiveProfile.runtime` 分发：
+
+| 模式 | 执行方式 | 适用 |
+|------|---------|------|
+| `ReAct` | 单个 `react_loop`，工具 = 有效工具集全量，轮数 = 合并预算 | 默认；开放式创作 / 分析 |
+| `Pipeline(&[Step])` | `pipeline.rs` 按步骤依次跑**收窄的** `react_loop` | 固定流程类（当前仅拆书） |
+
+- **合并规则**：领域优先、能力次之。流程形状由「处理什么作品」决定，故领域声明的模式优先于能力声明。
+- **步骤隔离**：`Step { name, instruction, tools, max_rounds }` 之间不共享消息历史。每步只看到「公共 System Prompt + 本步指令 + 用户消息 + 前序步骤产物」，上下文长度始终可控。
+- **失败语义（部分成功，不自动重试）**：单步失败即停，已完成步骤的产物保留，最终文本给出 `x/y` 结构化进度。刻意不做自动重试——`create_note_card` 有副作用且不可重入，盲重试会造成重复卡片。
+- **文本一致性**：步骤头 / 空输出占位 / 分隔换行由同一批函数生成，流式推送与最终渲染共用，故前端累积到的文本与 IPC 返回值逐字一致。流水线仍只推 `chunk` 事件，**不新增事件类型**。
+
+`SingleShot`（单轮直出）是 ADR-005 规划的第三种模式，**未实现**——其唯一消费方「AI 工具箱迁移」标为可选且需先对齐网络重试能力，见 [实施计划阶段六](../development/agent-profile-plan.md)。
 
 ---
 
@@ -228,9 +255,11 @@ CREATE TABLE memories (
 
 ## 6. 工具链（tools.rs）
 
-### 6.1 工具与技能映射
+### 6.1 L0 工具注册表
 
-6 个数据库工具，数据源全部经 **repository 层**（chapter_repo / world_card_repo / book_repo）直接查询 SQLite：
+8 个数据库工具收敛为 `static TOOLS: &[ToolDef]` 单一真相源（ADR-005 阶段一）：新增一个工具只需在数组里追加一项，不必再改「订阅 / schema / 分发」三处。数据源全部经 **repository 层**（chapter_repo / world_card_repo / book_repo）直接查询 SQLite。
+
+**通用工具（6 个）**
 
 | 工具 | 用途 | Token 优化 |
 |------|------|-----------|
@@ -241,16 +270,24 @@ CREATE TABLE memories (
 | `search_world_cards` | 世界观搜索 | 限 5 条，FTS5 优先、LIKE 降级 |
 | `get_book_context` | 整书上下文 | 近 5 章摘要 + 世界观概览 |
 
-各技能按需裁剪工具集（`tools_for_skill`），减少 Prompt 体积与误调用：
+**领域工具（2 个，仅提炼类领域 `breakdown` / `note` 可见）**
 
-| Skill | 工具集 |
+| 工具 | 用途 | 要点 |
+|------|------|------|
+| `split_chapter` | 按段落边界切分章节 | 三级切分（段落 → 句 → 按字数），每段严格 ≤ `max_chars`；超 12 段后仅给预览 |
+| `create_note_card` | 创建要点卡片并写入 `world_cards` | `card_type` 限定为前端 `WorldCardType` 的 6 个取值，越界返回结构化错误且**不落库** |
+
+**可见工具集 = 能力工具 ∪ 领域工具**（能力在前、领域新增在后，保序去重）。各能力画像声明自己的子集：
+
+| 能力 | 工具集 |
 |-------|--------|
 | `writing` | read_chapter_summary / read_chapter_chunk / list_book_chapters / search_world_cards / get_book_context |
 | `analysis` | read_chapter / read_chapter_chunk / list_book_chapters / search_world_cards / get_book_context |
 | `research` | read_chapter_summary / list_book_chapters / search_world_cards / get_book_context |
 | `polish` | read_chapter / read_chapter_chunk / get_book_context |
 
-> 未知 skill 默认取 writing 工具集。
+> 未知能力回退 writing 工具集，但**预算**回退 15 轮 / 600s（**不是** writing 的 5 轮 / 300s）。
+> 拆书 / 学科笔记领域追加 `list_book_chapters`（若能力集尚无）+ `split_chapter` + `create_note_card`；小说 / 论文领域不追加任何工具。
 
 ### 6.2 执行与裁剪
 

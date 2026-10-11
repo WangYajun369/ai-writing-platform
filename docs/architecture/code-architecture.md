@@ -210,10 +210,12 @@ Python 子进程时代已整体移除，替换为 6 个 Rust 模块，**内嵌�
 
 | 文件 | 职责 |
 |------|------|
-| `skills.rs` | IPC 命令层：`execute_agent_skill` / `cancel_agent_skill` + 记忆管理命令（list/update/delete/clear） |
-| `engine.rs` | SSE 流式 ReAct 工具循环（`run_skill`）、全局取消标志 |
-| `prompts.rs` | 4 技能 System Prompt + 动态场景提示 + Token 估算 |
-| `tools.rs` | 6 个数据库工具（schema + 执行，经 repository 层） |
+| `skills.rs` | IPC 命令层：`execute_agent_skill` / `cancel_agent_skill` / `list_agent_profiles` + 记忆管理命令 |
+| `profiles.rs` | L1 画像注册表：能力 4 + 领域 4，含 L2 执行模式（`RuntimeMode`）与 `merge()` |
+| `engine.rs` | SSE 流式 ReAct 工具循环（`run_skill`）、全局取消标志、按 `RuntimeMode` 分发 |
+| `pipeline.rs` | L2 流水线执行器：按画像声明的步骤依次执行，失败保留已完成产物 |
+| `prompts.rs` | 动态场景提示组装（四段拼接）+ Token 估算 |
+| `tools.rs` | L0 工具注册表：8 个数据库工具（schema + 执行，经 repository 层） |
 | `memory.rs` | memories 表 CRUD / 规则提取 / 检索 / 旧库迁移 |
 
 > 原 `python/manager.rs`（子进程管理 + 看门狗）、`python/client.rs`（HTTP 客户端）、

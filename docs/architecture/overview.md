@@ -58,9 +58,11 @@ Agent 自动化能力由 `src-tauri/src/commands/agent/` 提供，**无外部进
 
 | 模块 | 职责 |
 |------|------|
-| `engine.rs` | SSE 流式 ReAct 工具循环（`run_skill` + 任务取消），调用云端模型 API |
-| `prompts.rs` | 4 个技能（writing/analysis/research/polish）的 System Prompt + 动态场景提示 |
-| `tools.rs` | 6 个数据库工具（读章节/摘要/分页/章节列表/世界观搜索/整书上下文） |
+| `engine.rs` | SSE 流式 ReAct 工具循环（`run_skill` + 任务取消），按 `RuntimeMode` 分发；调用云端模型 API |
+| `pipeline.rs` | L2 流水线执行器：按画像声明的固定步骤依次执行（当前仅拆书领域） |
+| `profiles.rs` | L1 画像注册表：能力 4 + 领域 4，含 L2 执行模式与 `merge()` 合并规则 |
+| `prompts.rs` | 动态场景提示组装（领域/能力基准 + 两类 hints）+ Token 估算 |
+| `tools.rs` | L0 工具注册表：8 个数据库工具（读章节/摘要/分页/章节列表/世界观搜索/整书上下文/拆章节/生成卡片） |
 | `memory.rs` | `memories` 表存取：CRUD、关键词检索、规则式记忆提取、旧库迁移 |
 | `skills.rs` | IPC 命令层：`execute_agent_skill` / `cancel_agent_skill` + 记忆管理命令 |
 

@@ -269,10 +269,12 @@ Python Agent（`agent/`）与 Bridge（`src-tauri/src/python/`）已删除，Age
 
 | 文件 | 职责 |
 |------|------|
-| `skills.rs` | IPC 命令层：`execute_agent_skill` / `cancel_agent_skill` + 记忆管理（6 个命令） |
-| `engine.rs` | SSE 流式 ReAct 工具循环（`run_skill`）+ 全局取消标志 |
-| `prompts.rs` | 4 个技能（writing/analysis/research/polish）System Prompt + 动态场景提示 |
-| `tools.rs` | 6 个数据库工具（schema + 执行，经 repository 层直查 SQLite） |
+| `skills.rs` | IPC 命令层：执行 / 取消 / 画像列表 + 记忆管理命令 |
+| `profiles.rs` | L1 画像注册表：能力 4 + 领域 4，含 L2 执行模式（`RuntimeMode`）与 `merge()` |
+| `engine.rs` | SSE 流式 ReAct 工具循环（`run_skill`）+ 全局取消标志 + 按 `RuntimeMode` 分发 |
+| `pipeline.rs` | L2 流水线执行器：按画像声明的步骤依次执行，失败保留已完成产物 |
+| `prompts.rs` | 动态场景提示组装（四段拼接）+ Token 估算 |
+| `tools.rs` | L0 工具注册表：8 个数据库工具（schema + 执行，经 repository 层直查 SQLite） |
 | `memory.rs` | `memories` 表 CRUD、规则式提取、检索、旧库自动迁移 |
 
 > 执行链路、事件协议（`agent-stream-chunk`）与记忆系统详见 [Agent 引擎架构](architecture/agent-architecture)。
