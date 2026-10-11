@@ -207,9 +207,11 @@ export default function BookCard({ book, onOpen, onRefresh }: BookCardProps) {
           </div>
         )}
 
-        {/* 类型徽标 — 封面左下角（左上角留给「更多菜单」按钮） */}
+        {/* 类型徽标 — 封面右下角。
+            另三个角都不可用：左上是「更多菜单」按钮（悬停出现）、右上是日更进度环、
+            左下是生成式封面绘制的署名（SVG 中 author 画在 x=26 / y=382）。 */}
         <span
-          className="absolute bottom-2 left-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-black/45 text-white backdrop-blur-sm"
+          className="absolute bottom-2 right-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-black/45 text-white backdrop-blur-sm"
           title={`作品类型：${typeMeta.label}（${typeMeta.description}）`}
         >
           {typeMeta.label}
