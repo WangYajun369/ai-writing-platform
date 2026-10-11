@@ -1,6 +1,6 @@
 # 领域感知 Agent 实施计划
 
-> **适用版本**：`1.20.0`　|　**最后核对**：2026-10-10
+> **适用版本**：`1.20.0`　|　**最后核对**：2026-10-11
 > **决策依据**：
 > - [ADR-004：Agent 领域画像与能力技能正交分层](architecture/adr/ADR-004-domain-aware-agent-profiles)
 > - [ADR-005：Agent 扩展模型（工具注册表 / 执行模式 / 前端自动发现）](architecture/adr/ADR-005-agent-extension-model)
@@ -30,7 +30,7 @@
 | 三 | `book_type` 落库 | ✅ **已完成**（2026-10-10） |
 | 四 | 领域画像 + Prompt 组装 | ✅ **已完成**（2026-10-10） |
 | 五 | L3 前端自动发现 | ✅ **已完成**（2026-10-10） |
-| 六 | L2 `RuntimeMode` / Pipeline | ⬜ 未开始 |
+| 六 | L2 `RuntimeMode` / Pipeline | ✅ **已完成**（2026-10-11；`SingleShot` 刻意未做，见该节决策 2） |
 | 七 | 插件宿主 | ⬜ 未开始 |
 
 ---
@@ -276,7 +276,7 @@
 
 ### 完成情况（2026-10-10）
 
-任务 1–5、7 已完成；**任务 6（领域工具）按上述说明延后至阶段六**，理由见下。
+任务 1–5、7 已完成；**任务 6（领域工具）已按下方说明随阶段六补齐**——「拆章 / 生成卡片」两个工具于阶段六「任务 0」落地，详见该节。
 
 #### 落地改动
 
@@ -292,7 +292,9 @@
 
 **1. `extends`（继承）不实现。** 原计划阶段二注明「`kind` 与 `extends` 推迟到阶段四一并加入」。实际只有 `kind` 落地：`extend` 会让四个平级的领域画像多一个**无人读取**的字段，即死代码，破坏「`cargo check` 零警告」。将来真出现「某领域继承自另一领域」时再补。
 
-**2. 任务 6（领域工具）延后至阶段六。** 领域画像的 `tools` 恒为 `&[]`（领域定义世界观、不定义动作），合并取并集时等价于能力工具集。这样阶段四可独立验收，且阶段六新增领域工具时只需在 `DOMAIN_TOOLS` 登记。
+**2. 任务 6（领域工具）延后至阶段六。** 领域画像的 `tools` 恒为 `&[]`（领域定义世界观、不定义动作），合并取并集时等价于能力工具集。这样阶段四可独立验收，且阶段六新增领域工具时只需在登记表里追加。
+
+> ✅ **已闭环**：阶段六补齐了 `split_chapter` / `create_note_card`，并把原先共用的空 `DOMAIN_TOOLS` 拆为「创作类领域不带工具 / 提炼类领域带 `EXTRACTION_TOOLS`」。
 
 #### ⚠️ 关键发现：未知能力的兜底语义必须按维度分别保住
 
@@ -428,20 +430,73 @@
 
 ### 任务
 
-| # | 任务 | 文件 | 说明 |
-|---|------|------|------|
-| 1 | 定义 `RuntimeMode` 枚举 | `commands/agent/engine.rs` | `ReAct`（现状）/ `Pipeline(&[Step])` / `SingleShot` |
-| 2 | `AgentProfile` 加字段 | `commands/agent/profiles.rs` | `runtime: RuntimeMode`，默认 `ReAct` |
-| 3 | 实现 `Pipeline` 执行器 | `commands/agent/`（新模块） | 步骤序列执行，需设计步骤间状态传递与失败重试 |
-| 4 | 实现 `SingleShot` 执行器 | 同上 | 单轮直出，无工具循环 |
-| 5 | 拆书 Agent 切 `Pipeline` | `profiles.rs` | 首个真实用例，验证模式有效性 |
-| 6 | AI 工具箱迁 `SingleShot`（可选） | `AiToolboxPanel.tsx` | 消除「两套链路能力不对等」的历史问题；迁移前需先对齐容错能力（工具箱当前有网络重试而 Agent 链路没有） |
+| # | 任务 | 文件 | 说明 | 状态 |
+|---|------|------|------|------|
+| 0 | 补两个领域工具（阶段四遗留） | `tools.rs` / `profiles.rs` | `split_chapter` / `create_note_card` | ✅ |
+| 1 | 定义 `RuntimeMode` 枚举 | **`profiles.rs`**（计划原写 `engine.rs`） | `ReAct` / `Pipeline(&[Step])` | ✅ |
+| 2 | `AgentProfile` 加字段 | `profiles.rs` | `runtime: RuntimeMode` | ✅ |
+| 3 | 实现 `Pipeline` 执行器 | **`pipeline.rs`**（新建） | 步骤序列、可中断、保留已完成产物 | ✅ |
+| 4 | 实现 `SingleShot` 执行器 | — | 单轮直出，无工具循环 | ⬜ **刻意未做**，见决策 2 |
+| 5 | 拆书 Agent 切 `Pipeline` | `profiles.rs` | 首个真实用例 | ✅ |
+| 6 | AI 工具箱迁 `SingleShot`（可选） | `AiToolboxPanel.tsx` | 依赖任务 4 | ⬜ 随任务 4 一并搁置 |
+
+### 完成情况
+
+#### 任务 0：补齐两个领域工具（阶段四遗留的必做前置）
+
+计划阶段四任务 6 已注明「最晚与阶段六同批完成」，本阶段先行补齐，否则流水线后两步无从落地。
+
+| 工具 | 作用 | 要点 |
+|------|------|------|
+| `split_chapter` | 读：把章节按段落边界切成片段 | 三级递进切分（段落 → 句 → 按字数硬切），保证每段严格 ≤ `max_chars`；超过 12 段时后续只给预览并提示调大 `max_chars` |
+| `create_note_card` | 写：把要点固化成卡片 | `card_type` **硬性校验**为前端 `WorldCardType` 的 6 个取值，越界返回结构化错误且不落库 |
+
+工具经 `EXTRACTION_TOOLS` 引入，仅 `breakdown` / `note` 两个提炼类领域可见；`novel` / `thesis` 保持不带工具（严格门禁）。
+
+#### 关键设计
+
+| 项 | 决策 |
+|----|------|
+| `RuntimeMode` 归属 | 放 `profiles.rs`，是「画像声明自己怎么跑」的配置数据，与 L1 注册表同源；`engine` 依赖 `profiles`，反向不成立 |
+| `Step` 形态 | `{ name, instruction, tools, max_rounds }`——一个**收窄了工具与轮数**的 ReAct |
+| 与 ReAct 的关系 | 每步复用 `engine::react_loop`，只换工具表 / 轮数 / 指令。SSE 解析、取消竞争、trace 上报三条链路无第二套实现 |
+| 合并规则 | 执行模式**领域优先、能力次之**：流程形状由「处理什么作品」决定，能力通常不固定流程 |
+| 产物传递 | 每步独立构造消息（不带入上一步的工具往返），已完成产物以「## 前序步骤产物」用户消息喂给下一步 |
+| 文本一致性 | 步骤头 / 占位 / 收尾经同一批函数生成，流式推送与最终渲染共用 → 前端累积文本与 IPC 返回值逐字一致 |
+| 拆书三步 | ① 拆章节（`list_book_chapters`+`split_chapter`，4 轮）→ ② 提炼要点（**无工具**，1 轮）→ ③ 生成卡片（仅 `create_note_card`，8 轮） |
+
+第 ② 步刻意不给工具：否则模型会绕开「先读后写」，边编边写——那正是自由 ReAct 的失败模式。
+
+#### ⚠️ 三处刻意偏离
+
+**1. `RuntimeMode` 放 `profiles.rs` 而非计划写的 `engine.rs`。**
+计划让 `engine.rs` 定义枚举、`profiles.rs` 引用它。但 `AgentProfile` 要带 `runtime` 字段，等于 `profiles` 反过来依赖 `engine`——而 `engine` 已依赖 `profiles`。Rust 虽允许模块互引，但依赖方向会绕成环，读代码时无法判断谁是谁的上游。枚举属于「配置数据」，放在 L1 注册表里更贴合 ADR-005 的分层。
+
+**2. `SingleShot` 未实现。**
+计划中唯一的消费方是任务 6「AI 工具箱迁 `SingleShot`」，而该迁移本身标为**可选**，且需先对齐容错能力（工具箱有网络重试，Agent 链路没有）。在此之前加入只会是一个无人构造的枚举变体——与 `extends` 同样的取舍（见阶段四决策 1）。
+
+**3. Pipeline 单步失败不自动重试。**
+计划验收写的是「可重试」。实际**不做自动重试**：`create_note_card` 有副作用且不可重入，盲重试会造成重复卡片。改为「停下 + 保留已完成产物 + 文本里给出 `x/y` 结构化进度」，由人决定是否续跑。所需信息（哪步失败、失败原因、已完成部分）都在返回文本里。
 
 ### 验收
 
-- 拆书 Agent 在 `Pipeline` 模式下输出稳定可预期，不再依赖模型自行规划步骤
-- `ReAct` 模式行为与改造前完全一致（回归验证）
-- Pipeline 单步失败可重试、可中断，且不丢失已完成步骤的中间产物
+- ✅ 拆书 Agent 在 `Pipeline` 模式下按固定三步执行，顺序与工具边界由画像保证，不再依赖模型自行规划
+- ✅ `ReAct` 模式行为与改造前完全一致：`run_skill_inner` 的 ReAct 分支沿用原 `react_loop` 调用（入参仅 `url`/`model` 由 `String` 改 `&str`，避免分发时无谓克隆）
+- ✅ Pipeline 可中断（每步开始前检查取消令牌，`react_loop` 内部亦有竞争点）
+- ✅ 单步失败不丢失已完成步骤的中间产物（部分成功 + 结构化进度）
+
+#### 顺带发现（P1，本次未修）
+
+`WorldbuildingPanel.tsx:447` 的 `WORLD_CARD_TYPE_CONFIG[card.type].icon` **无兜底**，卡片 `type` 一旦是配置表外的值（旧备份导入、其他来源写入）即 `undefined.icon` 抛错，整个设定面板白屏。
+
+`create_note_card` 已在**写入侧**硬性拦截（校验值域 + 不落库），堵住了本阶段新增的这条路径；但**渲染侧**的隐患仍在，属既有缺陷。建议后续加一行兜底：`WORLD_CARD_TYPE_CONFIG[card.type] ?? WORLD_CARD_TYPE_CONFIG.misc`。
+
+#### 测试
+
+- Rust `cargo test --lib` **219/219**（+17：领域工具行为 6、领域门禁与执行模式 4、流水线纯函数与渲染 7）
+- 前端 `vitest run` **110/110**（本阶段未改前端，属回归验证）
+- `pnpm check` **231/231**
+- `cargo check --all-targets` **零警告**
 
 ---
 

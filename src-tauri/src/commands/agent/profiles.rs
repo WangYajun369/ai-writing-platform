@@ -290,11 +290,81 @@ const RESEARCH_TOOLS: &[&str] = &[
 
 const POLISH_TOOLS: &[&str] = &["read_chapter", "read_chapter_chunk", "get_book_context"];
 
-/// 领域画像的工具集：领域只定义世界观、**不定义动作**，故恒为空。
+/// 创作类领域（小说 / 论文）的专属工具：恒为空。
 ///
-/// 领域专属工具（如拆书的「拆章」「生成卡片」）待阶段六随 Pipeline 引入时在此登记，
-/// 合并时与能力工具取并集。
+/// 领域只定义世界观、**不定义动作**——动作一律由能力画像给出，故此处不引入工具，
+/// 合并时能力工具原样透出。
 const DOMAIN_TOOLS: &[&str] = &[];
+
+/// 提炼类领域（拆书 / 学科笔记）的专属工具
+///
+/// 三者是「读章节 → 提炼要点 → 生成卡片」流水线所需的全部工具：`list_book_chapters`
+/// 负责定位目标章节，`split_chapter` 负责看清结构，`create_note_card` 负责把提炼
+/// 结果落库。领域只声明「需要这几件工具」，何时调用由执行模式决定；合并时与能力
+/// 工具取并集。
+///
+/// ⚠️ 流水线步骤（[`BREAKDOWN_STEPS`]）声明的工具必须都在此表内——「步骤工具 ⊆
+/// 有效工具集」是流水线可达性的前提，由 `pipeline_steps_are_reachable` 单测守住。
+const EXTRACTION_TOOLS: &[&str] =
+    &["list_book_chapters", "split_chapter", "create_note_card"];
+
+// ── L2 执行模式（阶段六）────────────────────────────────────────────────────
+// 与 L1 画像同源：本文件声明「这个画像怎么跑」，engine / pipeline 只负责执行。
+
+/// 流水线中的一个步骤：一个**收窄了工具与轮数**的 ReAct
+///
+/// 步骤的**顺序由画像固定**，模型只能在步内自由行动，不能跳步或改序——这正是
+/// 「固定流程类 Agent」与自由 ReAct 的本质区别。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Step {
+    /// 步骤名（日志与进度展示）
+    pub name: &'static str,
+    /// 本步指令：拼进该步的 system prompt，取代「一次把整个任务说完」
+    pub instruction: &'static str,
+    /// 本步可见的工具（须是有效画像工具集的子集，否则工具不可达）
+    pub tools: &'static [&'static str],
+    /// 本步最多推理轮数
+    pub max_rounds: usize,
+}
+
+/// 画像的执行模式（ADR-005 L2）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeMode {
+    /// 自由 ReAct：模型自行决定调什么工具、何时停（现状默认）
+    ReAct,
+    /// 固定流水线：按 [`Step`] 依次执行，前一步产物作为后一步输入
+    Pipeline(&'static [Step]),
+    //
+    // `SingleShot`（单轮直出）**刻意未实现**：计划中唯一的消费方是「AI 工具箱」，
+    // 而该迁移本身标为可选、且需先对齐网络重试能力。在此之前加入只会成为无人
+    // 读取的死代码——与 `extends` 同样的取舍（见文件头注释）。
+}
+
+/// 拆书流水线：读章节 → 提炼要点 → 生成卡片
+///
+/// 每步都**收窄工具与轮数**，把「先看清原文、再提炼、最后落库」的顺序固化下来。
+/// 自由 ReAct 下模型常会跳过取数直接开写，或把三步挤在一轮里草草了事；拆成步骤
+/// 后，模型只能在步内自由行动，顺序与工具边界由本表保证。
+const BREAKDOWN_STEPS: &[Step] = &[
+    Step {
+        name: "拆章节",
+        instruction: "先用 list_book_chapters 定位用户所指的章节，再用 split_chapter 切成片段。本步只输出片段清单与结构观察，不要提前提炼要点。",
+        tools: &["list_book_chapters", "split_chapter"],
+        max_rounds: 4,
+    },
+    Step {
+        name: "提炼要点",
+        instruction: "基于上一步的片段逐段提炼要点。每条要点须自带背景、可脱离原文独立理解，并标注出自第几段。本步不调用任何工具，直接输出要点列表。",
+        tools: &[],
+        max_rounds: 1,
+    },
+    Step {
+        name: "生成卡片",
+        instruction: "把上一步的每条要点用 create_note_card 固化成卡片：card_type 一律 misc，章节出处与概念层级写进 tags。写完后简要汇报共建了几张卡片、分别是什么。",
+        tools: &["create_note_card"],
+        max_rounds: 8,
+    },
+];
 
 // ── 注册表 ──────────────────────────────────────────────────────────────────
 
@@ -333,6 +403,8 @@ pub struct AgentProfile {
     pub max_rounds: usize,
     /// 整个 Agent 执行总超时（秒）（领域画像填 0 表示「不约束」）
     pub timeout_secs: u64,
+    /// 执行模式（L2）：默认 [`RuntimeMode::ReAct`]，固定流程类画象声明 `Pipeline`
+    pub runtime: RuntimeMode,
 }
 
 /// 全部画像（单一真相源）。新增一个 Skill 或领域只需在此追加一项。
@@ -351,6 +423,7 @@ static PROFILES: &[AgentProfile] = &[
         tools: WRITING_TOOLS,
         max_rounds: 5,
         timeout_secs: 300,
+        runtime: RuntimeMode::ReAct,
     },
     AgentProfile {
         id: "analysis",
@@ -365,6 +438,7 @@ static PROFILES: &[AgentProfile] = &[
         tools: ANALYSIS_TOOLS,
         max_rounds: 10,
         timeout_secs: 480,
+        runtime: RuntimeMode::ReAct,
     },
     AgentProfile {
         id: "research",
@@ -379,6 +453,7 @@ static PROFILES: &[AgentProfile] = &[
         tools: RESEARCH_TOOLS,
         max_rounds: 20,
         timeout_secs: 600,
+        runtime: RuntimeMode::ReAct,
     },
     AgentProfile {
         id: "polish",
@@ -393,6 +468,7 @@ static PROFILES: &[AgentProfile] = &[
         tools: POLISH_TOOLS,
         max_rounds: 3,
         timeout_secs: 240,
+        runtime: RuntimeMode::ReAct,
     },
     // ── 领域画像（id 对齐 `books.book_type` 的值域）──
     AgentProfile {
@@ -408,6 +484,7 @@ static PROFILES: &[AgentProfile] = &[
         tools: DOMAIN_TOOLS,
         max_rounds: 0,
         timeout_secs: 0,
+        runtime: RuntimeMode::ReAct,
     },
     AgentProfile {
         id: "thesis",
@@ -422,6 +499,7 @@ static PROFILES: &[AgentProfile] = &[
         tools: DOMAIN_TOOLS,
         max_rounds: 0,
         timeout_secs: 0,
+        runtime: RuntimeMode::ReAct,
     },
     AgentProfile {
         id: "breakdown",
@@ -433,9 +511,12 @@ static PROFILES: &[AgentProfile] = &[
         quick_actions: DOMAIN_QUICK_ACTIONS,
         base_prompt: BREAKDOWN_PROMPT,
         hints: BREAKDOWN_HINTS,
-        tools: DOMAIN_TOOLS,
+        tools: EXTRACTION_TOOLS,
         max_rounds: 0,
         timeout_secs: 0,
+        // 首个 Pipeline 真实用例（阶段六任务 5）。学科笔记暂留 ReAct：
+        // 先用一个用例验证模式有效性，不一次性铺开。
+        runtime: RuntimeMode::Pipeline(BREAKDOWN_STEPS),
     },
     AgentProfile {
         id: "note",
@@ -447,9 +528,11 @@ static PROFILES: &[AgentProfile] = &[
         quick_actions: DOMAIN_QUICK_ACTIONS,
         base_prompt: NOTE_PROMPT,
         hints: NOTE_HINTS,
-        tools: DOMAIN_TOOLS,
+        tools: EXTRACTION_TOOLS,
         max_rounds: 0,
         timeout_secs: 0,
+        // 已具备提炼工具，但流程尚未固化：等拆书用例验证通过后再迁 Pipeline
+        runtime: RuntimeMode::ReAct,
     },
 ];
 
@@ -551,6 +634,7 @@ pub fn profile_metas() -> Vec<ProfileMeta> {
 /// | 基准提示词 | 领域基准 → 能力基准，纯拼接 | 领域定义世界观，能力定义动作，后者更具体应靠后 |
 /// | 工具集 | 取并集（能力在前，领域新增在后） | 互补，取交集会导致某一侧工具不可用 |
 /// | 执行预算 | 取较大值 | 保守策略，避免领域需要的多轮被能力的小预算截断 |
+/// | 执行模式 | 领域优先、能力次之 | 流程形状由「处理什么作品」决定（如拆书的读→提炼→落库），故领域声明优先 |
 #[derive(Debug, Clone)]
 pub struct EffectiveProfile {
     /// 能力画像（用户选择的动作）
@@ -571,6 +655,8 @@ pub struct EffectiveProfile {
     pub max_rounds: usize,
     /// 合并后的总超时（秒）
     pub timeout_secs: u64,
+    /// 合并后的执行模式（L2）
+    pub runtime: RuntimeMode,
 }
 
 /// 合并能力画像与领域画像
@@ -589,6 +675,13 @@ pub fn merge(ability_id: &str, domain_id: &str) -> EffectiveProfile {
         }
     }
 
+    // 执行模式取领域优先：流程形状由「处理什么作品」决定，能力通常不固定流程，
+    // 故仅在领域未声明（ReAct）时才回落到能力的声明。
+    let runtime = match domain.runtime {
+        RuntimeMode::ReAct => ability.runtime,
+        other => other,
+    };
+
     EffectiveProfile {
         ability,
         ability_matched: find_ability(ability_id).is_some(),
@@ -597,6 +690,7 @@ pub fn merge(ability_id: &str, domain_id: &str) -> EffectiveProfile {
         tools,
         max_rounds: ability.max_rounds.max(domain.max_rounds),
         timeout_secs: ability.timeout_secs.max(domain.timeout_secs),
+        runtime,
     }
 }
 
@@ -728,9 +822,9 @@ mod tests {
                     assert!(p.max_rounds > 0, "{} 轮数须为正", p.id);
                     assert!(p.timeout_secs > 0, "{} 超时须为正", p.id);
                 }
-                // 领域画像定义世界观：不带工具、预算为 0 表示「不约束」
+                // 领域画像定义世界观：可携带领域专属工具（提炼类领域），
+                // 但预算恒为 0 表示「不约束」，动作仍由能力画像决定
                 ProfileKind::Domain => {
-                    assert!(p.tools.is_empty(), "{} 领域画像不应带工具", p.id);
                     assert_eq!(p.max_rounds, 0, "{} 领域画像不应约束轮数", p.id);
                     assert_eq!(p.timeout_secs, 0, "{} 领域画像不应约束超时", p.id);
                 }
@@ -766,11 +860,134 @@ mod tests {
     /// 工具集取并集：领域当前无工具，故并集 = 能力工具，顺序不变
     #[test]
     fn merge_tools_is_union_with_ability_first() {
-        let eff = merge("research", "breakdown");
-        assert_eq!(eff.tools, RESEARCH_TOOLS);
-        // 领域画像目前无工具，并集不应引入新项
-        let eff2 = merge("polish", "note");
-        assert_eq!(eff2.tools, POLISH_TOOLS);
+        // 创作类领域（小说 / 论文）无专属工具 → 并集即能力工具本身
+        assert_eq!(merge("research", "novel").tools, RESEARCH_TOOLS);
+        assert_eq!(merge("polish", "thesis").tools, POLISH_TOOLS);
+
+        // 提炼类领域追加专属工具。RESEARCH_TOOLS 本就含 list_book_chapters，
+        // 去重后它仍停在能力段的位置——这正是「能力在前、领域新增在后」的含义
+        assert_eq!(
+            merge("research", "breakdown").tools,
+            [
+                "read_chapter_summary",
+                "list_book_chapters",
+                "search_world_cards",
+                "get_book_context",
+                "split_chapter",
+                "create_note_card",
+            ]
+        );
+        // POLISH_TOOLS 与提炼工具无交集 → 三者整体追加在后
+        assert_eq!(
+            merge("polish", "note").tools,
+            [
+                "read_chapter",
+                "read_chapter_chunk",
+                "get_book_context",
+                "list_book_chapters",
+                "split_chapter",
+                "create_note_card",
+            ]
+        );
+    }
+
+    /// 领域工具的开关语义：只有提炼类领域引入专属工具，创作类领域一律不带
+    #[test]
+    fn only_extraction_domains_add_tools() {
+        for id in ["breakdown", "note"] {
+            assert_eq!(
+                find_domain(id).unwrap().tools,
+                EXTRACTION_TOOLS,
+                "{id} 应引入提炼工具"
+            );
+        }
+        for id in ["novel", "thesis"] {
+            assert!(
+                find_domain(id).unwrap().tools.is_empty(),
+                "{id} 是创作类领域，不应引入工具"
+            );
+        }
+        // 提炼工具须「读写成对」：既能列章节 / 看清结构，也能把结果落库
+        assert!(EXTRACTION_TOOLS.contains(&"list_book_chapters"));
+        assert!(EXTRACTION_TOOLS.contains(&"split_chapter"));
+        assert!(EXTRACTION_TOOLS.contains(&"create_note_card"));
+    }
+
+    /// 执行模式合并：领域优先、能力次之，都未声明则 ReAct
+    #[test]
+    fn runtime_mode_is_domain_first() {
+        // 拆书领域声明 Pipeline → 无论搭哪个能力都走流水线
+        for ability in ["writing", "analysis", "research", "polish", "no_such"] {
+            assert_eq!(
+                merge(ability, "breakdown").runtime,
+                RuntimeMode::Pipeline(BREAKDOWN_STEPS),
+                "{ability} 下拆书领域应走 Pipeline"
+            );
+        }
+        // 其余领域（含尚未固化流程的学科笔记）与所有能力都是 ReAct
+        for domain in ["novel", "thesis", "note"] {
+            for ability in ["writing", "research"] {
+                assert_eq!(merge(ability, domain).runtime, RuntimeMode::ReAct);
+            }
+        }
+        // 未知领域兜底 novel → 仍是 ReAct
+        assert_eq!(merge("writing", "poetry").runtime, RuntimeMode::ReAct);
+    }
+
+    /// 拆书流水线的步骤须结构完整：「读 → 提炼 → 落库」三段，工具边界逐段收敛
+    #[test]
+    fn breakdown_steps_are_well_formed() {
+        let RuntimeMode::Pipeline(steps) = find_domain("breakdown").unwrap().runtime else {
+            panic!("拆书领域应为 Pipeline 模式");
+        };
+        assert_eq!(steps.len(), 3, "拆书流水线应为三步");
+
+        for s in steps {
+            assert!(!s.name.is_empty(), "步骤名不可为空");
+            assert!(!s.instruction.is_empty(), "步骤「{}」缺少指令", s.name);
+            assert!(s.max_rounds > 0, "步骤「{}」轮数须为正", s.name);
+            // 步骤工具须是领域工具的子集——「步骤 ⊆ 领域 ⊆ 有效工具集」是可达性的前提
+            for t in s.tools {
+                assert!(
+                    EXTRACTION_TOOLS.contains(t),
+                    "步骤「{}」的工具 `{t}` 不在领域工具集中",
+                    s.name
+                );
+            }
+        }
+
+        // 工具边界：读 → 不调工具 → 只写
+        assert!(steps[0].tools.contains(&"split_chapter"), "首步须能拆章节");
+        assert!(
+            steps[1].tools.is_empty(),
+            "提炼要点步不应调工具，否则模型会绕开「先读后写」"
+        );
+        assert_eq!(steps[2].tools, &["create_note_card"], "末步只应落库");
+    }
+
+    /// 流水线可达性：每一步声明的工具，在**任意能力**下都必须在有效工具集内
+    ///
+    /// 若步骤引用了有效工具集之外的名字，模型会看到一个拿不到的工具，流水线必然
+    /// 卡在这一步。领域工具随领域一起进并集，故「步骤 ⊆ 领域工具」即可保证任意
+    /// 能力组合下都成立——本测试是把这条推理钉住，防止将来改工具集时悄悄失效。
+    #[test]
+    fn pipeline_steps_are_reachable() {
+        let RuntimeMode::Pipeline(steps) = find_domain("breakdown").unwrap().runtime else {
+            panic!("拆书领域应为 Pipeline 模式");
+        };
+        for ability in ["writing", "analysis", "research", "polish", "no_such"] {
+            let eff = merge(ability, "breakdown");
+            for step in steps {
+                for t in step.tools {
+                    assert!(
+                        eff.tools.contains(t),
+                        "能力 `{ability}` 下步骤「{}」的工具 `{t}` 不可达: {:?}",
+                        step.name,
+                        eff.tools
+                    );
+                }
+            }
+        }
     }
 
     /// 预算取较大值：领域为 0（不约束），故结果等于能力预算

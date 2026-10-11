@@ -19,7 +19,8 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::Notify;
 use tokio::time::timeout;
 
-use crate::commands::agent::{memory, profiles, prompts, tools};
+use crate::commands::agent::{memory, pipeline, profiles, prompts, tools};
+use crate::commands::agent::profiles::RuntimeMode;
 use crate::db::SqliteConnectionManager;
 use crate::error::AppError;
 use crate::repository;
@@ -127,7 +128,8 @@ const MAX_TOOL_RESULT_CHARS: usize = 30_000;
 // HTTP 发送等待响应头）通过 tokio::select! 与其竞争，实现即时中断——
 // 不必等待 60s 行超时或下一个 chunk 到达。
 
-struct CancelToken {
+/// 取消令牌（阶段六起由 pipeline.rs 共享：流水线每一步都要能即时中断）
+pub(crate) struct CancelToken {
     flag: AtomicBool,
     notify: Notify,
 }
@@ -145,7 +147,8 @@ impl CancelToken {
         self.notify.notify_waiters();
     }
 
-    fn is_cancelled(&self) -> bool {
+    /// 阶段六起由 pipeline.rs 共享：流水线每步开始前都要检查一次取消
+    pub(crate) fn is_cancelled(&self) -> bool {
         self.flag.load(Ordering::SeqCst)
     }
 
@@ -366,39 +369,76 @@ async fn run_skill_inner(
 
     let url = format!("{endpoint}/chat/completions");
 
-    // ========== 5. SSE ReAct 循环 ==========
+    // ========== 5. 按 L2 执行模式分发 ==========
+    // 两种模式共用同一套 SSE / 取消 / trace 链路，差别只在「跑一个循环」还是
+    // 「按步骤跑多个收窄的循环」；因此超时守卫仍只需在外面套一层。
     let mut full_response = String::new();
     let mut tool_rounds = 0usize;
 
     let total_guard = timeout(
         std::time::Duration::from_secs(SSE_TOTAL_TIMEOUT_SECS),
-        react_loop(
-            app.clone(),
-            pool.clone(),
-            url,
-            api_key.as_deref().unwrap_or(""),
-            model,
-            temperature,
-            max_tokens,
-            tools_schema,
-            &mut messages,
-            &mut full_response,
-            &mut tool_rounds,
-            request_id,
-            cancel_token,
-            &budget,
-            skill,
-        ),
+        async {
+            match effective.runtime {
+                // ReAct：与改造前完全一致的单一循环，行为零变化（回归安全）
+                RuntimeMode::ReAct => {
+                    react_loop(
+                        app.clone(),
+                        pool.clone(),
+                        &url,
+                        api_key.as_deref().unwrap_or(""),
+                        &model,
+                        temperature,
+                        max_tokens,
+                        tools_schema,
+                        &mut messages,
+                        &mut full_response,
+                        &mut tool_rounds,
+                        request_id,
+                        cancel_token,
+                        &budget,
+                        skill,
+                    )
+                    .await?;
+                    Ok::<String, AppError>(std::mem::take(&mut full_response))
+                }
+                // Pipeline：按画像声明的步骤依次执行，上一步产物喂给下一步
+                RuntimeMode::Pipeline(steps) => {
+                    crate::app_log!(
+                        "[Agent] 流水线模式：{} 步（{}）",
+                        steps.len(),
+                        steps.iter().map(|s| s.name).collect::<Vec<_>>().join(" → ")
+                    );
+                    let ctx = pipeline::PipelineCtx {
+                        app: &app,
+                        pool: &pool,
+                        url: &url,
+                        api_key: api_key.as_deref().unwrap_or(""),
+                        model: &model,
+                        temperature,
+                        max_tokens,
+                        request_id,
+                        cancel_token,
+                        budget: &budget,
+                        skill,
+                    };
+                    let outcome = pipeline::run_pipeline(&ctx, steps, &system_prompt, message).await;
+                    // 步骤头 / 收尾已在 run_pipeline 内逐段推送，此处只把同样的
+                    // 文本作为返回值，保证「前端累积文本 == IPC 返回值」
+                    full_response.push_str(&outcome.render());
+                    Ok(full_response.clone())
+                }
+            }
+        },
     )
     .await;
 
     match total_guard {
-        Ok(Ok(())) => {
+        Ok(Ok(text)) => {
             // 取消路径已由 react_loop 发出 cancelled 事件，这里不再补发 done
             if !cancel_token.is_cancelled() {
                 let _ = emit_event(&app, "done", "", request_id);
             }
-            Ok(full_response)
+            Ok(text)
         }
         Ok(Err(e)) => {
             let _ = emit_event(&app, "error", &e.to_string(), request_id);
@@ -415,13 +455,16 @@ async fn run_skill_inner(
     }
 }
 
+/// 开放给 `pipeline.rs`：流水线的每一步就是一个「工具与轮数被收窄」的 ReAct，
+/// 复用本函数可避免把 SSE 解析 / 取消竞争 / trace 上报再抄一遍。
 #[allow(clippy::too_many_arguments)]
-async fn react_loop(
+pub(crate) async fn react_loop(
     app: AppHandle,
     pool: Pool<SqliteConnectionManager>,
-    url: String,
+    // url / model 改为借用：流水线模式下两个分支都要用到，按值传会逼出无谓的 clone
+    url: &str,
     api_key: &str,
-    model: String,
+    model: &str,
     temperature: f64,
     max_tokens: u32,
     tools_schema: Vec<Value>,
@@ -461,7 +504,7 @@ async fn react_loop(
 
         let client = get_sse_client().clone();
         let req = client
-            .post(&url)
+            .post(url)
             .header("Content-Type", "application/json")
             .header("Accept", "text/event-stream")
             .header("Authorization", format!("Bearer {api_key}"));
@@ -855,7 +898,12 @@ fn emit_chunk(app: &AppHandle, delta: &str, request_id: &str) -> bool {
     .is_ok()
 }
 
-fn emit_event(app: &AppHandle, event: &str, data: &str, request_id: &str) -> bool {
+/// 推一个 SSE 事件。开放给 `pipeline.rs`（推步骤进度头）。
+///
+/// 事件契约见文件头：`event ∈ chunk / done / error / cancelled`。流水线额外推的
+/// 仍是 `chunk`（步骤标题行），**不引入新事件类型**——既保持契约稳定，也让前端
+/// 累积到的文本与最终返回值天然一致。
+pub(crate) fn emit_event(app: &AppHandle, event: &str, data: &str, request_id: &str) -> bool {
     app.emit(
         "agent-stream-chunk",
         AgentStreamEvent {
