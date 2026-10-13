@@ -1,5 +1,23 @@
 # 更新日志
 
+## v1.21.1 (2026-10-13) — IPC 参数回归修复 + 架构重构
+
+### 修复
+- **Tauri v2 命令参数结构不匹配**（架构重构引入的回归）：Rust 端已将命令参数打包为 Args struct，前端仍以散开传参invoke，导致 `missing required key args` 静默失败。受影响 3 个命令：`rag_search`、`execute_agent_skill`、`process_image_cropped`
+- **asset:// URL 格式不兼容**：Tauri v2 的 `convertFileSrc` 在macOS/Linux 输出 `asset://localhost/<path>`，与 v1 三/四斜杠格式不同，导致「重新裁切」取不到文件路径。现兼容 5 种前缀并补充 host 段剥离兜底分支
+- **裁剪图片资产重复入库**：原按「原图 sha256」查重，但裁剪会生成新内容、原图指纹无意义，导致相同裁剪结果反复入库。现改为按裁剪后内容的 sha256 二次查重，命中即删除临时文件复用既有资产
+- **裁剪失败无用户反馈**：错误仅 `console.error`，现补充 `toast.error` 提示
+
+### 优化
+- **ServiceCtx 模式重构**（service 层 6 处）：新增 `ServiceCtx<'a> { app, db }` 结构体（Clone + Copy），消除每个 service 函数签名中重复的 `&AppHandle + &AppDb` 前缀
+- **Args struct 模式推广**（repository 11 处 / commands 3 处 / observability 1 处）：将业务参数打包进独立结构体，降低函数签名复杂度
+- **clippy 警告清零**：26 处 `too_many_arguments` + 4 处其他警告（explicit_auto_deref / type_complexity / doc_lazy_continuation / useless_format）全部修复，`cargo clippy -D warnings` 输出 0 warnings / 0 errors
+- **Commands Args struct 补全 `#[serde(rename_all = "camelCase")]`**：避免 Tauri IPC 反序列化时 camelCase 字段无法映射到 snake_case 造成运行时静默失败
+- 落地页对比卡片金色渐变视觉样式调整
+
+### 验证
+`pnpm check` 231/231 通过 ｜ `cargo check` 通过 ｜ `cargo clippy` 零警告 ｜ Rust 263/263 ｜ 前端 126/126
+
 ## v1.20.0 (2026-10-05) — 数学公式输入（KaTeX 渲染 + 符号面板）
 
 ### Agent 引擎重构（2026-10-13）
