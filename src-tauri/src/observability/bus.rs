@@ -110,6 +110,19 @@ pub fn emit_sql(
     emit(app, None, event);
 }
 
+/// agent trace 的业务参数封装（除 app/conn 外）
+#[derive(Debug)]
+pub struct AgentTraceArgs<'a> {
+    pub request_id: &'a str,
+    pub skill: &'a str,
+    pub round: usize,
+    pub role: &'a str,
+    pub content: &'a str,
+    pub tool_name: Option<&'a str>,
+    pub tool_args: Option<&'a str>,
+    pub tool_result: Option<&'a str>,
+}
+
 /// Agent 轨迹事件:写 `agent_traces` 表 + emit 事件(实时推送前端)
 ///
 /// 调用方传 `&Connection`,本函数同时写表与广播。原 `engine.rs` 三点调用
@@ -117,41 +130,36 @@ pub fn emit_sql(
 pub fn emit_agent_trace(
     app: Option<&AppHandle>,
     conn: &rusqlite::Connection,
-    request_id: &str,
-    skill: &str,
-    round: usize,
-    role: &str,
-    content: &str,
-    tool_name: Option<&str>,
-    tool_args: Option<&str>,
-    tool_result: Option<&str>,
+    args: AgentTraceArgs<'_>,
 ) {
     // 写 agent_traces 表(保持原行为)
     let _ = crate::repository::agent_trace_repo::insert_trace(
         conn,
-        request_id,
-        skill,
-        round,
-        role,
-        content,
-        tool_name,
-        tool_args,
-        tool_result,
+        crate::repository::agent_trace_repo::InsertTraceArgs {
+            request_id: args.request_id,
+            skill: args.skill,
+            round: args.round,
+            role: args.role,
+            content: args.content,
+            tool_name: args.tool_name,
+            tool_args: args.tool_args,
+            tool_result: args.tool_result,
+        },
     );
     // emit 事件(供前端实时查看)
     let payload = serde_json::json!({
-        "requestId": request_id,
-        "skill": skill,
-        "round": round,
-        "role": role,
-        "toolName": tool_name,
-        "toolArgs": tool_args,
-        "toolResult": tool_result,
+        "requestId": args.request_id,
+        "skill": args.skill,
+        "round": args.round,
+        "role": args.role,
+        "toolName": args.tool_name,
+        "toolArgs": args.tool_args,
+        "toolResult": args.tool_result,
     });
     let mut event = TelemetryEvent::new(
         TelemetryKind::Agent,
         "info",
-        format!("[Agent] {} #{} {}: {}", skill, round, role, content),
+        format!("[Agent] {} #{} {}: {}", args.skill, args.round, args.role, args.content),
     );
     event.payload = Some(payload);
     emit(app, None, event);

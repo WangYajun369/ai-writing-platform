@@ -45,20 +45,23 @@ pub fn find_full(conn: &Connection, snapshot_id: &str) -> Result<(String, String
     )
 }
 
+/// snapshot insert 的业务参数封装（除 conn 外）
+#[derive(Debug)]
+pub struct InsertSnapshotArgs<'a> {
+    pub id: &'a str,
+    pub chapter_id: &'a str,
+    pub content_html: &'a str,
+    pub word_count: i64,
+    pub snapshot_type: &'a str,
+    pub label: &'a Option<String>,
+    pub created_at: &'a str,
+}
+
 /// 创建新快照
-pub fn insert(
-    conn: &Connection,
-    id: &str,
-    chapter_id: &str,
-    content_html: &str,
-    word_count: i64,
-    snapshot_type: &str,
-    label: &Option<String>,
-    created_at: &str,
-) -> Result<()> {
+pub fn insert(conn: &Connection, args: InsertSnapshotArgs<'_>) -> Result<()> {
     conn.execute(
         "INSERT INTO snapshots (id,chapter_id,content_html,word_count,type,label,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
-        params![id, chapter_id, content_html, word_count, snapshot_type, label, created_at],
+        params![args.id, args.chapter_id, args.content_html, args.word_count, args.snapshot_type, args.label, args.created_at],
     )?;
     Ok(())
 }

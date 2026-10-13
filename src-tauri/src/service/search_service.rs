@@ -8,20 +8,26 @@ use crate::db::AppDb;
 use crate::error::AppError;
 use crate::repository::{chapter_repo, embedding_repo, world_card_repo};
 use crate::service::uow::UnitOfWork;
+use crate::service::ServiceCtx;
 use crate::utils::{escape_fts5_query, like_pattern, snippet, strip_html};
 use std::collections::HashMap;
 use tauri::AppHandle;
 
+/// rag_search 的业务参数封装（ServiceCtx 提供 app/db）
+#[derive(Debug)]
+pub struct RagSearchArgs<'a> {
+    pub book_id: &'a str,
+    pub query: &'a str,
+    pub top_n: usize,
+    pub endpoint: Option<&'a str>,
+    pub api_key: Option<&'a str>,
+    pub embedding_model: Option<&'a str>,
+}
+
 /// RAG 语义搜索（向量 + 关键词降级）
 pub async fn rag_search(
-    app: &AppHandle,
-    db: &AppDb,
-    book_id: &str,
-    query: &str,
-    top_n: usize,
-    endpoint: Option<&str>,
-    api_key: Option<&str>,
-    embedding_model: Option<&str>,
+    ctx: ServiceCtx<'_>,
+    args: RagSearchArgs<'_>,
 ) -> Result<Vec<RagResult>, AppError> {
     // v1.9：迁移到 UnitOfWork。注意 async 函数不能跨 await 持有非 Send 的
     // UnitOfWork（内含 &rusqlite::Connection），因此把 embedding API 调用
@@ -29,27 +35,27 @@ pub async fn rag_search(
 
     // 阶段 1：检查是否有已索引向量，决定是否走向量搜索（查询后立即释放连接）
     let query_vec: Option<Vec<f32>> = if let (Some(ep), Some(key), Some(model)) =
-        (endpoint, api_key, embedding_model)
+        (args.endpoint, args.api_key, args.embedding_model)
     {
         // 用独立作用域包住 pooled + uow，确保 await 前连接已归还连接池
         let emb_count = {
-            let pooled = db.pool.get()?;
-            let mut uow = UnitOfWork::new(&pooled, Some(app));
+            let pooled = ctx.db.pool.get()?;
+            let mut uow = UnitOfWork::new(&pooled, Some(ctx.app));
             uow.audit(
                 "SELECT",
                 "embeddings",
-                format!("COUNT for book_id={book_id}"),
+                format!("COUNT for book_id={}", args.book_id),
                 file!(),
                 line!(),
             );
-            let count = embedding_repo::count_indexed_for_book(uow.conn(), book_id).unwrap_or(0);
+            let count = embedding_repo::count_indexed_for_book(uow.conn(), args.book_id).unwrap_or(0);
             uow.commit()?;
             count
         };
 
         if emb_count > 0 {
             // 直接 await 异步调用，避免 block_on 死锁风险（此时不持有任何 DB 连接）
-            match call_embedding_api(ep, key, model, &[query.to_string()]).await {
+            match call_embedding_api(ep, key, model, &[args.query.to_string()]).await {
                 Ok(embs) => embs.into_iter().next(),
                 Err(e) => {
                     crate::app_log_error!("Embedding API 调用失败，降级为关键词搜索: {e}");
@@ -64,12 +70,12 @@ pub async fn rag_search(
     };
 
     // 阶段 2：向量搜索或 FTS5 降级（统一一个 Uow，不再跨 await）
-    let pooled = db.pool.get()?;
-    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    let pooled = ctx.db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(ctx.app));
 
     if let Some(qv) = query_vec {
         // 向量无命中或失败时降级关键词搜索（不直接抛错）
-        match vector_search(&mut uow, book_id, &qv, top_n) {
+        match vector_search(&mut uow, args.book_id, &qv, args.top_n) {
             Ok(results) if !results.is_empty() => {
                 uow.commit()?;
                 return Ok(results);
@@ -83,7 +89,7 @@ pub async fn rag_search(
         }
     }
 
-    let results = fts5_search(&mut uow, book_id, query, top_n)?;
+    let results = fts5_search(&mut uow, args.book_id, args.query, args.top_n)?;
     uow.commit()?;
     Ok(results)
 }

@@ -26,18 +26,21 @@ pub struct AgentTrace {
     pub created_at: String,
 }
 
+/// insert_trace 的业务参数封装（除 conn 外）
+#[derive(Debug)]
+pub struct InsertTraceArgs<'a> {
+    pub request_id: &'a str,
+    pub skill: &'a str,
+    pub round: usize,
+    pub role: &'a str,
+    pub content: &'a str,
+    pub tool_name: Option<&'a str>,
+    pub tool_args: Option<&'a str>,
+    pub tool_result: Option<&'a str>,
+}
+
 /// 写入一条轨迹
-pub fn insert_trace(
-    conn: &Connection,
-    request_id: &str,
-    skill: &str,
-    round: usize,
-    role: &str,
-    content: &str,
-    tool_name: Option<&str>,
-    tool_args: Option<&str>,
-    tool_result: Option<&str>,
-) -> Result<(), AppError> {
+pub fn insert_trace(conn: &Connection, args: InsertTraceArgs<'_>) -> Result<(), AppError> {
     let id = Uuid::new_v4().to_string();
     let created_at = Local::now().to_rfc3339();
     conn.execute(
@@ -45,14 +48,14 @@ pub fn insert_trace(
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             id,
-            request_id,
-            skill,
-            round as i64,
-            role,
-            content,
-            tool_name,
-            tool_args,
-            tool_result,
+            args.request_id,
+            args.skill,
+            args.round as i64,
+            args.role,
+            args.content,
+            args.tool_name,
+            args.tool_args,
+            args.tool_result,
             created_at,
         ],
     )
@@ -144,38 +147,44 @@ mod tests {
         let conn = setup();
         insert_trace(
             &conn,
-            "req-1",
-            "writing",
-            0,
-            "assistant",
-            "正在思考...",
-            None,
-            None,
-            None,
+            InsertTraceArgs {
+                request_id: "req-1",
+                skill: "writing",
+                round: 0,
+                role: "assistant",
+                content: "正在思考...",
+                tool_name: None,
+                tool_args: None,
+                tool_result: None,
+            },
         )
         .unwrap();
         insert_trace(
             &conn,
-            "req-1",
-            "writing",
-            1,
-            "tool_call",
-            "调用工具",
-            Some("read_chapter"),
-            Some("{\"id\":\"ch1\"}"),
-            None,
+            InsertTraceArgs {
+                request_id: "req-1",
+                skill: "writing",
+                round: 1,
+                role: "tool_call",
+                content: "调用工具",
+                tool_name: Some("read_chapter"),
+                tool_args: Some("{\"id\":\"ch1\"}"),
+                tool_result: None,
+            },
         )
         .unwrap();
         insert_trace(
             &conn,
-            "req-1",
-            "writing",
-            1,
-            "tool_result",
-            "工具结果",
-            None,
-            None,
-            Some("章节内容..."),
+            InsertTraceArgs {
+                request_id: "req-1",
+                skill: "writing",
+                round: 1,
+                role: "tool_result",
+                content: "工具结果",
+                tool_name: None,
+                tool_args: None,
+                tool_result: Some("章节内容..."),
+            },
         )
         .unwrap();
         let traces = list_traces_by_request(&conn, "req-1").unwrap();
@@ -198,26 +207,30 @@ mod tests {
         let conn = setup();
         insert_trace(
             &conn,
-            "req-1",
-            "writing",
-            0,
-            "assistant",
-            "内容",
-            None,
-            None,
-            None,
+            InsertTraceArgs {
+                request_id: "req-1",
+                skill: "writing",
+                round: 0,
+                role: "assistant",
+                content: "内容",
+                tool_name: None,
+                tool_args: None,
+                tool_result: None,
+            },
         )
         .unwrap();
         insert_trace(
             &conn,
-            "req-2",
-            "research",
-            0,
-            "assistant",
-            "内容",
-            None,
-            None,
-            None,
+            InsertTraceArgs {
+                request_id: "req-2",
+                skill: "research",
+                round: 0,
+                role: "assistant",
+                content: "内容",
+                tool_name: None,
+                tool_args: None,
+                tool_result: None,
+            },
         )
         .unwrap();
         let deleted = super::delete_traces_by_request(&conn, "req-1").unwrap();
@@ -231,26 +244,30 @@ mod tests {
         let conn = setup();
         insert_trace(
             &conn,
-            "req-1",
-            "writing",
-            0,
-            "assistant",
-            "内容",
-            None,
-            None,
-            None,
+            InsertTraceArgs {
+                request_id: "req-1",
+                skill: "writing",
+                round: 0,
+                role: "assistant",
+                content: "内容",
+                tool_name: None,
+                tool_args: None,
+                tool_result: None,
+            },
         )
         .unwrap();
         insert_trace(
             &conn,
-            "req-2",
-            "research",
-            0,
-            "assistant",
-            "内容",
-            None,
-            None,
-            None,
+            InsertTraceArgs {
+                request_id: "req-2",
+                skill: "research",
+                round: 0,
+                role: "assistant",
+                content: "内容",
+                tool_name: None,
+                tool_args: None,
+                tool_result: None,
+            },
         )
         .unwrap();
         let deleted = super::clear_all_traces(&conn).unwrap();

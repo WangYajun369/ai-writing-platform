@@ -46,28 +46,33 @@ pub fn list_world_cards(
     Ok(cards)
 }
 
+/// create_world_card 的业务参数封装（ServiceCtx 提供 app/db）
+#[derive(Debug)]
+pub struct CreateWorldCardArgs<'a> {
+    pub book_id: &'a str,
+    pub card_type: &'a str,
+    pub title: &'a str,
+    pub content: &'a str,
+    pub content_html: &'a str,
+    pub tags: &'a [String],
+}
+
 /// 创建世界观卡片
 pub fn create_world_card(
-    app: &AppHandle,
-    db: &AppDb,
-    book_id: &str,
-    card_type: &str,
-    title: &str,
-    content: &str,
-    content_html: &str,
-    tags: &[String],
+    ctx: crate::service::ServiceCtx<'_>,
+    args: CreateWorldCardArgs<'_>,
 ) -> Result<WorldCard, AppError> {
-    validate_len("卡片标题", title, MAX_TITLE_LEN)?;
+    validate_len("卡片标题", args.title, MAX_TITLE_LEN)?;
 
     // 校验标签
-    if tags.len() > MAX_TAGS_COUNT {
+    if args.tags.len() > MAX_TAGS_COUNT {
         return Err(AppError::Validation(format!(
             "标签数量超过上限（{} > {}），请删减后重试",
-            tags.len(),
+            args.tags.len(),
             MAX_TAGS_COUNT
         )));
     }
-    for (i, tag) in tags.iter().enumerate() {
+    for (i, tag) in args.tags.iter().enumerate() {
         if tag.chars().count() > MAX_TAG_LEN {
             return Err(AppError::Validation(format!(
                 "第 {} 个标签长度超过上限（{} > {}）",
@@ -80,38 +85,40 @@ pub fn create_world_card(
 
     let id = Uuid::new_v4().to_string();
     let ts = now();
-    let tags_json = serde_json::to_string(tags).unwrap_or_else(|_| "[]".to_string());
+    let tags_json = serde_json::to_string(args.tags).unwrap_or_else(|_| "[]".to_string());
     // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
-    let pooled = db.pool.get()?;
-    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    let pooled = ctx.db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(ctx.app));
     uow.audit(
         "INSERT",
         "world_cards",
-        format!("id={id}, title={title}, type={card_type}"),
+        format!("id={id}, title={}, type={}", args.title, args.card_type),
         file!(),
         line!(),
     );
     world_card_repo::insert(
         uow.conn(),
-        &id,
-        book_id,
-        card_type,
-        title,
-        content,
-        content_html,
-        &tags_json,
-        &ts,
+        world_card_repo::InsertWorldCardArgs {
+            id: &id,
+            book_id: args.book_id,
+            card_type: args.card_type,
+            title: args.title,
+            content: args.content,
+            content_html: args.content_html,
+            tags_json: &tags_json,
+            created_at: &ts,
+        },
     )?;
     uow.commit()?;
 
     Ok(WorldCard {
         id,
-        book_id: book_id.to_string(),
-        card_type: card_type.to_string(),
-        title: title.to_string(),
-        content: content.to_string(),
-        content_html: content_html.to_string(),
-        tags: tags.to_vec(),
+        book_id: args.book_id.to_string(),
+        card_type: args.card_type.to_string(),
+        title: args.title.to_string(),
+        content: args.content.to_string(),
+        content_html: args.content_html.to_string(),
+        tags: args.tags.to_vec(),
         vectorized: false,
         created_at: ts.clone(),
         updated_at: ts,

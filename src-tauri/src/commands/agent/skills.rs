@@ -29,6 +29,18 @@ pub async fn list_agent_profiles(app: AppHandle) -> Vec<profiles::ProfileMeta> {
 
 // ══════ Skill 执行 ══════
 
+/// engine::run_skill 的参数打包（8 元组）
+type RunSkillParams = (
+    String,
+    String,
+    String,
+    Option<Vec<engine::HistoryMsg>>,
+    Option<engine::AiModelConfig>,
+    String,
+    Option<String>,
+    Option<Vec<profiles::OwnedStep>>,
+);
+
 /// 对话历史消息项（前端传入）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillHistoryItem {
@@ -56,24 +68,6 @@ pub struct PlanStepParam {
 const DEFAULT_STEP_ROUNDS: usize = 4;
 /// 单步轮数上限（与前端 `MAX_STEP_ROUNDS` 一致）
 const MAX_STEP_ROUNDS: usize = 20;
-
-/// 把不可信的入参规整为 [`profiles::OwnedStep`]
-fn normalize_plan(plan: Option<Vec<PlanStepParam>>) -> Option<Vec<profiles::OwnedStep>> {
-    plan.map(|steps| {
-        steps
-            .into_iter()
-            .map(|s| profiles::OwnedStep {
-                name: s.name,
-                instruction: s.instruction,
-                tools: s.tools,
-                max_rounds: s
-                    .max_rounds
-                    .unwrap_or(DEFAULT_STEP_ROUNDS)
-                    .clamp(1, MAX_STEP_ROUNDS),
-            })
-            .collect()
-    })
-}
 
 /// AI 配置参数（前端传入，camelCase 与 aiSlice 一致）
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,6 +100,78 @@ impl From<AiConfigParams> for engine::AiModelConfig {
     }
 }
 
+/// 把不可信的入参规整为 [`profiles::OwnedStep`]
+fn normalize_plan(plan: Option<Vec<PlanStepParam>>) -> Option<Vec<profiles::OwnedStep>> {
+    plan.map(|steps| {
+        steps
+            .into_iter()
+            .map(|s| profiles::OwnedStep {
+                name: s.name,
+                instruction: s.instruction,
+                tools: s.tools,
+                max_rounds: s
+                    .max_rounds
+                    .unwrap_or(DEFAULT_STEP_ROUNDS)
+                    .clamp(1, MAX_STEP_ROUNDS),
+            })
+            .collect()
+    })
+}
+
+/// execute_agent_skill 的业务参数封装（Tauri command 层）
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecuteSkillArgs {
+    pub skill: String,
+    pub book_id: String,
+    pub message: String,
+    #[serde(default)]
+    pub conversation_history: Option<Vec<SkillHistoryItem>>,
+    #[serde(default)]
+    pub ai_config: Option<AiConfigParams>,
+    #[serde(default)]
+    pub request_id: Option<String>,
+    #[serde(default)]
+    pub conversation_summary: Option<String>,
+    /// 插件 JS 生成的编排计划；仅当 `skill` 命中插件画像时生效
+    #[serde(default)]
+    pub plan: Option<Vec<PlanStepParam>>,
+}
+
+/// 把 ExecuteSkillArgs 转换为 engine::run_skill 的参数
+impl ExecuteSkillArgs {
+    fn into_run_params(self) -> RunSkillParams {
+        let history: Vec<engine::HistoryMsg> = self
+            .conversation_history
+            .unwrap_or_default()
+            .into_iter()
+            .map(|h| engine::HistoryMsg {
+                role: h.role,
+                content: h.content,
+            })
+            .collect();
+        let history = if history.is_empty() {
+            None
+        } else {
+            Some(history)
+        };
+
+        let config = self.ai_config.map(engine::AiModelConfig::from);
+        let request_id = self.request_id.unwrap_or_default();
+
+        (
+            self.skill,
+            self.book_id,
+            self.message,
+            history,
+            config,
+            request_id,
+            self.conversation_summary,
+            normalize_plan(self.plan),
+        )
+    }
+}
+
 /// 执行 Agent Skill（SSE 流式）
 ///
 /// 结果通过 Tauri 事件 `agent-stream-chunk` 推送到前端，事件体携带 request_id。
@@ -114,33 +180,10 @@ impl From<AiConfigParams> for engine::AiModelConfig {
 pub async fn execute_agent_skill(
     app: AppHandle,
     db: State<'_, AppDb>,
-    skill: String,
-    book_id: String,
-    message: String,
-    conversation_history: Option<Vec<SkillHistoryItem>>,
-    ai_config: Option<AiConfigParams>,
-    request_id: Option<String>,
-    conversation_summary: Option<String>,
-    // 插件 JS 生成的编排计划；仅当 `skill` 命中插件画像时生效
-    plan: Option<Vec<PlanStepParam>>,
+    args: ExecuteSkillArgs,
 ) -> Result<String, AppError> {
-    let history: Vec<engine::HistoryMsg> = conversation_history
-        .unwrap_or_default()
-        .into_iter()
-        .map(|h| engine::HistoryMsg {
-            role: h.role,
-            content: h.content,
-        })
-        .collect();
-
-    let history = if history.is_empty() {
-        None
-    } else {
-        Some(history)
-    };
-
-    let config = ai_config.map(engine::AiModelConfig::from);
-    let request_id = request_id.unwrap_or_default();
+    let (skill, book_id, message, history, config, request_id, conversation_summary, plan) =
+        args.into_run_params();
 
     engine::run_skill(
         app,
@@ -152,7 +195,7 @@ pub async fn execute_agent_skill(
         config,
         request_id,
         conversation_summary,
-        normalize_plan(plan),
+        plan,
     )
     .await
 }

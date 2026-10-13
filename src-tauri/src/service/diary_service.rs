@@ -267,7 +267,7 @@ pub fn diary_stats(app: &AppHandle, db: &AppDb) -> Result<DiaryStats, AppError> 
     let (current_streak, longest_streak) = compute_streaks(&dates);
 
     let months = last_12_months();
-    let since = format!("{}", months.first().map(|m| format!("{m}-01")).unwrap_or_else(|| "0000-01-01".to_string()));
+    let since = months.first().map(|m| format!("{m}-01")).unwrap_or_else(|| "0000-01-01".to_string());
     let monthly_map: std::collections::HashMap<String, (i64, i64)> = diary_repo::monthly_words(uow.conn(), &since)?
         .into_iter()
         .map(|(m, w, d)| (m, (w, d)))

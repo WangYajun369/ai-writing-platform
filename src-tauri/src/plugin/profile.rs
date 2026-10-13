@@ -144,7 +144,7 @@ pub fn to_effective(p: &PluginProfile, domain_id: &str) -> EffectiveProfile {
     // 插件自己的编排计划由 `engine` 在拿到 plan 后覆盖为 DynamicPipeline。
     let runtime = match &domain.runtime {
         RuntimeMode::ReAct => RuntimeMode::ReAct,
-        RuntimeMode::Pipeline(steps) => RuntimeMode::Pipeline(*steps),
+        RuntimeMode::Pipeline(steps) => RuntimeMode::Pipeline(steps),
         RuntimeMode::DynamicPipeline(steps) => RuntimeMode::DynamicPipeline(steps.clone()),
     };
 

@@ -108,17 +108,19 @@ pub fn create_template(
     );
     template_repo::insert(
         uow.conn(),
-        &id,
-        name,
-        params.project_id.as_deref(),
-        title,
-        &params.description,
-        &params.priority,
-        &params.note,
-        params.due_offset_days.max(0),
-        &params.tag_ids,
-        &params.subtask_titles,
-        &ts,
+        template_repo::InsertTemplateArgs {
+            id: &id,
+            name,
+            project_id: params.project_id.as_deref(),
+            title,
+            description: &params.description,
+            priority: &params.priority,
+            note: &params.note,
+            due_offset_days: params.due_offset_days.max(0),
+            tag_ids: &params.tag_ids,
+            subtask_titles: &params.subtask_titles,
+            ts: &ts,
+        },
     )?;
     uow.commit()?;
     template_repo::find_by_id(&pooled, &id).map_err(AppError::from)

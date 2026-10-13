@@ -163,13 +163,15 @@ pub fn import_parsed_chapters(
         let ts = now();
         chapter_repo::insert_with_content(
             uow.conn(),
-            &id,
-            book_id,
-            &ch.title,
-            &ch.html,
-            ch.word_count,
-            start_order + i as i64,
-            &ts,
+            chapter_repo::InsertChapterWithContentArgs {
+                id: &id,
+                book_id,
+                title: &ch.title,
+                content_html: &ch.html,
+                word_count: ch.word_count,
+                sort_order: start_order + i as i64,
+                created_at: &ts,
+            },
         )?;
     }
 

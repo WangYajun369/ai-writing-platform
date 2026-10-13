@@ -530,6 +530,7 @@ pub(crate) fn write_backup_data(
 /// 1. `app_config` 不在 `RB_TABLES` 内（不被 `clear_full_tables` 清空），若这里再
 ///    做删除，旧版备份（无 appConfig 字段）会把用户现有配置清空回退成默认值；
 /// 2. 配置是跨作品的全局状态，单作品导入本就不应触碰，全量导入也应保守合并。
+///
 /// 未知段名（未来新增段 / 降级导入）直接跳过，不阻断整体导入。
 pub(crate) fn restore_app_config(
     uow: &mut UnitOfWork,

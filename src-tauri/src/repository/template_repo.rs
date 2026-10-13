@@ -56,28 +56,31 @@ pub fn find_by_id(conn: &Connection, id: &str) -> Result<TaskTemplate> {
     )
 }
 
+/// template insert 的业务参数封装（除 conn 外）
+#[derive(Debug)]
+pub struct InsertTemplateArgs<'a> {
+    pub id: &'a str,
+    pub name: &'a str,
+    pub project_id: Option<&'a str>,
+    pub title: &'a str,
+    pub description: &'a str,
+    pub priority: &'a str,
+    pub note: &'a str,
+    pub due_offset_days: i64,
+    pub tag_ids: &'a [String],
+    pub subtask_titles: &'a [String],
+    pub ts: &'a str,
+}
+
 /// 插入模板
-pub fn insert(
-    conn: &Connection,
-    id: &str,
-    name: &str,
-    project_id: Option<&str>,
-    title: &str,
-    description: &str,
-    priority: &str,
-    note: &str,
-    due_offset_days: i64,
-    tag_ids: &[String],
-    subtask_titles: &[String],
-    ts: &str,
-) -> Result<()> {
+pub fn insert(conn: &Connection, args: InsertTemplateArgs<'_>) -> Result<()> {
     conn.execute(
         "INSERT INTO task_templates \
             (id,name,project_id,title,description,priority,note,due_offset_days,tag_ids,subtask_titles,created_at,updated_at) \
          VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?11)",
         params![
-            id, name, project_id, title, description, priority, note, due_offset_days,
-            to_json_array(tag_ids), to_json_array(subtask_titles), ts
+            args.id, args.name, args.project_id, args.title, args.description, args.priority, args.note, args.due_offset_days,
+            to_json_array(args.tag_ids), to_json_array(args.subtask_titles), args.ts
         ],
     )?;
     Ok(())

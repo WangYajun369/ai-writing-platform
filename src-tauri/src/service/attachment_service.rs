@@ -251,13 +251,15 @@ pub fn add_file(
         );
         attachment_repo::insert(
             uow.conn(),
-            &id,
-            &task_id,
-            &file_name,
-            &ext,
-            meta.len() as i64,
-            &rel,
-            &ts,
+            attachment_repo::InsertAttachmentArgs {
+                id: &id,
+                task_id: &task_id,
+                file_name: &file_name,
+                file_type: &ext,
+                file_size: meta.len() as i64,
+                local_path: &rel,
+                ts: &ts,
+            },
         )?;
         let mut list = attachment_repo::list_by_task(uow.conn(), &task_id)?;
         list.retain(|a| a.id == id);

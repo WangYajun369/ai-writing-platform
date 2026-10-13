@@ -8,6 +8,7 @@ use crate::error::AppError;
 use crate::models::Book;
 use crate::service::book_service;
 use crate::service::book_service::UpdateBookParams;
+use crate::service::ServiceCtx;
 use tauri::{AppHandle, State};
 
 /// 列出所有未删除的书籍，按 updated_at 降序排列
@@ -53,14 +54,15 @@ pub async fn create_book(
     params: CreateBookParams,
 ) -> Result<Book, AppError> {
     book_service::create_book(
-        &app,
-        &db,
-        &params.title,
-        &params.author,
-        &params.description,
-        params.daily_target,
-        &params.tags,
-        &params.book_type,
+        ServiceCtx::new(&app, &db),
+        book_service::CreateBookArgs {
+            title: &params.title,
+            author: &params.author,
+            description: &params.description,
+            daily_target: params.daily_target,
+            tags: &params.tags,
+            book_type: &params.book_type,
+        },
     )
 }
 

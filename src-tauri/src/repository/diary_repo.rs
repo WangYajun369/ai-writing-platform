@@ -6,6 +6,9 @@
 use crate::models::{Diary, DiaryMeta};
 use rusqlite::{params, Connection, OptionalExtension, Result};
 
+/// 搜索命中项（id, diary_date, word_count, keywords_json, content_html）
+pub type DiarySearchHit = (String, String, i64, String, String);
+
 /// 解析数据库中的 keywords JSON 字符串为 Vec<String>
 pub fn parse_keywords(raw: String) -> Vec<String> {
     serde_json::from_str(&raw).unwrap_or_default()
@@ -108,7 +111,7 @@ pub fn search_fts5(
     conn: &Connection,
     fts_query: &str,
     limit: usize,
-) -> Result<Vec<(String, String, i64, String, String)>> {
+) -> Result<Vec<DiarySearchHit>> {
     let mut stmt = conn.prepare(
         "SELECT d.id, d.diary_date, d.word_count, d.keywords, d.content_html \
          FROM diaries d \
@@ -134,7 +137,7 @@ pub fn search_like(
     conn: &Connection,
     pattern: &str,
     limit: usize,
-) -> Result<Vec<(String, String, i64, String, String)>> {
+) -> Result<Vec<DiarySearchHit>> {
     let mut stmt = conn.prepare(
         "SELECT id, diary_date, word_count, keywords, content_html \
          FROM diaries \

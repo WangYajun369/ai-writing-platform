@@ -6,6 +6,7 @@
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::WorldCard;
+use crate::service::ServiceCtx;
 use crate::service::world_card_service;
 use crate::service::world_card_service::UpdateWorldCardParams;
 use tauri::{AppHandle, State};
@@ -42,14 +43,15 @@ pub async fn create_world_card(
     params: CreateWorldCardParams,
 ) -> Result<WorldCard, AppError> {
     world_card_service::create_world_card(
-        &app,
-        &db,
-        &params.book_id,
-        &params.card_type,
-        &params.title,
-        &params.content,
-        &params.content_html,
-        &params.tags,
+        ServiceCtx::new(&app, &db),
+        world_card_service::CreateWorldCardArgs {
+            book_id: &params.book_id,
+            card_type: &params.card_type,
+            title: &params.title,
+            content: &params.content,
+            content_html: &params.content_html,
+            tags: &params.tags,
+        },
     )
 }
 

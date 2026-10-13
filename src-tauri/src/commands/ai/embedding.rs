@@ -7,6 +7,7 @@ use crate::commands::ai::{ConnectionTestResult, EmbeddingProgress, EmbeddingStat
 use crate::db::AppDb;
 use crate::error::AppError;
 use crate::service::search_service;
+use crate::service::ServiceCtx;
 use crate::utils::get_http_client;
 use tauri::{AppHandle, State};
 
@@ -123,27 +124,35 @@ pub async fn test_rag_connection(
     }
 }
 
+/// rag_search 的业务参数封装（Tauri command 层）
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RagSearchCommandArgs {
+    pub book_id: String,
+    pub query: String,
+    pub top_n: usize,
+    pub endpoint: Option<String>,
+    pub api_key: Option<String>,
+    pub embedding_model: Option<String>,
+}
+
 /// RAG 语义检索（向量相似度搜索）
 #[tauri::command]
 pub async fn rag_search(
     app: AppHandle,
     db: State<'_, AppDb>,
-    book_id: String,
-    query: String,
-    top_n: usize,
-    endpoint: Option<String>,
-    api_key: Option<String>,
-    embedding_model: Option<String>,
+    args: RagSearchCommandArgs,
 ) -> Result<Vec<RagResult>, AppError> {
     search_service::rag_search(
-        &app,
-        &db,
-        &book_id,
-        &query,
-        top_n,
-        endpoint.as_deref(),
-        api_key.as_deref(),
-        embedding_model.as_deref(),
+        ServiceCtx::new(&app, &db),
+        search_service::RagSearchArgs {
+            book_id: &args.book_id,
+            query: &args.query,
+            top_n: args.top_n,
+            endpoint: args.endpoint.as_deref(),
+            api_key: args.api_key.as_deref(),
+            embedding_model: args.embedding_model.as_deref(),
+        },
     )
     .await
 }

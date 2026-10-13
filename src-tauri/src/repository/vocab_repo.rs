@@ -48,36 +48,39 @@ fn row_to_word(row: &rusqlite::Row) -> rusqlite::Result<VocabWord> {
     })
 }
 
+/// create_word 的业务参数封装（除 conn 外）
+#[derive(Debug)]
+pub struct CreateWordArgs<'a> {
+    pub id: &'a str,
+    pub word: &'a str,
+    pub phonetic: &'a str,
+    pub meanings_json: &'a str,
+    pub example: &'a str,
+    pub example_zh: &'a str,
+    pub ai_details: &'a str,
+    pub source: &'a str,
+    pub next_review_at: Option<&'a str>,
+    pub ts: &'a str,
+}
+
 /// 新增生词（初始 learning，按传入的首次复习日期排期）
-pub fn create_word(
-    conn: &Connection,
-    id: &str,
-    word: &str,
-    phonetic: &str,
-    meanings_json: &str,
-    example: &str,
-    example_zh: &str,
-    ai_details: &str,
-    source: &str,
-    next_review_at: Option<&str>,
-    ts: &str,
-) -> Result<()> {
+pub fn create_word(conn: &Connection, args: CreateWordArgs<'_>) -> Result<()> {
     conn.execute(
         "INSERT INTO vocab_words (id, word, phonetic, meanings, example, example_zh, repetition, \
             interval_days, ease_factor, status, next_review_at, last_review_at, review_count, correct_count, \
             source, ai_details, created_at, updated_at) \
          VALUES (?1,?2,?3,?4,?5,?6,0,0,2.5,'learning',?7,NULL,0,0,?8,?9,?10,?10)",
         params![
-            id,
-            word,
-            phonetic,
-            meanings_json,
-            example,
-            example_zh,
-            next_review_at,
-            source,
-            ai_details,
-            ts
+            args.id,
+            args.word,
+            args.phonetic,
+            args.meanings_json,
+            args.example,
+            args.example_zh,
+            args.next_review_at,
+            args.source,
+            args.ai_details,
+            args.ts
         ],
     )?;
     Ok(())
@@ -102,20 +105,23 @@ pub fn find_by_id(conn: &Connection, id: &str) -> Result<Option<VocabWord>> {
     Ok(result)
 }
 
+/// update_content_fields 的业务参数封装（除 conn 外）
+#[derive(Debug)]
+pub struct UpdateContentArgs<'a> {
+    pub id: &'a str,
+    pub phonetic: &'a str,
+    pub meanings_json: &'a str,
+    pub example: &'a str,
+    pub example_zh: &'a str,
+    pub ai_details: &'a str,
+    pub ts: &'a str,
+}
+
 /// 更新释义类字段（音标/释义/例句/AI 学习知识）
-pub fn update_content_fields(
-    conn: &Connection,
-    id: &str,
-    phonetic: &str,
-    meanings_json: &str,
-    example: &str,
-    example_zh: &str,
-    ai_details: &str,
-    ts: &str,
-) -> Result<()> {
+pub fn update_content_fields(conn: &Connection, args: UpdateContentArgs<'_>) -> Result<()> {
     conn.execute(
         "UPDATE vocab_words SET phonetic = ?2, meanings = ?3, example = ?4, example_zh = ?5, ai_details = ?6, updated_at = ?7 WHERE id = ?1",
-        params![id, phonetic, meanings_json, example, example_zh, ai_details, ts],
+        params![args.id, args.phonetic, args.meanings_json, args.example, args.example_zh, args.ai_details, args.ts],
     )?;
     Ok(())
 }
@@ -129,18 +135,21 @@ pub fn set_status(conn: &Connection, id: &str, status: &str, ts: &str) -> Result
     Ok(())
 }
 
+/// update_review_state 的业务参数封装（除 conn 外）
+#[derive(Debug)]
+pub struct UpdateReviewStateArgs<'a> {
+    pub id: &'a str,
+    pub repetition: i64,
+    pub interval_days: i64,
+    pub ease_factor: f64,
+    pub status: &'a str,
+    pub next_review_at: Option<&'a str>,
+    pub last_review_at: &'a str,
+    pub correct: bool,
+}
+
 /// 复习后推进记忆状态（SM-2 参数 + 统计）
-pub fn update_review_state(
-    conn: &Connection,
-    id: &str,
-    repetition: i64,
-    interval_days: i64,
-    ease_factor: f64,
-    status: &str,
-    next_review_at: Option<&str>,
-    last_review_at: &str,
-    correct: bool,
-) -> Result<()> {
+pub fn update_review_state(conn: &Connection, args: UpdateReviewStateArgs<'_>) -> Result<()> {
     // correct 以 0/1 整数落入 correct_count 累加（答对 +1、答错 +0）
     conn.execute(
         "UPDATE vocab_words SET repetition = ?2, interval_days = ?3, ease_factor = ?4, \
@@ -148,15 +157,15 @@ pub fn update_review_state(
          review_count = review_count + 1, correct_count = correct_count + ?8, \
          updated_at = ?9 WHERE id = ?1",
         params![
-            id,
-            repetition,
-            interval_days,
-            ease_factor,
-            status,
-            next_review_at,
-            last_review_at,
-            correct as i64,
-            last_review_at,
+            args.id,
+            args.repetition,
+            args.interval_days,
+            args.ease_factor,
+            args.status,
+            args.next_review_at,
+            args.last_review_at,
+            args.correct as i64,
+            args.last_review_at,
         ],
     )?;
     Ok(())
@@ -216,22 +225,25 @@ pub fn list_due(conn: &Connection, today: &str) -> Result<Vec<VocabWord>> {
     items.collect()
 }
 
+/// insert_review_log 的业务参数封装（除 conn 外）
+#[derive(Debug)]
+pub struct InsertReviewLogArgs<'a> {
+    pub id: &'a str,
+    pub word_id: &'a str,
+    pub review_date: &'a str,
+    pub rating: i64,
+    pub repetition: i64,
+    pub interval_days: i64,
+    pub ease_factor: f64,
+    pub reviewed_at: &'a str,
+}
+
 /// 插入一条复习记录
-pub fn insert_review_log(
-    conn: &Connection,
-    id: &str,
-    word_id: &str,
-    review_date: &str,
-    rating: i64,
-    repetition: i64,
-    interval_days: i64,
-    ease_factor: f64,
-    reviewed_at: &str,
-) -> Result<()> {
+pub fn insert_review_log(conn: &Connection, args: InsertReviewLogArgs<'_>) -> Result<()> {
     conn.execute(
         "INSERT INTO vocab_reviews (id, word_id, review_date, rating, repetition, interval_days, ease_factor, reviewed_at) \
          VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
-        params![id, word_id, review_date, rating, repetition, interval_days, ease_factor, reviewed_at],
+        params![args.id, args.word_id, args.review_date, args.rating, args.repetition, args.interval_days, args.ease_factor, args.reviewed_at],
     )?;
     Ok(())
 }

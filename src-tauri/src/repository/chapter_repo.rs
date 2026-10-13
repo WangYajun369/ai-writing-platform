@@ -139,20 +139,23 @@ pub fn insert(
     Ok(())
 }
 
+/// insert_with_content 的业务参数封装（除 conn 外）
+#[derive(Debug)]
+pub struct InsertChapterWithContentArgs<'a> {
+    pub id: &'a str,
+    pub book_id: &'a str,
+    pub title: &'a str,
+    pub content_html: &'a str,
+    pub word_count: i64,
+    pub sort_order: i64,
+    pub created_at: &'a str,
+}
+
 /// 导入时批量插入章节（含内容）
-pub fn insert_with_content(
-    conn: &Connection,
-    id: &str,
-    book_id: &str,
-    title: &str,
-    content_html: &str,
-    word_count: i64,
-    sort_order: i64,
-    created_at: &str,
-) -> Result<()> {
+pub fn insert_with_content(conn: &Connection, args: InsertChapterWithContentArgs<'_>) -> Result<()> {
     conn.execute(
         "INSERT INTO chapters (id,book_id,volume_id,title,content_html,word_count,status,sort_order,created_at,updated_at) VALUES (?1,?2,NULL,?3,?4,?5,'draft',?6,?7,?8)",
-        params![id, book_id, title, content_html, word_count, sort_order, created_at, created_at],
+        params![args.id, args.book_id, args.title, args.content_html, args.word_count, args.sort_order, args.created_at, args.created_at],
     )?;
     Ok(())
 }

@@ -20,6 +20,19 @@ use tauri::{AppHandle, State};
 const DEFAULT_MAX_WIDTH: u32 = 1200;
 const DEFAULT_QUALITY: u8 = 80;
 
+/// 裁剪插图的命令参数封装（Tauri command 层）
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessCroppedArgs {
+    pub source_path: String,
+    pub crop_x: u32,
+    pub crop_y: u32,
+    pub crop_w: u32,
+    pub crop_h: u32,
+    pub max_width: Option<u32>,
+    pub quality: Option<u8>,
+}
+
 /// 编辑器插图：上传本地文件 → 存资产 → 返回 asset URL
 #[tauri::command]
 pub async fn process_image(
@@ -50,30 +63,24 @@ pub async fn process_image(
 pub async fn process_image_cropped(
     app: AppHandle,
     db: State<'_, AppDb>,
-    source_path: String,
-    crop_x: u32,
-    crop_y: u32,
-    crop_w: u32,
-    crop_h: u32,
-    max_width: Option<u32>,
-    quality: Option<u8>,
+    args: ProcessCroppedArgs,
 ) -> Result<CreateAssetResult, AppError> {
     let crop = CropArea {
-        x: crop_x,
-        y: crop_y,
-        width: crop_w,
-        height: crop_h,
+        x: args.crop_x,
+        y: args.crop_y,
+        width: args.crop_w,
+        height: args.crop_h,
     };
-    let args = CreateAssetArgs {
-        source_path,
+    let asset_args = CreateAssetArgs {
+        source_path: args.source_path,
         source: "crop".into(),
         original_name: String::new(),
         source_url: String::new(),
-        max_width: max_width.or(Some(DEFAULT_MAX_WIDTH)),
-        quality: quality.or(Some(DEFAULT_QUALITY)),
+        max_width: args.max_width.or(Some(DEFAULT_MAX_WIDTH)),
+        quality: args.quality.or(Some(DEFAULT_QUALITY)),
         crop: Some(crop),
     };
-    image_asset_service::create_or_find(&app, &db, &args)
+    image_asset_service::create_or_find(&app, &db, &asset_args)
 }
 
 /// 溯源面板：从 img src URL 反查资产元数据（含原图尺寸/格式/来源/上传时间）

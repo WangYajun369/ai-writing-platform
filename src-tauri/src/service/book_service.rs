@@ -8,6 +8,7 @@ use crate::error::AppError;
 use crate::models::Book;
 use crate::repository::book_repo;
 use crate::service::uow::UnitOfWork;
+use crate::service::ServiceCtx;
 use crate::utils::{
     now, validate_len, DynamicUpdate, MAX_AUTHOR_LEN, MAX_DESCRIPTION_LEN, MAX_TITLE_LEN,
 };
@@ -68,65 +69,72 @@ pub fn list_deleted_books(app: &AppHandle, db: &AppDb) -> Result<Vec<Book>, AppE
     Ok(books)
 }
 
+/// create_book 的业务参数封装（ServiceCtx 提供 app/db）
+#[derive(Debug)]
+pub struct CreateBookArgs<'a> {
+    pub title: &'a str,
+    pub author: &'a str,
+    pub description: &'a str,
+    pub daily_target: i64,
+    pub tags: &'a [String],
+    pub book_type: &'a str,
+}
+
 /// 创建新书
 pub fn create_book(
-    app: &AppHandle,
-    db: &AppDb,
-    title: &str,
-    author: &str,
-    description: &str,
-    daily_target: i64,
-    tags: &[String],
-    book_type: &str,
+    ctx: ServiceCtx<'_>,
+    args: CreateBookArgs<'_>,
 ) -> Result<Book, AppError> {
-    validate_len("书名", title, MAX_TITLE_LEN)?;
-    validate_len("作者", author, MAX_AUTHOR_LEN)?;
-    validate_len("简介", description, MAX_DESCRIPTION_LEN)?;
+    validate_len("书名", args.title, MAX_TITLE_LEN)?;
+    validate_len("作者", args.author, MAX_AUTHOR_LEN)?;
+    validate_len("简介", args.description, MAX_DESCRIPTION_LEN)?;
 
     let id = Uuid::new_v4().to_string();
     let ts = now();
-    let tags_json = serde_json::to_string(tags).unwrap_or_else(|_| "[]".to_string());
+    let tags_json = serde_json::to_string(args.tags).unwrap_or_else(|_| "[]".to_string());
 
     // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
-    let pooled = db.pool.get()?;
-    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    let pooled = ctx.db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(ctx.app));
     uow.audit(
         "INSERT",
         "books",
-        format!("id={id}, title={title}"),
+        format!("id={id}, title={}", args.title),
         file!(),
         line!(),
     );
     book_repo::insert(
         uow.conn(),
-        &id,
-        title,
-        author,
-        description,
-        daily_target,
-        &tags_json,
-        &ts,
-        book_type,
+        book_repo::InsertBookArgs {
+            id: &id,
+            title: args.title,
+            author: args.author,
+            description: args.description,
+            daily_target: args.daily_target,
+            tags_json: &tags_json,
+            created_at: &ts,
+            book_type: args.book_type,
+        },
     )?;
     uow.commit()?;
 
     // 输入与落库一致，直接内存构造返回值，避免再查一次库
     Ok(Book {
         id,
-        title: title.to_string(),
-        author: author.to_string(),
-        description: description.to_string(),
+        title: args.title.to_string(),
+        author: args.author.to_string(),
+        description: args.description.to_string(),
         cover_image: None,
         word_count: 0,
-        daily_target,
+        daily_target: args.daily_target,
         today_count: 0,
         db_path: String::new(),
-        tags: tags.to_vec(),
+        tags: args.tags.to_vec(),
         created_at: ts.clone(),
         updated_at: ts,
         deleted_at: None,
         outline: String::new(),
-        book_type: book_type.to_string(),
+        book_type: args.book_type.to_string(),
     })
 }
 

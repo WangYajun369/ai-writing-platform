@@ -6,12 +6,35 @@
 //! - 通过 [`uow::UnitOfWork::audit`] 记录 SQL 审计日志（commit 时统一 emit）
 //! - 处理事务边界和业务规则
 //!
+//! ## ServiceCtx（v1.21 新增）
+//!
+//! [`ServiceCtx`] 封装 `AppHandle` + `AppDb`，替代每个 service 函数签名
+//! 的 `(app, db, ...)` 前缀。这解决了 clippy `too_many_arguments`：
+//! 原本 8-10 参数的函数现在只需 ServiceCtx + 业务参数。
+//!
 //! ## Unit of Work（v1.9 新增）
 //!
 //! [`uow::UnitOfWork`] 封装事务边界 + SQL 审计统一收口，所有写操作必须通过
 //! UoW 执行。详见 [`uow`] 模块文档。
 
 pub mod uow;
+
+use crate::db::AppDb;
+use tauri::AppHandle;
+
+/// Service 层统一上下文：封装 `AppHandle` + `AppDb`，
+/// 消除 service 函数签名中重复的 `app: &AppHandle, db: &AppDb` 前缀。
+#[derive(Clone, Copy)]
+pub struct ServiceCtx<'a> {
+    pub app: &'a AppHandle,
+    pub db: &'a AppDb,
+}
+
+impl<'a> ServiceCtx<'a> {
+    pub fn new(app: &'a AppHandle, db: &'a AppDb) -> Self {
+        Self { app, db }
+    }
+}
 
 // ── 写作模块 ──
 pub mod book_service;

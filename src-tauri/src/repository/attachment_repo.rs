@@ -57,22 +57,25 @@ pub fn find_active(conn: &Connection, id: &str) -> Result<(Attachment, String)> 
     )
 }
 
+/// attachment insert 的业务参数封装（除 conn 外）
+#[derive(Debug)]
+pub struct InsertAttachmentArgs<'a> {
+    pub id: &'a str,
+    pub task_id: &'a str,
+    pub file_name: &'a str,
+    pub file_type: &'a str,
+    pub file_size: i64,
+    pub local_path: &'a str,
+    pub ts: &'a str,
+}
+
 /// 插入附件
-pub fn insert(
-    conn: &Connection,
-    id: &str,
-    task_id: &str,
-    file_name: &str,
-    file_type: &str,
-    file_size: i64,
-    local_path: &str,
-    ts: &str,
-) -> Result<()> {
+pub fn insert(conn: &Connection, args: InsertAttachmentArgs<'_>) -> Result<()> {
     conn.execute(
         "INSERT INTO attachments \
             (id,task_id,file_name,file_type,file_size,local_path,deleted,deleted_at,created_at) \
          VALUES (?1,?2,?3,?4,?5,?6,0,NULL,?7)",
-        params![id, task_id, file_name, file_type, file_size, local_path, ts],
+        params![args.id, args.task_id, args.file_name, args.file_type, args.file_size, args.local_path, args.ts],
     )?;
     Ok(())
 }

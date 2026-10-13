@@ -733,7 +733,7 @@ pub fn merge(ability_id: &str, domain_id: &str) -> EffectiveProfile {
     // 无法从 `&AgentProfile` 中把字段移动出来。
     let runtime = match &domain.runtime {
         RuntimeMode::ReAct => ability.runtime.clone(),
-        RuntimeMode::Pipeline(steps) => RuntimeMode::Pipeline(*steps),
+        RuntimeMode::Pipeline(steps) => RuntimeMode::Pipeline(steps),
         RuntimeMode::DynamicPipeline(steps) => RuntimeMode::DynamicPipeline(steps.clone()),
     };
 

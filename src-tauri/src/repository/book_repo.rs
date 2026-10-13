@@ -86,21 +86,24 @@ pub fn find_title_author(conn: &Connection, id: &str) -> Result<(String, String)
 
 // ---- 写入 ----
 
+/// book insert 的业务参数封装（除 conn 外）
+#[derive(Debug)]
+pub struct InsertBookArgs<'a> {
+    pub id: &'a str,
+    pub title: &'a str,
+    pub author: &'a str,
+    pub description: &'a str,
+    pub daily_target: i64,
+    pub tags_json: &'a str,
+    pub created_at: &'a str,
+    pub book_type: &'a str,
+}
+
 /// 插入新书
-pub fn insert(
-    conn: &Connection,
-    id: &str,
-    title: &str,
-    author: &str,
-    description: &str,
-    daily_target: i64,
-    tags_json: &str,
-    created_at: &str,
-    book_type: &str,
-) -> Result<()> {
+pub fn insert(conn: &Connection, args: InsertBookArgs<'_>) -> Result<()> {
     conn.execute(
         "INSERT INTO books (id,title,author,description,daily_target,tags,created_at,updated_at,word_count,today_count,db_path,outline,book_type) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,0,0,'','',?9)",
-        params![id, title, author, description, daily_target, tags_json, created_at, created_at, book_type],
+        params![args.id, args.title, args.author, args.description, args.daily_target, args.tags_json, args.created_at, args.created_at, args.book_type],
     )?;
     Ok(())
 }

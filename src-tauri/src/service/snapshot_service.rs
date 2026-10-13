@@ -67,13 +67,15 @@ pub fn create_snapshot(
     );
     snapshot_repo::insert(
         uow.conn(),
-        &id,
-        chapter_id,
-        &content_html,
-        word_count,
-        snap_type,
-        label,
-        &ts,
+        snapshot_repo::InsertSnapshotArgs {
+            id: &id,
+            chapter_id,
+            content_html: &content_html,
+            word_count,
+            snapshot_type: snap_type,
+            label,
+            created_at: &ts,
+        },
     )?;
     uow.commit()?;
 

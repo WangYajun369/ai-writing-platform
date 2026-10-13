@@ -13,6 +13,7 @@ use crate::error::AppError;
 use crate::models::{StatsDay, VocabKnowledge, VocabMeaning, VocabStats, VocabWord};
 use crate::repository::vocab_repo;
 use crate::service::uow::UnitOfWork;
+use crate::service::ServiceCtx;
 use crate::utils::{now, validate_len};
 use chrono::{Duration, Local, NaiveDate};
 use tauri::{AppHandle, Emitter};
@@ -146,27 +147,34 @@ fn validate_status(status: &str) -> Result<(), AppError> {
 
 // ───────────────────────── 生词 CRUD ─────────────────────────
 
+/// add_word 的业务参数封装（ServiceCtx 提供 app/db）
+#[derive(Debug)]
+pub struct AddWordBizArgs<'a> {
+    pub word: &'a str,
+    pub phonetic: &'a str,
+    pub meanings: &'a [VocabMeaning],
+    pub example: &'a str,
+    pub example_zh: &'a str,
+    pub knowledge: Option<&'a VocabKnowledge>,
+    pub source: &'a str,
+}
+
 /// 收录生词（重名时更新释义并返回原词）
 pub fn add_word(
-    app: &AppHandle,
-    db: &AppDb,
-    word: &str,
-    phonetic: &str,
-    meanings: &[VocabMeaning],
-    example: &str,
-    example_zh: &str,
-    knowledge: Option<&VocabKnowledge>,
-    source: &str,
+    ctx: ServiceCtx<'_>,
+    biz: AddWordBizArgs<'_>,
 ) -> Result<VocabWord, AppError> {
-    let word = normalize_word(word)?;
-    validate_len("音标", phonetic, MAX_PHONETIC_LEN)?;
-    validate_len("例句", example, MAX_EXAMPLE_LEN)?;
-    validate_len("例句翻译", example_zh, MAX_EXAMPLE_LEN)?;
-    validate_meanings(meanings)?;
+    let app = ctx.app;
+    let db = ctx.db;
+    let word = normalize_word(biz.word)?;
+    validate_len("音标", biz.phonetic, MAX_PHONETIC_LEN)?;
+    validate_len("例句", biz.example, MAX_EXAMPLE_LEN)?;
+    validate_len("例句翻译", biz.example_zh, MAX_EXAMPLE_LEN)?;
+    validate_meanings(biz.meanings)?;
 
     let ts = now();
-    let meanings_json = serde_json::to_string(meanings)?;
-    let ai_details = serde_json::to_string(&knowledge).unwrap_or_default();
+    let meanings_json = serde_json::to_string(biz.meanings)?;
+    let ai_details = serde_json::to_string(&biz.knowledge).unwrap_or_default();
     let pooled = db.pool.get()?;
 
     // 已存在：更新释义/音标/例句（不重置复习进度）
@@ -182,13 +190,15 @@ pub fn add_word(
         );
         vocab_repo::update_content_fields(
             uow.conn(),
-            &existing.id,
-            phonetic,
-            &meanings_json,
-            example,
-            example_zh,
-            &ai_details,
-            &ts,
+            vocab_repo::UpdateContentArgs {
+                id: &existing.id,
+                phonetic: biz.phonetic,
+                meanings_json: &meanings_json,
+                example: biz.example,
+                example_zh: biz.example_zh,
+                ai_details: &ai_details,
+                ts: &ts,
+            },
         )?;
         uow.commit()?;
         emit_due_updated(app);
@@ -202,7 +212,7 @@ pub fn add_word(
     uow.audit(
         "INSERT",
         "vocab_words",
-        format!("word={word}, source={source}"),
+        format!("word={word}, source={}", biz.source),
         file!(),
         line!(),
     );
@@ -211,16 +221,18 @@ pub fn add_word(
     let first_review = date_plus_days(&today, 1).unwrap_or_else(|| today.clone());
     vocab_repo::create_word(
         uow.conn(),
-        &id,
-        &word,
-        phonetic,
-        &meanings_json,
-        example,
-        example_zh,
-        &ai_details,
-        source,
-        Some(&first_review),
-        &ts,
+        vocab_repo::CreateWordArgs {
+            id: &id,
+            word: &word,
+            phonetic: biz.phonetic,
+            meanings_json: &meanings_json,
+            example: biz.example,
+            example_zh: biz.example_zh,
+            ai_details: &ai_details,
+            source: biz.source,
+            next_review_at: Some(&first_review),
+            ts: &ts,
+        },
     )?;
     uow.commit()?;
     emit_due_updated(app);
@@ -230,8 +242,7 @@ pub fn add_word(
 
 /// 编辑释义类字段
 pub fn update_word(
-    app: &AppHandle,
-    db: &AppDb,
+    ctx: ServiceCtx<'_>,
     id: &str,
     phonetic: &str,
     meanings: &[VocabMeaning],
@@ -239,6 +250,8 @@ pub fn update_word(
     example_zh: &str,
     knowledge: Option<&VocabKnowledge>,
 ) -> Result<VocabWord, AppError> {
+    let app = ctx.app;
+    let db = ctx.db;
     validate_len("音标", phonetic, MAX_PHONETIC_LEN)?;
     validate_len("例句", example, MAX_EXAMPLE_LEN)?;
     validate_len("例句翻译", example_zh, MAX_EXAMPLE_LEN)?;
@@ -262,13 +275,15 @@ pub fn update_word(
     );
     vocab_repo::update_content_fields(
         uow.conn(),
-        id,
-        phonetic,
-        &meanings_json,
-        example,
-        example_zh,
-        &ai_details,
-        &ts,
+        vocab_repo::UpdateContentArgs {
+            id,
+            phonetic,
+            meanings_json: &meanings_json,
+            example,
+            example_zh,
+            ai_details: &ai_details,
+            ts: &ts,
+        },
     )?;
     uow.commit()?;
     vocab_repo::find_by_id(&pooled, id)?
@@ -458,25 +473,29 @@ pub fn submit_review(
     );
     vocab_repo::update_review_state(
         uow.conn(),
-        &word.id,
-        sm.repetition,
-        sm.interval_days,
-        sm.ease_factor,
-        status,
-        Some(&sm.next_review_at),
-        &reviewed_at,
-        correct,
+        vocab_repo::UpdateReviewStateArgs {
+            id: &word.id,
+            repetition: sm.repetition,
+            interval_days: sm.interval_days,
+            ease_factor: sm.ease_factor,
+            status,
+            next_review_at: Some(&sm.next_review_at),
+            last_review_at: &reviewed_at,
+            correct,
+        },
     )?;
     vocab_repo::insert_review_log(
         uow.conn(),
-        &Uuid::new_v4().to_string(),
-        &word.id,
-        &today,
-        rating,
-        sm.repetition,
-        sm.interval_days,
-        sm.ease_factor,
-        &reviewed_at,
+        vocab_repo::InsertReviewLogArgs {
+            id: &Uuid::new_v4().to_string(),
+            word_id: &word.id,
+            review_date: &today,
+            rating,
+            repetition: sm.repetition,
+            interval_days: sm.interval_days,
+            ease_factor: sm.ease_factor,
+            reviewed_at: &reviewed_at,
+        },
     )?;
     uow.commit()?;
 

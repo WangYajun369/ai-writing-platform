@@ -52,21 +52,24 @@ pub fn find_by_id(conn: &Connection, id: &str) -> Result<WorldCard> {
     )
 }
 
+/// world_card insert 的业务参数封装（除 conn 外）
+#[derive(Debug)]
+pub struct InsertWorldCardArgs<'a> {
+    pub id: &'a str,
+    pub book_id: &'a str,
+    pub card_type: &'a str,
+    pub title: &'a str,
+    pub content: &'a str,
+    pub content_html: &'a str,
+    pub tags_json: &'a str,
+    pub created_at: &'a str,
+}
+
 /// 插入新卡片
-pub fn insert(
-    conn: &Connection,
-    id: &str,
-    book_id: &str,
-    card_type: &str,
-    title: &str,
-    content: &str,
-    content_html: &str,
-    tags_json: &str,
-    created_at: &str,
-) -> Result<()> {
+pub fn insert(conn: &Connection, args: InsertWorldCardArgs<'_>) -> Result<()> {
     conn.execute(
         "INSERT INTO world_cards (id,book_id,type,title,content,content_html,tags,vectorized,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,0,?8,?9)",
-        params![id, book_id, card_type, title, content, content_html, tags_json, created_at, created_at],
+        params![args.id, args.book_id, args.card_type, args.title, args.content, args.content_html, args.tags_json, args.created_at, args.created_at],
     )?;
     Ok(())
 }

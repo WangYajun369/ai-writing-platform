@@ -653,7 +653,17 @@ fn tool_create_note_card(conn: &Connection, args: &Value) -> Result<String, AppE
     let ts = crate::utils::now();
     let tags_json = serde_json::to_string(&tags).unwrap_or_else(|_| "[]".to_string());
     repository::world_card_repo::insert(
-        conn, &id, book_id, card_type, title, content, "", &tags_json, &ts,
+        conn,
+        repository::world_card_repo::InsertWorldCardArgs {
+            id: &id,
+            book_id,
+            card_type,
+            title,
+            content,
+            content_html: "",
+            tags_json: &tags_json,
+            created_at: &ts,
+        },
     )?;
 
     Ok(serde_json::to_string_pretty(&serde_json::json!({

@@ -8,6 +8,7 @@ use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::{VocabKnowledge, VocabMeaning, VocabStats, VocabWord};
 use crate::service::vocab_service;
+use crate::service::ServiceCtx;
 use serde::Deserialize;
 use tauri::{AppHandle, State};
 
@@ -63,15 +64,16 @@ pub fn vocab_add(
     args: AddWordArgs,
 ) -> Result<VocabWord, AppError> {
     vocab_service::add_word(
-        &app,
-        &state,
-        &args.word,
-        &args.phonetic,
-        &args.meanings,
-        &args.example,
-        &args.example_zh,
-        args.knowledge.as_ref(),
-        &args.source,
+        ServiceCtx::new(&app, &state),
+        vocab_service::AddWordBizArgs {
+            word: &args.word,
+            phonetic: &args.phonetic,
+            meanings: &args.meanings,
+            example: &args.example,
+            example_zh: &args.example_zh,
+            knowledge: args.knowledge.as_ref(),
+            source: &args.source,
+        },
     )
 }
 
@@ -83,8 +85,7 @@ pub fn vocab_update(
     args: UpdateWordArgs,
 ) -> Result<VocabWord, AppError> {
     vocab_service::update_word(
-        &app,
-        &state,
+        ServiceCtx::new(&app, &state),
         &args.id,
         &args.phonetic,
         &args.meanings,

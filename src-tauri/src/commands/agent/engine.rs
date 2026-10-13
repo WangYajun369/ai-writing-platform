@@ -739,20 +739,21 @@ pub(crate) async fn react_loop(
 
         // 逐个执行工具并回填 Tool 消息（连接在本回合内使用后即归还）
         let conn = pool.get().map_err(|e| AppError::DbPool(e.to_string()))?;
-        // v1.9：trace 持久化 — 记录本轮 assistant 响应（含 tool_calls 计划）
         // v1.9+：通过 telemetry::bus::emit_agent_trace 写表 + 实时推 telemetry-event 事件,
         // 前端调试控制台无需轮询 list_agent_traces 即可看到推理过程
         crate::observability::bus::emit_agent_trace(
             Some(&app),
             &conn,
-            &ctx.request_id,
-            &ctx.skill,
-            *tool_rounds,
-            "assistant",
-            &round_content,
-            None,
-            None,
-            None,
+            crate::observability::bus::AgentTraceArgs {
+                request_id: &ctx.request_id,
+                skill: &ctx.skill,
+                round: *tool_rounds,
+                role: "assistant",
+                content: &round_content,
+                tool_name: None,
+                tool_args: None,
+                tool_result: None,
+            },
         );
         for (_, tc) in &collected {
             if ctx.cancel_token.is_cancelled() {
@@ -765,14 +766,16 @@ pub(crate) async fn react_loop(
             crate::observability::bus::emit_agent_trace(
                 Some(&app),
                 &conn,
-                &ctx.request_id,
-                &ctx.skill,
-                *tool_rounds,
-                "tool_call",
-                &tc.name,
-                Some(&tc.name),
-                Some(&tc.arguments),
-                None,
+                crate::observability::bus::AgentTraceArgs {
+                    request_id: &ctx.request_id,
+                    skill: &ctx.skill,
+                    round: *tool_rounds,
+                    role: "tool_call",
+                    content: &tc.name,
+                    tool_name: Some(&tc.name),
+                    tool_args: Some(&tc.arguments),
+                    tool_result: None,
+                },
             );
             let result = match tools::execute_tool(&conn, &tc.name, &args_value) {
                 Ok(text) => text,
@@ -786,14 +789,16 @@ pub(crate) async fn react_loop(
             crate::observability::bus::emit_agent_trace(
                 Some(&app),
                 &conn,
-                &ctx.request_id,
-                &ctx.skill,
-                *tool_rounds,
-                "tool_result",
-                &result,
-                Some(&tc.name),
-                None,
-                Some(&result),
+                crate::observability::bus::AgentTraceArgs {
+                    request_id: &ctx.request_id,
+                    skill: &ctx.skill,
+                    round: *tool_rounds,
+                    role: "tool_result",
+                    content: &result,
+                    tool_name: Some(&tc.name),
+                    tool_args: None,
+                    tool_result: Some(&result),
+                },
             );
             messages.push(serde_json::json!({
                 "role": "tool",
