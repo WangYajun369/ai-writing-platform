@@ -1,21 +1,117 @@
-// Navbar scroll effect
+// ──────────────── Navbar Scroll + Hamburger ────────────────
+
 const nav = document.getElementById('nav');
+const hamburger = document.getElementById('hamburger');
+const navLinks = document.getElementById('navLinks');
+
 window.addEventListener('scroll', () => {
   nav.classList.toggle('scrolled', window.scrollY > 20);
 });
 
+// Hamburger toggle
+if (hamburger && navLinks) {
+  hamburger.addEventListener('click', () => {
+    hamburger.classList.toggle('open');
+    navLinks.classList.toggle('open');
+  });
+
+  // Close mobile menu when a link is clicked
+  navLinks.querySelectorAll('a').forEach(link => {
+    link.addEventListener('click', () => {
+      hamburger.classList.remove('open');
+      navLinks.classList.remove('open');
+    });
+  });
+}
+
+// ──────────────── Scroll Reveal (IntersectionObserver) ────────────────
+
+const revealObserver = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+      revealObserver.unobserve(entry.target);
+    }
+  });
+}, {
+  threshold: 0.12,
+  rootMargin: '0px 0px -40px 0px'
+});
+
+document.querySelectorAll('.reveal, .reveal-stagger').forEach(el => {
+  revealObserver.observe(el);
+});
+
+// ──────────────── Nav Scrollspy ────────────────
+
+const navLinkEls = document.querySelectorAll('.nav-links a[href^="#"]');
+const navTargets = Array.from(navLinkEls)
+  .map(a => document.querySelector(a.getAttribute('href')))
+  .filter(Boolean);
+
+const scrollSpyObserver = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      const id = entry.target.id;
+      navLinkEls.forEach(a => {
+        a.classList.toggle('active', a.getAttribute('href') === '#' + id);
+      });
+    }
+  });
+}, {
+  rootMargin: '-45% 0px -50% 0px',
+  threshold: 0
+});
+
+navTargets.forEach(t => scrollSpyObserver.observe(t));
+
+// ──────────────── Stats Count-Up Animation ────────────────
+
+function animateStat(el) {
+  const text = el.textContent.trim();
+  // Handle "11+", "29", "6", "8", "4", "∞"
+  const match = text.match(/^(\d+)(.*)$/);
+  if (!match) return; // e.g. "∞" — skip animation
+  const target = parseInt(match[1], 10);
+  const suffix = match[2]; // e.g. "+"
+  const duration = 900;
+  const startTime = performance.now();
+
+  function tick(now) {
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
+    const current = Math.round(target * eased);
+    el.textContent = current + suffix;
+    if (progress < 1) requestAnimationFrame(tick);
+    else el.classList.add('counted');
+  }
+  requestAnimationFrame(tick);
+}
+
+const statsRow = document.getElementById('statsRow');
+if (statsRow) {
+  const statObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.querySelectorAll('.stat-value').forEach(animateStat);
+        statObserver.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.3 });
+  statObserver.observe(statsRow);
+}
+
 // ──────────────── Share Utilities ────────────────
 
 const PAGE_TITLE = '智写时光 TimeWrite — AI 小说写作平台';
-const PAGE_DESC = '智写时光 TimeWrite：内置 AI 对话工具箱与 Rust 原生 Agent 智能体，自动读取作品设定、多步完成大纲/润色/校验；还有任务卡·项目管理（看板、子任务、模板与提醒）与英语生词本（AI 精讲、语音朗读、间隔复习）。专为网文作者打造，免费下载。';
+const PAGE_DESC = '智写时光 TimeWrite：Rust 原生 Agent 双轨架构（画像注册表 + 流水线执行器），自动读取作品设定、多步完成大纲/润色/校验；任务卡·项目管理、英语生词本。专为网文作者打造，免费下载。';
 const PAGE_URL = window.location.href;
 
-// 检测是否在微信内置浏览器中
 function isWeChat() {
   return /MicroMessenger/i.test(navigator.userAgent);
 }
 
-// Toast 提示
 function showToast(msg) {
   let toast = document.querySelector('.toast');
   if (!toast) {
@@ -29,7 +125,6 @@ function showToast(msg) {
   toast._timeout = setTimeout(() => toast.classList.remove('show'), 2000);
 }
 
-// 复制链接
 async function copyLink() {
   try {
     await navigator.clipboard.writeText(PAGE_URL);
@@ -42,7 +137,6 @@ async function copyLink() {
       btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> 复制链接';
     }, 2500);
   } catch {
-    // 降级方案：使用 textarea 复制
     const ta = document.createElement('textarea');
     ta.value = PAGE_URL;
     ta.style.position = 'fixed';
@@ -55,27 +149,20 @@ async function copyLink() {
   }
 }
 
-// 分享按钮处理
 function handleShare() {
   if (isWeChat()) {
-    // 微信内：显示引导浮层
     document.getElementById('wxGuideOverlay').classList.add('show');
   } else if (navigator.share) {
-    // 支持 Web Share API（现代浏览器 + 微信新版）
     navigator.share({
       title: PAGE_TITLE,
       text: PAGE_DESC,
       url: PAGE_URL
-    }).catch(() => {
-      // 用户取消分享，不做任何操作
-    });
+    }).catch(() => {});
   } else {
-    // 不支持分享 API：复制链接
     copyLink();
   }
 }
 
-// 绑定事件
 document.addEventListener('DOMContentLoaded', () => {
   const shareBtn = document.getElementById('shareBtn');
   const copyBtn = document.getElementById('copyLinkBtn');
@@ -85,17 +172,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (shareBtn) shareBtn.addEventListener('click', handleShare);
   if (copyBtn) copyBtn.addEventListener('click', copyLink);
 
-  // 关闭微信引导浮层
   if (guideClose) {
-    guideClose.addEventListener('click', () => {
-      guideOverlay.classList.remove('show');
-    });
+    guideClose.addEventListener('click', () => guideOverlay.classList.remove('show'));
   }
   if (guideOverlay) {
     guideOverlay.addEventListener('click', (e) => {
-      if (e.target === guideOverlay) {
-        guideOverlay.classList.remove('show');
-      }
+      if (e.target === guideOverlay) guideOverlay.classList.remove('show');
     });
   }
 });

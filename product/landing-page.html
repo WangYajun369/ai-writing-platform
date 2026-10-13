@@ -29,7 +29,12 @@
     <div class="nav-brand-icon">✍️</div>
     智写时光
   </a>
-  <div class="nav-links">
+  <button class="nav-hamburger" id="hamburger" aria-label="菜单">
+    <span></span>
+    <span></span>
+    <span></span>
+  </button>
+  <div class="nav-links" id="navLinks">
     <a href="#features">功能特性</a>
     <a href="#ai">AI 写作</a>
     <a href="#agent">Agent 智能体</a>
@@ -42,7 +47,7 @@
 <section class="hero">
   <div class="hero-badge">
     <span class="hero-badge-dot"></span>
-    v1.21.0 已发布 — 图片资产独立存储系统 + Agent 插件宿主（领域画像 / 拆书流水线）
+    v1.21.0 已发布 · Agent 引擎双轨架构（画像 + 流水线）· 图片资产独立存储
   </div>
 
   <h1>
@@ -52,11 +57,9 @@
 
   <p class="hero-subtitle">
     智写时光（TimeWrite）是专为网络小说作者打造的专业桌面端写作平台。
-    内置 AI 对话与 Agent 智能体：流式对话即问即答、AI 工具箱一键续写润色，
-    Agent 自动读取你的书库与世界观设定，多步推理完成大纲生成、文风分析与一致性校验；
-    还有任务卡·项目管理：创作计划、灵感与待办都收进一张看板；
-    日记日历与英语生词本随写随记，写作学习两不误。
-    从灵感到成书，一站式完成创作。
+    Rust 原生 Agent 引擎（画像注册表 + 流水线执行器双轨架构）自动读取你的书库与世界观设定，
+    多步推理完成大纲生成、文风分析与一致性校验；AI 对话流式响应、29 个工具箱一键触发；
+    任务卡·项目管理、日记日历与英语生词本，写作学习两不误。从灵感到成书，一站式完成。
   </p>
 
   <div class="hero-actions">
@@ -78,12 +81,12 @@
 </section>
 
 <!-- 从灵感到大作的四步 -->
-<section class="showcase-section" id="showcase">
+<section class="showcase-section reveal" id="showcase">
   <div class="showcase-header">
     <h2>写小说 <span class="gold">真的不难</span>，全程 AI 赋能</h2>
     <p>摸鱼半小时，就能日更万字</p>
   </div>
-  <div class="showcase-grid">
+  <div class="showcase-grid reveal-stagger">
     <div class="showcase-card">
       <span class="showcase-tag">搭建书库：2分钟</span>
       <div class="showcase-card-title">创建作品，建立专属空间</div>
@@ -128,7 +131,7 @@
 </section>
 
 <!-- 为什么选择智写时光 -->
-<section class="why-section" id="why">
+<section class="why-section reveal" id="why">
   <div class="why-header">
     <h2>为什么选择 <span style="color:#e8c060;">智写时光</span></h2>
     <p>传统写作困境 vs AI 赋能创作，让写作不再是苦差事</p>
@@ -165,7 +168,7 @@
         </div>
         <div class="why-item">
           <h4>Agent 智能体，自动干活</h4>
-          <p>Agent 引擎原生内嵌 Rust（v1.2，无需 Python 环境）：写作辅助、内容分析、设定研究、文字润色四大技能，直接连接你的书库与世界观数据，多步推理自动完成大纲生成、文风分析、一致性校验等复杂任务。</p>
+          <p>Agent 引擎原生内嵌 Rust（画像注册表 + 流水线执行器双轨架构）：写作辅助、文学分析、设定研究、文字润色四大能力画像与小说/论文/拆书等领域画像正交合并，自动连接你的书库与世界观数据，多步推理完成大纲生成、文风分析、一致性校验等复杂任务。</p>
         </div>
         <div class="why-item">
           <h4>摸鱼时间轻松万字</h4>
@@ -177,7 +180,7 @@
 </section>
 
 <!-- Stats -->
-<div class="stats-row">
+<div class="stats-row reveal" id="statsRow">
   <div class="stat-item">
     <div class="stat-value">11+</div>
     <div class="stat-label">核心功能模块</div>
@@ -210,7 +213,7 @@
   <h2 class="section-title">为创作者打造的完整写作工具链</h2>
   <p class="section-desc">从书库管理到章节编辑，从 AI 辅助到 Agent 自动化，覆盖小说创作的全流程需求。</p>
 
-  <div class="features">
+  <div class="features reveal-stagger">
     <div class="feature-card">
       <div class="feature-icon purple">📚</div>
       <h3>书库管理</h3>
@@ -225,11 +228,11 @@
     <div class="feature-card">
       <div class="feature-icon teal">✏️</div>
       <h3>章节编辑器</h3>
-      <p>基于 TipTap v3 的专业富文本编辑，支持 H1-H3 标题、加粗、斜体、文字颜色、图片缩放、表格、34 种语言代码高亮、任务列表、KaTeX 数学公式。图片支持查看器与精确选区裁剪，卷-章节两级目录树，滚动与光标位置自动记忆。</p>
+      <p>基于 TipTap v3 的专业富文本编辑，支持 H1-H3 标题、加粗、斜体、文字颜色、图片缩放、表格、34 种语言代码高亮、任务列表、KaTeX 数学公式。图片经 Rust 侧像素裁剪后进入独立资产存储（SHA-256 去重 + 溯源），卷-章节两级目录树，滚动与光标位置自动记忆。</p>
       <div class="feature-tags">
         <span class="feature-tag">TipTap 编辑器</span>
         <span class="feature-tag">数学公式</span>
-        <span class="feature-tag">图片裁剪</span>
+        <span class="feature-tag">图片资产存储</span>
       </div>
     </div>
 
@@ -326,11 +329,12 @@
     <div class="feature-card">
       <div class="feature-icon pink">🤖</div>
       <h3>Agent 自动化写作</h3>
-      <p>v1.2 原生引擎：Agent 已完整内嵌于 Rust，无需 Python 环境、开箱即用。四大写作技能自动调用数据库工具链，读取章节、搜索世界观设定，多步推理完成大纲生成、文风分析、一致性校验。三层记忆体并入主库，让 AI 记住你的创作偏好，越用越懂你。</p>
+      <p>双轨架构原生内嵌 Rust：L1 画像注册表（Ability × Domain 正交合并）+ L2 流水线执行器（固定流程固化步骤顺序）。Agent 自动调用数据库工具链，读取章节、搜索世界观设定，多步推理完成大纲生成、文风分析、一致性校验。三层记忆体并入主库，动态预算自适应各 Skill，越用越懂你。</p>
       <div class="feature-tags">
-        <span class="feature-tag">Rust 原生引擎</span>
+        <span class="feature-tag">画像注册表</span>
+        <span class="feature-tag">流水线执行</span>
+        <span class="feature-tag">动态预算</span>
         <span class="feature-tag">记忆体系统</span>
-        <span class="feature-tag">零配置即用</span>
       </div>
     </div>
 
@@ -353,7 +357,7 @@
   <h2 class="section-title">大模型加持，突破创作瓶颈</h2>
   <p class="section-desc">多服务商支持：智谱 GLM、DeepSeek 与自定义 OpenAI 兼容端点（含 Ollama 本地模型），流式对话即时响应。对话经引擎自动读取当前章节与世界观设定，生成内容更贴合你的作品。</p>
 
-  <div class="ai-cards">
+  <div class="ai-cards reveal-stagger">
     <div class="ai-card">
       <div class="ai-card-icon">💬</div>
       <h4>流式对话</h4>
@@ -380,10 +384,10 @@
 <!-- Agent Section -->
 <section class="section agent-section" id="agent">
   <span class="section-label">Agent 智能体</span>
-  <h2 class="section-title">让 AI 替你干活，而不只是帮你打字</h2>
-  <p class="section-desc">Agent 引擎原生内嵌于 Rust 主进程（v1.2），无需 Python、无需启动任何服务。直接连接你的书库与世界观数据，自动完成复杂多步写作任务。</p>
+  <h2 class="section-title">双轨架构：让 AI 替你干活，而不只是帮你打字</h2>
+  <p class="section-desc">Agent 引擎原生内嵌于 Rust 主进程，无需 Python、无需启动任何服务。L1 画像注册表把能力与领域正交合并为「有效画像」，L2 流水线执行器把固定流程固化为步骤序列——自由 ReAct + 受控流水线，两种模式按需调用。</p>
 
-  <div class="agent-grid">
+  <div class="agent-grid reveal-stagger">
     <div class="agent-card">
       <div class="agent-card-icon">✍️</div>
       <h4>写作辅助</h4>
@@ -426,33 +430,47 @@
     </div>
   </div>
 
-  <div class="agent-features">
+  <div class="agent-features reveal-stagger">
     <div class="agent-feature">
-      <span class="agent-feature-icon">🧠</span>
+      <span class="agent-feature-icon">�</span>
+      <div>
+        <strong>L1 画像注册表</strong>
+        <span>Ability（写作/分析/研究/润色）× Domain（小说/论文/拆书/笔记）正交合并为有效画像，新增 Skill 只需追加一行。</span>
+      </div>
+    </div>
+    <div class="agent-feature">
+      <span class="agent-feature-icon">🔗</span>
+      <div>
+        <strong>L2 流水线执行器</strong>
+        <span>固定流程（如读章节→提炼要点→生成卡片）固化步骤顺序与工具边界，模型只在步内自由行动，每步独立可失败。</span>
+      </div>
+    </div>
+    <div class="agent-feature">
+      <span class="agent-feature-icon">��</span>
       <div>
         <strong>三层记忆体</strong>
-        <span>偏好 / 决策 / 经验三层记忆并入主库 SQLite，跨会话记住你的创作习惯，越用越懂你；旧版记忆自动迁移。</span>
+        <span>偏好 / 决策 / 经验三层记忆并入主库 SQLite，跨会话记住你的创作习惯；旧版记忆自动迁移。</span>
       </div>
     </div>
     <div class="agent-feature">
       <span class="agent-feature-icon">⚡</span>
       <div>
-        <strong>零依赖，开箱即用</strong>
-        <span>引擎随应用内嵌运行：无 Python 环境、无后台服务、无端口占用，下载即用；按你的 AI 配置直连 DeepSeek / 智谱等大模型。</span>
+        <strong>动态预算自适应</strong>
+        <span>AgentBudget 由 EffectiveProfile 合并后构造，不同 Skill 自适应轮数与超时——避免简单任务浪费 token。</span>
       </div>
     </div>
     <div class="agent-feature">
       <span class="agent-feature-icon">🛡️</span>
       <div>
         <strong>同进程只读安全</strong>
-        <span>Agent 工具与主程序同进程运行，经 repository 层只读访问数据库——无本地端口暴露、无跨进程写锁，你的创作数据绝对安全。</span>
+        <span>Agent 工具与主程序同进程运行，经 repository 层只读访问数据库——无本地端口暴露、无跨进程写锁。</span>
       </div>
     </div>
     <div class="agent-feature">
       <span class="agent-feature-icon">⏹️</span>
       <div>
         <strong>全程尽在掌握</strong>
-        <span>生成过程中可一键停止（全局取消标志即时生效），SSE 流式输出逐字呈现，无需管理进程与端口，专注写作不卡顿。</span>
+        <span>生成过程中可一键停止（全局取消标志即时中断），SSE 流式输出逐字呈现，无需管理进程与端口。</span>
       </div>
     </div>
   </div>
@@ -464,7 +482,7 @@
   <h2 class="section-title">从灵感萌芽到大作完成</h2>
   <p class="section-desc">五步走，让你的创作之旅高效有序。</p>
 
-  <div class="workflow-steps">
+  <div class="workflow-steps reveal-stagger">
     <div class="workflow-step">
       <div class="workflow-step-number">1</div>
       <h4>创建作品</h4>

@@ -705,7 +705,8 @@ body {
 }
 
 .why-card.right {
-  background: #f0e6c8;
+  background: linear-gradient(180deg, rgba(232, 192, 96, 0.12) 0%, rgba(15, 15, 18, 0) 100%);
+  border: 1px solid rgba(232, 192, 96, 0.28);
 }
 
 .why-card-badge {
@@ -726,9 +727,9 @@ body {
 }
 
 .why-card.right .why-card-badge {
-  background: linear-gradient(135deg, #9a7a4a 0%, #6b4e2a 100%);
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(107, 78, 42, 0.3);
+  background: linear-gradient(135deg, #e8c060 0%, #b8903e 100%);
+  color: #1a1a22;
+  box-shadow: 0 4px 16px rgba(232, 192, 96, 0.25);
 }
 
 .why-card-body {
@@ -763,7 +764,7 @@ body {
 }
 
 .why-card.right .why-item h4 {
-  color: #3d2e1a;
+  color: #e8c060;
 }
 
 .why-item p {
@@ -776,7 +777,11 @@ body {
 }
 
 .why-card.right .why-item p {
-  color: #6b5a3a;
+  color: #b0b0c0;
+}
+
+.why-card.right .why-item {
+  border-color: #e8c060;
 }
 
 .why-vs {
@@ -1143,6 +1148,39 @@ body {
   .nav-links a {
     font-size: 12px;
   }
+  .nav-hamburger {
+    display: flex;
+  }
+  .nav-links {
+    position: fixed;
+    top: 48px;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    gap: 0;
+    background: rgba(15, 15, 18, 0.97);
+    backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 1px solid var(--border);
+    padding: 0;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s;
+  }
+  .nav-links.open {
+    max-height: 400px;
+    padding: 12px 0;
+  }
+  .nav-links a {
+    padding: 12px 24px;
+    font-size: 15px;
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-links a:last-child {
+    border-bottom: none;
+  }
+  .nav-links a.active::after {
+    display: none;
+  }
   .section {
     padding: 40px 16px;
   }
@@ -1310,4 +1348,114 @@ body {
   .section-title {
     font-size: 22px;
   }
+}
+
+/* ── Scroll Reveal Animations ─────────────────── */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: opacity, transform;
+}
+
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* 批量 reveal 子元素：全部先隐藏，再按 nth-child 设置渐进延迟 */
+.reveal-stagger > * {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+/* 先给全部子元素一个默认的 visible 状态，再由 nth-child 叠加 delay */
+.reveal-stagger.visible > * {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.reveal-stagger.visible > *:nth-child(1) { transition-delay: 0.05s; }
+.reveal-stagger.visible > *:nth-child(2) { transition-delay: 0.12s; }
+.reveal-stagger.visible > *:nth-child(3) { transition-delay: 0.19s; }
+.reveal-stagger.visible > *:nth-child(4) { transition-delay: 0.26s; }
+.reveal-stagger.visible > *:nth-child(5) { transition-delay: 0.33s; }
+.reveal-stagger.visible > *:nth-child(6) { transition-delay: 0.40s; }
+/* 第 7 个及以后：用最后一个延迟 */
+.reveal-stagger.visible > *:nth-child(n+7) { transition-delay: 0.47s; }
+
+/* ── Nav Active Link ──────────────────────────── */
+.nav-links a.active {
+  color: var(--text);
+}
+
+.nav-links a.active::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+.nav-links a {
+  position: relative;
+}
+
+/* ── Stat Value Count-Up ─────────────────────── */
+.stat-value {
+  transition: transform 0.3s ease;
+}
+
+.stat-value.counted {
+  animation: statPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes statPop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+/* ── Mobile Hamburger ─────────────────────────── */
+.nav-hamburger {
+  display: none;
+  flex-direction: column;
+  gap: 5px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  z-index: 110;
+}
+
+.nav-hamburger span {
+  display: block;
+  width: 22px;
+  height: 2px;
+  background: var(--text);
+  border-radius: 2px;
+  transition: all 0.3s;
+}
+
+.nav-hamburger.open span:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+
+.nav-hamburger.open span:nth-child(2) {
+  opacity: 0;
+}
+
+.nav-hamburger.open span:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
+/* ── Pulse ────────────────────────────────────── */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
