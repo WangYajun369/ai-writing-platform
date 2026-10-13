@@ -5,6 +5,7 @@
  * 返回 data: URL 内嵌到 HTML。确保导出/导入完全自包含。
  */
 import { imageApi } from '@/lib/tauri-bridge'
+import { convertFileSrc } from '@tauri-apps/api/core'
 
 /** 编辑器图片：最大宽度 1200px，JPEG 质量 80% */
 const EDITOR_MAX_WIDTH = 1200
@@ -147,30 +148,34 @@ export async function processCroppedCoverImage(
 /**
  * 判断 coverImage 是否为可直接渲染的 URL
  *
- * 新方案下 cover_image 直接存 Base64 data URL，
- * 可以直接作为 <img src> 使用，无需额外转换。
+ * 可渲染：data:、http:、asset: 开头。
+ * 绝对路径（/Users/.../xxx.jpg）不是 URL，需要 convertFileSrc 转换。
  */
 export function isRenderableSrc(src: string | undefined | null): src is string {
-  return !!src && (src.startsWith('data:') || src.startsWith('http'))
+  return !!src && (src.startsWith('data:') || src.startsWith('http') || src.startsWith('asset:'))
 }
 
 /**
- * 兼容旧数据：如果封面仍是文件路径（非 data: URL），
- * 尝试通过 processCoverImage 转换。
+ * 封面 src 解析：兼容旧数据 + 新的 asset_path 方案
  *
- * @deprecated 仅用于迁移旧数据，新数据直接存 Base64
+ * 封面 DB 可能存：
+ *   - data: URL（旧方案，Base64 内嵌）→ 直接返回
+ *   - http(s):// URL（外链）→ 直接返回
+ *   - asset:// URL（新方案前端已 convertFileSrc 过）→ 直接返回
+ *   - 纯绝对路径（新方案后端 asset_path）→ convertFileSrc 转 asset://
+ *   - null/undefined → 返回 undefined
+ *
+ * 渲染入口统一走这里，自动适配历史数据和新数据。
  */
-export async function resolveCoverSrc(path: string | undefined | null): Promise<string | undefined> {
-  if (!path) return undefined
-  if (isRenderableSrc(path)) return path
-
-  // 旧数据：绝对文件路径 → 压缩 + Base64
-  try {
-    return await processCoverImage(path)
-  } catch (e) {
-    console.error('resolveCoverSrc 失败:', e)
-    return undefined
+export function resolveCoverSrc(input: string | undefined | null): Promise<string | undefined> {
+  if (!input) return Promise.resolve(undefined)
+  const s: string = input
+  if (s.startsWith('data:') || s.startsWith('http') || s.startsWith('asset:')) {
+    return Promise.resolve(s)
   }
+  // 纯绝对路径 → convertFileSrc 转 asset:// URL
+  if (s.startsWith('/')) return Promise.resolve(convertFileSrc(s))
+  return Promise.resolve(undefined)
 }
 
 /** 生成封面用的字体栈（CJK 友好，回退 sans-serif） */

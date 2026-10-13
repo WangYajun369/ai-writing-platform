@@ -653,3 +653,39 @@ pub struct TodayOverview {
     /// 需要提醒的未完成任务数（角标：今日到期 + 逾期 + 计划今日）
     pub badge: i64,
 }
+
+/// 图片资产 —— 对应 `image_assets` 表（v1.20 新增）
+///
+/// 编辑器图片从 data URL 内嵌迁移到独立文件存储，本模型记录：
+/// - 原图元数据（溯源：文件名、尺寸、格式、大小）
+/// - 存储信息（路径、压缩后尺寸）
+/// - 内容哈希（sha256 去重：相同内容不重复存）
+/// - 来源标记（upload / crop / url / migrate）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ImageAsset {
+    pub id: String,
+    pub sha256: String,
+    #[serde(rename = "originalName")]
+    pub original_name: String,
+    #[serde(rename = "originalSize")]
+    pub original_size: i64,
+    #[serde(rename = "originalWidth")]
+    pub original_width: i64,
+    #[serde(rename = "originalHeight")]
+    pub original_height: i64,
+    #[serde(rename = "originalFormat")]
+    pub original_format: String,
+    #[serde(rename = "storedPath")]
+    pub stored_path: String,
+    #[serde(rename = "storedWidth")]
+    pub stored_width: i64,
+    #[serde(rename = "storedHeight")]
+    pub stored_height: i64,
+    #[serde(rename = "storedFormat")]
+    pub stored_format: String,
+    pub source: String,
+    #[serde(rename = "sourceUrl")]
+    pub source_url: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+}

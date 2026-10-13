@@ -388,6 +388,13 @@ pub fn get_word(db: &AppDb, id: &str) -> Result<VocabWord, AppError> {
         .ok_or_else(|| AppError::NotFound(format!("生词不存在: {id}")))
 }
 
+/// 按单词精确查找（大小写不敏感），未收录返回 None
+pub fn get_by_word(db: &AppDb, word: &str) -> Result<Option<VocabWord>, AppError> {
+    let conn = db.pool.get()?;
+    vocab_repo::find_by_word(&conn, word)
+        .map_err(|e| AppError::Business(format!("查询失败: {e}")))
+}
+
 // ───────────────────────── 复习（SM-2）─────────────────────────
 
 /// 提交一次复习反馈，推进 SM-2 状态并写入复习日志

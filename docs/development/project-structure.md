@@ -1,6 +1,6 @@
 # 项目结构
 
-> **适用版本**：`1.20.0`　|　**最后核对**：2026-10-05
+> **适用版本`1.21.0`　|　**最后核对**：2026-10-13
 >
 > 本文档描述 TimeWrite 的目录组织与分层设计。IPC 命令清单见 [IPC 命令速查](development/ipc-api)。
 
@@ -105,7 +105,7 @@ src/
 | `taskCardsMeta.ts` | 任务卡展示元信息：状态/优先级徽标样式 |
 | `tts-player.ts` | 豆包语音合成：合成请求封装与 `playAudioFile` 本地播放 |
 | `utils.ts` | `cn()` 类名合并、字数统计、HTML 清洗、日期格式化 |
-| `image-utils.ts` | 图片压缩、Base64 转换、尺寸获取 |
+| `image-utils.ts` | 图片工具：`processEditorImage/processCroppedEditorImage/processCroppedCoverImage`（调 Rust imageApi）+ `resolveCoverSrc`（封面纯路径→asset://）+ `canvasCropImage`（data URL 旧方案 Canvas fallback） |
 | `toast.ts` | Toast 通知（成功/错误/警告/信息） |
 
 ### 路由 `router/`
@@ -158,7 +158,8 @@ src-tauri/
     ├── repository/           # 数据访问层（17 个仓库）
     ├── db/                   # r2d2 连接池 + Schema + FTS5 触发器
     ├── models/               # Serde 数据模型（统一 camelCase）
-    └── commands/agent/       # Rust 原生 Agent 引擎（engine/prompts/tools/memory/skills）
+    └── commands/agent/       # Rust 原生 Agent 引擎（9 文件：engine / pipeline / profiles /
+                              #   prompts / skills / sse_parser / tools / memory）
 ```
 
 ### 命令层 `commands/`
@@ -180,7 +181,7 @@ src-tauri/
 | AI | `ai/{mod,chat,embedding,summarize,test}.rs` | 8 |
 | 导入导出 | `io/{mod,export,import_txt,backup,crypto}.rs` | 8（v1.7.0 新增 `inspect_backup` / `cancel_book_export`） |
 | 窗口 | `window/{mod,manager,debug,validate}.rs` | 22 |
-| Agent | `agent/{mod,engine,prompts,tools,memory,skills}.rs` | 6 |
+| Agent | `agent/{mod,engine,pipeline,profiles,prompts,skills,sse_parser,tools,memory}.rs` | 9 |
 | 任务项目 | `project.rs` | 9 |
 | 任务卡 | `task.rs` | 17 |
 | 标签 | `tag.rs` | 4 |
@@ -271,8 +272,9 @@ Python Agent（`agent/`）与 Bridge（`src-tauri/src/python/`）已删除，Age
 |------|------|
 | `skills.rs` | IPC 命令层：执行 / 取消 / 画像列表 + 记忆管理命令 |
 | `profiles.rs` | L1 画像注册表：能力 4 + 领域 4，含 L2 执行模式（`RuntimeMode`）与 `merge()` |
-| `engine.rs` | SSE 流式 ReAct 工具循环（`run_skill`）+ 全局取消标志 + 按 `RuntimeMode` 分发 |
-| `pipeline.rs` | L2 流水线执行器：按画像声明的步骤依次执行，失败保留已完成产物 |
+| `engine.rs` | SSE 流式 ReAct 工具循环（`run_skill`）+ 全局取消标志 + 按 `RuntimeMode` 分发；`ReactCtx` 收拢运行时上下文、`classify_http_error` HTTP 错误诊断 |
+| `sse_parser.rs` | **2026-10 新增**：纯函数 SSE 解析器——`next_line` / `parse_sse_data` / `flush_remaining_line`；无 AppHandle 依赖，9 个单元测试 |
+| `pipeline.rs` | L2 流水线执行器：按画像声明的步骤依次执行，失败保留已完成产物；构造 `engine::ReactCtx` 传入 |
 | `prompts.rs` | 动态场景提示组装（四段拼接）+ Token 估算 |
 | `tools.rs` | L0 工具注册表：8 个数据库工具（schema + 执行，经 repository 层直查 SQLite） |
 | `memory.rs` | `memories` 表 CRUD、规则式提取、检索、旧库自动迁移 |

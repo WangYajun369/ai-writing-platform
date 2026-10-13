@@ -1,6 +1,6 @@
 # 领域感知 Agent 实施计划
 
-> **适用版本**：`1.20.0`　|　**最后核对**：2026-10-12
+> **适用版本`1.21.0`　|　**最后核对**：2026-10-12
 > **决策依据**：
 > - [ADR-004：Agent 领域画像与能力技能正交分层](architecture/adr/ADR-004-domain-aware-agent-profiles)
 > - [ADR-005：Agent 扩展模型（工具注册表 / 执行模式 / 前端自动发现）](architecture/adr/ADR-005-agent-extension-model)
@@ -481,7 +481,7 @@
 ### 验收
 
 - ✅ 拆书 Agent 在 `Pipeline` 模式下按固定三步执行，顺序与工具边界由画像保证，不再依赖模型自行规划
-- ✅ `ReAct` 模式行为与改造前完全一致：`run_skill_inner` 的 ReAct 分支沿用原 `react_loop` 调用（入参仅 `url`/`model` 由 `String` 改 `&str`，避免分发时无谓克隆）
+- ✅ `ReAct` 模式行为与改造前完全一致：`run_skill_inner` 的 ReAct 分支构造 `engine::ReactCtx`（收拢 url / api_key / model / temperature / max_tokens / request_id / cancel_token / budget / skill 9 个运行时参数），传入新签名 `react_loop(app, pool, tools_schema, &mut messages, &mut full_response, &mut tool_rounds, ctx)`（原 15 参数收拢为 7，消除 `clippy::too_many_arguments` suppressions）
 - ✅ Pipeline 可中断（每步开始前检查取消令牌，`react_loop` 内部亦有竞争点）
 - ✅ 单步失败不丢失已完成步骤的中间产物（部分成功 + 结构化进度）
 

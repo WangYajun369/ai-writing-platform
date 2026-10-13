@@ -2,7 +2,7 @@
  * CompleteSummaryModal — 完成任务 · 填写总结（任务卡）
  *
  * 勾选「完成」时弹出：富文本总结编辑器（TipTap），支持加粗/斜体/删除线、
- * 无序/有序列表、引用、代码块、超链接、图片（压缩为 Base64 内嵌）。
+ * 无序/有序列表、引用、代码块、超链接、图片（asset:// URL 资产存储）。
  *
  * 交互：
  *  - 保存总结并完成：将 HTML 总结随 task_set_status(done) 写入 completion_summary
@@ -163,7 +163,7 @@ export default function CompleteSummaryModal({ task, onClose, onCompleted }: Pro
     setLinkOpen(false)
   }
 
-  /** 插入图片：选文件 → 压缩 Base64 → 内嵌 */
+  /** 插入图片：选文件 → Rust 压缩存资产 → 返回 asset:// URL → 插入编辑器 */
   const handleInsertImage = async () => {
     if (!editor) return
     try {

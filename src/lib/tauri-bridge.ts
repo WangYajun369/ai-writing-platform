@@ -708,13 +708,52 @@ export const agentApi = {
 
 // ==================== 图片处理 ====================
 
+import { convertFileSrc } from '@tauri-apps/api/core'
+
+interface CreateAssetResult {
+  id: string
+  assetPath: string  // 纯绝对文件路径（后端返回），前端用 convertFileSrc 转 asset:// URL
+  reused: boolean
+  originalName: string
+  originalSize: number
+  originalWidth: number
+  originalHeight: number
+  originalFormat: string
+  storedSize: number
+  storedWidth: number
+  storedHeight: number
+}
+
+interface ImageAssetMeta {
+  id: string
+  sha256: string
+  originalName: string
+  originalSize: number
+  originalWidth: number
+  originalHeight: number
+  originalFormat: string
+  storedPath: string
+  storedWidth: number
+  storedHeight: number
+  storedFormat: string
+  source: string
+  sourceUrl: string
+  createdAt: string
+}
+
 export const imageApi = {
-  /** 处理图片：压缩 + 缩放 + Base64 编码，返回 data: URL */
+  /** 处理图片：压缩缩放 → 存文件 → 返回 asset:// URL
+   *
+   * 后端只返回纯绝对文件路径（assetPath），本函数用
+   * convertFileSrc 转成 asset:// URL（Tauri 官方 JS API，
+   * 正确处理 assetProtocol handler 的所有隐含约定）。
+   */
   async process(sourcePath: string, maxWidth = 1200, quality = 80): Promise<string> {
-    return typedInvoke<string>('process_image', { sourcePath, maxWidth, quality })
+    const result = await typedInvoke<CreateAssetResult>('process_image', { sourcePath, maxWidth, quality })
+    return convertFileSrc(result.assetPath)
   },
 
-  /** 裁剪图片：裁剪 + 压缩 + 缩放 + Base64 编码，返回 data: URL */
+  /** 裁剪图片 → 存文件 → 返回 asset:// URL（同上） */
   async processCropped(
     sourcePath: string,
     cropX: number,
@@ -724,7 +763,7 @@ export const imageApi = {
     maxWidth = 1200,
     quality = 80,
   ): Promise<string> {
-    return typedInvoke<string>('process_image_cropped', {
+    const result = await typedInvoke<CreateAssetResult>('process_image_cropped', {
       sourcePath,
       cropX: Math.round(cropX),
       cropY: Math.round(cropY),
@@ -733,6 +772,12 @@ export const imageApi = {
       maxWidth,
       quality,
     })
+    return convertFileSrc(result.assetPath)
+  },
+
+  /** 溯源查询：从 img src URL 反查资产元数据 */
+  async getMetaBySrc(src: string): Promise<ImageAssetMeta | null> {
+    return typedInvoke<ImageAssetMeta | null>('image_asset_get_by_src', { src })
   },
 }
 
@@ -1111,6 +1156,11 @@ export const vocabApi = {
   /** 单条详情 */
   async get(id: string): Promise<VocabWord> {
     return typedInvoke<VocabWord>('vocab_get', { id })
+  },
+
+  /** 按单词精确查找（大小写不敏感），未收录返回 null */
+  async getByWord(word: string): Promise<VocabWord | null> {
+    return typedInvoke<VocabWord | null>('vocab_get_by_word', { word })
   },
 
   /** 提交复习反馈（0 忘记 / 1 模糊 / 2 记得 / 3 轻松），返回更新后的词条 */

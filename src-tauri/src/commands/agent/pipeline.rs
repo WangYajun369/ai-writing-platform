@@ -28,7 +28,7 @@ use r2d2::Pool;
 use serde_json::Value;
 use tauri::AppHandle;
 
-use crate::commands::agent::engine::{emit_event, react_loop, AgentBudget, CancelToken};
+use crate::commands::agent::engine::{self, emit_event, react_loop, AgentBudget, CancelToken};
 use crate::commands::agent::profiles::OwnedStep;
 use crate::db::SqliteConnectionManager;
 
@@ -237,14 +237,20 @@ pub async fn run_pipeline(
         };
         let mut body = String::new();
         let mut rounds = 0usize;
+        let react_ctx = engine::ReactCtx {
+            url: ctx.url.to_string(),
+            api_key: ctx.api_key.to_string(),
+            model: ctx.model.to_string(),
+            temperature: ctx.temperature,
+            max_tokens: ctx.max_tokens,
+            request_id: ctx.request_id.to_string(),
+            cancel_token: ctx.cancel_token.clone(),
+            budget: step_budget,
+            skill: ctx.skill.to_string(),
+        };
         let result = react_loop(
             ctx.app.clone(),
             ctx.pool.clone(),
-            ctx.url,
-            ctx.api_key,
-            ctx.model,
-            ctx.temperature,
-            ctx.max_tokens,
             // OwnedStep.tools 是 Vec<String>，而 build_tools_schema 收 &[&str]
             crate::commands::agent::tools::build_tools_schema(
                 &step.tools.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
@@ -252,10 +258,7 @@ pub async fn run_pipeline(
             &mut messages,
             &mut body,
             &mut rounds,
-            ctx.request_id,
-            ctx.cancel_token,
-            &step_budget,
-            ctx.skill,
+            react_ctx,
         )
         .await;
 

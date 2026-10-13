@@ -235,7 +235,7 @@ export default function EditorToolbar() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [colorPickerOpen, tablePickerOpen])
 
-  /** 插入图片（压缩后以 Base64 内嵌，确保导出/导入自包含） */
+  /** 插入图片：选文件 → Rust 压缩存资产 → 返回 asset:// URL → 插入编辑器 */
   const handleInsertImage = useCallback(async () => {
     if (!usableEditor) return
     try {

@@ -1,6 +1,6 @@
 # TimeWrite（智写时光）代码架构深度分析
 
-> **适用版本**：`1.20.0`　|　**最后核对**：2026-10-05
+> **适用版本`1.21.0`　|　**最后核对**：2026-10-13
 >
 > 基于当前源码（前端 `src/`、Rust 后端 `src-tauri/`、脚本 `scripts/`）整理。
 > v1.1 起 Agent 已迁移为 **Rust 原生引擎**（`src-tauri/src/commands/agent/`），
@@ -130,7 +130,7 @@ main.tsx
 | `taskCardApi` | project.rs / task.rs / tag.rs / task_meta.rs / subtask.rs / attachment.rs / activity.rs / template.rs / reminder.rs / migrate.rs | 任务卡全量命令（55 条，v1.5.0） |
 | `aiApi` | ai/ (chat/embedding/summarize/test) | 流式对话、RAG、Embedding（预留）、总结 |
 | `importExportApi` | io/ (export/import_txt/backup) | 格式导出、TXT 导入、加密备份 |
-| `imageApi` | image.rs | 图片压缩/裁剪 |
+| `imageApi` | image.rs | 图片资产：上传压缩/裁剪/Rust crop_imm/sha256 去重/独立文件存储/溯源查询（3 命令：process_image / process_image_cropped / image_asset_get_by_src） |
 | `windowApi` | window/manager.rs | 独立窗口开关 |
 | `debugApi` | window/debug.rs + validate.rs | 调试控制台、数据库校验 |
 | `systemApi` | system_check.rs | 环境检查 |
@@ -169,11 +169,11 @@ db/         连接与 Schema —— r2d2 连接池、迁移、FTS5 触发器、�
 2. **数据库初始化**：`app_data_dir/time_write.db` → `AppDb::new()`（建表 + 迁移 + 索引）
 3. **旧版 Agent 记忆库迁移**：检测旧 `agent_memory.db`（`<cwd>/data/` 与 `<app_data_dir>/`），存在则将存量记忆导入 `memories` 表（幂等，失败仅记日志）
 4. **窗口关闭拦截**：CloseRequested → prevent_close → emit `agent-status-changed {status:"closing"}` → 关调试窗口 → 真正关闭（AtomicBool 防死循环）
-5. 注册 173 个 IPC 命令（34 个命令模块：books / volumes / chapters / snapshots / world_cards / diaries / schedules / vocab / vocab_dict / tts / ai / io / image / window / agent / system_check + 任务卡 project/task/tag/task_meta/subtask/attachment/activity/template/reminder/migrate + v1.6.0 writing_stats）
+5. 注册 200 个 IPC 命令（命令模块见下方 IPC 总览）
 
 ### 3.3 数据库设计（db/schema.rs + db/mod.rs）
 
-**24 张业务表 + 2 张 FTS5 虚拟表**（v1.1 起新增 `memories`；v1.3 新增 `diaries` / `schedules`；v1.4 新增 `vocab_words` / `vocab_reviews`；v1.5 新增任务卡 10 张；v1.6 新增 `writing_stats`；v1.7 新增 `import_log`，`import_rollback_log` 承载导入回退点；另 sqlite-vec 动态 `chunks_vec` 镜像表）：
+**28 张业务表 + 2 张 FTS5 虚拟表**（v1.1 起新增 `memories`；v1.3 新增 `diaries` / `schedules`；v1.4 新增 `vocab_words` / `vocab_reviews`；v1.5 新增任务卡 13 张；v1.6 新增 `writing_stats`；v1.7 新增 `import_log` + `import_rollback_log`；v1.20 新增 `image_assets` / `agent_traces` / `telemetry_events`；另 sqlite-vec 动态 `chunks_vec` 镜像表）：
 
 | 表 | 关键字段 | 说明 |
 |----|---------|------|
@@ -197,6 +197,7 @@ db/         连接与 Schema —— r2d2 连接池、迁移、FTS5 触发器、�
 | `task_activity_logs` | task_id/project_id, action, summary, created_at | 操作日志时间线（v1.5.0） |
 | `task_templates` | name, project_id, title, priority, due_offset_days, subtask_titles | 任务模板（v1.5.0） |
 | `chapters_fts` / `world_cards_fts` | FTS5 (unicode61) | 全文搜索，INSERT/UPDATE/DELETE 三触发器自动同步 |
+| `image_assets` | sha256(唯一), original_name/size/width/height/format, stored_path, stored_width/height/format, source(upload/crop), created_at | 图片独立文件资产（v1.20），sha256 去重 |
 
 技术要点：
 - r2d2 连接池（max_size=10，超时 10s，空闲 300s，最长存活 1800s）
@@ -206,14 +207,15 @@ db/         连接与 Schema —— r2d2 连接池、迁移、FTS5 触发器、�
 
 ### 3.4 Agent 引擎层（commands/agent/）—— v1.1 起 Rust 原生
 
-Python 子进程时代已整体移除，替换为 6 个 Rust 模块，**内嵌主进程、无外部服务**：
+Python 子进程时代已整体移除，替换为 8 个 Rust 子模块（+ `mod.rs` = 9 个文件），**内嵌主进程、无外部服务**：
 
 | 文件 | 职责 |
 |------|------|
 | `skills.rs` | IPC 命令层：`execute_agent_skill` / `cancel_agent_skill` / `list_agent_profiles` + 记忆管理命令 |
 | `profiles.rs` | L1 画像注册表：能力 4 + 领域 4，含 L2 执行模式（`RuntimeMode`）与 `merge()` |
-| `engine.rs` | SSE 流式 ReAct 工具循环（`run_skill`）、全局取消标志、按 `RuntimeMode` 分发 |
-| `pipeline.rs` | L2 流水线执行器：按画像声明的步骤依次执行，失败保留已完成产物 |
+| `engine.rs` | SSE 流式 ReAct 工具循环（`run_skill`）、全局取消标志、按 `RuntimeMode` 分发；`ReactCtx` 收拢运行时上下文、`classify_http_error` HTTP 错误诊断 |
+| **`sse_parser.rs`** | **2026-10 新增**：纯函数 SSE 解析器——`next_line` / `parse_sse_data` / `flush_remaining_line`；无 AppHandle 依赖，9 个单元测试 |
+| `pipeline.rs` | L2 流水线执行器：按画像声明的步骤依次执行，失败保留已完成产物；构造 `engine::ReactCtx` 传入 |
 | `prompts.rs` | 动态场景提示组装（四段拼接）+ Token 估算 |
 | `tools.rs` | L0 工具注册表：8 个数据库工具（schema + 执行，经 repository 层） |
 | `memory.rs` | memories 表 CRUD / 规则提取 / 检索 / 旧库迁移 |
@@ -363,7 +365,8 @@ MirageInk/
 │   ├── src/
 │   │   ├── lib.rs            #   Builder / 插件 / 启动编排 / 173 命令注册
 │   │   ├── commands/         #   27 个模块：基础域 + ai/io/window/agent + 任务卡 10 文件 + writing_stats
-│   │   │   └── agent/        #   engine / prompts / tools / memory / skills（Rust 原生 Agent）
+│   │   │   └── agent/        #   9 个文件：engine / pipeline / profiles / prompts /
+│   │   │   │                 #   skills / sse_parser / tools / memory（Rust 原生 Agent）
 │   │   ├── service/          #   20 个业务服务（事务 + 审计，含 task/reminder/migrate 等）
 │   │   ├── repository/       #   17 个数据仓库（纯 SQL）
 │   │   ├── db/               #   r2d2 连接池 + Schema（21 业务表 + 2 FTS5）

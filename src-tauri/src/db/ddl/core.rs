@@ -194,6 +194,27 @@ pub fn apply(conn: &Connection) -> anyhow::Result<()> {
             );
             CREATE INDEX IF NOT EXISTS idx_telemetry_kind ON telemetry_events(kind);
             CREATE INDEX IF NOT EXISTS idx_telemetry_created ON telemetry_events(created_at DESC);
+
+            -- 图片资产管理（v1.20 新增，编辑器图片从 data URL 内嵌迁移到独立文件存储）
+            -- 去重键 sha256：相同字节内容的图片只存一份，多章节/多书籍可复用
+            CREATE TABLE IF NOT EXISTS image_assets (
+                id              TEXT PRIMARY KEY,                       -- uuid
+                sha256          TEXT NOT NULL UNIQUE,                   -- 内容哈希，去重
+                original_name   TEXT NOT NULL DEFAULT '',              -- 原始文件名（溯源）
+                original_size   INTEGER NOT NULL DEFAULT 0,            -- 原始字节数
+                original_width  INTEGER NOT NULL DEFAULT 0,
+                original_height INTEGER NOT NULL DEFAULT 0,
+                original_format TEXT NOT NULL DEFAULT '',               -- png / jpg / webp / gif ...
+                stored_path     TEXT NOT NULL,                          -- images/xxx.jpg（相对 app_data_dir）
+                stored_width    INTEGER NOT NULL DEFAULT 0,
+                stored_height   INTEGER NOT NULL DEFAULT 0,
+                stored_format   TEXT NOT NULL DEFAULT 'jpeg',
+                source          TEXT NOT NULL DEFAULT 'upload',         -- upload / crop / url / migrate
+                source_url      TEXT NOT NULL DEFAULT '',              -- 网络图片：原 URL；本地：源路径
+                created_at      TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_image_assets_sha256 ON image_assets(sha256);
+            CREATE INDEX IF NOT EXISTS idx_image_assets_created ON image_assets(created_at DESC);
         "#,
     )
     .context("创建核心业务表失败")

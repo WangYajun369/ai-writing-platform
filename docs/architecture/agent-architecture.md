@@ -1,6 +1,6 @@
 # Agent 引擎架构（Rust 原生）
 
-> **适用版本**：`1.20.0`　|　**最后核对**：2026-10-05
+> **适用版本`1.21.0`　|　**最后核对**：2026-10-13
 >
 > Agent 自动化引擎已整体内嵌于 Rust（`src-tauri/src/commands/agent/`），**无外部进程、无需 Python 环境**。
 > 历史：v1.0 曾以 Python FastAPI + LangGraph 子进程实现（端口 9877），v1.1 迁移为 Rust 原生引擎，`agent/`、`src-tauri/src/python/` 已删除。
@@ -27,8 +27,10 @@ Agent 引擎与主进程**同进程运行**：Skill Prompt 组装 → 云端模�
                             │ Tauri IPC（invoke / event）
 ┌───────────────────────────┴────────────────────────────────┐
 │  Rust Core（Tauri v2）—— Agent 引擎 commands/agent/         │
-│  skills.rs    IPC 命令层（execute/cancel + 记忆 CRUD）         │
+│  skills.rs     IPC 命令层（execute/cancel + 记忆 CRUD）         │
 │  engine.rs    SSE 流式 ReAct 循环 + 任务取消 + L2 模式分发     │
+│  sse_parser.rs 纯函数 SSE 解析器（next_line / parse_sse /       │
+│                flush_remaining_line，无 AppHandle 依赖）       │
 │  pipeline.rs  L2 流水线执行器（固定步骤序列，阶段六）          │
 │  profiles.rs  L1 画像注册表（提示词/工具/预算/执行模式）        │
 │  prompts.rs   动态场景提示组装 + Token 估算                    │
@@ -61,13 +63,16 @@ Agent 引擎与主进程**同进程运行**：Skill Prompt 组装 → 云端模�
 
 ## 2. 模块职责（`src-tauri/src/commands/agent/`）
 
+8 个子模块 + 1 个 `mod.rs` = 9 个文件：
+
 | 文件 | 职责 |
 |------|------|
-| `mod.rs` | 模块声明：engine / memory / pipeline / profiles / prompts / skills / tools |
+| `mod.rs` | 模块声明：engine / memory / pipeline / profiles / prompts / skills / **sse_parser** / tools |
 | `skills.rs` | **IPC 命令层**：`execute_agent_skill`（流式执行）、`cancel_agent_skill`、`list_agent_profiles`、记忆管理命令；参数类型 `AiConfigParams`（camelCase）→ `engine::AiModelConfig` |
 | `profiles.rs` | **L1 画像注册表**（ADR-005 阶段二/四/六）：`static PROFILES` 单一真相源，按 `ProfileKind` 区分 `Ability`（4 个动作）与 `Domain`（4 个作品类型）；`Step` / `RuntimeMode`（L2 执行模式）、`merge()` 合成 `EffectiveProfile` |
-| `engine.rs` | **引擎核心**：`run_skill()` SSE 流式 ReAct 循环（工具调用 + 文本增量）、`CancelToken` 即时任务取消（`cancel_current_task()`）、按 `RuntimeMode` 分发执行路径 |
-| `pipeline.rs` | **L2 流水线执行器**（阶段六）：按画像声明的 `Step[]` 依次执行，每步复用 `engine::react_loop` 但收窄工具与轮数；单步失败即停并保留已完成产物 |
+| `engine.rs` | **引擎核心**：`run_skill()` SSE 流式 ReAct 循环（工具调用 + 文本增量）、`CancelToken` 即时任务取消（`cancel_current_task()`）、按 `RuntimeMode` 分发执行路径、`ReactCtx` 收拢 ReAct 运行时上下文、`classify_http_error` HTTP 错误诊断 |
+| `sse_parser.rs` | **SSE 纯函数解析器**（2026-10 重构提取）：`PendingToolCall` / `PendingToolCalls` 类型、`next_line` 行缓冲拆分、`parse_sse_data` 单行 JSON 解析（返回 `LineParse { done, deltas }`）、`flush_remaining_line` 流结束残留处理；无 AppHandle 依赖，9 个单元测试覆盖完整往返 |
+| `pipeline.rs` | **L2 流水线执行器**（阶段六）：按画像声明的 `Step[]` 依次执行，每步复用 `engine::react_loop` 但收窄工具与轮数；通过 `engine::ReactCtx` 构造运行时上下文传入；单步失败即停并保留已完成产物 |
 | `prompts.rs` | 动态场景提示组装（`compose_system_prompt`，四段拼接 + 两类 hints 各 ≤3 条）、Token 估算 |
 | `tools.rs` | **L0 工具注册表**（ADR-005 阶段一）：`static TOOLS: &[ToolDef]` 8 个数据库工具，`build_tools_schema` 按名字列表生成 schema、`execute_tool` 按名分发 |
 | `memory.rs` | `memories` 表 CRUD、规则式记忆提取（`extract_and_save`）、关键词检索（`retrieve_memories`，命中打点 `last_hit_at`）、容量/过期清理（`prune_memories` / `prune_all_memories`）、旧库迁移（`migrate_legacy_db`） |
@@ -115,9 +120,10 @@ run_skill()
   │    └─ memory_prompt(book, skill, msg)   # 注入相关记忆段（≤600 tokens）
   ├─ 清理历史消息（剥离 reasoning_content）
   ├─ 按 EffectiveProfile.runtime 分发（见 §3.3）
-  ├─ react_loop()（ReAct）／ run_pipeline()（Pipeline）
+  ├─ react_loop(..., ctx: ReactCtx)（ReAct）／ run_pipeline()（Pipeline）
   │    ├─ POST /chat/completions（tools = build_tools_schema(本次可见工具名)）
-  │    ├─ 解析 SSE data 行（文本增量 → emit chunk；tool_calls → 提取参数）
+  │    ├─ **HTTP 错误诊断**：`classify_http_error` 对 DNS / 连接拒绝 / 超时 / TLS / 上游 5xx 等模式匹配返回中文诊断提示
+  │    ├─ **SSE 解析**：`sse_parser.rs` 纯函数——`next_line` 逐行取出 → `parse_sse_data` 解析 JSON 返回 `LineParse { done, deltas }` → 对每个 delta 调 `emit_event("chunk", ...)` 推送；流结束时 `flush_remaining_line` 处理残留
   │    ├─ 有工具调用 → tools::execute_tool() → 追加 tool 消息 → 继续循环
   │    └─ 无工具调用 → 文本流结束
   ├─ emit('agent-stream-chunk', { event: 'done', ... })

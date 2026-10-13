@@ -89,7 +89,7 @@ impl ManageConnection for SqliteConnectionManager {
 /// - `0`：v1.7.0 之前的旧库（无版本标记），首次启动时由幂等 DDL 对齐后升为当前版本；
 /// - 高于当前值：拒绝启动（`E_DB_VERSION`），防止旧版本应用降级误写新结构；
 /// - 新增非幂等迁移时在 [`AppDb::run_versioned_migrations`] 追加分支并递增本常量。
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// 读取当前数据库结构版本（`PRAGMA user_version`）
 fn user_version(conn: &Connection) -> anyhow::Result<u32> {

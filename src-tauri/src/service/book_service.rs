@@ -214,7 +214,20 @@ pub fn set_book_cover(
         return get_book(app, db, id);
     }
 
-    let data_url = crate::commands::image::process_image_data(source_path, 800, 85)?;
+    let cover = crate::service::image_asset_service::create_or_find(
+        app,
+        db,
+        &crate::service::image_asset_service::CreateAssetArgs {
+            source_path: source_path.to_string(),
+            source: "cover".into(),
+            original_name: String::new(),
+            source_url: source_path.to_string(),
+            max_width: Some(800),
+            quality: Some(85),
+            crop: None,
+        },
+    )?;
+    let cover_path = cover.asset_path;
     let ts = now();
     {
         // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
@@ -227,7 +240,7 @@ pub fn set_book_cover(
             file!(),
             line!(),
         );
-        book_repo::update_cover(uow.conn(), id, &data_url, &ts)?;
+        book_repo::update_cover(uow.conn(), id, &cover_path, &ts)?;
         uow.commit()?;
     }
     get_book(app, db, id)
@@ -259,24 +272,26 @@ pub fn set_book_cover_data(
         return get_book(app, db, id);
     }
 
-    // 校验 data URL 格式
-    if !data_url.starts_with("data:image/") {
-        return Err(AppError::Business("无效的图片 data URL 格式".into()));
+    // 兼容两种封面 URL：
+    //  - 新格式：asset://{app_data}/images/xxx.jpg（v1.20 起）
+    //  - 旧格式：data:image/...;base64,...（历史数据）
+    let url = data_url.trim();
+    if !url.starts_with("asset://") && !url.starts_with("data:image/") {
+        return Err(AppError::Business("无效的图片 URL 格式（需要 asset:// 或 data:image/）".into()));
     }
 
     let ts = now();
     {
-        // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
         let pooled = db.pool.get()?;
         let mut uow = UnitOfWork::new(&pooled, Some(app));
         uow.audit(
             "UPDATE",
             "books",
-            format!("id={id}, set cover_image from data URL"),
+            format!("id={id}, set cover_image"),
             file!(),
             line!(),
         );
-        book_repo::update_cover(uow.conn(), id, data_url, &ts)?;
+        book_repo::update_cover(uow.conn(), id, url, &ts)?;
         uow.commit()?;
     }
     get_book(app, db, id)

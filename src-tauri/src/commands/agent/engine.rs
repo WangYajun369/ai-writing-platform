@@ -7,7 +7,6 @@
 //! 事件契约与旧 Python 完全一致（事件名 `agent-stream-chunk`，事件体
 //! `{ event, data, requestId }`，event ∈ chunk / done / error / cancelled）。
 
-use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 
@@ -19,6 +18,9 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::Notify;
 use tokio::time::timeout;
 
+use crate::commands::agent::sse_parser::{
+    flush_remaining_line, next_line, parse_sse_data, LineParse, PendingToolCall, PendingToolCalls,
+};
 use crate::commands::agent::{memory, pipeline, profiles, prompts, tools};
 use crate::commands::agent::profiles::RuntimeMode;
 use crate::db::SqliteConnectionManager;
@@ -189,15 +191,25 @@ pub fn cancel_current_task() {
     }
 }
 
-// ─── 工具调用累积（SSE delta 增量拼接） ───
-
-struct PendingToolCall {
-    id: String,
-    name: String,
-    arguments: String,
+/// ReAct 循环的不变运行时上下文。
+///
+/// 收拢原 react_loop 的 9 个标量参数（url / api_key / model / temperature /
+/// max_tokens / request_id / cancel_token / budget / skill），使签名从 15 个
+/// 参数降到 7 个（app / pool / tools_schema / &mut messages / &mut full_response /
+/// &mut tool_rounds / ctx），消除 `clippy::too_many_arguments`。
+///
+/// pipeline.rs 的调用点只需把 `PipelineCtx` 的对应字段 collect 后传入。
+pub(crate) struct ReactCtx {
+    pub url: String,
+    pub api_key: String,
+    pub model: String,
+    pub temperature: f64,
+    pub max_tokens: u32,
+    pub request_id: String,
+    pub cancel_token: Arc<CancelToken>,
+    pub budget: AgentBudget,
+    pub skill: String,
 }
-
-type PendingToolCalls = BTreeMap<usize, PendingToolCall>;
 
 // ─── 主入口 ───
 
@@ -418,22 +430,25 @@ async fn run_skill_inner(
             match plan_steps {
                 // ReAct：与改造前完全一致的单一循环，行为零变化（回归安全）
                 None => {
+                    let ctx = ReactCtx {
+                        url,
+                        api_key: api_key.unwrap_or_default(),
+                        model,
+                        temperature,
+                        max_tokens,
+                        request_id: request_id.to_string(),
+                        cancel_token: cancel_token.clone(),
+                        budget,
+                        skill: skill.to_string(),
+                    };
                     react_loop(
                         app.clone(),
                         pool.clone(),
-                        &url,
-                        api_key.as_deref().unwrap_or(""),
-                        &model,
-                        temperature,
-                        max_tokens,
                         tools_schema,
                         &mut messages,
                         &mut full_response,
                         &mut tool_rounds,
-                        request_id,
-                        cancel_token,
-                        &budget,
-                        skill,
+                        ctx,
                     )
                     .await?;
                     Ok::<String, AppError>(std::mem::take(&mut full_response))
@@ -501,34 +516,24 @@ async fn run_skill_inner(
 
 /// 开放给 `pipeline.rs`：流水线的每一步就是一个「工具与轮数被收窄」的 ReAct，
 /// 复用本函数可避免把 SSE 解析 / 取消竞争 / trace 上报再抄一遍。
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn react_loop(
     app: AppHandle,
     pool: Pool<SqliteConnectionManager>,
-    // url / model 改为借用：流水线模式下两个分支都要用到，按值传会逼出无谓的 clone
-    url: &str,
-    api_key: &str,
-    model: &str,
-    temperature: f64,
-    max_tokens: u32,
     tools_schema: Vec<Value>,
     messages: &mut Vec<Value>,
     full_response: &mut String,
     tool_rounds: &mut usize,
-    request_id: &str,
-    cancel_token: &Arc<CancelToken>,
-    budget: &AgentBudget,
-    skill: &str,
+    ctx: ReactCtx,
 ) -> Result<(), AppError> {
     loop {
-        if cancel_token.is_cancelled() {
-            let _ = emit_event(&app, "cancelled", "任务已被用户取消", request_id);
+        if ctx.cancel_token.is_cancelled() {
+            let _ = emit_event(&app, "cancelled", "任务已被用户取消", &ctx.request_id);
             return Ok(());
         }
-        if *tool_rounds >= budget.max_rounds {
+        if *tool_rounds >= ctx.budget.max_rounds {
             crate::app_log!(
                 "[Agent] 达到最大推理轮数 ({}), 结束工具循环",
-                budget.max_rounds
+                ctx.budget.max_rounds
             );
             break;
         }
@@ -537,33 +542,33 @@ pub(crate) async fn react_loop(
         // DeepSeek thinking 参数：Python SDK 无法透传，Rust 直连亦不传，保持行为一致
         //（如需思考模式可在此按 ai_config.thinking_enabled 显式开启）
         let body = serde_json::json!({
-            "model": model,
+            "model": &ctx.model,
             "messages": messages,
             "stream": true,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
+            "temperature": ctx.temperature,
+            "max_tokens": ctx.max_tokens,
             "tools": tools_schema,
             "tool_choice": "auto",
         });
 
         let client = get_sse_client().clone();
         let req = client
-            .post(url)
+            .post(&ctx.url)
             .header("Content-Type", "application/json")
             .header("Accept", "text/event-stream")
-            .header("Authorization", format!("Bearer {api_key}"));
+            .header("Authorization", format!("Bearer {}", ctx.api_key));
 
         // 发送阶段也与取消信号竞争：客户端仅配 connect_timeout（30s），
         // 若服务端迟迟不返回响应头，取消可在此即时退出而不被长时间挂起
         let send_fut = req.json(&body).send();
         tokio::pin!(send_fut);
-        let send_notified = cancel_token.notified();
+        let send_notified = ctx.cancel_token.notified();
         tokio::pin!(send_notified);
         let send_result = tokio::select! {
             biased;
             _ = &mut send_notified => {
-                if cancel_token.is_cancelled() {
-                    let _ = emit_event(&app, "cancelled", "任务已被用户取消", request_id);
+                if ctx.cancel_token.is_cancelled() {
+                    let _ = emit_event(&app, "cancelled", "任务已被用户取消", &ctx.request_id);
                     return Ok(());
                 }
                 // 非取消通知（理论上不发生）：继续完成原请求
@@ -574,23 +579,7 @@ pub(crate) async fn react_loop(
 
         let response = send_result.map_err(|e| {
             let err_str = e.to_string();
-            let hint = if err_str.contains("dns") || err_str.contains("resolve") {
-                "\n诊断：DNS 解析失败，请检查网络连接或尝试配置代理"
-            } else if err_str.contains("refused") {
-                "\n诊断：连接被拒绝，请确认 API 地址正确且服务可用"
-            } else if err_str.contains("timeout") || err_str.contains("timed out") {
-                "\n诊断：连接超时，请检查网络稳定性或尝试使用代理"
-            } else if err_str.contains("tls")
-                || err_str.contains("certificate")
-                || err_str.contains("ssl")
-            {
-                "\n诊断：TLS/证书验证失败，请检查系统时间是否正确，或尝试设置 HTTPS_PROXY 环境变量"
-            } else if err_str.contains("502") || err_str.contains("503") || err_str.contains("504")
-            {
-                "\n诊断：AI 服务暂时不可用，请稍后重试"
-            } else {
-                "\n诊断：无法连接到 AI 服务（可能是代理/防火墙阻止），请在系统中设置 HTTPS_PROXY 环境变量后重启应用"
-            };
+            let hint = classify_http_error(&err_str);
             AppError::Business(format!("请求失败: {err_str}{hint}"))
         })?;
 
@@ -609,7 +598,7 @@ pub(crate) async fn react_loop(
         let mut stream = response.bytes_stream();
         let mut buffer = String::new();
         let mut round_content = String::new();
-        let mut tool_calls: PendingToolCalls = BTreeMap::new();
+        let mut tool_calls: PendingToolCalls = Default::default();
         let mut stream_finished = false;
 
         'outer: loop {
@@ -617,7 +606,7 @@ pub(crate) async fn react_loop(
             // 流读取（含 60s 行超时窗口与流已结束的静默期），无需等待超时或
             // 下一个 chunk 到达；被放弃的 stream.next() future 随即 drop，
             // 底层 reqwest 连接中止，服务端感知后停止继续生成。
-            let notified = cancel_token.notified();
+            let notified = ctx.cancel_token.notified();
             tokio::pin!(notified);
             let next_chunk = timeout(
                 std::time::Duration::from_secs(SSE_READ_TIMEOUT_SECS),
@@ -626,8 +615,8 @@ pub(crate) async fn react_loop(
             let chunk = tokio::select! {
                 biased;
                 _ = &mut notified => {
-                    if cancel_token.is_cancelled() {
-                        let _ = emit_event(&app, "cancelled", "任务已被用户取消", request_id);
+                    if ctx.cancel_token.is_cancelled() {
+                        let _ = emit_event(&app, "cancelled", "任务已被用户取消", &ctx.request_id);
                         return Ok(());
                     }
                     continue; // 非取消通知：回到等待
@@ -644,15 +633,15 @@ pub(crate) async fn react_loop(
                 }
                 Ok(None) => {
                     // 正常 EOF（服务端未发送 [DONE]）
-                    flush_remaining_line(
+                    let (_done, deltas) = flush_remaining_line(
                         &mut buffer,
                         &mut round_content,
                         &mut tool_calls,
-                        &app,
                         full_response,
-                        request_id,
-                        &mut stream_finished,
                     );
+                    for d in deltas {
+                        let _ = emit_event(&app, "chunk", &d, &ctx.request_id);
+                    }
                     break 'outer;
                 }
                 Err(_elapsed) => {
@@ -661,64 +650,61 @@ pub(crate) async fn react_loop(
                         "[Agent] SSE 读取超时 ({}s 无数据)",
                         SSE_READ_TIMEOUT_SECS
                     );
-                    flush_remaining_line(
+                    let (_done, deltas) = flush_remaining_line(
                         &mut buffer,
                         &mut round_content,
                         &mut tool_calls,
-                        &app,
                         full_response,
-                        request_id,
-                        &mut stream_finished,
                     );
+                    for d in deltas {
+                        let _ = emit_event(&app, "chunk", &d, &ctx.request_id);
+                    }
                     break 'outer;
                 }
             };
 
             // 竞态兜底：若取消信号恰在 select 选中 chunk 分支之后到达，
             // 此复查保证在解析该批 buffer 前立即中断退出，无需等下一轮循环。
-            if cancel_token.is_cancelled() {
-                let _ = emit_event(&app, "cancelled", "任务已被用户取消", request_id);
+            if ctx.cancel_token.is_cancelled() {
+                let _ = emit_event(&app, "cancelled", "任务已被用户取消", &ctx.request_id);
                 return Ok(());
             }
 
             buffer.push_str(&String::from_utf8_lossy(&chunk));
 
-            while let Some(pos) = buffer.find('\n') {
-                let line = buffer[..pos].trim().to_string();
-                buffer = buffer[pos + 1..].to_string();
-                if line.is_empty() {
-                    continue;
-                }
-                if !line.starts_with("data:") {
+            // 逐行取出并解析
+            while let Some(line) = next_line(&mut buffer) {
+                if line.is_empty() || !line.starts_with("data:") {
                     continue;
                 }
                 let json_str = line[5..].trim().to_string();
-                if json_str == "[DONE]" {
-                    stream_finished = true;
-                    break 'outer;
-                }
-                parse_sse_data(
+                let LineParse { done, deltas } = parse_sse_data(
                     &json_str,
                     &mut round_content,
                     &mut tool_calls,
-                    &app,
                     full_response,
-                    request_id,
                 );
+                if done {
+                    stream_finished = true;
+                    break 'outer;
+                }
+                for d in deltas {
+                    let _ = emit_event(&app, "chunk", &d, &ctx.request_id);
+                }
             }
         }
 
-        // 处理后事（EOF/中断时缓冲残留行）
+        // 处理后事（流中断时缓冲残留行）
         if !stream_finished && !buffer.is_empty() {
-            flush_remaining_line(
+            let (_done, deltas) = flush_remaining_line(
                 &mut buffer,
                 &mut round_content,
                 &mut tool_calls,
-                &app,
                 full_response,
-                request_id,
-                &mut stream_finished,
             );
+            for d in deltas {
+                let _ = emit_event(&app, "chunk", &d, &ctx.request_id);
+            }
         }
 
         // ========== 工具调用判断 ==========
@@ -759,8 +745,8 @@ pub(crate) async fn react_loop(
         crate::observability::bus::emit_agent_trace(
             Some(&app),
             &conn,
-            request_id,
-            skill,
+            &ctx.request_id,
+            &ctx.skill,
             *tool_rounds,
             "assistant",
             &round_content,
@@ -769,8 +755,8 @@ pub(crate) async fn react_loop(
             None,
         );
         for (_, tc) in &collected {
-            if cancel_token.is_cancelled() {
-                let _ = emit_event(&app, "cancelled", "任务已被用户取消", request_id);
+            if ctx.cancel_token.is_cancelled() {
+                let _ = emit_event(&app, "cancelled", "任务已被用户取消", &ctx.request_id);
                 return Ok(());
             }
             let args_value: Value =
@@ -779,8 +765,8 @@ pub(crate) async fn react_loop(
             crate::observability::bus::emit_agent_trace(
                 Some(&app),
                 &conn,
-                request_id,
-                skill,
+                &ctx.request_id,
+                &ctx.skill,
                 *tool_rounds,
                 "tool_call",
                 &tc.name,
@@ -800,8 +786,8 @@ pub(crate) async fn react_loop(
             crate::observability::bus::emit_agent_trace(
                 Some(&app),
                 &conn,
-                request_id,
-                skill,
+                &ctx.request_id,
+                &ctx.skill,
                 *tool_rounds,
                 "tool_result",
                 &result,
@@ -831,116 +817,30 @@ fn clamp_text(s: &str, max: usize) -> String {
     }
 }
 
-// ─── SSE 行解析 ───
-
-/// 解析单行 SSE `data:` JSON（收到 `[DONE]` 前的内容行）：
-/// - 正文增量：追加到本轮 round_content 与全局 full_response，并即时向前端
-///   推送 chunk 事件（多工具轮中模型夹带的中间正文同样会被转发与累积）；
-/// - 工具调用增量：按 index 槽位累积（id/name 仅在首次非空时写入，
-///   arguments 跨多个 chunk 片段直接拼接），供本轮结束后的工具循环使用；
-/// - 解析失败或字段缺失时静默跳过，不中断整轮 SSE 流的收尾处理。
-#[allow(clippy::too_many_arguments)]
-fn parse_sse_data(
-    json_str: &str,
-    round_content: &mut String,
-    tool_calls: &mut PendingToolCalls,
-    app: &AppHandle,
-    full_response: &mut String,
-    request_id: &str,
-) {
-    let data: Value = match serde_json::from_str(json_str) {
-        Ok(d) => d,
-        Err(e) => {
-            crate::app_log_error!("[Agent] SSE JSON 解析失败: {} | {}", e, json_str);
-            return;
-        }
-    };
-
-    let choice = &data["choices"][0];
-
-    // DeepSeek 思考内容（reasoning_content）不转发（与 Python 行为一致）
-    // 仅透出正文 content
-
-    if let Some(delta) = choice["delta"]["content"].as_str() {
-        if !delta.is_empty() {
-            round_content.push_str(delta);
-            full_response.push_str(delta);
-            let _ = emit_chunk(app, delta, request_id);
-        }
+/// 对 HTTP 层错误字符串做模式匹配，返回对应的中文诊断提示。
+///
+/// 覆盖 DNS、连接拒绝、超时、TLS/证书、上游 5xx 等常见场景；无法识别时
+/// 返回"通用代理/防火墙"兜底提示。返回值不含 `\n` 前缀，由调用方决定拼接方式。
+fn classify_http_error(err_str: &str) -> &'static str {
+    if err_str.contains("dns") || err_str.contains("resolve") {
+        "\n诊断：DNS 解析失败，请检查网络连接或尝试配置代理"
+    } else if err_str.contains("refused") {
+        "\n诊断：连接被拒绝，请确认 API 地址正确且服务可用"
+    } else if err_str.contains("timeout") || err_str.contains("timed out") {
+        "\n诊断：连接超时，请检查网络稳定性或尝试使用代理"
+    } else if err_str.contains("tls")
+        || err_str.contains("certificate")
+        || err_str.contains("ssl")
+    {
+        "\n诊断：TLS/证书验证失败，请检查系统时间是否正确，或尝试设置 HTTPS_PROXY 环境变量"
+    } else if err_str.contains("502") || err_str.contains("503") || err_str.contains("504") {
+        "\n诊断：AI 服务暂时不可用，请稍后重试"
+    } else {
+        "\n诊断：无法连接到 AI 服务（可能是代理/防火墙阻止），请在系统中设置 HTTPS_PROXY 环境变量后重启应用"
     }
-
-    if let Some(tc_arr) = choice["delta"]["tool_calls"].as_array() {
-        for tc in tc_arr {
-            let idx = tc["index"].as_u64().unwrap_or(0) as usize;
-            let slot = tool_calls.entry(idx).or_insert_with(|| PendingToolCall {
-                id: String::new(),
-                name: String::new(),
-                arguments: String::new(),
-            });
-            if let Some(id) = tc["id"].as_str() {
-                if slot.id.is_empty() && !id.is_empty() {
-                    slot.id = id.to_string();
-                }
-            }
-            if let Some(name) = tc["function"]["name"].as_str() {
-                if slot.name.is_empty() && !name.is_empty() {
-                    slot.name = name.to_string();
-                }
-            }
-            if let Some(args) = tc["function"]["arguments"].as_str() {
-                slot.arguments.push_str(args);
-            }
-        }
-    }
-}
-
-/// 流结束（EOF / 中断 / 超时）后处理缓冲区内残留的最后一行
-#[allow(clippy::too_many_arguments)]
-fn flush_remaining_line(
-    buffer: &mut String,
-    round_content: &mut String,
-    tool_calls: &mut PendingToolCalls,
-    app: &AppHandle,
-    full_response: &mut String,
-    request_id: &str,
-    stream_finished: &mut bool,
-) {
-    let remaining = buffer.trim().to_string();
-    buffer.clear();
-    if remaining.is_empty() {
-        return;
-    }
-    if !remaining.starts_with("data:") {
-        return;
-    }
-    let json_str = remaining[5..].trim().to_string();
-    if json_str == "[DONE]" {
-        *stream_finished = true;
-        return;
-    }
-    parse_sse_data(
-        &json_str,
-        round_content,
-        tool_calls,
-        app,
-        full_response,
-        request_id,
-    );
 }
 
 // ─── 事件推送 ───
-
-fn emit_chunk(app: &AppHandle, delta: &str, request_id: &str) -> bool {
-    app.emit(
-        "agent-stream-chunk",
-        AgentStreamEvent {
-            event: "chunk".into(),
-            data: delta.to_string(),
-            request_id: request_id.to_string(),
-        },
-    )
-    .is_ok()
-}
 
 /// 推一个 SSE 事件。开放给 `pipeline.rs`（推步骤进度头）。
 ///

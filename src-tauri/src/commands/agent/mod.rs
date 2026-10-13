@@ -14,4 +14,5 @@ pub mod pipeline;
 pub mod profiles;
 pub mod prompts;
 pub mod skills;
+pub mod sse_parser;
 pub mod tools;

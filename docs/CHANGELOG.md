@@ -2,6 +2,20 @@
 
 ## v1.20.0 (2026-10-05) — 数学公式输入（KaTeX 渲染 + 符号面板）
 
+### Agent 引擎重构（2026-10-13）
+> 本轮聚焦 engine.rs 可维护性提升，**行为零变化**（256 测试全绿），agent 模块 clippy 零警告。
+
+- **SSE 解析模块提取** → 新增 `commands/agent/sse_parser.rs`（9 个单元测试）：
+  - `PendingToolCall` / `PendingToolCalls` 类型从 engine.rs 迁移
+  - `next_line(&mut buffer) → Option<String>` — 行缓冲拆分
+  - `parse_sse_data(json_str, round_content, tool_calls, full_response) → LineParse { done, deltas }` — 纯函数，无 AppHandle 依赖，返回解析结果让调用方决定如何 emit
+  - `flush_remaining_line(buffer, round_content, tool_calls, full_response) → (done, deltas)` — 流结束残留处理
+  - engine.rs 删除 ~120 行内联 SSE 代码，react_loop 主循环改为 `next_line` + `parse_sse_data` + `emit_event("chunk", …)` 的清晰流水线
+- **ReactCtx 收拢 react_loop 参数**：新增 `engine::ReactCtx { url, api_key, model, temperature, max_tokens, request_id, cancel_token, budget, skill }`，把 9 个标量参数收拢进结构体。react_loop 签名从 **15 参数 → 7 参数**（消除 `#[allow(clippy::too_many_arguments)]`  suppressions 中的 3 个）。pipeline.rs 和 run_skill_inner 两个调用点同步改为构造 ReactCtx 传入
+- **classify_http_error 提取**：从 react_loop 的 `map_err` 闭包里把 17 行 DNS/连接拒绝/超时/TLS/上游 5xx 模式匹配提取为独立函数 `classify_http_error(err_str: &str) → &'static str`，主逻辑从 20 行缩到 4 行
+- **emit_chunk 合并入 emit_event**：原 `emit_chunk(app, delta, request_id)` 与 `emit_event(app, "chunk", delta, request_id)` 逻辑完全重复，删除前者；所有事件推送统一走 `emit_event`（pipeline.rs 也在用它推步骤进度头）
+- **验证**：`cargo check` 零错误、`cargo clippy --lib` agent 模块零警告、`cargo test` 256 passed
+
 ### 新增
 - **行内 / 块级数学公式**：编辑器集成 `@tiptap/extension-mathematics` + KaTeX，支持行内公式与独立块级公式；块级公式居中卡片式展示，行内公式随文排布，`data-latex` 属性持久化，重开章节可无损还原
 - **公式编辑弹窗**：工具栏 Sigma 按钮打开居中弹窗（900px 宽），左侧 LaTeX 源码输入 + KaTeX 实时预览（切换行内/块级即时重排），右侧符号面板；⌘+Enter 插入 / 更新，Esc 或点击遮罩关闭；支持双击文档中的公式节点重新打开编辑

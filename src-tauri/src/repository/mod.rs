@@ -29,6 +29,7 @@ pub mod book_repo;
 pub mod chapter_repo;
 pub mod diary_repo;
 pub mod embedding_repo;
+pub mod image_asset_repo;
 pub mod schedule_repo;
 pub mod snapshot_repo;
 pub mod soft_delete;

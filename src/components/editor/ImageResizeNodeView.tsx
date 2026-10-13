@@ -2,7 +2,7 @@
  * ImageResizeNodeView — 可缩放图片节点视图
  *
  * 选中图片时显示浮动缩放工具栏，支持缩小/放大/重置/替换/删除/重新裁切。
- * 图片以压缩后的 Base64 data URL 内嵌在 HTML 中。
+ * 新图片以 asset:// URL 存储（后端独立文件资产），历史 data URL 走 Canvas fallback。
  */
 import { useCallback, useState, useRef, useEffect } from 'react'
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react'
@@ -15,10 +15,14 @@ import {
   ImageUpIcon,
   CropIcon,
   EyeIcon,
+  InfoIcon,
 } from 'lucide-react'
 import { processEditorImage, canvasCropImage } from '@/lib/image-utils.ts'
+import { imageApi } from '@/lib/tauri-bridge.ts'
 import ImageCropperDialog from './ImageCropperDialog'
 import ImageViewerDialog from './ImageViewerDialog'
+import ImageMetaPanel from './ImageMetaPanel'
+import type { ImageAssetMeta } from './ImageMetaPanel'
 
 const MIN_WIDTH_PCT = 20
 const MAX_WIDTH_PCT = 100
@@ -35,8 +39,29 @@ export default function ImageResizeNodeView({
   // 重新裁切状态
   const [reCropOpen, setReCropOpen] = useState(false)
 
-  // 图片查看状态
+  // 查看大图弹窗
   const [viewerOpen, setViewerOpen] = useState(false)
+
+  // 溯源面板状态
+  const [metaOpen, setMetaOpen] = useState(false)
+  const [metaLoading, setMetaLoading] = useState(false)
+  const [metaData, setMetaData] = useState<ImageAssetMeta | null>(null)
+
+  /** 打开溯源面板：从后端查资产元数据 */
+  const openMetaPanel = useCallback(async () => {
+    setMetaOpen(true)
+    setMetaLoading(true)
+    try {
+      const src = node.attrs.src as string
+      const meta = await imageApi.getMetaBySrc(src)
+      setMetaData(meta)
+    } catch (err) {
+      console.warn('[Image·溯源] 查询失败:', err)
+      setMetaData(null)
+    } finally {
+      setMetaLoading(false)
+    }
+  }, [node.attrs.src])
 
   // 手动输入宽度
   const [editingWidth, setEditingWidth] = useState(false)
@@ -82,7 +107,7 @@ export default function ImageResizeNodeView({
     setEditingWidth(true)
   }, [widthPct])
 
-  /** 替换图片源（压缩后以 Base64 内嵌） */
+  /** 替换图片源：选新文件 → Rust 压缩存资产 → 更新 asset:// URL */
   const handleReplace = useCallback(async () => {
     try {
       const selectedPath = await open({
@@ -110,13 +135,39 @@ export default function ImageResizeNodeView({
     deleteNode()
   }, [deleteNode])
 
-  /** 确认重新裁切（前端 Canvas 处理，因原始文件已不可用） */
+  /** 确认重新裁切
+   *
+   * 两条路径：
+   * 1. src 是 asset://（新方案）→ 从 URL 提取文件路径 → imageApi.processCropped
+   *    Rust 端裁剪 → 存新资产 → 返回新 asset:// URL（像素级精确、无二次画质损失）
+   * 2. src 是 data URL（旧方案历史遗留）→ Canvas 裁剪 + 压缩（暂不迁移，下次重传自动走新链路）
+   */
   const handleReCropConfirm = useCallback(async (crop: { x: number; y: number; width: number; height: number }) => {
     try {
       const src = node.attrs.src as string
-      // 前端 Canvas 裁剪 + 压缩 + Base64
-      const dataUrl = await canvasCropImage(src, crop, 1200, 80)
-      updateAttributes({ src: dataUrl })
+
+      if (src.startsWith('asset://')) {
+        // 路径 1：从 asset:// URL 提取绝对文件路径 → Rust 端裁剪
+        // asset:////Users/xxx/Library/Application%20Support/.../images/xxx.jpg
+        let filePath = src
+        if (src.startsWith('asset:////')) filePath = src.slice(9) // 四斜杠
+        else if (src.startsWith('asset:///')) filePath = src.slice(8) // 三斜杠
+        filePath = decodeURIComponent(filePath)
+
+        const newSrc = await imageApi.processCropped(
+          filePath,
+          crop.x, crop.y, crop.width, crop.height,
+          1200, 80,
+        )
+        updateAttributes({ src: newSrc })
+      } else if (src.startsWith('data:')) {
+        // 路径 2：旧方案遗留 data URL → Canvas 裁剪
+        // TODO(v1.21): 加 Rust data_url_to_file 命令，把旧图也迁移到资产存储
+        const dataUrl = await canvasCropImage(src, crop, 1200, 80)
+        updateAttributes({ src: dataUrl })
+      } else {
+        console.warn('重新裁切：不支持的 src 类型', src?.slice?.(0, 50))
+      }
     } catch (err) {
       console.error('重新裁切失败', err)
     } finally {
@@ -144,6 +195,14 @@ export default function ImageResizeNodeView({
               className="image-resize-btn"
             >
               <EyeIcon className="w-3.5 h-3.5" />
+            </button>
+            {/* 溯源信息 */}
+            <button
+              onClick={openMetaPanel}
+              title="图片溯源信息"
+              className="image-resize-btn"
+            >
+              <InfoIcon className="w-3.5 h-3.5" />
             </button>
             <span className="image-toolbar-divider" />
             <button
@@ -229,6 +288,15 @@ export default function ImageResizeNodeView({
         <ImageViewerDialog
           imageSrc={node.attrs.src as string}
           onClose={() => setViewerOpen(false)}
+        />
+      )}
+
+      {/* 溯源元数据弹窗 */}
+      {metaOpen && (
+        <ImageMetaPanel
+          meta={metaData}
+          loading={metaLoading}
+          onClose={() => setMetaOpen(false)}
         />
       )}
     </NodeViewWrapper>

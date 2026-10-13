@@ -277,6 +277,7 @@ pub fn run() {
             commands::vocab::vocab_list,
             commands::vocab::vocab_due,
             commands::vocab::vocab_get,
+            commands::vocab::vocab_get_by_word,
             commands::vocab::vocab_review,
             commands::vocab::vocab_logs,
             commands::vocab::vocab_stats,
@@ -302,6 +303,7 @@ pub fn run() {
             // ══════ 图片处理 ══════
             commands::image::process_image,
             commands::image::process_image_cropped,
+            commands::image::image_asset_get_by_src,
             // ══════ 窗口管理 — 独立窗口 ══════
             commands::window::manager::open_world_window,
             commands::window::manager::close_world_window,

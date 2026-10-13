@@ -11,7 +11,7 @@
 > 这是「引擎在 Rust 侧、无法回调前端 JS」约束下的解法，详见「需要 follow-up 的事项」首条。
 > **日期**：2026-10-10
 > **影响范围**：Agent 引擎 / IPC 契约 / 应用安全边界 / 前端插件 UI
-> **适用版本**：`1.20.0`　|　**最后核对**：2026-10-12
+> **适用版本`1.21.0`　|　**最后核对**：2026-10-12
 > **相关**：
 > - [ADR-004：Agent 领域画像与能力技能正交分层](architecture/adr/ADR-004-domain-aware-agent-profiles)
 > - [ADR-005：Agent 扩展模型（工具注册表 / 执行模式 / 前端自动发现）](architecture/adr/ADR-005-agent-extension-model)

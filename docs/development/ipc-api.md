@@ -1,8 +1,8 @@
 # IPC 命令速查
 
-> **适用版本**：`1.20.0`　|　**最后核对**：2026-10-05
+> **适用版本`1.21.0`　|　**最后核对**：2026-10-13
 
-TimeWrite 共注册 **173 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用。桥接层导出 **19 个 API 对象**（`bookApi` `volumeApi` `chapterApi` `snapshotApi` `worldCardApi` `diaryApi` `scheduleApi` `windowApi` `aiApi` `agentApi` `imageApi` `importExportApi` `debugApi` `systemApi` `vocabApi` `ttsApi` `dictApi` `taskCardApi` `writingApi`）。
+TimeWrite 共注册 **200 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用。桥接层导出 **19 个 API 对象**（`bookApi` `volumeApi` `chapterApi` `snapshotApi` `worldCardApi` `diaryApi` `scheduleApi` `windowApi` `aiApi` `agentApi` `imageApi` `importExportApi` `debugApi` `systemApi` `vocabApi` `ttsApi` `dictApi` `taskCardApi` `writingApi`）。
 
 > **架构约定**：`tauri-bridge.ts` 是全项目**唯一**允许调用 `invoke` 的模块。禁止在其他文件中直接 import `@tauri-apps/api` 的 `invoke`。
 
@@ -24,7 +24,7 @@ TimeWrite 共注册 **173 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` �
 | [语音合成](#语音合成-tts) | 1 | `commands/tts.rs` |
 | [AI](#ai-commandsai) | 8 | `commands/ai/{test,embedding,chat,summarize}.rs` |
 | [导入导出](#导入导出-commandsio) | 8（export 2 / import_txt 1 / backup 5） | `commands/io/{export,import_txt,backup}.rs` |
-| [图片](#图片-image) | 2 | `commands/image.rs` |
+| [图片](#图片-image) | 3 | `commands/image.rs` |
 | [窗口](#窗口-commandswindow) | 22 | `commands/window/{manager,debug,validate}.rs` |
 | [Agent](#agent-commandsagent) | 6 | `commands/agent/skills.rs` |
 | [系统](#系统检查-system_check) | 1 | `commands/system_check.rs` |
@@ -65,8 +65,8 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 | `get_book` | 获取单本书详情 |
 | `create_book` | 创建新书籍（自动创建默认卷） |
 | `update_book` | 更新书籍元信息 |
-| `set_book_cover` | 设置书籍封面（文件路径） |
-| `set_book_cover_data` | 设置封面（Base64 data URL 直传） |
+| `set_book_cover` | 设置书籍封面（文件路径 → 后端压缩存资产，返回 asset://） |
+| `set_book_cover_data` | 设置封面（Base64 data URL 直传，旧方案兼容） |
 | `delete_book` | 软删除书籍（级联子孙卷/章） |
 | `list_deleted_books` | 列出回收站中的书籍 |
 | `restore_book` | 恢复已删除书籍 |
@@ -396,8 +396,12 @@ io 目录定义的业务码：
 
 | 命令 | 说明 |
 |------|------|
-| `process_image` | 图片压缩/校验/编码（1200px 编辑器图、800px 封面图） |
-| `process_image_cropped` | 按前端传入的裁剪参数处理图片 |
+| `process_image` | 上传图片：校验→sha256 去重→压缩存 `{app_data_dir}/images/`→入库 `image_assets`，返回纯绝对路径（前端 `convertFileSrc` 转 asset:// URL） |
+| `process_image_cropped` | 裁剪图片：接收 `cropX/Y/W/H`（原图自然像素坐标）→ Rust `img.crop_imm`→缩放编码→存资产→返回 assetPath |
+| `image_asset_get_by_src` | 溯源面板：从 img src URL（asset:// 或 data:）反查 `image_assets` 表元数据（原图尺寸/格式/来源/上传时间） |
+
+> **格式策略**：PNG + 有 alpha 通道 → 存 PNG（保透明）；其他所有格式 → 统一存 JPEG。
+> **返回值**：后端只返回纯绝对文件路径，`asset://` URL 由前端 `convertFileSrc` 构造，避免跨平台三/四斜杠坑。
 
 ## 窗口 `commands/window/`
 
@@ -457,7 +461,7 @@ io 目录定义的业务码：
 | `aiApi` | 8 |
 | `agentApi` | 6 |
 | `importExportApi` | 5 |
-| `imageApi` | 2 |
+| `imageApi` | 3 |
 | `windowApi` | 16 |
 | `debugApi` | 6 |
 | `systemApi` | 1 |

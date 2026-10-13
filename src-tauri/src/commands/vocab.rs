@@ -134,6 +134,12 @@ pub fn vocab_get(state: State<AppDb>, id: String) -> Result<VocabWord, AppError>
     vocab_service::get_word(&state, &id)
 }
 
+/// 按单词精确查找（大小写不敏感），未收录返回 null
+#[tauri::command]
+pub fn vocab_get_by_word(state: State<AppDb>, word: String) -> Result<Option<VocabWord>, AppError> {
+    vocab_service::get_by_word(&state, &word)
+}
+
 /// 提交复习反馈（rating: 0 忘记 / 1 模糊 / 2 记得 / 3 轻松），推进 SM-2 调度
 #[tauri::command]
 pub fn vocab_review(

@@ -1,6 +1,6 @@
 # 架构总览
 
-> **适用版本**：`1.20.0`　|　**最后核对**：2026-10-05
+> **适用版本`1.21.0`　|　**最后核对**：2026-10-13
 >
 > TimeWrite（MirageInk / 智写时光）运行时为**双进程模型**：WebView 前端 + Rust Core。
 > v1.1 起 Agent 已由 Python 外部子进程迁移为 **Rust 原生引擎**（见 [Agent 引擎架构](architecture/agent-architecture)），
@@ -33,7 +33,8 @@ TimeWrite 运行时包含 **2 个进程**。Rust 是**唯一的数据拥有者**
 │  │ repository/  数据访问：纯 SQL，无业务逻辑               │  │
 │  │ db/          r2d2 连接池 + SQLite WAL + FTS5           │  │
 │  │ commands/agent/  Rust 原生 Agent 引擎                  │  │
-│  │   （engine/prompts/tools/memory/skills）                │  │
+│  │   （engine/pipeline/profiles/prompts/skills/             │  │
+│  │    sse_parser/tools/memory）                             │  │
 │  └───────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -54,12 +55,13 @@ TimeWrite 运行时包含 **2 个进程**。Rust 是**唯一的数据拥有者**
 
 ## Agent 引擎（v1.2 内嵌于 Rust）
 
-Agent 自动化能力由 `src-tauri/src/commands/agent/` 提供，**无外部进程、无需 Python 环境**：
+Agent 自动化能力由 `src-tauri/src/commands/agent/` 提供（**9 个文件**，无外部进程、无需 Python 环境）：
 
 | 模块 | 职责 |
 |------|------|
-| `engine.rs` | SSE 流式 ReAct 工具循环（`run_skill` + 任务取消），按 `RuntimeMode` 分发；调用云端模型 API |
-| `pipeline.rs` | L2 流水线执行器：按画像声明的固定步骤依次执行（当前仅拆书领域） |
+| `engine.rs` | SSE 流式 ReAct 工具循环（`run_skill` + 任务取消），按 `RuntimeMode` 分发；`ReactCtx` 收拢运行时上下文、`classify_http_error` HTTP 错误诊断 |
+| `sse_parser.rs` | **2026-10 新增**：纯函数 SSE 解析器——`next_line` / `parse_sse_data` / `flush_remaining_line`；无 AppHandle 依赖，9 个单元测试 |
+| `pipeline.rs` | L2 流水线执行器：按画像声明的固定步骤依次执行（当前仅拆书领域）；构造 `engine::ReactCtx` 传入每步 |
 | `profiles.rs` | L1 画像注册表：能力 4 + 领域 4，含 L2 执行模式与 `merge()` 合并规则 |
 | `prompts.rs` | 动态场景提示组装（领域/能力基准 + 两类 hints）+ Token 估算 |
 | `tools.rs` | L0 工具注册表：8 个数据库工具（读章节/摘要/分页/章节列表/世界观搜索/整书上下文/拆章节/生成卡片） |
@@ -124,7 +126,7 @@ db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发�
 
 ## 数据库设计
 
-**24 张业务表 + 2 张 FTS5 虚拟表**（另含 sqlite-vec 动态 `chunks_vec` 镜像表）
+**28 张业务表 + 2 张 FTS5 虚拟表**（另含 sqlite-vec 动态 `chunks_vec` 镜像表；v1.20 新增 `image_assets` / `agent_traces` / `telemetry_events`）
 
 | 表 | 关键字段 | 说明 |
 |----|---------|------|
@@ -151,6 +153,7 @@ db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发�
 | `writing_stats` | book_id (FK, 级联删除), stat_date, words | 按日净增字数（v1.6.0，衍生展示表，不纳入备份导出） |
 | `chapters_fts` | FTS5（unicode61） | 章节全文搜索，由 3 个触发器自动同步 |
 | `world_cards_fts` | FTS5（unicode61） | 世界观全文搜索，由 3 个触发器自动同步 |
+| `image_assets` | sha256(唯一), stored_path, original_width/height/format, stored_width/height/format, source, created_at | 图片独立文件资产（v1.20），sha256 去重，溯源查询入口 |
 
 **技术要点**
 
@@ -180,7 +183,7 @@ db/         连接与 Schema —— r2d2 连接池、幂等迁移、FTS5 触发�
 | `ttsApi` | `commands/tts.rs` | 豆包语音合成（v1.4.0） |
 | `aiApi` | `commands/ai/` | 流式对话 + RAG + Embedding（预留）+ 总结 |
 | `importExportApi` | `commands/io/` | 导入导出 + 加密备份 |
-| `imageApi` | `commands/image.rs` | 图片压缩与裁剪 |
+| `imageApi` | `commands/image.rs` | 图片资产：上传压缩/Rust 裁剪/sha256 去重/独立文件存储（v1.20） |
 | `windowApi` | `commands/window/manager.rs` | 独立窗口开关（8 类窗口） |
 | `debugApi` | `commands/window/{debug,validate}.rs` | 调试控制台 + 数据库校验 |
 | `systemApi` | `commands/system_check.rs` | 运行环境自检 |

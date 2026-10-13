@@ -152,7 +152,43 @@ export default function AddWordDialog({ open, editing, onClose }: Props) {
     setAiBusy(true)
     setAiError('')
     try {
-      // ① 单词形态检查（轻量模型）：判定是完整单词 / 简写 / 缩写 / 不存在。
+      // ① 新增模式先查生词本是否已收录（编辑模式跳过——本来就是在改已有词条）
+      if (!isEdit) {
+        try {
+          const existing = await vocabApi.getByWord(w)
+          if (existing) {
+            // 已有：加载全部已有字段到表单，并提示用户
+            setPhonetic(existing.phonetic || '')
+            const existingMeanings = (existing.meanings ?? [])
+              .map((m) => normalizeAiMeaning({ pos: m.pos, def: m.def }))
+              .filter((m) => m.def || m.pos)
+            if (existingMeanings.length) {
+              setMeanings(existingMeanings)
+              setDictSource(false)
+            }
+            setExample(existing.example || '')
+            setExampleZh(existing.exampleZh || '')
+            setKnowledge(existing.knowledge ?? null)
+            const statusTag =
+              existing.status === 'learning'
+                ? '学习中'
+                : existing.status === 'mastered'
+                  ? '已掌握'
+                  : existing.status === 'suspended'
+                    ? '已暂停'
+                    : '已收录'
+            toast.info(
+              `单词「${w}」已在生词本中（${statusTag}），已加载已有内容。如需用 AI 重新生成，请再次点击 DeepSeek`,
+            )
+            return
+          }
+        } catch (err) {
+          // 查询服务不可用时降级——不阻断 AI 流程
+          console.warn('[Vocab·翻译] 已有单词查询失败，降级为直接翻译:', err)
+        }
+      }
+
+      // ② 单词形态检查（轻量模型）：判定是完整单词 / 简写 / 缩写 / 不存在。
       //    检查服务不可用时降级为直接翻译，不阻断主流程。
       const endpoint = aiConfig.chat.endpoint
       const checkModel = aiConfig.chat.provider === 'deepseek' ? AI_CHECK_MODEL : aiConfig.chat.model

@@ -41,8 +41,6 @@ type FlipDir = 'prev' | 'next' | null
 /** 一页展开的双页：left/right 为 metas 下标，null 表示该半页留白 */
 type BookPage = { left: number | null; right: number | null }
 
-const todayKey = toDateKey(new Date())
-
 /** 提取日期所属的年月键 'YYYY-MM' */
 const ymOfDate = (date: string) => date.slice(0, 7)
 
@@ -51,6 +49,8 @@ const zhMonths = ['一', '二', '三', '四', '五', '六', '七', '八', '九',
 
 // 组件：DiaryBookPage 看日记独立窗口书页浏览器（只读翻书，无编辑入口）
 export default function DiaryBookPage() {
+  /** 今日日期键（每次渲染动态计算，确保跨天自动刷新） */
+  const todayKey = toDateKey(new Date())
   /** 全部日记摘要（按日期升序，最早的在前） */
   const [metas, setMetas] = useState<DiaryMeta[] | null>(null)
   /** 当前展开书页在 pages 中的下标 */

@@ -45,9 +45,6 @@ import DayTasksPanel from './DayTasksPanel'
 import CompleteSummaryModal from '@/components/taskCards/CompleteSummaryModal'
 import { countUnfinishedSubtasks } from '@/lib/subtaskGuard'
 
-/** 今日日期键（页面挂载时计算一次） */
-const todayKey = toDateKey(new Date())
-
 /** HTML → 纯文本（用于日记卡片正文预览） */
 function htmlToText(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')
@@ -56,6 +53,8 @@ function htmlToText(html: string): string {
 
 // 组件：DiaryPanel 首页右侧「日记 + 当日任务」模块（按月日历联动切换）
 export default function DiaryPanel() {
+  /** 今日日期键（每次渲染动态计算，确保跨天自动刷新） */
+  const todayKey = localToday()
   const [viewYear, setViewYear] = useState(() => new Date().getFullYear())
   const [viewMonth, setViewMonth] = useState(() => new Date().getMonth() + 1)
   /** 本月日记摘要（用于日历上的已写标记点） */
