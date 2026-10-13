@@ -519,7 +519,17 @@ export const aiApi = {
   ) {
     return typedInvoke<RagResultItem[]>(
       'rag_search',
-      { bookId, query, topN, endpoint: endpoint ?? null, apiKey: apiKey ?? null, embeddingModel: embeddingModel ?? null }
+      {
+        // Rust 端参数为 `args: RagSearchCommandArgs` 结构体，必须嵌套在 args 下
+        args: {
+          bookId,
+          query,
+          topN,
+          endpoint: endpoint ?? null,
+          apiKey: apiKey ?? null,
+          embeddingModel: embeddingModel ?? null,
+        },
+      }
     )
   },
 
@@ -648,7 +658,9 @@ export const agentApi = {
    * 流式事件经 `agent-stream-chunk` 推送（携带 requestId），返回值为最终累积的完整文本
    */
   async executeSkill(args: AgentSkillArgs): Promise<string> {
-    return typedInvoke<string>('execute_agent_skill', { ...args })
+    // Rust 端参数为 `args: ExecuteSkillArgs` 结构体，必须嵌套在 args 下
+    // （此前 Rust 端为标量参数、展开传参可匹配；e48853c 重构后必须嵌套）
+    return typedInvoke<string>('execute_agent_skill', { args })
   },
 
   /** 取消当前正在执行的 Agent 任务（CancelToken 即时中断） */
@@ -764,13 +776,17 @@ export const imageApi = {
     quality = 80,
   ): Promise<string> {
     const result = await typedInvoke<CreateAssetResult>('process_image_cropped', {
-      sourcePath,
-      cropX: Math.round(cropX),
-      cropY: Math.round(cropY),
-      cropW: Math.round(cropW),
-      cropH: Math.round(cropH),
-      maxWidth,
-      quality,
+      // 注意：Rust 端参数为 `args: ProcessCroppedArgs` 结构体，
+      // Tauri 按参数名取键，必须嵌套在 `args` 下（散开传参会报 missing required key args）
+      args: {
+        sourcePath,
+        cropX: Math.round(cropX),
+        cropY: Math.round(cropY),
+        cropW: Math.round(cropW),
+        cropH: Math.round(cropH),
+        maxWidth,
+        quality,
+      },
     })
     return convertFileSrc(result.assetPath)
   },

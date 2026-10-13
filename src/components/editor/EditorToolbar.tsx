@@ -64,6 +64,7 @@ import { usePreferencesStore } from '@/stores/preferencesStore'
 import { cn } from '@/lib/utils.ts'
 import { processEditorImage, processCroppedEditorImage } from '@/lib/image-utils.ts'
 import { windowApi } from '@/lib/tauri-bridge'
+import { toast } from '@/lib/toast'
 import ImageCropperDialog from './ImageCropperDialog'
 import { ToolbarBtn, TooltipWrap } from './toolbar/ToolbarBtn'
 import { SaveIndicator } from './toolbar/SaveIndicator'
@@ -280,7 +281,8 @@ export default function EditorToolbar() {
       if (!isEditorUsable(usableEditor)) return
       usableEditor.chain().focus().setImage({ src: dataUrl }).run()
     } catch (err) {
-      console.error('裁剪图片失败', err)
+      console.error('裁剪图片失败:', err)
+      toast.error(`裁剪图片失败：${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setCropperOpen(false)
       setCropperFilePath('')

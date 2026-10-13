@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { processEditorImage, canvasCropImage } from '@/lib/image-utils.ts'
 import { imageApi } from '@/lib/tauri-bridge.ts'
+import { toast } from '@/lib/toast'
 import ImageCropperDialog from './ImageCropperDialog'
 import ImageViewerDialog from './ImageViewerDialog'
 import ImageMetaPanel from './ImageMetaPanel'
@@ -146,12 +147,31 @@ export default function ImageResizeNodeView({
     try {
       const src = node.attrs.src as string
 
-      if (src.startsWith('asset://')) {
+      if (src.startsWith('asset://') || src.startsWith('http://asset.localhost') || src.startsWith('https://asset.localhost')) {
         // 路径 1：从 asset:// URL 提取绝对文件路径 → Rust 端裁剪
-        // asset:////Users/xxx/Library/Application%20Support/.../images/xxx.jpg
-        let filePath = src
-        if (src.startsWith('asset:////')) filePath = src.slice(9) // 四斜杠
-        else if (src.startsWith('asset:///')) filePath = src.slice(8) // 三斜杠
+        // 兼容 Tauri v2 多种 asset:// URL 输出格式：
+        //  - asset://localhost/<path>（Tauri v2 macOS/Linux 标准输出，由 convertFileSrc 生成）
+        //  - asset:////<path>（Tauri v1 四斜杠残留）
+        //  - asset:///<path>（Tauri v1 三斜杠残留）
+        let filePath: string
+        if (src.startsWith('asset://localhost/')) {
+          filePath = src.slice('asset://localhost/'.length)
+        } else if (src.startsWith('http://asset.localhost/')) {
+          filePath = src.slice('http://asset.localhost/'.length)
+        } else if (src.startsWith('https://asset.localhost/')) {
+          filePath = src.slice('https://asset.localhost/'.length)
+        } else if (src.startsWith('asset:////')) {
+          filePath = src.slice('asset:////'.length)
+        } else if (src.startsWith('asset:///')) {
+          filePath = src.slice('asset:///'.length)
+        } else {
+          // 兜底：去掉 asset:// 或 http(s):// 前缀及可能的 host 段，仅保留 path 部分
+          const rest = src.startsWith('asset://')
+            ? src.slice('asset://'.length)
+            : src.replace(/^https?:\/\//, '')
+          const slash = rest.indexOf('/')
+          filePath = slash >= 0 ? rest.slice(slash + 1) : rest
+        }
         filePath = decodeURIComponent(filePath)
 
         const newSrc = await imageApi.processCropped(
@@ -169,7 +189,8 @@ export default function ImageResizeNodeView({
         console.warn('重新裁切：不支持的 src 类型', src?.slice?.(0, 50))
       }
     } catch (err) {
-      console.error('重新裁切失败', err)
+      console.error('重新裁切失败:', err)
+      toast.error(`重新裁切失败：${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setReCropOpen(false)
     }

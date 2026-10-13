@@ -266,26 +266,28 @@ pub fn create_or_find(
     let source_path = Path::new(&args.source_path);
     validate_source(source_path)?;
 
-    // 计算 sha256
-    let sha256 = sha256_file(source_path)?;
+    // 计算 sha256（原图指纹；裁剪场景下后续会按裁剪结果二次查重）
+    let mut sha256 = sha256_file(source_path)?;
 
-    // 查重
+    // 查重（仅未裁剪时按原图 sha256 查重；裁剪会生成新内容，原图指纹无意义）
     let conn = db.pool.get()?;
-    if let Some(existing) = image_asset_repo::find_by_sha256(&conn, &sha256)? {
-        let asset_path = build_asset_path(app, &existing)?;
-        return Ok(CreateAssetResult {
-            id: existing.id,
-            asset_path,
-            reused: true,
-            original_name: existing.original_name,
-            original_size: existing.original_size,
-            original_width: existing.original_width,
-            original_height: existing.original_height,
-            original_format: existing.original_format,
-            stored_size: 0,
-            stored_width: existing.stored_width,
-            stored_height: existing.stored_height,
-        });
+    if args.crop.is_none() {
+        if let Some(existing) = image_asset_repo::find_by_sha256(&conn, &sha256)? {
+            let asset_path = build_asset_path(app, &existing)?;
+            return Ok(CreateAssetResult {
+                id: existing.id,
+                asset_path,
+                reused: true,
+                original_name: existing.original_name,
+                original_size: existing.original_size,
+                original_width: existing.original_width,
+                original_height: existing.original_height,
+                original_format: existing.original_format,
+                stored_size: 0,
+                stored_width: existing.stored_width,
+                stored_height: existing.stored_height,
+            });
+        }
     }
 
     // 原图元数据
@@ -309,6 +311,31 @@ pub fn create_or_find(
         .map(|m| m.len() as i64)
         .unwrap_or(0);
     let stored_path_relative = format!("images/{file_stem}.{ext}");
+
+    // 裁剪场景：用裁剪后内容的 sha256 做二次查重，避免相同裁剪重复入库
+    if args.crop.is_some() {
+        let cropped_sha = sha256_file(&dest_path)?;
+        if let Some(existing) = image_asset_repo::find_by_sha256(&conn, &cropped_sha)? {
+            // 命中已有裁剪结果：删除刚生成的临时文件，复用既有资产
+            let _ = std::fs::remove_file(&dest_path);
+            let asset_path = build_asset_path(app, &existing)?;
+            return Ok(CreateAssetResult {
+                id: existing.id,
+                asset_path,
+                reused: true,
+                original_name: existing.original_name,
+                original_size: existing.original_size,
+                original_width: existing.original_width,
+                original_height: existing.original_height,
+                original_format: existing.original_format,
+                stored_size: 0,
+                stored_width: existing.stored_width,
+                stored_height: existing.stored_height,
+            });
+        }
+        // 未命中：把 sha256 替换为裁剪结果的指纹，供后续 insert 写入 DB
+        sha256 = cropped_sha;
+    }
 
     // 插入 DB
     let asset = ImageAsset {
