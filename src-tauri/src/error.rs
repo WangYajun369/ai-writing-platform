@@ -120,6 +120,16 @@ pub enum ErrCode {
     /// 应用配置载荷解析失败（`E_CONFIG_PARSE`）。
     ConfigParse,
 
+    // ── Agent 插件（ADR-006） ──
+    /// 插件清单不合法（`E_PLUGIN_MANIFEST`）：解析失败、id 与目录名不一致、
+    /// 入口文件缺失、画像引用的工具未被 `grants` 覆盖等。
+    PluginManifest,
+    /// 插件画像 id 与内置画像撞车（`E_PLUGIN_CONFLICT`）。
+    ///
+    /// 独立成码是因为它**可修复且修复方式唯一**（改插件的画像 id），
+    /// 前端值得为它给出针对性提示，而非笼统归入清单错误。
+    PluginConflict,
+
     // ── 兜底 ──
     /// 业务逻辑错误兜底码（`E_BUSINESS`）。
     Business,
@@ -168,6 +178,8 @@ impl ErrCode {
             Self::ConfigVersion => "E_CONFIG_VERSION",
             Self::ConfigSection => "E_CONFIG_SECTION",
             Self::ConfigParse => "E_CONFIG_PARSE",
+            Self::PluginManifest => "E_PLUGIN_MANIFEST",
+            Self::PluginConflict => "E_PLUGIN_CONFLICT",
             Self::Business => "E_BUSINESS",
             Self::General => "E_GENERAL",
         }
@@ -438,6 +450,13 @@ mod tests {
             (ErrCode::ExportFormat, "E_EXPORT_FORMAT"),
             (ErrCode::ExportWrite, "E_EXPORT_WRITE"),
             (ErrCode::ExportCanceled, "E_EXPORT_CANCELED"),
+            // 应用配置段（此前本测试遗漏的三个，随本次新增一并补齐）
+            (ErrCode::ConfigVersion, "E_CONFIG_VERSION"),
+            (ErrCode::ConfigSection, "E_CONFIG_SECTION"),
+            (ErrCode::ConfigParse, "E_CONFIG_PARSE"),
+            // Agent 插件
+            (ErrCode::PluginManifest, "E_PLUGIN_MANIFEST"),
+            (ErrCode::PluginConflict, "E_PLUGIN_CONFLICT"),
             (ErrCode::Business, "E_BUSINESS"),
             (ErrCode::General, "E_GENERAL"),
         ];

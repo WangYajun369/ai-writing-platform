@@ -591,6 +591,21 @@ export interface AgentSkillArgs {
   requestId?: string
   /** 会话滑动窗口摘要（聊天模式传入；Skill 模式传 null） */
   conversationSummary?: string | null
+  /**
+   * 插件 JS 生成的编排计划（ADR-006）
+   *
+   * 仅当 `skill` 命中**已启用的插件画像**时生效；传 `null` 表示不接管编排。
+   * 结构上与 `agent-plugin` 的 `PlanStep` 一致，此处内联定义以避免
+   * bridge 与 agent-plugin 互相 import 形成循环。
+   *
+   * ⚠️ 后端会按插件的 `grants` 再校验一次工具权限——前端这遍只是 UX。
+   */
+  plan?: {
+    name: string
+    instruction: string
+    tools: string[]
+    maxRounds?: number
+  }[] | null
 }
 
 /** 记忆类型（三层记忆体） */
@@ -1489,5 +1504,93 @@ export const configApi = {
     aiToolCategories?: unknown
   }): Promise<LegacyMigrationResult> {
     return typedInvoke<LegacyMigrationResult>('migrate_legacy_config', { payload })
+  },
+}
+
+// ══════════════════ Agent 插件（ADR-006）══════════════════
+
+/**
+ * 插件权限项
+ *
+ * 取值与 Rust `plugin::model::Grant` 的 serde rename 一一对应，
+ * 两边都是封闭集合：拼错的 grant 会在解析 manifest 时直接报错，
+ * 不会被静默忽略（否则「未声明即不注入」的保证会失守）。
+ */
+export type PluginGrant = 'llm' | 'book.read' | 'card.search' | 'card.write' | 'storage'
+
+/** grants 的中文说明 —— 安装确认界面逐项展示 */
+export const PLUGIN_GRANT_LABELS: Record<PluginGrant, string> = {
+  llm: '调用 AI 模型生成内容（会消耗你的 API 额度）',
+  'book.read': '读取书籍与章节内容',
+  'card.search': '检索世界观设定卡片',
+  'card.write': '新建世界观设定卡片',
+  storage: '读写本插件自己的本地存储',
+}
+
+/** 插件贡献的 Agent 画像（形状与后端 PluginProfile 一致） */
+export interface PluginProfileSpec {
+  id: string
+  label: string
+  description: string
+  icon: string
+  color: string
+  quickActions: string[]
+  basePrompt: string
+  tools: string[]
+  maxRounds: number
+}
+
+/** 插件清单（manifest.json） */
+export interface PluginManifest {
+  id: string
+  name: string
+  version: string
+  description: string
+  author?: string | null
+  grants: PluginGrant[]
+  profiles: PluginProfileSpec[]
+  entry: string
+}
+
+/** 'ok' = 校验通过；'error' = 清单或入口有问题，见 error 字段 */
+export type PluginStatus = 'ok' | 'error'
+
+/** 已安装插件 */
+export interface InstalledPlugin {
+  manifest: PluginManifest
+  enabled: boolean
+  status: PluginStatus
+  error?: string | null
+}
+
+export const pluginApi = {
+  /** 列出全部已安装插件（含装坏的，便于用户卸载） */
+  async list(): Promise<InstalledPlugin[]> {
+    return typedInvoke<InstalledPlugin[]>('plugin_list')
+  },
+
+  /**
+   * 从本地目录安装插件
+   *
+   * 只复制 manifest.json 与 entry 两个文件；同名插件会被覆盖更新。
+   * 安装后默认未启用——须用户阅读源码并确认 grants 后再调 setEnabled。
+   */
+  async install(srcDir: string): Promise<InstalledPlugin> {
+    return typedInvoke<InstalledPlugin>('plugin_install', { srcDir })
+  },
+
+  /** 卸载插件（删除目录并移出启用清单） */
+  async uninstall(id: string): Promise<void> {
+    return typedInvoke<void>('plugin_uninstall', { id })
+  },
+
+  /** 启用 / 停用；启用前后端会重跑一次全量校验 */
+  async setEnabled(id: string, enabled: boolean): Promise<void> {
+    return typedInvoke<void>('plugin_set_enabled', { id, enabled })
+  },
+
+  /** 读取插件入口源码（供安装确认界面原样展示以人工审核） */
+  async source(id: string): Promise<string> {
+    return typedInvoke<string>('plugin_source', { id })
   },
 }

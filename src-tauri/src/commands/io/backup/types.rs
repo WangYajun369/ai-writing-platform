@@ -118,6 +118,10 @@ pub(crate) struct DatabaseExport {
 }
 
 /// 全量导出总载荷（v1 字段兼容保留；v2 新增 schemaVersion / appVersion / payloadHash，均缺失时自动兼容旧文件）
+///
+/// `files` 段是 v2 的**加性**扩展（插件 / 附件文件资产，见 `files.rs`）：
+/// 版本号仍为 `2.0` —— 旧版 App 反序列化时忽略未知字段，新版读旧备份时 `None`，
+/// 两个方向都不破坏兼容。payloadHash 也仍只覆盖 `database`（文件不参与指纹）。
 #[derive(Serialize, Deserialize)]
 pub(crate) struct ExportPayload {
     pub(crate) version: String,
@@ -133,6 +137,9 @@ pub(crate) struct ExportPayload {
     pub(crate) payload_hash: Option<String>,
     pub(crate) database: DatabaseExport,
     pub(crate) cache: serde_json::Value,
+    /// 文件资产段（仅全量备份携带；单作品备份与旧版备份为 `None`）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) files: Option<super::files::FilesExport>,
 }
 
 /// SHA-256 十六进制（载荷指纹 / 行内容短指纹共用）

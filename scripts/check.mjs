@@ -78,7 +78,9 @@ console.log('='.repeat(50))
 // ── 0. TypeScript 类型检查 ──────────────────────────────────
 console.log('\n🔎  [0/10] TypeScript 类型检查')
 try {
-  execSync('npx tsc --noEmit', { cwd: ROOT, stdio: 'pipe', timeout: 120000 })
+  // 首次（冷缓存）全量类型检查实际耗时 2 分钟左右（CPU 仅 ~11s，其余是 IO 等待），
+  // 120s 会把它误判成失败且拿不到任何 error TS 行。留足余量，避免假阴性。
+  execSync('npx tsc --noEmit', { cwd: ROOT, stdio: 'pipe', timeout: 300000 })
   console.log('  ✅  tsc --noEmit 通过（0 个类型错误）')
   passed++
 } catch (e) {

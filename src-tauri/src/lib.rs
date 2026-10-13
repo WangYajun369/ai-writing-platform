@@ -24,6 +24,7 @@ mod error; // 统一错误类型
 mod logging; // 全局日志宏（app_log! / app_log_error!，双写控制台与调试窗口）
 mod models; // 数据模型
 mod observability; // 可观测性体系收敛（telemetry 事件总线 + 持久化）
+mod plugin; // Agent 插件宿主（ADR-006）：清单校验、目录装卸、启用清单持久化
 mod repository; // 数据访问层（DAO）
 mod service; // 业务逻辑层
 mod utils; // 工具函数
@@ -407,6 +408,12 @@ pub fn run() {
             config::commands::reset_config,
             config::commands::get_config_meta,
             config::commands::migrate_legacy_config,
+            // ══════ Agent 插件宿主（ADR-006）══════
+            commands::plugin::plugin_list,
+            commands::plugin::plugin_install,
+            commands::plugin::plugin_uninstall,
+            commands::plugin::plugin_set_enabled,
+            commands::plugin::plugin_source,
             // ══════ 系统检查 ══════
             commands::system_check::system_check,
             // ══════ Schema 演进工具 ══════

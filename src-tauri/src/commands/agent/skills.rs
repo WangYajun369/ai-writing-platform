@@ -14,13 +14,17 @@ use crate::error::AppError;
 
 // ══════ 画像发现（L3）══════
 
-/// 列出全部 Agent 画像元数据（能力 + 领域）
+/// 列出全部 Agent 画像元数据（内置能力 + 内置领域 + **已启用插件的贡献**）
 ///
 /// 前端据此渲染技能选择器、领域徽标与快捷操作——**新增画像时前端零改动**。
-/// 无需访问数据库，纯查注册表常量。
+///
+/// 插件画像是阶段七（ADR-006 任务 10）并入的：前端画像列表只认这一个 IPC，
+/// 不并入的话插件装了也看不见。内置画像在前、插件画像在后。
 #[tauri::command]
-pub fn list_agent_profiles() -> Vec<profiles::ProfileMeta> {
-    profiles::profile_metas()
+pub async fn list_agent_profiles(app: AppHandle) -> Vec<profiles::ProfileMeta> {
+    let mut metas = profiles::profile_metas();
+    metas.extend(crate::plugin::profile::plugin_profile_metas(&app));
+    metas
 }
 
 // ══════ Skill 执行 ══════
@@ -30,6 +34,45 @@ pub fn list_agent_profiles() -> Vec<profiles::ProfileMeta> {
 pub struct SkillHistoryItem {
     pub role: String,
     pub content: String,
+}
+
+/// 插件编排计划的一步（前端 `PlanStep`，由插件 JS 运行时生成）
+///
+/// ⚠️ 这是**不可信输入**：即便前端已按 `grants` 校验过，Rust 侧仍会独立再校验一次
+/// （`plugin::profile::plan_is_allowed`）——IPC 边界之外的校验都只是 UX。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanStepParam {
+    pub name: String,
+    pub instruction: String,
+    #[serde(default)]
+    pub tools: Vec<String>,
+    /// 缺省 4，最终夹到 1..=20
+    #[serde(default)]
+    pub max_rounds: Option<usize>,
+}
+
+/// 单步轮数默认值（与前端 `DEFAULT_STEP_ROUNDS` 一致）
+const DEFAULT_STEP_ROUNDS: usize = 4;
+/// 单步轮数上限（与前端 `MAX_STEP_ROUNDS` 一致）
+const MAX_STEP_ROUNDS: usize = 20;
+
+/// 把不可信的入参规整为 [`profiles::OwnedStep`]
+fn normalize_plan(plan: Option<Vec<PlanStepParam>>) -> Option<Vec<profiles::OwnedStep>> {
+    plan.map(|steps| {
+        steps
+            .into_iter()
+            .map(|s| profiles::OwnedStep {
+                name: s.name,
+                instruction: s.instruction,
+                tools: s.tools,
+                max_rounds: s
+                    .max_rounds
+                    .unwrap_or(DEFAULT_STEP_ROUNDS)
+                    .clamp(1, MAX_STEP_ROUNDS),
+            })
+            .collect()
+    })
 }
 
 /// AI 配置参数（前端传入，camelCase 与 aiSlice 一致）
@@ -78,6 +121,8 @@ pub async fn execute_agent_skill(
     ai_config: Option<AiConfigParams>,
     request_id: Option<String>,
     conversation_summary: Option<String>,
+    // 插件 JS 生成的编排计划；仅当 `skill` 命中插件画像时生效
+    plan: Option<Vec<PlanStepParam>>,
 ) -> Result<String, AppError> {
     let history: Vec<engine::HistoryMsg> = conversation_history
         .unwrap_or_default()
@@ -107,6 +152,7 @@ pub async fn execute_agent_skill(
         config,
         request_id,
         conversation_summary,
+        normalize_plan(plan),
     )
     .await
 }

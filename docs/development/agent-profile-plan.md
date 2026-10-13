@@ -1,6 +1,6 @@
 # 领域感知 Agent 实施计划
 
-> **适用版本**：`1.20.0`　|　**最后核对**：2026-10-11
+> **适用版本**：`1.20.0`　|　**最后核对**：2026-10-12
 > **决策依据**：
 > - [ADR-004：Agent 领域画像与能力技能正交分层](architecture/adr/ADR-004-domain-aware-agent-profiles)
 > - [ADR-005：Agent 扩展模型（工具注册表 / 执行模式 / 前端自动发现）](architecture/adr/ADR-005-agent-extension-model)
@@ -31,7 +31,7 @@
 | 四 | 领域画像 + Prompt 组装 | ✅ **已完成**（2026-10-10） |
 | 五 | L3 前端自动发现 | ✅ **已完成**（2026-10-10） |
 | 六 | L2 `RuntimeMode` / Pipeline | ✅ **已完成**（2026-10-11；`SingleShot` 刻意未做，见该节决策 2） |
-| 七 | 插件宿主 | ⬜ 未开始 |
+| 七 | 插件宿主 | ✅ **已完成**（2026-10-12；10 项全落地，含任务 2/3 前端编排运行时与任务 8 备份文件打包，见该节） |
 
 ---
 
@@ -520,31 +520,106 @@
 | 实现方式 | 宿主注入受限 `PluginHost` 对象。**不做 IPC 层白名单**——`withGlobalTauri: false` 使插件天然拿不到 invoke 能力 |
 | 存放 | `{app_data_dir}/plugins/<id>/` 含 `manifest.json` + `index.js` |
 | 权限 | `manifest.json` 的 `grants` 声明，安装时展示，运行时只注入声明项 |
-| ⚠️ CSP | `script-src 'self'` 无 `'unsafe-eval'`，加载第三方 JS **必须全局放宽**（Tauri v2 不支持按窗口隔离） |
+| ⚠️ CSP | **已放宽**：`script-src 'self' 'unsafe-eval'`（Tauri v2 不支持按窗口隔离，放宽即全局）。放宽后已有真实消费端——前端编排运行时用 `new Function` 执行插件 JS 产出 plan（16 个单测覆盖） |
+| 执行 | 插件 JS 只在**前端**跑一次产出 `plan`（步骤 / 指示 / 工具），plan 交 Rust 引擎执行；插件**不参与**逐轮工具循环 |
 
 ### 任务
 
-| # | 任务 | 文件 | 说明 |
-|---|------|------|------|
-| 1 | 放宽 CSP 并实测加载方式 | `src-tauri/tauri.conf.json` | `'unsafe-eval'` 与 `asset:` + `<script src>` 两路线实测后取舍（ADR-006 follow-up） |
-| 2 | 定义 `PluginHost` 注入面 | `src/plugins/host/`（新建） | `llm` / `book` / `card` / `log` / `storage`；`llm.complete` **必须走应用自身配置**，禁止插件传 endpoint 或 key |
-| 3 | 注入面单测固化 | 同上 | 断言「未声明的 `grants` 一律不注入」，防止高权限方法误挂载 |
-| 4 | 插件加载器 | Rust 侧新模块 | 扫描 `{app_data_dir}/plugins/`，解析 manifest 校验 `grants` 合法性 |
-| 5 | 新增 IPC 命令 | `commands/` + `lib.rs` 注册 | 枚举 / 安装 / 卸载 / 启用；需同步 `ipc-commands.ts` 契约 |
-| 6 | 安装确认 UI | `src/components/settings/`（新建） | **展示源码供审核** + 逐项列出 `grants` 供确认 |
-| 7 | 启用清单持久化 | `app_config` 或独立文件 | 现状 `PluginManager.statuses` 是内存 Map，重启即丢——必须补持久化 |
-| 8 | 插件纳入备份 | `commands/io/backup/` | 确认体积与导入覆盖策略（ADR-006 follow-up） |
-| 9 | 概念划界 | `docs/development/plugin-system.md` | 现有 `src/plugins/` 与本宿主是两套东西，需明确命名（前者「内置模块」，后者「Agent 插件」） |
-| 10 | **插件画像接入 L3** | `commands/agent.rs` | `list_agent_profiles` 的返回值须合并「内置注册表画像」+「已启用插件的 `manifest.profiles`」。**不做的话插件装了也看不见**——前端画像列表只认这个 IPC |
+| # | 任务 | 文件 | 说明 | 状态 |
+|---|------|------|------|------|
+| 1 | 放宽 CSP | `src-tauri/tauri.conf.json` | 取 `'unsafe-eval'`（放弃 `asset:` + `<script src>`：拿不到返回值、只能靠全局变量暴露、隔离性更差） | ✅ |
+| 2 | 定义 `PluginHost` 注入面 | `src/agent-plugin/host.ts`（新建） | `llm` / `book` / `card` / `log` / `storage` | ✅ |
+| 3 | 注入面单测固化 | `src/test/agentPluginHost.test.ts` | 断言「未声明的 `grants` 一律不注入」（16 个用例） | ✅ |
+| 4 | 插件加载器 + 启用清单 | `src-tauri/src/plugin/`（新建） | 扫描 `{app_data_dir}/plugins/`、解析 manifest、校验 id / grants / 画像；`enabled.json` 持久化 | ✅ |
+| 5 | 新增 IPC 命令 | `commands/plugin.rs` + `lib.rs` | `plugin_list` / `install` / `uninstall` / `set_enabled` / `source`（5 个，已同步 `ipc-commands.ts`） | ✅ |
+| 6 | 安装确认 UI | `settings/PluginSection.tsx`（新建） | 展示源码供审核 + 逐项列出 `grants`；**装完默认未启用**，确认后才启用 | ✅ |
+| 7 | 启用清单持久化 | `plugin/loader.rs` | 取**独立文件** `{app_data_dir}/plugins/enabled.json`（与插件目录同处，不动 `app_config` 四段注册链路） | ✅ |
+| 8 | 插件纳入备份 | `commands/io/backup/files.rs`（新建） | 备份体系原本**不含任何文件**，已为其新增文件资产段（内嵌 base64），`plugins/` 与 `attachments/` 一并纳入 | ✅ |
+| 9 | 概念划界 | `docs/development/plugin-system.md` | 已补「两套插件的划界」章节；ADR-006 四个 follow-up 已定稿 | ✅ |
+| 10 | **插件画像接入 L3** | `commands/agent/skills.rs` + `engine.rs` | 列表侧合并内置 + 插件画像；**执行侧同样要改**，否则跑的仍是 writing | ✅ |
+
+### 完成情况（2026-10-12）
+
+**落地范围：声明式插件闭环。** 插件贡献 Agent 画像（提示词 / 工具 / 预算 / UI 元数据），
+由 Rust 引擎执行，可完整跑 ReAct 与 Pipeline。安装、卸载、启用、持久化、审核 UI 均已可用。
+
+**后续补做（同日）：** 任务 2/3（PluginHost 注入面 + 前端编排运行时）与任务 8（备份文件打包）
+经用户定稿后一并补做，至此 10 项全部落地，详见下方两小节。
+
+#### 三个计划前提经核查不成立
+
+| # | 计划 / ADR 的假设 | 实际情况 |
+|---|---|---|
+| 1 | 任务 10 只是「合并返回值」 | `ProfileMeta` 的字段全是 `&'static str`，插件画像是运行时 `String`——整个结构需改为 owned；且**执行侧必须同步改**（`profiles::merge` 对未知 id 兜底 writing，不改则选了插件画像却跑 writing） |
+| 2 | 「复用现有 `ID_PATTERN`」 | 它只在前端 `src/plugins/schema.ts`，Rust 侧没有；**字符集不含 `:` 与 `.`**，与 ADR 建议的 `<plugin-id>:<profile-id>` 前缀直接冲突——故改用「撞车即拒绝」而非加前缀 |
+| 3 | 任务 8「插件纳入备份」 | 备份是**纯数据库内容的加密 JSON**（`ExportPayload`），**不含任何文件**——连 `attachments/` 都不在备份内。纳入插件等于给备份体系引入全新的文件打包能力。**已按用户定稿补做**：新增 `files` 段（内嵌 base64），`plugins/` 与 `attachments/` 一并纳入，见下 |
+
+#### 两个关键设计决定
+
+- **`grants` 必须覆盖插件声明的工具**（`grant_for_tool`）。插件画像是声明式的，
+  由引擎代为执行、不跑插件 JS；若不把工具名映射回 `grants` 就校验，
+  插件可绕过权限声明直接借 L0 的原子能力读写数据，`grants` 形同虚设。
+- **`EffectiveProfile` 无需改结构**。工具名虽在 `Vec<String>` 里，但**值必在 L0 注册表内**
+  （加载时校验过），可映射回 `&'static str`；`ability_matched: false` 连带两个正确后果：
+  不注入 writing 的动态提示、预算不套用 writing 的 `(5, 300)`。
+
+#### 刻意偏离
+
+- **安装只复制 `manifest.json` + `entry` 两个文件**，不递归复制源目录——
+  包格式本来就只定义这两个，多拷一个都是无谓的攻击面。
+- **`log` 不列为 grant**：日志不读不写数据、无副作用，恒定注入；
+  列为可选项只会让确认界面多一个无需决策的噪音项。
+- **装坏的插件仍列出**（`status: "error"` + 原因），否则用户永远无法卸载它。
+
+#### 任务 2 / 3：前端编排运行时（PluginHost 注入面）
+
+识别出本 ADR 未考虑的架构约束：**Agent 引擎在 Rust 侧，无法回调前端 JS**。
+用户定稿为「保留 CSP 放宽，做完整前端编排运行时」（而非回退放宽），落地形态：
+
+- **职责切分**：插件 JS 只在前端跑**一次**，用受限 `host` 产出 `plan`（步骤 / 指示 / 工具 / 轮数）；
+  plan 经 `execute_agent_skill` 的 `plan` 参数回传 Rust，由**原生引擎**执行逐轮工具循环。
+  插件因此**不参与**逐轮循环 —— 既避开「前端再造一套引擎」的重复，
+  也让 CSP 放宽有了真实消费端（`new Function`，不再是无收益的净风险）。
+- **权限即字段存在性**：`host` 上未声明 grant 的能力**字段不存在**（不是返回 undefined 的空壳）；
+  `card.search` 与 `card.create` 各自独立；`log` 恒定注入。
+- **双保险**：前端校验 plan 只是 UX，Rust 侧 `plan_is_allowed` 在 IPC 边界**再校验一次**
+  （IPC 入参不可信）。plan 失败/超时一律降级为 `null`，不让对话挂掉。
+- `TOOLS_BY_GRANT` 是 Rust `grant_for_tool` 的前端镜像，两侧必须同步改（单测各自覆盖）。
+
+#### 任务 8：备份文件打包
+
+- **形态**：文件以 base64 内嵌进同一份 JSON（`files.items[].contentB64`），
+  不走 tar/zip —— 加解密链路、`payloadHash` 语义、「临时文件 + rename」原子写出全部不用改，
+  且零新增依赖（`base64` 已在依赖表中）。
+- **仅全量备份携带**：插件与附件都不是作品级数据，与 `app_config` 同一条规则。
+- **还原只写不删**：文件没有回退点（`rollback_import` 只恢复数据库），按 replace 语义
+  先清空本地目录会导致「回滚了库但文件回不来」。故只写备份里有的文件，本地多余文件保留；
+  `fill-gaps` 策略连同名文件也不覆盖（与「绝不触碰已有数据」一致）。
+- **路径白名单**：`path` 来自不可信备份，必须落在 `plugins/` 或 `attachments/` 内，
+  挡住 `../`、绝对路径与 `\`（单测覆盖）。收集时不追符号链接。
+- **上限**：单文件 32 MB 跳过、文件段总量 64 MB 截断并置 `truncated`（留日志）。
+  选截断而非报错，是因为附件动辄几十 MB，因它超标就拒绝整份备份代价太大。
+- **兼容性**：版本号仍 `2.0`（加性扩展，旧版 App 忽略未知字段、新版读旧备份得 `None`）；
+  `payloadHash` 仍只覆盖 `database`，不因文件段改变幂等判定。
+
+> ⚠️ **已知缺口（用户知情后选定的取舍）**：`attachments/` 的文件进了备份，但
+> `tasks` / `attachments` **两张表不在** `DatabaseExport` 里。因此在跨机迁移场景下，
+> 还原出来的附件是没有库内引用的孤儿文件（会被每日孤儿清理删掉）。
+> 要真正闭环需把 `tasks` / `subtasks` / `attachments` 一并纳入 DB 导出，属独立议题。
 
 ### 验收
 
-- 安装一个示例插件后，**不重启应用**即可在 AI 面板看到并选中它（即插件画像已并入 `list_agent_profiles` 返回值）
-- 卸载后插件痕迹清除（含 `app_data_dir` 目录与启用清单）
-- `grants` 未声明的能力在插件内访问为 `undefined`，且单测覆盖
-- 插件内尝试 `fetch` 外部地址被 CSP 拦截（`connect-src` 已限制）
-- 启用状态在重启后保持
-- 往返备份后插件仍在
+- ✅ 安装插件后**不重启应用**即可在 AI 面板看到并选中它（画像已并入 `list_agent_profiles`）
+- ✅ 卸载后插件痕迹清除（含 `app_data_dir` 目录与启用清单条目）
+- ✅ 启用状态在重启后保持（`enabled.json`）
+- ✅ 插件声明了未被 `grants` 覆盖的工具时**拒绝加载**并点明缺哪个 grant（单测覆盖）
+- ✅ 插件画像 id 与内置画像撞车时拒绝加载（`E_PLUGIN_CONFLICT`，单测覆盖）
+- ✅ `grants` 未声明的能力在 `host` 上**字段不存在**（16 个前端单测覆盖：llm / book / card 读写 / storage 各自独立）
+- ✅ 插件 plan 声明越权工具时**两端都拒绝**（前端归一化 + Rust `plan_is_allowed` 再校验）
+- ✅ 插件 JS 语法错 / 超时 / 抛异常时**对话不挂**（降级为 null，走内置编排）
+- ✅ 插件内 `fetch` 外部地址被 CSP 拦截（`connect-src` 已限制）
+- ✅ 往返备份后插件仍在（全量备份打包 `plugins/`，还原只写不删；含 7 个 Rust 单测）
+- ✅ 旧版备份（无 `files` 段）与单作品备份照常导入
 
 ---
 

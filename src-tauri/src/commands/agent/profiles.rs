@@ -327,13 +327,49 @@ pub struct Step {
     pub max_rounds: usize,
 }
 
+/// 运行时构造的流水线步骤
+///
+/// [`Step`] 是编译期常量用的静态版本（`&'static str`），本结构是其 owned 形态，
+/// 用于「运行时才知道步骤内容」的场景——目前唯一来源是**插件 JS 生成的编排计划**
+/// （ADR-006）。两者由 [`OwnedStep::from`] 单向转换，静态常量仍是唯一定义源。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnedStep {
+    /// 步骤名（日志与进度展示）
+    pub name: String,
+    /// 本步指令
+    pub instruction: String,
+    /// 本步可见的工具（调用方须先校验其合法性）
+    pub tools: Vec<String>,
+    /// 本步最多推理轮数
+    pub max_rounds: usize,
+}
+
+impl From<&Step> for OwnedStep {
+    fn from(s: &Step) -> Self {
+        Self {
+            name: s.name.to_string(),
+            instruction: s.instruction.to_string(),
+            tools: s.tools.iter().map(|t| t.to_string()).collect(),
+            max_rounds: s.max_rounds,
+        }
+    }
+}
+
 /// 画像的执行模式（ADR-005 L2）
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeMode {
     /// 自由 ReAct：模型自行决定调什么工具、何时停（现状默认）
     ReAct,
-    /// 固定流水线：按 [`Step`] 依次执行，前一步产物作为后一步输入
+    /// 编译期常量流水线（内置画像声明）
+    ///
+    /// 保持 `&'static [Step]`：`PROFILES` 是 `static`，其初始化表达式必须
+    /// 在编译期可求值——换成 `Vec` 会直接编译失败。
     Pipeline(&'static [Step]),
+    /// 运行时流水线（插件 JS 生成的编排计划）
+    ///
+    /// 插件计划的生命周期不是 `'static`，静态变体容纳不下，故单列一个 owned 变体。
+    /// 执行前由调用方统一转成 `Vec<OwnedStep>`（见 `engine` 的模式分发）。
+    DynamicPipeline(Vec<OwnedStep>),
     //
     // `SingleShot`（单轮直出）**刻意未实现**：计划中唯一的消费方是「AI 工具箱」，
     // 而该迁移本身标为可选、且需先对齐网络重试能力。在此之前加入只会成为无人
@@ -379,7 +415,10 @@ pub enum ProfileKind {
 }
 
 /// 单个画像的完整定义：提示词 / 展示元数据 / 场景提示 / 工具集 / 执行预算
-#[derive(Debug, Clone, Copy)]
+///
+/// 刻意**不是 `Copy`**：`runtime` 字段含 `Vec`（插件可运行时生成编排计划），
+/// 拷贝语义会掩盖这一步的开销。各处一律以 `&'static AgentProfile` 传递。
+#[derive(Debug, Clone)]
 pub struct AgentProfile {
     pub id: &'static str,
     pub kind: ProfileKind,
@@ -590,27 +629,31 @@ pub fn domain_or_novel(book_type: &str) -> &'static AgentProfile {
 /// 因此**新增画像时前端无需改动**（ADR-005 L3 的目标）。
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+//
+// ⚠️ 字段一律是 **owned String**，不是 `&'static str`。
+// 阶段七（ADR-006）起这个结构还要承载**插件画像**——它们的字符串来自运行时
+// 读取的 `manifest.json`，生命周期不是 `'static`。序列化结果不变，前端无需改动。
 pub struct ProfileMeta {
-    pub id: &'static str,
+    pub id: String,
     /// `"ability"` 或 `"domain"`
     pub kind: ProfileKind,
-    pub label: &'static str,
-    pub description: &'static str,
-    pub icon: &'static str,
-    pub color: &'static str,
-    pub quick_actions: &'static [&'static str],
+    pub label: String,
+    pub description: String,
+    pub icon: String,
+    pub color: String,
+    pub quick_actions: Vec<String>,
 }
 
 impl From<&'static AgentProfile> for ProfileMeta {
     fn from(p: &'static AgentProfile) -> Self {
         Self {
-            id: p.id,
+            id: p.id.to_string(),
             kind: p.kind,
-            label: p.label,
-            description: p.description,
-            icon: p.icon,
-            color: p.color,
-            quick_actions: p.quick_actions,
+            label: p.label.to_string(),
+            description: p.description.to_string(),
+            icon: p.icon.to_string(),
+            color: p.color.to_string(),
+            quick_actions: p.quick_actions.iter().map(|s| s.to_string()).collect(),
         }
     }
 }
@@ -621,6 +664,14 @@ impl From<&'static AgentProfile> for ProfileMeta {
 /// 前端按 `kind` 分组使用，不依赖顺序。
 pub fn profile_metas() -> Vec<ProfileMeta> {
     PROFILES.iter().map(ProfileMeta::from).collect()
+}
+
+/// 内置画像 id 全集
+///
+/// 供插件宿主（ADR-006）校验撞车：插件声明的画像 id 若与内置重名，
+/// 内置画像会先被命中，插件那一份将永远选不到——所以在安装时就必须拒绝。
+pub fn builtin_profile_ids() -> Vec<&'static str> {
+    PROFILES.iter().map(|p| p.id).collect()
 }
 
 // ── 领域 × 能力合并 ─────────────────────────────────────────────────────────
@@ -677,9 +728,13 @@ pub fn merge(ability_id: &str, domain_id: &str) -> EffectiveProfile {
 
     // 执行模式取领域优先：流程形状由「处理什么作品」决定，能力通常不固定流程，
     // 故仅在领域未声明（ReAct）时才回落到能力的声明。
-    let runtime = match domain.runtime {
-        RuntimeMode::ReAct => ability.runtime,
-        other => other,
+    //
+    // 按引用匹配：`RuntimeMode` 含 owned 变体后不再是 `Copy`，
+    // 无法从 `&AgentProfile` 中把字段移动出来。
+    let runtime = match &domain.runtime {
+        RuntimeMode::ReAct => ability.runtime.clone(),
+        RuntimeMode::Pipeline(steps) => RuntimeMode::Pipeline(*steps),
+        RuntimeMode::DynamicPipeline(steps) => RuntimeMode::DynamicPipeline(steps.clone()),
     };
 
     EffectiveProfile {

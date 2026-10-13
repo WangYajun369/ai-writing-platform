@@ -29,7 +29,7 @@ use serde_json::Value;
 use tauri::AppHandle;
 
 use crate::commands::agent::engine::{emit_event, react_loop, AgentBudget, CancelToken};
-use crate::commands::agent::profiles::Step;
+use crate::commands::agent::profiles::OwnedStep;
 use crate::db::SqliteConnectionManager;
 
 // ── 结果类型 ────────────────────────────────────────────────────────────────
@@ -45,21 +45,22 @@ pub enum StepStatus {
 /// 单个步骤的执行结果（含产物或错误）
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StepOutcome {
-    pub name: &'static str,
+    // owned String：步骤名可能来自插件运行时生成的计划（ADR-006），不保证 'static
+    pub name: String,
     pub status: StepStatus,
     /// `Done` 时为步骤输出；`Failed` 时为错误信息；`Cancelled` 时为空
     pub output: String,
 }
 
 impl StepOutcome {
-    fn done(name: &'static str, output: String) -> Self {
-        Self { name, status: StepStatus::Done, output }
+    fn done(name: &str, output: String) -> Self {
+        Self { name: name.to_string(), status: StepStatus::Done, output }
     }
-    fn failed(name: &'static str, error: String) -> Self {
-        Self { name, status: StepStatus::Failed, output: error }
+    fn failed(name: &str, error: String) -> Self {
+        Self { name: name.to_string(), status: StepStatus::Failed, output: error }
     }
-    fn cancelled(name: &'static str) -> Self {
-        Self { name, status: StepStatus::Cancelled, output: String::new() }
+    fn cancelled(name: &str) -> Self {
+        Self { name: name.to_string(), status: StepStatus::Cancelled, output: String::new() }
     }
 }
 
@@ -99,11 +100,11 @@ impl PipelineOutcome {
         for (idx, s) in self.steps.iter().enumerate() {
             match s.status {
                 StepStatus::Done => {
-                    out.push_str(&step_header(idx, s.name));
+                    out.push_str(&step_header(idx, &s.name));
                     out.push_str(&s.output);
                     out.push_str(&step_tail(&s.output));
                 }
-                StepStatus::Failed => out.push_str(&failure_line(s.name, &s.output)),
+                StepStatus::Failed => out.push_str(&failure_line(&s.name, &s.output)),
                 StepStatus::Cancelled => {}
             }
         }
@@ -160,12 +161,12 @@ fn incomplete_tail(done: usize, total: usize) -> String {
 }
 
 /// 该步的 system prompt：公共提示 + 本步指令（不带上一步的工具往返）
-fn step_system_prompt(base: &str, step: &Step) -> String {
+fn step_system_prompt(base: &str, step: &OwnedStep) -> String {
     format!("{base}\n\n## 当前步骤\n{}\n", step.instruction)
 }
 
 /// 把已完成步骤的产物拼成下一步的输入
-fn render_artifacts(artifacts: &[(&'static str, String)]) -> String {
+fn render_artifacts(artifacts: &[(String, String)]) -> String {
     let mut s = String::from("## 前序步骤产物\n");
     for (name, out) in artifacts {
         s.push_str(&format!("\n### {name}\n{out}\n"));
@@ -197,21 +198,21 @@ pub struct PipelineCtx<'a> {
 /// 遇到失败或取消即停，已完成步骤的产物保留在返回的 [`PipelineOutcome`] 中。
 pub async fn run_pipeline(
     ctx: &PipelineCtx<'_>,
-    steps: &[Step],
+    steps: &[OwnedStep],
     system_prompt: &str,
     message: &str,
 ) -> PipelineOutcome {
     let mut outcomes: Vec<StepOutcome> = Vec::new();
     // 已完成步骤的产物（步骤名 → 输出），作为后续步骤的输入
-    let mut artifacts: Vec<(&'static str, String)> = Vec::new();
+    let mut artifacts: Vec<(String, String)> = Vec::new();
 
     for (idx, step) in steps.iter().enumerate() {
         if ctx.cancel_token.is_cancelled() {
-            outcomes.push(StepOutcome::cancelled(step.name));
+            outcomes.push(StepOutcome::cancelled(&step.name));
             break;
         }
 
-        let header = step_header(idx, step.name);
+        let header = step_header(idx, &step.name);
         emit_event(ctx.app, "chunk", &header, ctx.request_id);
 
         // 每步独立构造消息：不带入上一步的工具往返，上下文长度始终可控
@@ -244,7 +245,10 @@ pub async fn run_pipeline(
             ctx.model,
             ctx.temperature,
             ctx.max_tokens,
-            crate::commands::agent::tools::build_tools_schema(step.tools),
+            // OwnedStep.tools 是 Vec<String>，而 build_tools_schema 收 &[&str]
+            crate::commands::agent::tools::build_tools_schema(
+                &step.tools.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            ),
             &mut messages,
             &mut body,
             &mut rounds,
@@ -257,7 +261,7 @@ pub async fn run_pipeline(
 
         match result {
             Ok(()) if ctx.cancel_token.is_cancelled() => {
-                outcomes.push(StepOutcome::cancelled(step.name));
+                outcomes.push(StepOutcome::cancelled(&step.name));
                 break;
             }
             Ok(()) => {
@@ -271,8 +275,8 @@ pub async fn run_pipeline(
                 );
                 let tail = step_tail(&body);
                 emit_event(ctx.app, "chunk", &tail, ctx.request_id);
-                artifacts.push((step.name, body.clone()));
-                outcomes.push(StepOutcome::done(step.name, body));
+                artifacts.push((step.name.clone(), body.clone()));
+                outcomes.push(StepOutcome::done(&step.name, body));
             }
             Err(e) => {
                 // 有副作用的步骤不可重入，故不重试：停在此处，保留已完成产物
@@ -283,9 +287,9 @@ pub async fn run_pipeline(
                     step.name,
                     e
                 );
-                let line = failure_line(step.name, &e.to_string());
+                let line = failure_line(&step.name, &e.to_string());
                 emit_event(ctx.app, "chunk", &line, ctx.request_id);
-                outcomes.push(StepOutcome::failed(step.name, e.to_string()));
+                outcomes.push(StepOutcome::failed(&step.name, e.to_string()));
                 break;
             }
         }
@@ -383,10 +387,10 @@ mod tests {
 
     #[test]
     fn step_prompt_carries_instruction_and_base() {
-        let step = Step {
-            name: "拆章节",
-            instruction: "先定位章节再切分",
-            tools: &["split_chapter"],
+        let step = OwnedStep {
+            name: "拆章节".to_string(),
+            instruction: "先定位章节再切分".to_string(),
+            tools: vec!["split_chapter".to_string()],
             max_rounds: 4,
         };
         let prompt = step_system_prompt("公共提示", &step);
@@ -397,8 +401,10 @@ mod tests {
 
     #[test]
     fn artifacts_are_fed_to_next_step() {
-        let artifacts: Vec<(&'static str, String)> =
-            vec![("拆章节", "片段 A".to_string()), ("提炼要点", "要点 B".to_string())];
+        let artifacts: Vec<(String, String)> = vec![
+            ("拆章节".to_string(), "片段 A".to_string()),
+            ("提炼要点".to_string(), "要点 B".to_string()),
+        ];
         let text = render_artifacts(&artifacts);
         assert!(text.starts_with("## 前序步骤产物"), "{text}");
         assert!(text.contains("### 拆章节\n片段 A"), "{text}");

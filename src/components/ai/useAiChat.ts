@@ -14,7 +14,9 @@ import { useCallback, useRef, useState } from 'react'
 import { errText } from '@/lib/errors'
 import { useCurrentChapter, useCurrentAiMessages } from '@/stores/appStore'
 import { useAiStore } from '@/stores/aiStore'
-import { agentApi, bookApi, chapterApi } from '@/lib/tauri-bridge'
+import { bookApi, chapterApi } from '@/lib/tauri-bridge'
+// 插件画像的执行入口：会自动带上插件 JS 生成的编排计划（ADR-006）
+import { executeSkillWithPluginPlan } from '@/agent-plugin/execute'
 import { getChatApiKey } from '@/types'
 import { toast } from '@/lib/toast'
 import type { AiMessage, AiConfig, Chapter } from '@/types'
@@ -232,7 +234,7 @@ export function useAiChat(options: UseAiChatOptions): UseAiChatReturn {
           },
         })
 
-        await agentApi.executeSkill({
+        await executeSkillWithPluginPlan({
           skill: currentSkill,
           bookId,
           message: input.trim(),

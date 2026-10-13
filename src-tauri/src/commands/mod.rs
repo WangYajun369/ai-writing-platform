@@ -12,6 +12,8 @@ pub mod chapter;
 pub mod diary;
 pub mod image;
 pub mod io;
+// ── Agent 插件宿主（ADR-006）──
+pub mod plugin;
 pub mod schedule;
 pub mod schema;
 pub mod snapshot;

@@ -3,6 +3,7 @@
 //! 数据经 Repository 层装载，载荷附 payloadHash（database 规范化 JSON 的 SHA-256），
 //! 写出走「临时文件 + rename」原子替换。
 
+use super::files::FilesExport;
 use super::types::{
     sha256_hex, AppConfigExport, ChapterExport, DatabaseExport, EmbeddingMetaExport, ExportPayload,
     MAX_BACKUP_FILE_BYTES,
@@ -205,10 +206,12 @@ pub(crate) fn filter_single_book_data(data: &DatabaseExport, book_id: &str) -> D
 
 // ---- 公共导出逻辑 ----
 
+/// `files`：文件资产段（插件 / 附件），仅全量备份传 `Some`；单作品备份传 `None`
 pub(crate) fn build_and_write_payload(
     backup_type: &str,
     database: DatabaseExport,
     cache: serde_json::Value,
+    files: Option<FilesExport>,
     output_path: &str,
 ) -> Result<(), AppError> {
     let exported_at = Utc::now().to_rfc3339();
@@ -228,11 +231,13 @@ pub(crate) fn build_and_write_payload(
         payload_hash: Some(payload_hash),
         database,
         cache,
+        files,
     };
     let json = serde_json::to_string(&payload).map_err(|e| {
         AppError::business(ErrCode::BackupSerialize, format!("JSON 序列化失败: {}", e))
     })?;
     // Spec §8.2：序列化后估算，超 200 MB 拒绝（提示分书导出）
+    // 含文件段（base64）后的总体积也在此一并拦住
     if json.len() > MAX_BACKUP_FILE_BYTES as usize {
         return Err(AppError::Business(format!(
             "E_BACKUP_TOO_LARGE：导出载荷 {:.1} MB 超过上限 200 MB，请使用单作品导出或拆分数据",

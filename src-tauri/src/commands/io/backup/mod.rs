@@ -4,6 +4,7 @@
 //!
 //! 子模块划分：
 //! - `types` —— 共享类型与常量（v2 载荷 / ImportScope / ImportStrategy / WriteStats / 指纹工具）
+//! - `files` —— 文件资产打包（插件 / 附件，内嵌 base64；仅全量备份，还原只写不删）
 //! - `export` —— 全量/单作品数据装载与加密载荷写出（临时文件 + rename 原子替换）
 //! - `import` —— 只读载入校验（版本/结构/引用/行数）+ replace/merge/fill-gaps 三策略写入
 //! - `import_log` —— v2 载荷内容指纹与 import_log 幂等日志（滚动 20 条）
@@ -14,6 +15,7 @@
 //! inspect_backup / rollback_import）与全部单元测试。
 
 mod export;
+mod files;
 mod import;
 mod import_log;
 mod reconcile;
@@ -22,6 +24,7 @@ mod types;
 
 // 子模块内部项的统一出口（命令与测试使用；prune_expired_rollbacks 另供 lib.rs 后台清理调用）
 pub(crate) use export::{build_and_write_payload, filter_single_book_data, load_full_export_data};
+pub(crate) use files::{collect_file_assets, restore_file_assets};
 #[cfg(test)]
 pub(crate) use import::{apply_upsert_data, check_supported_version};
 pub(crate) use import::{
@@ -69,7 +72,10 @@ pub async fn export_all_data(
         AppError::business(ErrCode::BackupCache, format!("缓存数据解析失败: {}", e))
     })?;
 
-    build_and_write_payload("full", database, cache, &output_path)
+    // 文件资产（插件 / 附件）仅随全量备份导出
+    let files = collect_file_assets(&app)?;
+
+    build_and_write_payload("full", database, cache, Some(files), &output_path)
 }
 
 // ---- 单作品导出 ----
@@ -93,7 +99,8 @@ pub async fn export_single_book(
         AppError::business(ErrCode::BackupCache, format!("缓存数据解析失败: {}", e))
     })?;
 
-    build_and_write_payload("single", database, cache, &output_path)
+    // 单作品备份不携带文件资产（插件 / 附件都不是作品级数据，与 app_config 同一条规则）
+    build_and_write_payload("single", database, cache, None, &output_path)
 }
 
 /// 统一数据导入命令（Spec §5.4：策略化写入）
@@ -148,6 +155,17 @@ pub async fn import_backup(
         // 导入日志：仅在事务成功提交后写入（幂等判定基础；仅 v2 载荷）
         record_import_success(&conn, &payload, &payload_hash, &file_name, file_size)?;
 
+        // 文件资产（插件 / 附件）：库事务已提交后才落盘，且只写不删
+        let files_restored =
+            restore_file_assets(&app, payload.files.as_ref(), import_strategy)?;
+        if files_restored > 0 {
+            crate::app_log!(
+                "[Backup] {} 导入已恢复 {} 个文件资产",
+                import_strategy.as_str(),
+                files_restored
+            );
+        }
+
         // vec0 镜像对齐 + 过期回退点清理（与 replace 路径保持一致）
         if let Err(e) = embedding_repo::rebuild_chunks_vec(&conn) {
             crate::app_log_error!(
@@ -196,6 +214,13 @@ pub async fn import_backup(
 
             // 导入日志：仅在事务成功提交后写入（幂等判定基础；仅 v2 载荷）
             record_import_success(&conn, &payload, &payload_hash, &file_name, file_size)?;
+
+            // 文件资产（插件 / 附件）：库事务已提交后才落盘，且只写不删
+            let files_restored =
+                restore_file_assets(&app, payload.files.as_ref(), ImportStrategy::Replace)?;
+            if files_restored > 0 {
+                crate::app_log!("[Backup] full 导入已恢复 {} 个文件资产", files_restored);
+            }
 
             // vec0 镜像对齐（replace 后 embeddings 为空则无操作，幂等）
             if let Err(e) = embedding_repo::rebuild_chunks_vec(&conn) {

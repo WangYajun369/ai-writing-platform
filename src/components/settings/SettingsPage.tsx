@@ -7,8 +7,8 @@
  * - 编辑（编辑器显示宽度）
  * - 存储（占位，后续版本推出统计功能）
  * - 版本（当前版本 / 检查更新）
- * （注：上方列表为早期说明；实际标签页见下方 BASE_TABS，共七个，另有
- * 「AI 工具箱」「系统检查」两项。其中「系统检查」受开发者模式控制，
+ * （注：上方列表为早期说明；实际标签页见下方 BASE_TABS，共八个，另有
+ * 「AI 工具箱」「Agent 插件」「系统检查」三项。其中「系统检查」受开发者模式控制，
  * 仅在 版本 页开启「开发者模式」开关后显示。）
  *
  * 数据来源：AI 配置与连接状态来自 useAiStore；外观/编辑偏好来自
@@ -18,22 +18,24 @@
 import { useEffect, useMemo, useState } from 'react'
 import { errText } from '@/lib/errors'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeftIcon, BotIcon, PaletteIcon, DatabaseIcon, ArrowUpCircleIcon, PenLineIcon, WrenchIcon, MonitorCheckIcon } from 'lucide-react'
+import { ArrowLeftIcon, BotIcon, PaletteIcon, DatabaseIcon, ArrowUpCircleIcon, PenLineIcon, WrenchIcon, MonitorCheckIcon, PackageIcon } from 'lucide-react'
 import { useAiStore } from '@/stores/aiStore'
 import { usePreferencesStore } from '@/stores/preferencesStore'
 import { AiConfigSection } from './AiConfigSection'
 import { AiToolboxSection } from './AiToolboxSection'
 import { AppearanceSection } from './AppearanceSection'
 import { EditorConfigSection } from './EditorConfigSection'
+import { PluginSection } from './PluginSection'
 import { StorageSection } from './StorageSection'
 import { VersionSection } from './VersionSection'
 import { SystemCheckSection } from './SystemCheckSection'
 
-type Tab = 'ai' | 'toolbox' | 'appearance' | 'editor' | 'storage' | 'version' | 'system'
+type Tab = 'ai' | 'toolbox' | 'plugins' | 'appearance' | 'editor' | 'storage' | 'version' | 'system'
 
 const BASE_TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }> }[] = [
   { id: 'ai', label: 'AI 配置', icon: BotIcon },
   { id: 'toolbox', label: 'AI 工具箱', icon: WrenchIcon },
+  { id: 'plugins', label: 'Agent 插件', icon: PackageIcon },
   { id: 'appearance', label: '外观', icon: PaletteIcon },
   { id: 'editor', label: '编辑', icon: PenLineIcon },
   { id: 'storage', label: '存储', icon: DatabaseIcon },
@@ -120,6 +122,7 @@ export default function SettingsPage() {
               />
             )}
             {activeTab === 'toolbox' && <AiToolboxSection />}
+            {activeTab === 'plugins' && <PluginSection />}
             {activeTab === 'appearance' && (
               <AppearanceSection
                 theme={theme}

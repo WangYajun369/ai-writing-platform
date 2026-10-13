@@ -213,6 +213,8 @@ pub async fn run_skill(
     ai_config: Option<AiModelConfig>,
     request_id: String,
     conversation_summary: Option<String>,
+    // 插件 JS 生成的编排计划（`None` = 不接管编排，按画像默认方式跑）
+    plan: Option<Vec<profiles::OwnedStep>>,
 ) -> Result<String, AppError> {
     let cancel_token = register_cancel_token();
 
@@ -227,6 +229,7 @@ pub async fn run_skill(
         &request_id,
         conversation_summary.as_deref(),
         &cancel_token,
+        plan.as_deref(),
     )
     .await;
 
@@ -268,6 +271,7 @@ async fn run_skill_inner(
     request_id: &str,
     conversation_summary: Option<&str>,
     cancel_token: &Arc<CancelToken>,
+    plan: Option<&[profiles::OwnedStep]>,
 ) -> Result<String, AppError> {
     // ========== 1. 解析有效画像（领域 × 能力）==========
     // 领域由作品的 book_type 决定，在 Rust 侧反查——前端不传参，
@@ -279,7 +283,21 @@ async fn run_skill_inner(
             // 作品不存在（如已彻底删除）时按空处理，领域回退 novel
             .unwrap_or_default()
     };
-    let effective = profiles::merge(skill, &book_type);
+    // 插件画像必须**先于** merge 查找：插件 id 不在内置注册表里，
+    // 直接走 merge 会被兜底成 writing——用户明明选了插件画像，跑的却是 writing。
+    let plugin_hit = crate::plugin::profile::find(&app, skill);
+    let mut effective = match &plugin_hit {
+        Some((p, _)) => crate::plugin::profile::to_effective(p, &book_type),
+        None => profiles::merge(skill, &book_type),
+    };
+
+    // 插件 JS 生成的编排计划只在「本次确实命中了插件画像」时生效——
+    // 避免内置画像被外部传入的 plan 意外改写成流水线。
+    // 权限在此再校验一次：前端那遍只是 UX，IPC 边界不可信。
+    if let (Some((_, grants)), Some(steps)) = (&plugin_hit, plan) {
+        crate::plugin::profile::plan_is_allowed(steps, grants)?;
+        effective.runtime = RuntimeMode::DynamicPipeline(steps.to_vec());
+    }
     // v1.9：按 Skill 自适应预算（取代硬编码 15 轮上限）
     // 阶段四起取「领域 × 能力」合并后的预算（取较大值）
     let budget = AgentBudget::from_effective(&effective);
@@ -287,8 +305,16 @@ async fn run_skill_inner(
     let effective_tokens = prompts::estimate_prompt_tokens(&effective.base_prompt);
     crate::app_log!(
         "[Agent] 有效画像: 能力={}({}) 领域={}(book_type=`{}`) 工具={} 预算={}轮/{}s 基准提示≈{}tok",
-        effective.ability.id,
-        if effective.ability_matched { "命中" } else { "兜底" },
+        // 用入参 skill 而非 effective.ability.id：后者在插件画像场景下是
+        // writing 占位，打出来会让人误以为跑了 writing
+        skill,
+        if effective.ability_matched {
+            "内置命中"
+        } else if plugin_hit.is_some() {
+            "插件"
+        } else {
+            "兜底"
+        },
         effective.domain.id,
         book_type,
         effective.tools.len(),
@@ -378,9 +404,20 @@ async fn run_skill_inner(
     let total_guard = timeout(
         std::time::Duration::from_secs(SSE_TOTAL_TIMEOUT_SECS),
         async {
-            match effective.runtime {
+            // 先把两种流水线变体归一成 owned 步骤：`Pipeline` 是编译期常量表
+            // （内置画像），`DynamicPipeline` 是插件运行时生成的计划（ADR-006）。
+            // 归一之后两者走**同一段执行代码**，行为不会随来源而分叉。
+            let plan_steps: Option<Vec<profiles::OwnedStep>> = match &effective.runtime {
+                RuntimeMode::ReAct => None,
+                RuntimeMode::Pipeline(steps) => {
+                    Some(steps.iter().map(profiles::OwnedStep::from).collect())
+                }
+                RuntimeMode::DynamicPipeline(steps) => Some(steps.clone()),
+            };
+
+            match plan_steps {
                 // ReAct：与改造前完全一致的单一循环，行为零变化（回归安全）
-                RuntimeMode::ReAct => {
+                None => {
                     react_loop(
                         app.clone(),
                         pool.clone(),
@@ -401,12 +438,18 @@ async fn run_skill_inner(
                     .await?;
                     Ok::<String, AppError>(std::mem::take(&mut full_response))
                 }
-                // Pipeline：按画像声明的步骤依次执行，上一步产物喂给下一步
-                RuntimeMode::Pipeline(steps) => {
+                // Pipeline：按步骤依次执行，上一步产物喂给下一步。
+                // 步骤可能来自内置画像常量，也可能来自插件运行时生成的计划——
+                // 后者的工具权限已在入口校验过（见 `plugin::profile::plan_is_allowed`）。
+                Some(steps) => {
                     crate::app_log!(
                         "[Agent] 流水线模式：{} 步（{}）",
                         steps.len(),
-                        steps.iter().map(|s| s.name).collect::<Vec<_>>().join(" → ")
+                        steps
+                            .iter()
+                            .map(|s| s.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(" → ")
                     );
                     let ctx = pipeline::PipelineCtx {
                         app: &app,
@@ -421,7 +464,8 @@ async fn run_skill_inner(
                         budget: &budget,
                         skill,
                     };
-                    let outcome = pipeline::run_pipeline(&ctx, steps, &system_prompt, message).await;
+                    let outcome =
+                        pipeline::run_pipeline(&ctx, &steps, &system_prompt, message).await;
                     // 步骤头 / 收尾已在 run_pipeline 内逐段推送，此处只把同样的
                     // 文本作为返回值，保证「前端累积文本 == IPC 返回值」
                     full_response.push_str(&outcome.render());

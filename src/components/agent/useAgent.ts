@@ -10,6 +10,8 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { agentApi } from '@/lib/tauri-bridge'
+// 插件画像的执行入口：会自动带上插件 JS 生成的编排计划（ADR-006）
+import { executeSkillWithPluginPlan } from '@/agent-plugin/execute'
 import { errText } from '@/lib/errors'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useAiStore } from '@/stores/aiStore'
@@ -234,7 +236,7 @@ export function useAgent() {
         const aiConfig = useAiStore.getState().aiConfig
         const chatApiKey = getChatApiKey(aiConfig.chat)
 
-        await agentApi.executeSkill({
+        await executeSkillWithPluginPlan({
           skill,
           bookId,
           message,

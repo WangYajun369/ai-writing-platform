@@ -180,6 +180,14 @@ pub fn tool_def(name: &str) -> Option<&'static ToolDef> {
     TOOLS.iter().find(|t| t.name == name)
 }
 
+/// 注册表当前注册的全部工具名
+///
+/// 供插件宿主（ADR-006）校验插件画像引用的工具是否真实存在——
+/// 插件是声明式的，只报工具名、由引擎代为执行，必须先确认名字合法。
+pub fn registered_tool_names() -> Vec<&'static str> {
+    TOOLS.iter().map(|t| t.name).collect()
+}
+
 /// 单个工具的 OpenAI function calling 定义（name / description / parameters）
 pub fn tool_schema(name: &str) -> Option<Value> {
     tool_def(name).map(|t| {
