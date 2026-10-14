@@ -1,6 +1,6 @@
 # 领域感知 Agent 实施计划
 
-> **适用版本**：`1.21.2`　|　**最后核对**：2026-10-14
+> **适用版本**：`1.22.0`　|　**最后核对**：2026-10-15
 > **决策依据**：
 > - [ADR-004：Agent 领域画像与能力技能正交分层](architecture/adr/ADR-004-domain-aware-agent-profiles)
 > - [ADR-005：Agent 扩展模型（工具注册表 / 执行模式 / 前端自动发现）](architecture/adr/ADR-005-agent-extension-model)

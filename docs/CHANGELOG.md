@@ -1,5 +1,22 @@
 # 更新日志
 
+## v1.22.0 (2026-10-15) — 单词关联网络 + 词族复习 + 关联图谱
+
+### 新增
+- **单词关联网络（`vocab_word_relations` 表）**：新增第 29 张业务表，支撑近义 / 反义 / 派生 / 变形 / 手动五类关联，`UNIQUE(word_id, related_word, relation_type)` 去重，`word_id` 外键 CASCADE 级联删除；SCHEMA_VERSION 升至 3，这也是迁移注册表的首条真实迁移记录
+- **收录时自动建关联**：新增单词入库时同步解析关联 —— AI 释义中的近/反义词落为「潜在关联」（`source=ai`，需人工确认）、ECDICT 变形家族按 lemma 双向落库、存量关系反向激活（此前存为潜在关系且目标词已在库中的，自动转为正式关联）
+- **词条详情「关联」面板**（`VocabRelationsPanel`）：按类型分组展示已有关联，支持手动添加与删除；潜在关联与正式关联视觉区分，避免 AI 猜测污染学习路径
+- **顺带复习**：复习过程中遇到关联词可一键拉入本轮复习队列，走完整 SM-2 评分链路，不做简化的「看过就算」
+- **词族复习**（`FamilyReviewDialog`）：按 ECDICT 原型 lemma 实时聚族（run / running / ran / runner 归为一族），支持批量拉入复习会话；词典未安装时不猜测聚族，直接返回空列表避免误导
+- **关联图谱**（`WordGraphDialog`）：d3-force 力导向全屏弹层，节点按掌握状态着色、边按关联类型着色；支持滚轮缩放 / 拖拽平移 / 节点拖拽 / 自适应 fit / 低缩放标签分级；单击弹出信息卡、双击直接打开词条；含状态筛选、潜在关联叶子开关、300 节点截断与孤立词统计（新增依赖 `d3-force@^3.0.0`）
+- **生词列表关联数徽标**：逐词显示已有关联条数，一眼看出哪些词还「没长出关联网络」
+- **7 个新 Tauri 命令**：`vocab_relations_list` / `vocab_relations_add` / `vocab_relations_remove` / `vocab_relations_suggest` / `vocab_relations_counts` / `vocab_family_groups` / `vocab_relations_graph`
+
+### 优化
+- **图谱数据后端聚合**：图谱走后端 `build_graph` 一次成型（节点按度数降序、封顶 `GRAPH_NODE_LIMIT`），前端只做力导向布局，避免关联密集时前端 O(n²) 组图；孤立词数由 `count_isolated_words` 单独统计
+- **关联查询统一走仓储层**：新增 `vocab_relation_repo` 隔离 SQL，`vocab_relation_service`（848 行）承载业务编排，命令层保持薄壳
+- **词图单测补齐**：新增 `wordGraph.test.ts` 11 项用例，覆盖图谱构建、截断、孤立节点统计与着色映射
+
 ## v1.21.2 (2026-10-14) — 配置写入路径修复（字段级 patch）+ 文档版本标记纠正
 
 ### 修复
