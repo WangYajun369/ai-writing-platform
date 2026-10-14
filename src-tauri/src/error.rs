@@ -119,6 +119,11 @@ pub enum ErrCode {
     ConfigSection,
     /// 应用配置载荷解析失败（`E_CONFIG_PARSE`）。
     ConfigParse,
+    /// 敏感配置段加解密失败（`E_CONFIG_CRYPTO`）：密钥不匹配或密文损坏。
+    ///
+    /// 独立成码是因为它的成因（密钥变化 / 数据损坏）与修复方式（重置该段配置）
+    /// 都不同于普通解析失败，前端值得给出针对性提示。
+    ConfigCrypto,
 
     // ── Agent 插件（ADR-006） ──
     /// 插件清单不合法（`E_PLUGIN_MANIFEST`）：解析失败、id 与目录名不一致、
@@ -178,6 +183,7 @@ impl ErrCode {
             Self::ConfigVersion => "E_CONFIG_VERSION",
             Self::ConfigSection => "E_CONFIG_SECTION",
             Self::ConfigParse => "E_CONFIG_PARSE",
+            Self::ConfigCrypto => "E_CONFIG_CRYPTO",
             Self::PluginManifest => "E_PLUGIN_MANIFEST",
             Self::PluginConflict => "E_PLUGIN_CONFLICT",
             Self::Business => "E_BUSINESS",
@@ -454,6 +460,7 @@ mod tests {
             (ErrCode::ConfigVersion, "E_CONFIG_VERSION"),
             (ErrCode::ConfigSection, "E_CONFIG_SECTION"),
             (ErrCode::ConfigParse, "E_CONFIG_PARSE"),
+            (ErrCode::ConfigCrypto, "E_CONFIG_CRYPTO"),
             // Agent 插件
             (ErrCode::PluginManifest, "E_PLUGIN_MANIFEST"),
             (ErrCode::PluginConflict, "E_PLUGIN_CONFLICT"),

@@ -92,6 +92,8 @@ export function adviceFor(code: string): ErrorAdvice | null {
       return { advice: '未识别出任何章节内容，请确认文件非空且包含章节标题。' }
     case 'E_EXPORT_FORMAT':
       return { advice: '不支持的导出格式，请重新选择 TXT / Markdown / HTML。' }
+    case 'E_CONFIG_CRYPTO':
+      return { advice: '配置解密失败：密钥不匹配或数据已损坏，请在设置 → AI / TTS 配置中重新填写 API Key 后重试。' }
     case 'E_IO_BUSY':
       return { advice: '已有导入/导出操作正在进行，请完成后再试。' }
     default:

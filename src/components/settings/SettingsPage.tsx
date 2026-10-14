@@ -1,22 +1,17 @@
 /**
  * SettingsPage — 设置页面（入口壳）
  *
- * 提供五个设置标签页：
- * - AI 配置（服务商/API/模型/Temperature）
- * - 外观（浅色/深色/跟随系统）
- * - 编辑（编辑器显示宽度）
- * - 存储（占位，后续版本推出统计功能）
- * - 版本（当前版本 / 检查更新）
- * （注：上方列表为早期说明；实际标签页见下方 BASE_TABS，共八个，另有
- * 「AI 工具箱」「Agent 插件」「系统检查」三项。其中「系统检查」受开发者模式控制，
- * 仅在 版本 页开启「开发者模式」开关后显示。）
+ * 标签页由文件内的 `TABS` 注册表单一驱动：新增设置页只需往注册表加一条，
+ * 内容区再补一个分支即可，避免"后端有能力、前端无入口"的不对称。
+ * 「系统检查」通过 `visible` 谓词声明"仅开发者模式可见"，而非散落的条件判断。
  *
  * 数据来源：AI 配置与连接状态来自 useAiStore；外观/编辑偏好来自
- * usePreferencesStore（各 setter 内部 savePreferences 持久化）；
+ * usePreferencesStore（各 setter 内部持久化到后端 config）；
  * 「AI 配置」的测试连接由本页动态 import aiApi.testConnection 执行。
  */
 import { useEffect, useMemo, useState } from 'react'
 import { errText } from '@/lib/errors'
+import { toast } from '@/lib/toast'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeftIcon, BotIcon, PaletteIcon, DatabaseIcon, ArrowUpCircleIcon, PenLineIcon, WrenchIcon, MonitorCheckIcon, PackageIcon } from 'lucide-react'
 import { useAiStore } from '@/stores/aiStore'
@@ -29,10 +24,20 @@ import { PluginSection } from './PluginSection'
 import { StorageSection } from './StorageSection'
 import { VersionSection } from './VersionSection'
 import { SystemCheckSection } from './SystemCheckSection'
+import { ResetDefaultsCard } from './shared'
 
 type Tab = 'ai' | 'toolbox' | 'plugins' | 'appearance' | 'editor' | 'storage' | 'version' | 'system'
 
-const BASE_TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }> }[] = [
+interface TabDef {
+  id: Tab
+  label: string
+  icon: React.FC<{ className?: string }>
+  /** 可见性谓词：缺省恒可见，例如「系统检查」仅在开发者模式开启时出现 */
+  visible?: (ctx: { developerMode: boolean }) => boolean
+}
+
+/** 设置标签页注册表（单一真源） */
+const TABS: readonly TabDef[] = [
   { id: 'ai', label: 'AI 配置', icon: BotIcon },
   { id: 'toolbox', label: 'AI 工具箱', icon: WrenchIcon },
   { id: 'plugins', label: 'Agent 插件', icon: PackageIcon },
@@ -40,31 +45,51 @@ const BASE_TABS: { id: Tab; label: string; icon: React.FC<{ className?: string }
   { id: 'editor', label: '编辑', icon: PenLineIcon },
   { id: 'storage', label: '存储', icon: DatabaseIcon },
   { id: 'version', label: '版本', icon: ArrowUpCircleIcon },
+  {
+    id: 'system',
+    label: '系统检查',
+    icon: MonitorCheckIcon,
+    visible: ({ developerMode }) => developerMode,
+  },
 ]
-
-/** 「系统检查」仅在开发者模式（版本页开关）开启时可见 */
-const SYSTEM_TAB: { id: Tab; label: string; icon: React.FC<{ className?: string }> } = {
-  id: 'system',
-  label: '系统检查',
-  icon: MonitorCheckIcon,
-}
 
 export default function SettingsPage() {
   const navigate = useNavigate()
   const { aiConfig, setAiConfig, aiConnectionStatus, aiConnectionDetail, setAiConnectionStatus } = useAiStore()
-  const { theme, setTheme, eyeCareMode, setEyeCareMode, fontFamily, setFontFamily, fontSize, setFontSize, gridSize, setGridSize, editorWidth, setEditorWidth, developerMode } = usePreferencesStore()
+  const {
+    theme, setTheme,
+    eyeCareMode, setEyeCareMode,
+    gridSize, setGridSize,
+    editorWidth, setEditorWidth,
+    fontFamily, setFontFamily,
+    fontSize, setFontSize,
+    developerMode,
+    resetToDefaults,
+  } = usePreferencesStore()
   const [activeTab, setActiveTab] = useState<Tab>('ai')
+  const [resetBusy, setResetBusy] = useState(false)
 
-  /** 开发者模式关闭时，隐藏「系统检查」标签页 */
   const tabs = useMemo(
-    () => (developerMode ? [...BASE_TABS, SYSTEM_TAB] : BASE_TABS),
+    () => TABS.filter((tab) => !tab.visible || tab.visible({ developerMode })),
     [developerMode],
   )
 
-  // 开发者模式关闭后若停留在「系统检查」，回退到版本页，避免内容区空白
+  // 当前标签页变为不可见后（如关闭开发者模式）回退到版本页，避免内容区空白
   useEffect(() => {
-    if (!developerMode && activeTab === 'system') setActiveTab('version')
-  }, [developerMode, activeTab])
+    if (!tabs.some((tab) => tab.id === activeTab)) setActiveTab('version')
+  }, [tabs, activeTab])
+
+  const handleResetDefaults = async () => {
+    setResetBusy(true)
+    try {
+      await resetToDefaults()
+      toast.success('已恢复默认设置')
+    } catch (err) {
+      toast.error(errText(err, '恢复默认设置失败'))
+    } finally {
+      setResetBusy(false)
+    }
+  }
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background">
@@ -124,23 +149,30 @@ export default function SettingsPage() {
             {activeTab === 'toolbox' && <AiToolboxSection />}
             {activeTab === 'plugins' && <PluginSection />}
             {activeTab === 'appearance' && (
-              <AppearanceSection
-                theme={theme}
-                eyeCareMode={eyeCareMode}
-                fontFamily={fontFamily}
-                fontSize={fontSize}
-                gridSize={gridSize}
-                onThemeChange={(t) => setTheme(t as 'light' | 'dark' | 'system')}
-                onEyeCareChange={(m) => setEyeCareMode(m as 'off' | 'warm' | 'green')}
-                onFontFamilyChange={(f) => setFontFamily(f as 'simhei' | 'simsun' | 'kaiti' | 'yahei')}
-                onFontSizeChange={setFontSize}
-                onGridSizeChange={(s) => setGridSize(s as 'small' | 'medium' | 'large')}
-              />
+              <div className="space-y-6">
+                <AppearanceSection
+                  theme={theme}
+                  eyeCareMode={eyeCareMode}
+                  gridSize={gridSize}
+                  onThemeChange={setTheme}
+                  onEyeCareChange={setEyeCareMode}
+                  onGridSizeChange={setGridSize}
+                />
+                <ResetDefaultsCard
+                  busy={resetBusy}
+                  onReset={handleResetDefaults}
+                  scopeHint="将主题、护眼、字体、字号、网格大小、编辑器宽度与书库布局恢复为默认值（不影响作品数据）"
+                />
+              </div>
             )}
             {activeTab === 'editor' && (
               <EditorConfigSection
                 editorWidth={editorWidth}
-                onEditorWidthChange={(w) => setEditorWidth(w as 'mobile' | 'standard' | 'wide')}
+                fontFamily={fontFamily}
+                fontSize={fontSize}
+                onEditorWidthChange={setEditorWidth}
+                onFontFamilyChange={setFontFamily}
+                onFontSizeChange={setFontSize}
               />
             )}
             {activeTab === 'storage' && <StorageSection />}

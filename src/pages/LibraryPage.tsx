@@ -18,6 +18,7 @@ import { save, open } from '@tauri-apps/plugin-dialog'
 import { useBooksStore } from '@/stores/booksStore'
 import { useAiStore } from '@/stores/aiStore'
 import { usePreferencesStore } from '@/stores/preferencesStore'
+import { LOCAL_CACHE_KEYS as CACHE_KEYS } from '@/stores/appTypes'
 import { aiToolboxWindowOpenAtom, debugWindowOpenAtom } from '@/stores/uiAtoms'
 import { availableUpdateAtom } from '@/stores/updateAtoms'
 import { bookApi, importExportApi, windowApi, debugApi } from '@/lib/tauri-bridge'
@@ -55,19 +56,6 @@ const GRID_GAP_MAP = { small: 'gap-2', medium: 'gap-4', large: 'gap-6' } as cons
  * measureElement 会在首帧后自动修正为精确值。
  */
 const GRID_ROW_HEIGHT_MAP = { small: 480, medium: 560, large: 680 } as const
-
-/**
- * 随备份导出的 localStorage 缓存键白名单（导出收集与导入恢复共用，未知键一律忽略）
- *
- * v1.9 起 AI 配置 / 偏好 / AI 工具箱分类已迁移到后端 `app_config` 表，改由备份载荷的
- * `database.appConfig` 段携带（见 import.rs::restore_app_config），不再走 localStorage。
- * 这里只保留仍在 localStorage 的运行时状态。
- */
-const CACHE_KEYS = [
-  'time-write-editor-state',
-  'time-write-ai-conversations',
-  'time-write-ai-summaries',
-] as const
 
 export default function LibraryPage() {
   const navigate = useNavigate()

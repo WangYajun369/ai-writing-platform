@@ -119,6 +119,14 @@ fn current_key() -> Result<&'static [u8; 32], String> {
         .ok_or_else(|| "备份密钥未初始化：应用启动流程异常，请重启应用".to_string())
 }
 
+/// 单元测试专用：安装固定测试密钥（无 `AppHandle` 场景替代 `init_backup_key`）。
+///
+/// 仅 `cfg(test)` 编译，生产代码不可达；幂等（重复调用保留首次设置的密钥）。
+#[cfg(test)]
+pub(crate) fn install_test_key() {
+    let _ = BACKUP_KEY.set([7u8; 32]);
+}
+
 /// AES-256-GCM 加密：nonce[12] + ciphertext + tag[16]
 pub fn encrypt_bytes(plaintext: &[u8]) -> Result<Vec<u8>, String> {
     let key = Key::<Aes256Gcm>::from_slice(current_key()?);

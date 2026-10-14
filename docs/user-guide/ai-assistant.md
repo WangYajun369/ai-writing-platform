@@ -12,18 +12,18 @@ TimeWrite 内置 AI 写作助手，支持流式对话、RAG 上下文检索和 A
 | Ollama | `http://127.0.0.1:11434` | `qwen2.5:7b` 等 | 本地部署，无需 API Key |
 | 自定义 OpenAI 兼容 | 任意 | 任意 | 支持任何 OpenAI 兼容 API |
 
-> 上表默认值定义于 `src/components/settings/constants.ts`（`PROVIDER_DEFAULTS`）。RAG/Embedding 仅支持智谱 BigModel（`embedding-3`）。
+> 上表默认值的单一真源在后端 `src-tauri/src/config/defaults.rs`（前端 `constants.ts` 仅维护可选模型列表）。**当前设置页对话服务商固定为 DeepSeek、RAG 固定为智谱 BigModel**，上表其余服务商为后端 OpenAI 兼容协议预留能力，选择控件暂未开放。
 
 ## 配置 AI 服务
 
 在**设置 → AI 配置**页面完成配置。v0.4.0 起 AI 配置拆分为两大独立模块：
 
 ### 对话配置（Chat Config）
-1. **服务商**：选择智谱 BigModel / DeepSeek / Ollama / OpenAI 兼容
-2. **API 地址**：API 端点 URL（选择服务商自动填充默认值）
-3. **对话模型**：模型名称（如 `glm-5.1`、`deepseek-v4-flash`）
-4. **API Key**：各服务商独立管理（密码形式存储）
-5. **思考模式**：DeepSeek/智谱推理模型可开启 Thinking，展示推理过程
+1. **服务商**：当前固定为 DeepSeek（后续将扩展更多服务商）
+2. **API 地址**：API 端点 URL（当前只读展示，随服务商确定）
+3. **对话模型**：模型名称（如 `deepseek-v4-flash`、`deepseek-v4-pro`）
+4. **API Key**：各服务商独立管理（加密落库，密码形式展示）
+5. **思考模式**：DeepSeek 推理模型可开启 Thinking，展示推理过程
 6. **高级参数**：Temperature（0-1.0）、最大输出 Token（默认 131072）
 
 ### RAG / Embedding 配置（独立模块）

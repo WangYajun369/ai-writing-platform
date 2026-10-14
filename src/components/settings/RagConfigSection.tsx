@@ -8,10 +8,10 @@
 import { useState } from 'react'
 import { errText } from '@/lib/errors'
 import { BrainIcon } from 'lucide-react'
-import type { RagConfig, RagProvider } from '@/types'
+import type { RagConfig } from '@/types'
 import { getRagApiKey } from '@/types'
-import { RAG_PROVIDER_DEFAULTS, RAG_BIGMODEL_MODELS } from './constants'
-import { ApiKeyField, ConnectionStatusBadge, ConnectionStatus } from './shared'
+import { RAG_BIGMODEL_MODELS } from './constants'
+import { ApiKeyField, ConnectionStatusBadge, ConnectionStatus, StaticInfoRow } from './shared'
 
 interface RagConfigSectionProps {
   /** 当前 RAG 连接配置（服务商 / endpoint / embedding 模型 / API Key） */
@@ -24,12 +24,6 @@ export function RagConfigSection({ config, onChange }: RagConfigSectionProps) {
   // 连接测试为本地 UI 状态：idle 未测 / testing 测试中 / connected 通过 / error 失败
   const [ragTestStatus, setRagTestStatus] = useState<ConnectionStatus>('idle')
   const [ragTestDetail, setRagTestDetail] = useState('')
-
-  /** 切换服务商：同步填入该服务商的默认 endpoint 与 embedding 模型 */
-  const handleProviderChange = (provider: RagProvider) => {
-    const d = RAG_PROVIDER_DEFAULTS[provider]
-    onChange({ provider, endpoint: d.endpoint, embeddingModel: d.embeddingModel })
-  }
 
   /** API Key 变更：留空时回退为 undefined，保证配置中不残留空串 */
   const handleApiKeyChange = (value: string) => {
@@ -69,28 +63,11 @@ export function RagConfigSection({ config, onChange }: RagConfigSectionProps) {
         DeepSeek 不提供 Embeddings API，向量服务使用智谱 BigModel
       </p>
 
-      {/* 服务商 */}
-      <div className="space-y-1">
-        <label className="text-sm font-medium">服务商</label>
-        <select
-          value={config.provider}
-          onChange={(e) => handleProviderChange(e.target.value as RagProvider)}
-          className="w-full bg-muted rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-        >
-          <option value="bigmodel">智谱 BigModel</option>
-        </select>
-      </div>
+      {/* 服务商（当前仅支持智谱 BigModel，以静态行呈现） */}
+      <StaticInfoRow label="服务商" value="智谱 BigModel" />
 
-      {/* API 地址 */}
-      <div className="space-y-1">
-        <label className="text-sm font-medium">API 地址</label>
-        <input
-          value={config.endpoint}
-          readOnly
-          className="w-full bg-muted/50 rounded-lg px-3 py-2 text-sm outline-none cursor-not-allowed opacity-60"
-          placeholder="https://open.bigmodel.cn/api/paas/v4"
-        />
-      </div>
+      {/* API 地址（固定端点，不可修改） */}
+      <StaticInfoRow label="API 地址" value={config.endpoint} />
 
       {/* Embedding 模型 */}
       <div className="space-y-1">

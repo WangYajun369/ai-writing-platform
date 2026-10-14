@@ -5,23 +5,26 @@
  * - 主视图为 `TelemetryExplorer`(统一 4+1 套通道:SQL/Agent/IO/Error/System)
  * - 顶部保留数据库校验入口(校验按钮 + ValidationPanel)
  * - v1.9 Schema 演进工具:SchemaPanel 展示版本/迁移/PRAGMA diff
+ * - v1.9 配置元信息:ConfigPanel 展示 app_config 各段持久化版本与更新时间
  *
  * 历史:原 DebugPanel 直接渲染 LogEntry 列表;现统一收口到 telemetry 总线,
  * TelemetryExplorer 负责事件监听 / kind 过滤 / payload 详情展开。
  */
 import { useCallback, useState } from 'react'
-import { DatabaseIcon, GitBranchIcon, Loader2Icon } from 'lucide-react'
+import { DatabaseIcon, GitBranchIcon, Loader2Icon, SlidersHorizontalIcon } from 'lucide-react'
 import { debugApi, type ValidationResult } from '@/lib/tauri-bridge'
 import { errText } from '@/lib/errors'
 import TelemetryExplorer, { ValidationPanel } from './TelemetryExplorer'
 import SchemaPanel from './SchemaPanel'
+import ConfigPanel from './ConfigPanel'
 
-/** 组件:调试控制台根面板(TelemetryExplorer 主视图 + 数据库校验入口 + Schema 演进工具) */
+/** 组件:调试控制台根面板(TelemetryExplorer 主视图 + 数据库校验入口 + Schema/配置演进工具) */
 export default function DebugPanel() {
   const [validating, setValidating] = useState(false)
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null)
   const [showValidation, setShowValidation] = useState(false)
   const [showSchema, setShowSchema] = useState(false)
+  const [showConfig, setShowConfig] = useState(false)
 
   const handleValidate = useCallback(async () => {
     setValidating(true)
@@ -56,6 +59,9 @@ export default function DebugPanel() {
       {/* Schema 演进工具面板(全屏覆盖,显示时遮蔽 TelemetryExplorer) */}
       {showSchema && <SchemaPanel onClose={() => setShowSchema(false)} />}
 
+      {/* 应用配置元信息面板(全屏覆盖) */}
+      {showConfig && <ConfigPanel onClose={() => setShowConfig(false)} />}
+
       {/* 主视图:统一 Telemetry 事件查看器 */}
       {/* Schema / 校验数据库经 toolbar 插槽嵌入顶栏(替代原 absolute 浮层,避免遮挡过滤控件) */}
       <TelemetryExplorer
@@ -68,6 +74,14 @@ export default function DebugPanel() {
             >
               <GitBranchIcon className="w-3.5 h-3.5" />
               Schema
+            </button>
+            <button
+              onClick={() => setShowConfig(true)}
+              className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-md hover:bg-primary/10 text-primary transition-colors bg-card border"
+              title="应用配置:各段持久化版本与更新时间"
+            >
+              <SlidersHorizontalIcon className="w-3.5 h-3.5" />
+              配置
             </button>
             <button
               onClick={handleValidate}

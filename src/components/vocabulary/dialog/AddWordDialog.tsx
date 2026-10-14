@@ -134,11 +134,7 @@ export default function AddWordDialog({ open, editing, onClose }: Props) {
     }
     const chatApiKey = getChatApiKey(aiConfig.chat)
     if (!chatApiKey) {
-      console.warn(
-        '[Vocab·翻译] 未取到 API Key。localStorage ai-config 是否存在:',
-        Boolean(localStorage.getItem('time-write-ai-config')),
-        '| provider =', aiConfig.chat.provider,
-      )
+      console.warn('[Vocab·翻译] 未取到 API Key | provider =', aiConfig.chat.provider)
       toast.warning('未检测到 API Key。请先在「设置 → AI 设置」中配置并确保已保存')
       return
     }

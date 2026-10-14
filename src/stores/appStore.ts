@@ -18,7 +18,7 @@ import type { AiMessage } from '../types'
 
 export { useBooksStore, useAiStore, usePreferencesStore }
 export { getEditorState } from './appTypes'
-export type { AppState, AppSlice, EditorState, UserPreferences } from './appTypes'
+export type { AppState, AppSlice, EditorState } from './appTypes'
 
 // ==================== 跨域便捷选择器 ====================
 

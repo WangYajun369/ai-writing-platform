@@ -52,6 +52,7 @@ pub fn default_preferences() -> Preferences {
         editor_width: "standard".into(),
         library_view_mode: "grid".into(),
         library_sort_by: "updatedAt".into(),
+        developer_mode: false,
     }
 }
 
@@ -102,6 +103,40 @@ mod tests {
         assert_eq!(p.font_size, 16);
         assert_eq!(p.grid_size, "medium");
         assert_eq!(p.library_sort_by, "updatedAt");
+        assert!(!p.developer_mode, "开发者模式默认关闭");
+    }
+
+    /// 前后端默认值字段集一致性守卫：序列化后的键必须与前端 prefsDefaults 一一对应,
+    /// 防止后端漏字段导致前端读取时静默缺失（或反之）。
+    #[test]
+    fn default_preferences_field_set_matches_frontend() {
+        let mut keys: Vec<String> = serde_json::to_value(default_preferences())
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        keys.sort();
+        let mut expected: Vec<String> = [
+            "developerMode",
+            "editorWidth",
+            "eyeCareMode",
+            "fontFamily",
+            "fontSize",
+            "gridSize",
+            "librarySortBy",
+            "libraryViewMode",
+            "theme",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        expected.sort();
+        assert_eq!(
+            keys, expected,
+            "后端 Preferences 字段集须与前端 prefsDefaults 对齐"
+        );
     }
 
     #[test]

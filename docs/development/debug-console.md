@@ -526,7 +526,21 @@ unlisten()
 
 `src/components/common/DebugPanel.tsx` 是调试控制台的核心 UI 组件，仅在 `?debugwin=1` 模式下渲染。
 
-### 组件结构
+### 工具栏与覆盖面板（v1.9）
+
+`DebugPanel` 已收敛为「`TelemetryExplorer` 主视图 + 顶栏工具」结构：主视图统一展示 SQL / Agent / IO / Error / System 5 类遥测事件，顶栏经 `toolbar` 插槽嵌入三个入口（点击后在根面板上覆盖渲染，`onClose` 收起）：
+
+| 入口 | 图标 | 组件 | 作用 |
+|------|------|------|------|
+| Schema | `GitBranchIcon` | `SchemaPanel` | 数据库结构版本 / 迁移历史 / PRAGMA diff |
+| 配置 | `SlidersHorizontalIcon` | `ConfigPanel` | 展示 `app_config` 各段持久化版本与更新时间（`get_config_meta`），未落库段标注「未持久化 · 使用内置默认值」 |
+| 校验数据库 | `DatabaseIcon` | `ValidationPanel` | 校验 SQLite 表结构与数据完整性 |
+
+> 三个覆盖面板均为 `<div className="absolute inset-0 z-20 bg-background flex flex-col">` 形态，显示时遮蔽主视图；顶栏工具按钮仅切换显隐，不改变主视图的过滤/自动滚动状态。
+
+### 组件结构（v1.9 前形态 · 历史参考）
+
+> 下图描述 v1.9 之前 `DebugPanel` 直接渲染日志列表的形态，现已被 `TelemetryExplorer` 主视图取代，仅作演进参考。
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -643,7 +657,10 @@ export const debugWindowOpenAtom = atom<boolean>(false)
 | `src/stores/uiAtoms.ts` | 导出 `debugWindowOpenAtom` |
 | `src/App.tsx` | 检测 `?debugwin=1`、拦截 `console.*`、渲染 `DebugPanel` |
 | `src/pages/LibraryPage.tsx` | 工具栏调试按钮 + 事件监听 |
-| `src/components/common/DebugPanel.tsx` | 调试控制台 UI 组件 |
+| `src/components/common/DebugPanel.tsx` | 调试控制台 UI 组件（主视图 + 顶栏工具入口） |
+| `src/components/common/TelemetryExplorer.tsx` | 遥测事件查看器（含 `ValidationPanel`） |
+| `src/components/common/SchemaPanel.tsx` | Schema 演进工具覆盖面板 |
+| `src/components/common/ConfigPanel.tsx` | 应用配置元信息覆盖面板（`configApi.getMeta`） |
 
 ---
 

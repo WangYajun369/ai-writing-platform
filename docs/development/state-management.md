@@ -52,11 +52,11 @@ TimeWrite 采用**双层状态管理**架构：Zustand 承载业务数据，Jota
 | Store | 文件 | 职责 |
 |-------|------|------|
 | `booksStore` | `stores/booksStore.ts` | 书籍/卷/章节/世界观数据的加载、CRUD、回收站、选中态 |
-| `aiStore` | `stores/aiStore.ts` | AI 对话消息、配置、RAG、总结、连接状态（800ms 防抖持久化） |
-| `preferencesStore` | `stores/preferencesStore.ts` | 主题/护眼/字体/网格/编辑器宽度（localStorage 持久化） |
+| `aiStore` | `stores/aiStore.ts` | AI 对话消息、配置、RAG、总结、连接状态（对话走 localStorage 防抖；配置 / 工具箱分类经 `app_config`） |
+| `preferencesStore` | `stores/preferencesStore.ts` | 主题/护眼/字体/网格/编辑器宽度（`app_config` 持久化） |
 | `pluginStore` | `stores/pluginStore.ts` | 插件启用状态（独立 store） |
 | `vocabStore` | `stores/vocabStore.ts` | 英语生词数据：`words` / `due` / `stats` 三查询 + `refreshAll` 全量刷新（v1.4.0，独立 store） |
-| `ttsConfig` | `stores/ttsConfig.ts` | 豆包语音合成配置：API Key / 音色（localStorage 持久化，独立 store） |
+| `ttsConfig` | `stores/ttsConfig.ts` | 豆包语音合成配置：API Key / 音色（`app_config` 持久化，独立 store） |
 | `taskCardsStore` | `stores/taskCardsStore.ts` | 任务卡窗口数据：`projects` / `tags` / 任务 / 子任务 / 附件 / 模板 + 视图状态与操作（v1.5.0，独立 store，**不持久化**，数据真源在 SQLite，经 `taskCardApi` 拉取） |
 
 ### 主要状态字段
@@ -164,13 +164,13 @@ v1.1 起 Agent 为 Rust 原生引擎（内嵌主进程），**无启停流程**�
 |------|---------|------|
 | 业务数据（书籍/卷/章/快照/世界观卡片） | SQLite（Rust 管理） | **真源在后端**，前端 Zustand 仅为缓存 |
 | AI 对话记录 | `localStorage` | 按 `bookId` 分组；800ms 防抖合并写盘 + 卸载 flush（v1.6.0） |
-| AI 配置 / 偏好设置 | `localStorage` | 应用启动时恢复，自动兼容旧版格式迁移 |
+| AI 配置 / 偏好设置 / 工具箱分类 | SQLite（`app_config` 表） | v1.9 起统一后端真源；三层加载（默认 → 持久化 → env），写入为字段级 patch；敏感段（`ai` / `tts`）AES-256-GCM 加密落库 |
 | 编辑器状态（章节/滚动/光标） | `localStorage` | 按 `bookId` 保存，打开作品时恢复 |
 | Agent 记忆 | SQLite（`time_write.db` 的 `memories` 表） | Rust 引擎管理；旧独立库（`agent_memory.db`）启动时自动迁移 |
 | 英语生词 / 复习记录 | SQLite（`vocab_words` / `vocab_reviews` 表） | Rust 管理（SM-2 排程）；前端 `vocabStore` 仅为缓存 |
 | 任务卡 / 项目 / 标签 / 子任务 / 附件 | SQLite（`projects` / `tasks` / `tags` / `task_subtasks` / `attachments` 等 10 张表） | Rust 管理；前端 `taskCardsStore` **不持久化**，仅在任务卡窗口内存缓存 |
 | 任务卡提醒偏好 / 元数据 | SQLite（`task_meta` 表） | Rust 管理（key-value + 铃铛已读等） |
-| TTS 语音配置 | `localStorage` | `ttsConfig` store（豆包 API Key / 音色） |
+| TTS 语音配置 | SQLite（`app_config` 表） | v1.9 起经 `configClient.tts`；含 API Key，加密落库 |
 | UI 瞬态（Jotai） | 仅内存 | **不持久化** |
 
 ### AI 对话写盘时机（v1.6.0 防抖 + 兜底 flush）
@@ -188,10 +188,30 @@ v1.1 起 Agent 为 Rust 原生引擎（内嵌主进程），**无启停流程**�
 
 | 迁移项 | 说明 |
 |--------|------|
+| 旧 localStorage 配置 → `app_config` 表 | v1.9 启动时检测旧 key（`time-write-ai-config` 等），一次性迁移后清理 |
 | 旧版扁平 `AiConfig` → `chat` / `rag` 分离 | 自动检测缺失嵌套并转换 |
 | 旧版 `apiKey` → `bigmodelApiKey` / `deepseekApiKey` | 统一 Key 自动复制到两个服务商 |
 | 旧版 `aiToolPrompts` → `aiToolCategories` | 单层工具列表迁移到「自定义」分类 |
 | `contextWindowSize` 缺失 | 补默认值 `10` |
+
+### 配置模块（v1.9+）
+
+配置真源为后端 `app_config` 表，前端经 `src/lib/configClient.ts` → IPC → Rust `config` 模块读写，分 4 段（`ai` / `tts` / `preferences` / `ai_tool_categories`）。
+
+| 机制 | 说明 |
+|------|------|
+| 三层加载 | 默认值（Rust 内置常量）→ 持久化值（`app_config`）→ env 覆盖（`TIMEWRITE_AI_*` / `TIMEWRITE_TTS_*`） |
+| 写入门控 | 各 store 持有运行时 `configReady`（不持久化），`initFromConfig` 完成后才开门；未就绪前的 setter 只更新内存、**丢弃回写**，从机制上根除启动早期默认值覆盖已持久化配置的竞态 |
+| 字段级 patch | setter 只下发变更的顶层键；Rust `set_config` 与既有记录顶层浅合并后落库（子对象整体替换、顶层 `null` 删键），避免多窗口并发写截断其它字段 |
+| 敏感段加密 | `ai` / `tts` 落库前 AES-256-GCM 加密（`enc1:` + base64 前缀），密钥复用备份密钥体系；读取按前缀自动识别，无前缀按明文（兼容历史数据，写回即加密）；解密失败回退默认值并走可观测错误通道（`E_CONFIG_CRYPTO`） |
+| 版本守卫 | 每段携带 `version`；启动时高于应用支持版本拒绝启动（`E_CONFIG_VERSION`） |
+| 调试面板 | 调试控制台「配置」覆盖层（`ConfigPanel.tsx`）展示各段持久化版本与更新时间 |
+
+### 与数据库结构版本化的区别
+
+- DB 结构版本（`SCHEMA_VERSION`）走 `PRAGMA user_version`，DDL 幂等对齐
+- 应用配置版本（`CONFIG_VERSION`）走 `app_config.version` 字段，JSON 载荷按段迁移
+- 二者独立演进，互不影响
 
 ---
 

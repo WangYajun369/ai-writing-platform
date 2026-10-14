@@ -62,6 +62,32 @@ export function ApiKeyField({ label, hint, value, placeholder, onChange }: ApiKe
   )
 }
 
+// ──────────────── 只读信息行 ────────────────
+
+interface StaticInfoRowProps {
+  label: string
+  value: string
+  hint?: string
+}
+
+/**
+ * 只读信息行：以「标签 + 静态文本」呈现不可修改的信息。
+ *
+ * 用于替代「禁用输入框 / 只读 select」—— 那些控件外观上仍像可交互表单，
+ * 会让用户误以为可以修改。这里只陈述事实，不伪装成控件。
+ */
+export function StaticInfoRow({ label, value, hint }: StaticInfoRowProps) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-baseline gap-3">
+        <span className="text-sm font-medium shrink-0">{label}</span>
+        <span className="text-sm text-foreground font-mono break-all">{value}</span>
+      </div>
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </div>
+  )
+}
+
 // ──────────────── 连接测试状态徽标 ────────────────
 
 export type ConnectionStatus = 'idle' | 'testing' | 'connected' | 'error'
@@ -97,29 +123,47 @@ export function ConnectionStatusBadge({ status, detail }: ConnectionStatusBadgeP
 
 // ──────────────── 选项按钮组 ────────────────
 
-export interface OptionItem {
-  value: string
+/**
+ * 选项按钮组的选项。`V` 为值类型（设置项各自的联合类型），
+ * 通过它把"取值必须合法"从运行时约定升级为编译期约束。
+ */
+export interface OptionItem<V extends string = string> {
+  value: V
   label: string
   desc?: string
   color?: string
   icon?: string
 }
 
-interface OptionGroupProps {
-  options: readonly OptionItem[]
-  value: string
-  onChange: (value: string) => void
+interface OptionGroupProps<V extends string> {
+  options: readonly OptionItem<V>[]
+  value: V
+  onChange: (value: V) => void
+  /** 供无关联 label 的场景提供可访问名称 */
+  ariaLabel?: string
 }
 
-/** 选项按钮组：单项激活态单选，支持色块/图标/描述展示 */
-export function OptionGroup({ options, value, onChange }: OptionGroupProps) {
+/**
+ * 选项按钮组：单项激活态单选，支持色块/图标/描述展示。
+ *
+ * 泛型化后调用方无需再写 `as ThemeMode` 之类的断言 —— 选项数组声明为
+ * `OptionItem<ThemeMode>[]` 时，onChange 的参数类型自动收敛为 ThemeMode。
+ */
+export function OptionGroup<V extends string>({
+  options,
+  value,
+  onChange,
+  ariaLabel,
+}: OptionGroupProps<V>) {
   return (
-    <div className="flex flex-wrap gap-3">
+    <div className="flex flex-wrap gap-3" role="group" aria-label={ariaLabel}>
       {options.map((opt) => {
         const active = value === opt.value
         return (
           <button
             key={opt.value}
+            type="button"
+            aria-pressed={active}
             onClick={() => onChange(opt.value)}
             className={`flex flex-col items-start gap-0.5 px-4 py-2 rounded-lg text-sm transition-colors ${
               active ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
@@ -136,6 +180,35 @@ export function OptionGroup({ options, value, onChange }: OptionGroupProps) {
           </button>
         )
       })}
+    </div>
+  )
+}
+
+// ──────────────── 恢复默认 ────────────────
+
+interface ResetDefaultsCardProps {
+  onReset: () => void
+  busy?: boolean
+  /** 作用范围说明，避免用户误以为会重置数据 */
+  scopeHint: string
+}
+
+/** 偏好恢复默认入口：非破坏性操作，需明确标注作用范围 */
+export function ResetDefaultsCard({ onReset, busy, scopeHint }: ResetDefaultsCardProps) {
+  return (
+    <div className="flex items-center justify-between gap-4 pt-4 border-t border-border">
+      <div className="space-y-0.5">
+        <p className="text-sm font-medium">恢复默认设置</p>
+        <p className="text-xs text-muted-foreground">{scopeHint}</p>
+      </div>
+      <button
+        type="button"
+        onClick={onReset}
+        disabled={busy}
+        className="shrink-0 px-3 py-1.5 rounded-lg text-sm bg-muted hover:bg-muted/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {busy ? '恢复中…' : '恢复默认'}
+      </button>
     </div>
   )
 }

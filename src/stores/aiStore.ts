@@ -48,6 +48,14 @@ export interface AiState {
   aiToolCategories: AiToolCategory[]
   appVersion: string
   aiConfig: AiConfig
+  /**
+   * 后端配置是否已加载完成（运行时状态，不持久化）。
+   *
+   * 未完成前一律不回写：启动早期内存里只有默认值，此时若用户操作触发 setter，
+   * 落盘会把后端已持久化的 AI 配置 / 工具箱分类覆盖为默认值。
+   * 见 [preferencesStore] 的同类门控。
+   */
+  configReady: boolean
 
   /** 从后端 config 模块加载 aiConfig + aiToolCategories(AppInit 调用) */
   initFromConfig: () => Promise<void>
@@ -76,15 +84,23 @@ export interface AiState {
   setAppVersion: (appVersion: string) => void
 }
 
-/** 把 aiConfig 异步写后端(失败静默) */
-function persistAiConfigToBackend(config: AiConfig): void {
+/**
+ * 把 aiConfig 的字段级 patch 异步写后端(失败静默)，配置未加载完成前丢弃写入。
+ *
+ * 只下发本次变更的顶层键（chat / rag）；后端对子对象**整体替换**，
+ * 因此子对象内被清空的可选字段（值为 undefined）会随 JSON 序列化被丢弃，
+ * 等价于删除该键 —— 用户清除 API Key 能正确生效。
+ */
+function persistAiConfigPatch(config: Partial<AiConfig>): void {
+  if (!useAiStore.getState().configReady) return
   void configClient.ai.set(config).catch(() => {
     /* ignore */
   })
 }
 
-/** 把 aiToolCategories 异步写后端(失败静默) */
+/** 把 aiToolCategories 异步写后端(失败静默)，配置未加载完成前丢弃写入 */
 function persistAiToolCategoriesToBackend(categories: AiToolCategory[]): void {
+  if (!useAiStore.getState().configReady) return
   void configClient.aiToolCategories.set(categories).catch(() => {
     /* ignore */
   })
@@ -102,6 +118,7 @@ export const useAiStore = create<AiState>()((set, get) => {
     aiToolCategories: DEFAULT_AI_TOOL_CATEGORIES,
     appVersion: '',
     aiConfig: defaultAiConfig,
+    configReady: false,
 
     initFromConfig: async () => {
       try {
@@ -128,6 +145,9 @@ export const useAiStore = create<AiState>()((set, get) => {
       } catch {
         /* 后端读取失败,保持默认值 */
       }
+      // 无论读取成功与否都开门：表示「加载尝试已完成」，此后 setter 才允许回写后端。
+      // 保持默认值不代表配置损坏，继续阻塞写入反而会让用户刚改的配置永远无法保存。
+      set({ configReady: true })
     },
 
     setAiConfig: (config) =>
@@ -136,7 +156,8 @@ export const useAiStore = create<AiState>()((set, get) => {
           chat: config.chat ? { ...s.aiConfig.chat, ...config.chat } : s.aiConfig.chat,
           rag: config.rag ? { ...s.aiConfig.rag, ...config.rag } : s.aiConfig.rag,
         }
-        persistAiConfigToBackend(merged)
+        // 只把本次变更的顶层键作为字段级 patch 下发（未变更的子对象不重发）
+        persistAiConfigPatch(config)
         return { aiConfig: merged }
       }),
 

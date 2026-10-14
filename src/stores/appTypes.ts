@@ -1,14 +1,11 @@
 /**
  * AppStore 类型定义、常量与 localStorage 工具函数
  */
-import type { Book, Chapter, Volume, AiConfig, AiMessage, AiChatConfig, AiToolCategory, AiToolPrompt, ConversationSummary } from '../types'
+import type { Book, Chapter, Volume, AiConfig, AiMessage, AiToolCategory, AiToolPrompt, ConversationSummary } from '../types'
 import { createStorage } from '../lib/utils'
 import type { StateCreator } from 'zustand'
 
 // ==================== AI 工具箱预设常量 ====================
-
-export const AI_CONFIG_KEY = 'time-write-ai-config'
-export const AI_TOOL_CATEGORIES_KEY = 'time-write-ai-tool-categories'
 
 export const DEFAULT_AI_TOOL_CATEGORIES: AiToolCategory[] = [
   {
@@ -75,22 +72,23 @@ export const DEFAULT_AI_TOOL_CATEGORIES: AiToolCategory[] = [
 // ==================== localStorage 存储实例 ====================
 
 export const editorStateStore = createStorage<Record<string, EditorState>>('time-write-editor-state', {})
-export const preferencesStore = createStorage<Partial<UserPreferences>>('time-write-preferences', {})
 export const aiConversationsStore = createStorage<Record<string, AiMessage[]>>('time-write-ai-conversations', {})
 export const aiSummariesStore = createStorage<Record<string, ConversationSummary>>('time-write-ai-summaries', {})
 
-// ==================== 类型定义 ====================
+/**
+ * 随备份导出/导入的 localStorage 运行时缓存键白名单（导出收集与导入恢复共用，未知键一律忽略）。
+ *
+ * v1.9 起 AI 配置 / 偏好 / AI 工具箱分类已迁移到后端 `app_config` 表（随备份的
+ * `database.appConfig` 段携带，见 import.rs::restore_app_config），不再走 localStorage，
+ * 故不在此列；这里只保留仍在 localStorage 的运行时状态。
+ */
+export const LOCAL_CACHE_KEYS = [
+  'time-write-editor-state',
+  'time-write-ai-conversations',
+  'time-write-ai-summaries',
+] as const
 
-export type UserPreferences = {
-  theme: 'light' | 'dark' | 'system'
-  eyeCareMode: 'off' | 'warm' | 'green'
-  fontFamily: 'simhei' | 'simsun' | 'kaiti' | 'yahei'
-  fontSize: number
-  gridSize: 'small' | 'medium' | 'large'
-  editorWidth: 'mobile' | 'standard' | 'wide'
-  libraryViewMode: 'grid' | 'list'
-  librarySortBy: 'updatedAt' | 'createdAt' | 'title' | 'wordCount'
-}
+// ==================== 类型定义 ====================
 
 export interface EditorState {
   bookId: string
@@ -174,51 +172,6 @@ export interface AppState {
 /** Zustand slice 创建器 —— 允许返回 Partial<AppState> */
 export type AppSlice = StateCreator<AppState, [], [], Partial<AppState>>
 
-// ==================== AI 工具分类持久化 ====================
-
-/**
- * 加载 AI 工具箱分类（localStorage）
- *
- * 优先级：新键 time-write-ai-tool-categories → 旧键 time-write-ai-tool-prompts
- * （自动迁移为单一「自定义」分类并移除旧键）→ 内置 DEFAULT_AI_TOOL_CATEGORIES。
- * 数据缺失 / 非法 JSON / 空数组时均回退到内置默认分类。
- */
-export function loadAiToolCategories(): AiToolCategory[] {
-  try {
-    const raw = localStorage.getItem(AI_TOOL_CATEGORIES_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed
-    }
-    const oldRaw = localStorage.getItem('time-write-ai-tool-prompts')
-    if (oldRaw) {
-      const oldPrompts = JSON.parse(oldRaw)
-      if (Array.isArray(oldPrompts) && oldPrompts.length > 0) {
-        const migrated: AiToolCategory = {
-          id: 'migrated', name: '自定义',
-          color: 'linear-gradient(180deg, #E0EBFF -5%, #FFF2E7 99.73%)',
-          tools: oldPrompts.map((p: Record<string, unknown>) => ({
-            id: (p.id as string) || crypto.randomUUID(),
-            name: (p.name as string) || '未命名',
-            description: (p.description as string) || '',
-            systemPrompt: (p.systemPrompt as string) || '',
-          })),
-        }
-        saveAiToolCategories([migrated, ...DEFAULT_AI_TOOL_CATEGORIES])
-        localStorage.removeItem('time-write-ai-tool-prompts')
-        return [migrated, ...DEFAULT_AI_TOOL_CATEGORIES]
-      }
-    }
-    return DEFAULT_AI_TOOL_CATEGORIES
-  } catch {
-    return DEFAULT_AI_TOOL_CATEGORIES
-  }
-}
-
-export function saveAiToolCategories(categories: AiToolCategory[]) {
-  try { localStorage.setItem(AI_TOOL_CATEGORIES_KEY, JSON.stringify(categories)) } catch { /* ignore */ }
-}
-
 // ==================== 编辑器状态持久化 ====================
 
 export function saveEditorState(state: EditorState) {
@@ -232,104 +185,7 @@ export function getEditorState(bookId: string): EditorState | null {
   return all[bookId] ?? null
 }
 
-export function savePreferences(prefs: Partial<UserPreferences>) {
-  const existing = preferencesStore.load()
-  preferencesStore.save({ ...existing, ...prefs })
-}
-
-// ==================== AI 配置迁移 ====================
-
-export function isLegacyAiConfig(raw: Record<string, unknown>): boolean {
-  return raw.chat == null || typeof raw.chat !== 'object'
-    || raw.rag == null || typeof raw.rag !== 'object'
-}
-
-export function migrateLegacyAiConfig(raw: Record<string, unknown>): AiConfig {
-  const oldProvider = (raw.provider as string) || 'bigmodel'
-  const oldApiKey = raw.apiKey as string | undefined
-  return {
-    chat: {
-      provider: (oldProvider as AiChatConfig['provider']),
-      endpoint: (raw.endpoint as string) || 'https://open.bigmodel.cn/api/paas/v4',
-      model: (raw.model as string) || 'glm-5.1',
-      temperature: (raw.temperature as number) ?? 0.7,
-      maxTokens: (raw.maxTokens as number) || 131072,
-      bigmodelApiKey: oldApiKey,
-      deepseekApiKey: oldApiKey,
-      thinkingEnabled: false,
-      contextWindowSize: 10,
-    },
-    rag: {
-      provider: 'bigmodel',
-      endpoint: (raw.endpoint as string) || 'https://open.bigmodel.cn/api/paas/v4',
-      embeddingModel: (raw.embeddingModel as string) || 'embedding-3',
-      bigmodelApiKey: oldApiKey,
-    },
-  }
-}
-
-export function isLegacyChatApiKey(chat: Record<string, unknown>): boolean {
-  return chat.apiKey !== undefined && chat.bigmodelApiKey === undefined && chat.deepseekApiKey === undefined
-}
-
-export function migrateChatApiKey(chat: Record<string, unknown>): Record<string, unknown> {
-  const oldKey = chat.apiKey as string | undefined
-  const { apiKey: _, ...rest } = chat
-  return { ...rest, bigmodelApiKey: oldKey, deepseekApiKey: oldKey }
-}
-
-export function isLegacyRagConfig(rag: Record<string, unknown>): boolean {
-  return rag.apiKey !== undefined || rag.provider === undefined
-}
-
-export function migrateRagConfig(rag: Record<string, unknown>): Record<string, unknown> {
-  const oldKey = rag.apiKey as string | undefined
-  const { apiKey: _, deepseekApiKey: __, ...rest } = rag
-  const provider = (rag.provider as string) === 'deepseek' ? 'bigmodel' : (rag.provider as string) || 'bigmodel'
-  const endpoint = rag.endpoint as string || 'https://open.bigmodel.cn/api/paas/v4'
-  const embeddingModel = rag.embeddingModel as string || 'embedding-3'
-  return { provider, endpoint, embeddingModel, bigmodelApiKey: oldKey || (rag.bigmodelApiKey as string), ...rest }
-}
-
-export function loadAiConfig(): Partial<AiConfig> {
-  try {
-    const raw = localStorage.getItem(AI_CONFIG_KEY)
-    if (!raw) return {}
-    const parsed = JSON.parse(raw) as Record<string, unknown>
-    if (isLegacyAiConfig(parsed)) {
-      const migrated = migrateLegacyAiConfig(parsed)
-      saveAiConfig(migrated)
-      return migrated
-    }
-    const result = parsed as unknown as AiConfig
-    let needsSave = false
-    const chatObj = parsed.chat as Record<string, unknown> | undefined
-    if (chatObj) {
-      if (isLegacyChatApiKey(chatObj)) {
-        const migratedChat = migrateChatApiKey(chatObj) as unknown as AiChatConfig;
-        (result as unknown as Record<string, unknown>).chat = migratedChat
-        needsSave = true
-      }
-      const currentChat = (result as unknown as Record<string, unknown>).chat as Record<string, unknown>
-      if (currentChat && currentChat.contextWindowSize === undefined) {
-        currentChat.contextWindowSize = 10
-        needsSave = true
-      }
-    }
-    const ragObj = parsed.rag as Record<string, unknown> | undefined
-    if (ragObj && isLegacyRagConfig(ragObj)) {
-      const migratedRag = migrateRagConfig(ragObj);
-      (result as unknown as Record<string, unknown>).rag = migratedRag
-      needsSave = true
-    }
-    if (needsSave) saveAiConfig(result)
-    return result
-  } catch { return {} }
-}
-
-export function saveAiConfig(config: AiConfig) {
-  try { localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(config)) } catch { /* ignore */ }
-}
+// ==================== AI 对话缓存持久化 ====================
 
 export function saveAiConversations(conversations: Record<string, AiMessage[]>) {
   aiConversationsStore.save(conversations)

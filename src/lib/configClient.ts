@@ -142,13 +142,32 @@ export async function migrateLegacyLocalStorage(): Promise<LegacyMigrationResult
 
 // ─── 4 段配置的统一入口 ───
 
+/**
+ * AI 配置字段级 patch：仅含变更的顶层键。
+ *
+ * 子对象【整体替换】既有值 —— 因此清空某可选字段只需在子对象中省略该键
+ * （其值为 undefined 时会被 JSON 序列化丢弃）；顶层键显式 `null` 则由后端
+ * `set_config` 的 `merge_patch` 解释为删除该键。字段用 `unknown` 承载，
+ * 便于 store 侧直接传入顶层子对象。
+ */
+export interface AiConfigPatch {
+  chat?: unknown
+  rag?: unknown
+}
+
+/** TTS 配置字段级 patch */
+export interface TtsConfigPatch {
+  apiKey?: string
+  speaker?: string
+}
+
 export const configClient = {
-  /** AI 配置段(对话/RAG) */
+  /** AI 配置段(对话/RAG) —— 写入为字段级 patch(只发变更的顶层键) */
   ai: {
     async get(): Promise<AiConfig> {
       return configApi.get<AiConfig>('ai')
     },
-    async set(value: AiConfig): Promise<void> {
+    async set(value: AiConfigPatch): Promise<void> {
       return configApi.set('ai', value)
     },
     async reset(): Promise<AiConfig> {
@@ -156,12 +175,12 @@ export const configClient = {
     },
   },
 
-  /** TTS 配置段(豆包语音合成) */
+  /** TTS 配置段(豆包语音合成) —— 写入为字段级 patch */
   tts: {
     async get(): Promise<TtsConfig> {
       return configApi.get<TtsConfig>('tts')
     },
-    async set(value: TtsConfig): Promise<void> {
+    async set(value: TtsConfigPatch): Promise<void> {
       return configApi.set('tts', value)
     },
     async reset(): Promise<TtsConfig> {

@@ -102,19 +102,14 @@ RAG 仅支持**智谱 BigModel**（DeepSeek 不提供 Embeddings API）：
 
 ### 2.4 默认配置常量
 
-定义于 `src/components/settings/constants.ts`：
+服务商端点 / 模型默认值的**单一真源在后端**，定义于 `src-tauri/src/config/defaults.rs`（配置模块三层加载：默认值 → 持久化值 → env 覆盖）：
 
-```typescript
-PROVIDER_DEFAULTS = {
-  bigmodel: { endpoint: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-5.1' },
-  deepseek: { endpoint: 'https://api.deepseek.com',             model: 'deepseek-v4-flash' },
-  ollama:   { endpoint: 'http://127.0.0.1:11434',               model: 'qwen2.5:7b' },
-  custom:   { endpoint: '',                                      model: '' },
-}
-RAG_PROVIDER_DEFAULTS = {
-  bigmodel: { endpoint: 'https://open.bigmodel.cn/api/paas/v4', embeddingModel: 'embedding-3' },
-}
-```
+| 段 | 默认值 |
+|----|--------|
+| 对话（`chat`） | `provider = deepseek`、`endpoint = https://api.deepseek.com`、`model = deepseek-v4-flash` |
+| RAG（`rag`） | `provider = bigmodel`、`endpoint = https://open.bigmodel.cn/api/paas/v4`、`embeddingModel = embedding-3` |
+
+前端 `src/components/settings/constants.ts` 仅保留可选模型列表（`DEEPSEEK_MODELS` / `RAG_BIGMODEL_MODELS`）与 `GITHUB_REPO` re-export，**不再硬编码端点 / 模型默认值**，避免前后端双写漂移。
 
 ---
 

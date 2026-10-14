@@ -25,7 +25,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
 } from 'lucide-react'
-import { errText } from '@/lib/errors'
+import { errText, showError } from '@/lib/errors'
 import { toast } from '@/lib/toast'
 import {
   pluginApi,
@@ -87,7 +87,7 @@ export function PluginSection() {
       setPending({ plugin, source })
       await refresh()
     } catch (err) {
-      toast.error(errText(err, '安装失败'))
+      showError(err, '安装失败')
     } finally {
       setBusy(false)
     }
@@ -103,7 +103,7 @@ export function PluginSection() {
       setPending(null)
       await refresh()
     } catch (err) {
-      toast.error(errText(err, '启用失败'))
+      showError(err, '启用失败')
     } finally {
       setBusy(false)
     }
@@ -119,7 +119,7 @@ export function PluginSection() {
       setPending(null)
       await refresh()
     } catch (err) {
-      toast.error(errText(err, '卸载失败'))
+      showError(err, '卸载失败')
     } finally {
       setBusy(false)
     }
@@ -130,7 +130,7 @@ export function PluginSection() {
       await pluginApi.setEnabled(p.manifest.id, enabled)
       await refresh()
     } catch (err) {
-      toast.error(errText(err, enabled ? '启用失败' : '停用失败'))
+      showError(err, enabled ? '启用失败' : '停用失败')
     }
   }
 
@@ -145,7 +145,7 @@ export function PluginSection() {
       toast.success('已卸载')
       await refresh()
     } catch (err) {
-      toast.error(errText(err, '卸载失败'))
+      showError(err, '卸载失败')
     }
   }
 

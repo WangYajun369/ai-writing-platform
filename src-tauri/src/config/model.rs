@@ -177,6 +177,8 @@ pub struct Preferences {
     pub editor_width: String,
     pub library_view_mode: String,
     pub library_sort_by: String,
+    /// 开发者模式开关(与前端 `preferencesStore.ts` 的 developerMode 对齐)
+    pub developer_mode: bool,
 }
 
 /// AI 工具箱提示词(对齐前端 `AiToolPrompt`)

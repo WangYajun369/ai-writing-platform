@@ -25,6 +25,13 @@ export const DEFAULT_TTS_SPEAKER = 'zh_female_vv_uranus_bigtts'
 interface TtsConfigState extends TtsConfig {
   /** API Key 已填写 */
   configured: boolean
+  /**
+   * 后端配置是否已加载完成（运行时状态，不持久化）。
+   *
+   * 未完成前一律不回写：启动早期内存里只有默认音色，此时写入会把后端已持久化的
+   * apiKey / speaker 覆盖为默认值（见 preferencesStore / aiStore 的同类门控）。
+   */
+  configReady: boolean
   /** 从后端 config 模块加载真实配置(AppInit 调用) */
   initFromConfig: () => Promise<void>
   /** 合并保存（部分更新） */
@@ -35,6 +42,7 @@ export const useTtsConfigStore = create<TtsConfigState>((set, get) => ({
   apiKey: '',
   speaker: DEFAULT_TTS_SPEAKER,
   configured: false,
+  configReady: false,
 
   initFromConfig: async () => {
     try {
@@ -47,6 +55,8 @@ export const useTtsConfigStore = create<TtsConfigState>((set, get) => ({
     } catch {
       /* 后端读取失败,保持默认值 */
     }
+    // 无论读取成功与否都开门（与 aiStore / preferencesStore 一致）
+    set({ configReady: true })
   },
 
   setConfig: (patch) => {
@@ -58,8 +68,10 @@ export const useTtsConfigStore = create<TtsConfigState>((set, get) => ({
       ...merged,
       configured: !!merged.apiKey.trim(),
     })
-    // 异步写后端,失败静默
-    void configClient.tts.set(merged).catch(() => {
+    // 配置未加载完成前不回写：此时内存只有默认值，落盘会覆盖已持久化配置
+    if (!get().configReady) return
+    // 只发变更的键（字段级 patch），后端与既有持久化记录浅合并
+    void configClient.tts.set(patch).catch(() => {
       /* ignore */
     })
   },

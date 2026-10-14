@@ -6,7 +6,7 @@
  * 数据来源：config 由 SettingsPage 传入 useAiStore 的 aiConfig；
  * onChange 冒泡回 setAiConfig 持久化。config.chat/rag 缺失时给出降级提示。
  */
-import type { AiConfig, AiChatConfig, RagConfig } from '@/types'
+import type { AiConfig } from '@/types'
 import { ChatConfigSection } from './ChatConfigSection'
 import { RagConfigSection } from './RagConfigSection'
 import { ConnectionStatus } from './shared'
@@ -27,14 +27,14 @@ export function AiConfigSection({
   onTestConnection,
 }: AiConfigSectionProps) {
   if (!config.chat || !config.rag) {
-    return <div className="p-4 text-sm text-muted-foreground">AI 配置数据异常，请尝试清除浏览器缓存后重试。</div>
+    return <div className="p-4 text-sm text-muted-foreground">AI 配置数据异常，请在「版本」页重新初始化配置，或重启应用后重试。</div>
   }
 
   return (
     <div className="space-y-6">
       <ChatConfigSection
         config={config.chat}
-        onChange={(partial) => onChange({ chat: { ...config.chat, ...partial } as AiChatConfig })}
+        onChange={(partial) => onChange({ chat: { ...config.chat, ...partial } })}
         connectionStatus={connectionStatus}
         connectionDetail={connectionDetail}
         onTestConnection={onTestConnection}
@@ -44,7 +44,7 @@ export function AiConfigSection({
 
       <RagConfigSection
         config={config.rag}
-        onChange={(partial) => onChange({ rag: { ...config.rag, ...partial } as RagConfig })}
+        onChange={(partial) => onChange({ rag: { ...config.rag, ...partial } })}
       />
     </div>
   )

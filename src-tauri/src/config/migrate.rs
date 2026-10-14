@@ -365,6 +365,8 @@ mod tests {
     use serde_json::json;
 
     fn setup() -> Connection {
+        // ai/tts 段加密落库依赖全局密钥；测试无 AppHandle，先安装固定测试密钥（幂等）。
+        crate::commands::io::crypto::install_test_key();
         let conn = Connection::open_in_memory().unwrap();
         super::super::store::apply_ddl(&conn).unwrap();
         conn

@@ -11,7 +11,19 @@ import { ZapIcon } from 'lucide-react'
 import type { AiChatConfig } from '@/types'
 import { getChatApiKey } from '@/types'
 import { DEEPSEEK_MODELS } from './constants'
-import { ApiKeyField, ConnectionStatusBadge, ConnectionStatus } from './shared'
+import { ApiKeyField, ConnectionStatusBadge, ConnectionStatus, StaticInfoRow, Toggle } from './shared'
+
+/** 最大输出 Token 的合法区间与推荐值（推荐值与后端默认值 131072 一致） */
+const MAX_TOKENS_MIN = 1
+const MAX_TOKENS_MAX = 262144
+const MAX_TOKENS_RECOMMENDED = 131072
+
+/** 解析最大 Token 输入：整数化并收敛到合法区间；非法输入回退到推荐值 */
+function parseMaxTokens(raw: string): number {
+  const parsed = parseInt(raw, 10)
+  if (!Number.isInteger(parsed)) return MAX_TOKENS_RECOMMENDED
+  return Math.min(MAX_TOKENS_MAX, Math.max(MAX_TOKENS_MIN, parsed))
+}
 
 interface ChatConfigSectionProps {
   config: AiChatConfig
@@ -38,29 +50,15 @@ export function ChatConfigSection({
     <div className="space-y-4">
       <h2 className="text-base font-semibold">AI 对话</h2>
 
-      {/* 服务商 */}
-      <div className="space-y-1">
-        <label className="text-sm font-medium">服务商</label>
-        <select
-          value={config.provider}
-          disabled
-          className="w-full bg-muted/50 rounded-lg px-3 py-2 text-sm outline-none cursor-not-allowed opacity-60"
-        >
-          <option value="deepseek">DeepSeek</option>
-        </select>
-        <p className="text-xs text-muted-foreground">当前仅支持 DeepSeek，后续将扩展更多服务商</p>
-      </div>
+      {/* 服务商（当前仅支持 DeepSeek，以静态行呈现，避免伪装成可选项） */}
+      <StaticInfoRow
+        label="服务商"
+        value="DeepSeek"
+        hint="当前仅支持 DeepSeek，后续将扩展更多服务商"
+      />
 
-      {/* API 地址 */}
-      <div className="space-y-1">
-        <label className="text-sm font-medium">API 地址</label>
-        <input
-          value={config.endpoint}
-          readOnly
-          className="w-full bg-muted/50 rounded-lg px-3 py-2 text-sm outline-none cursor-not-allowed opacity-60"
-          placeholder="https://api.deepseek.com"
-        />
-      </div>
+      {/* API 地址（由服务商决定，不可修改） */}
+      <StaticInfoRow label="API 地址" value={config.endpoint} />
 
       {/* 对话模型 */}
       <div className="space-y-1">
@@ -79,23 +77,14 @@ export function ChatConfigSection({
       {/* 思考模式 */}
       <div className="space-y-1">
         <label className="text-sm font-medium">思考模式</label>
-        <p className="text-xs text-muted-foreground">
-          启用后，模型会先进行深度推理再输出回答，思考过程可在 AI 助手中查看
-        </p>
-        <div className="flex gap-3 mt-1">
-          {([true, false] as const).map((value) => (
-            <button
-              key={String(value)}
-              onClick={() => onChange({ thinkingEnabled: value })}
-              className={`px-4 py-2 rounded-lg text-sm transition-colors ${
-                config.thinkingEnabled === value
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted hover:bg-muted/80'
-              }`}
-            >
-              {value ? '启用' : '禁用'}
-            </button>
-          ))}
+        <div className="flex items-start justify-between gap-4 mt-1">
+          <p className="text-xs text-muted-foreground">
+            启用后，模型会先进行深度推理再输出回答，思考过程可在 AI 助手中查看
+          </p>
+          <Toggle
+            enabled={config.thinkingEnabled}
+            onChange={(value) => onChange({ thinkingEnabled: value })}
+          />
         </div>
       </div>
 
@@ -116,15 +105,15 @@ export function ChatConfigSection({
         <label className="text-sm font-medium">最大输出 Token 数</label>
         <input
           type="number"
-          min={1}
-          max={262144}
+          min={MAX_TOKENS_MIN}
+          max={MAX_TOKENS_MAX}
           step={1024}
           value={config.maxTokens}
-          onChange={(e) => onChange({ maxTokens: Math.max(1, parseInt(e.target.value) || 65536) })}
+          onChange={(e) => onChange({ maxTokens: parseMaxTokens(e.target.value) })}
           className="w-full bg-muted rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
         />
         <p className="text-xs text-muted-foreground">
-          1 万汉字约需 15000 tokens。推理模型的思考过程也计入此上限，建议设置 ≥ 131072。
+          1 万汉字约需 15000 tokens。推理模型的思考过程也计入此上限，建议设置 ≥ {MAX_TOKENS_RECOMMENDED}。
         </p>
       </div>
 

@@ -14,6 +14,7 @@ import { formatWordCount, formatRelativeTime } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 import { showError } from '@/lib/errors'
 import { useBooksStore } from '@/stores/booksStore'
+import { LOCAL_CACHE_KEYS } from '@/stores/appTypes'
 import { getBookTypeMeta } from '@/lib/book-types'
 import { resolveCoverSrc, processCroppedCoverImage, COVER_ASPECT, generateBookCoverSvg } from '@/lib/image-utils.ts'
 import type { CropArea } from '@/lib/image-utils'
@@ -77,16 +78,10 @@ export default function BookCard({ book, onOpen, onRefresh }: BookCardProps) {
       })
       if (!filePath) { setIsExportingBook(false); return }
 
-      // 收集该作品相关的 localStorage 缓存
+      // 收集随备份携带的 localStorage 运行时缓存（白名单见 appTypes.LOCAL_CACHE_KEYS；
+      // AI 配置 / 偏好 / AI 工具箱分类已迁至后端 app_config，不再走 localStorage）
       const cacheData: Record<string, unknown> = {}
-      const cacheKeys = [
-        'time-write-ai-config',
-        'time-write-preferences',
-        'time-write-editor-state',
-        `time-write-ai-conversations-${book.id}`,
-        `time-write-ai-summaries-${book.id}`,
-      ]
-      for (const key of cacheKeys) {
+      for (const key of LOCAL_CACHE_KEYS) {
         const raw = localStorage.getItem(key)
         if (raw) {
           try { cacheData[key] = JSON.parse(raw) } catch { cacheData[key] = raw }

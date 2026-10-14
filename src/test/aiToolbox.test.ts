@@ -17,9 +17,14 @@ import rustDefaults from '../../src-tauri/src/config/default_ai_tool_categories.
 const setSpy = vi.fn().mockResolvedValue(undefined)
 const getSpy = vi.fn().mockResolvedValue({})
 const resetSpy = vi.fn().mockResolvedValue([])
+const aiSetSpy = vi.fn().mockResolvedValue(undefined)
 vi.mock('@/lib/configClient', () => ({
   configClient: {
-    ai: { get: vi.fn().mockResolvedValue({}), set: vi.fn(), reset: vi.fn() },
+    ai: {
+      get: vi.fn().mockResolvedValue({}),
+      set: (...a: unknown[]) => aiSetSpy(...a),
+      reset: vi.fn(),
+    },
     preferences: { get: vi.fn(), set: vi.fn(), reset: vi.fn() },
     tts: { get: vi.fn(), set: vi.fn(), reset: vi.fn() },
     aiToolCategories: {
@@ -77,11 +82,44 @@ describe('aiStore 工具箱分类', () => {
     setSpy.mockClear()
     getSpy.mockClear().mockResolvedValue({})
     resetSpy.mockClear().mockResolvedValue([])
+    aiSetSpy.mockClear()
     vi.useRealTimers()
     useAiStore.setState({
       aiToolCategories: DEFAULT_AI_TOOL_CATEGORIES,
       aiConfig: defaultAiConfig,
+      // 写入门控要求：配置已加载完成后 setter 才回写后端
+      configReady: true,
     })
+  })
+
+  it('configReady=false 时 setter 不回写后端（启动早期覆盖防护）', () => {
+    useAiStore.setState({ configReady: false })
+    useAiStore.getState().setAiConfig({ chat: { ...defaultAiConfig.chat, model: 'x' } })
+    useAiStore.getState().deleteAiToolCategory(DEFAULT_AI_TOOL_CATEGORIES[0].id)
+    expect(setSpy).not.toHaveBeenCalled()
+    expect(aiSetSpy).not.toHaveBeenCalled()
+    // 内存仍即时生效（门控只挡落盘，不挡 UI 响应）
+    expect(useAiStore.getState().aiConfig.chat.model).toBe('x')
+  })
+
+  it('setAiConfig 只发变更的子对象，被清除的可选键随序列化丢弃（字段级 patch）', () => {
+    useAiStore.getState().setAiConfig({
+      chat: { ...defaultAiConfig.chat, deepseekApiKey: undefined },
+    })
+    expect(aiSetSpy).toHaveBeenCalledTimes(1)
+    const payload = aiSetSpy.mock.calls[0][0] as { chat?: Record<string, unknown>; rag?: unknown }
+    expect(payload.rag).toBeUndefined() // 未变更的 rag 不重发
+    // IPC 走 JSON 序列化，值为 undefined 的键被丢弃 → 子对象整体替换即等价删键
+    const serialized = JSON.parse(JSON.stringify(payload)) as { chat: Record<string, unknown> }
+    expect('deepseekApiKey' in serialized.chat).toBe(false)
+  })
+
+  it('initFromConfig 完成后开门：后续 setter 恢复回写', async () => {
+    useAiStore.setState({ configReady: false })
+    await useAiStore.getState().initFromConfig()
+    expect(useAiStore.getState().configReady).toBe(true)
+    useAiStore.getState().deleteAiToolCategory(DEFAULT_AI_TOOL_CATEGORIES[0].id)
+    expect(setSpy).toHaveBeenCalledTimes(1)
   })
 
   it('initFromConfig 接受空数组：用户删空分类后不会「复活」默认值', async () => {
