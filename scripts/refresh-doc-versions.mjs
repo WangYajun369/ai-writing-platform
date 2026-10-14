@@ -75,6 +75,11 @@ const files = walkMarkdown(DOCS_DIR)
 
 const rows = []
 let changed = 0
+// 标记格式失配（既不匹配 MARKER_RE 也不含「最后核对」）的文档。
+// 历史教训：v1.21.1 发版时 23 个文档头部误写成 `**适用版本\`1.21.0\``（缺闭合 ** 与全角冒号），
+// MARKER_RE 全部失配且脚本静默 continue，导致 docs 基线停留在 1.21.0 直到下一版才发现。
+// 这里显式收集并在输出中告警，避免同类静默漏刷重演。
+const malformed = []
 
 for (const file of files) {
   const rel = relative(ROOT, file)
@@ -85,6 +90,8 @@ for (const file of files) {
     // 兼容只带「最后核对」的文档
     if (DATE_ONLY_RE.test(text)) {
       rows.push({ rel, docVersion: '—', date: text.match(DATE_ONLY_RE)[1], status: 'date-only' })
+    } else if (/适用版本/.test(text)) {
+      malformed.push(rel)
     }
     continue
   }
@@ -148,4 +155,12 @@ if (!WRITE) {
 
 if (STALE_ONLY && staleCount === 0) {
   console.log('  ✅ 所有文档均标记为当前应用版本\n')
+}
+
+if (malformed.length > 0) {
+  console.log(`\n  ❌ ${malformed.length} 个文档的版本标记格式不合规，已跳过（本次不计入落后数）：`)
+  for (const rel of malformed) console.log(`     ${rel}`)
+  console.log('     正确格式：> **适用版本**：`X.Y.Z`　|　**最后核对**：YYYY-MM-DD')
+  console.log('     注意闭合的 ** 与全角冒号「：」，否则会静默漏刷。\n')
+  process.exitCode = 1
 }
