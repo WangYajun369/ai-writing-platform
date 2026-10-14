@@ -43,6 +43,10 @@ const ONLY = flagValue('--only')
 // 头部标记：> **适用版本**：`X.Y.Z`　|　**最后核对**：YYYY-MM-DD
 const MARKER_RE = /> \*\*适用版本\*\*：`([^`]+)`(.*?)\*\*最后核对\*\*：(\d{4}-\d{2}-\d{2})/
 const DATE_ONLY_RE = /\*\*最后核对\*\*：(\d{4}-\d{2}-\d{2})/
+// 坏形态专检：`**适用版本` 后面直接跟反引号（缺闭合 ** 与全角冒号「：」）。
+// 只认这一种畸形，不误伤格式正确但带历史注解的文档（如「1.0.0（原始分析）」、
+// 「1.9.1 … 目标落地版本 1.7.0（已交付）」这类规划/分析文档）。
+const MALFORMED_RE = /\*\*适用版本`/
 
 function today() {
   const d = new Date()
@@ -90,7 +94,7 @@ for (const file of files) {
     // 兼容只带「最后核对」的文档
     if (DATE_ONLY_RE.test(text)) {
       rows.push({ rel, docVersion: '—', date: text.match(DATE_ONLY_RE)[1], status: 'date-only' })
-    } else if (/适用版本/.test(text)) {
+    } else if (MALFORMED_RE.test(text)) {
       malformed.push(rel)
     }
     continue

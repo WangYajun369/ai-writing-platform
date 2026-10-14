@@ -517,6 +517,12 @@ if (pkgVersion) {
     ['README.md（当前版本行）', matchVersion('README.md', /\*\*当前版本：`(\d+\.\d+\.\d+)`\*\*/)],
     ['README.md（亮点行）', matchVersion('README.md', /> \*\*v(\d+\.\d+\.\d+) 亮点\*\*/)],
     ['docs/Home.md（当前版本）', matchVersion('docs/Home.md', /\| 当前版本 \| (\d+\.\d+\.\d+) \|/)],
+    // 历史教训：v1.21.2 发版时 Home.md / DOC-INDEX.md 的这几处曾停留在 1.21.0。
+    // 它们被 refresh-doc-versions.mjs 主动排除（版本流水由 bump 脚本守护），
+    // bump 脚本又不覆盖这几行，此前无任何断言守护 → 静默漂移。补齐断言闭环。
+    ['docs/Home.md（适用版本标记）', matchVersion('docs/Home.md', /> \*\*适用版本\*\*：`(\d+\.\d+\.\d+)`/)],
+    ['docs/Home.md（下载链接版本）', matchVersion('docs/Home.md', /下载最新版 v(\d+\.\d+\.\d+)/)],
+    ['docs/DOC-INDEX.md（当前版本）', matchVersion('docs/DOC-INDEX.md', /\*\*当前版本\*\*：`(\d+\.\d+\.\d+)`/)],
     ['product/landing-page.html（Hero 徽章）', matchVersion('product/landing-page.html', /v(\d+\.\d+\.\d+) 已发布/)],
     ['product/landing-page.html（页脚）', matchVersion('product/landing-page.html', /TimeWrite<\/strong> &nbsp;·&nbsp; v(\d+\.\d+\.\d+)/)],
     ['.github/workflows/release.yml（默认版本）', matchVersion('.github/workflows/release.yml', /default:\s*'(\d+\.\d+\.\d+)'/)],
