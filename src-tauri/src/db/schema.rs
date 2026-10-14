@@ -164,6 +164,18 @@ pub const TABLE_SCHEMA: &[(&str, &[&str])] = &[
             "reviewed_at",
         ],
     ),
+    // 单词关联网络（v3 迁移建表，单一真源在 db::migrations）
+    (
+        "vocab_word_relations",
+        &[
+            "id",
+            "word_id",
+            "related_word",
+            "relation_type",
+            "source",
+            "created_at",
+        ],
+    ),
     (
         "agent_traces",
         &[

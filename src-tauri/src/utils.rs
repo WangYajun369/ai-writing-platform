@@ -6,6 +6,46 @@ use crate::error::AppError;
 use chrono::{Local, Utc};
 use std::sync::OnceLock;
 
+// ---- ECDICT 离线词典文件 ----
+
+/// ECDICT 词典文件相对 app_data_dir 的位置
+pub const DICT_DIR: &str = "dict";
+pub const DICT_FILE: &str = "ecdict.sqlite";
+
+/// 获取 ECDICT 词典文件完整路径
+pub fn dict_db_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, AppError> {
+    use tauri::Manager;
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Business(format!("无法获取应用数据目录: {e}")))?;
+    Ok(dir.join(DICT_DIR).join(DICT_FILE))
+}
+
+/// 打开 ECDICT 词典库（只读），校验 stardict 表存在；未安装或缺表返回 None。
+///
+/// 供 `commands::vocab_dict`（查词/导入）与 `service::vocab_relation_service`
+/// （变形家族建议）共享，避免词典文件访问逻辑多处复制。
+pub fn open_dict_db(app: &tauri::AppHandle) -> Result<Option<rusqlite::Connection>, AppError> {
+    let path = dict_db_path(app)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let conn = rusqlite::Connection::open_with_flags(
+        &path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+    let table_ok: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='stardict')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !table_ok {
+        return Ok(None);
+    }
+    Ok(Some(conn))
+}
+
 // ---- 时间戳 ----
 
 /// 获取当前 UTC 时间的 RFC 3339 字符串表示

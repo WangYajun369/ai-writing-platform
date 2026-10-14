@@ -13,6 +13,8 @@ interface VocabState {
   stats: VocabStats | null
   words: VocabWord[]
   due: VocabWord[]
+  /** 各生词的关联条数（列表徽标），key 为生词 id */
+  relationCounts: Record<string, number>
   loading: boolean
   loaded: boolean
   loadStats: () => Promise<void>
@@ -26,6 +28,7 @@ export const useVocabStore = create<VocabState>((set, get) => ({
   stats: null,
   words: [],
   due: [],
+  relationCounts: {},
   loading: false,
   loaded: false,
 
@@ -60,8 +63,15 @@ export const useVocabStore = create<VocabState>((set, get) => ({
     if (get().loading) return
     set({ loading: true })
     try {
-      const [stats, words, due] = await Promise.all([vocabApi.stats(), vocabApi.list('all', ''), vocabApi.due()])
-      set({ stats, words, due, loaded: true })
+      const [stats, words, due, counts] = await Promise.all([
+        vocabApi.stats(),
+        vocabApi.list('all', ''),
+        vocabApi.due(),
+        vocabApi.relationsCounts(),
+      ])
+      const relationCounts: Record<string, number> = {}
+      for (const c of counts) relationCounts[c.wordId] = c.count
+      set({ stats, words, due, relationCounts, loaded: true })
     } catch (err) {
       console.error('刷新生词数据失败', err)
     } finally {

@@ -17,43 +17,13 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::OnceLock;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 // ───────────────────────── 词典文件 ─────────────────────────
 
-/// ECDICT 词典文件相对 app_data_dir 的位置
-const DICT_DIR: &str = "dict";
-const DICT_FILE: &str = "ecdict.sqlite";
-
-/// 获取词典文件完整路径
-fn dict_db_path(app: &AppHandle) -> Result<PathBuf, AppError> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| AppError::Business(format!("无法获取应用数据目录: {e}")))?;
-    Ok(dir.join(DICT_DIR).join(DICT_FILE))
-}
-
-/// 打开词典库（只读），校验 stardict 表存在
-fn open_dict_db(app: &AppHandle) -> Result<Option<rusqlite::Connection>, AppError> {
-    let path = dict_db_path(app)?;
-    if !path.exists() {
-        return Ok(None);
-    }
-    let conn = rusqlite::Connection::open_with_flags(
-        &path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )?;
-    let table_ok: bool = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='stardict')",
-        [],
-        |row| row.get(0),
-    )?;
-    if !table_ok {
-        return Ok(None);
-    }
-    Ok(Some(conn))
-}
+// 词典文件路径与只读打开逻辑已上移到 `crate::utils`（dict_db_path / open_dict_db），
+// 供本模块与单词关联服务共享。
+use crate::utils::{dict_db_path, open_dict_db};
 
 /// 从 stardict 行解析 DictHit（列顺序依赖查询语句）
 fn row_to_hit(row: &rusqlite::Row) -> rusqlite::Result<DictHit> {

@@ -15,6 +15,8 @@ import {
   PlayIcon,
   CheckCircle2Icon,
   PencilIcon,
+  Link2Icon,
+  NetworkIcon,
 } from 'lucide-react'
 import { useVocabStore } from '@/stores/vocabStore'
 import { cn } from '@/lib/utils'
@@ -22,6 +24,7 @@ import type { VocabStatus, VocabWord } from '@/types'
 import { meaningsSummary, STATUS_TEXT, formatNextReview, masteryPercent } from '../vocab-utils'
 import AddWordDialog from '../dialog/AddWordDialog'
 import WordDetailDialog from '../dialog/WordDetailDialog'
+import WordGraphDialog from '../dialog/WordGraphDialog'
 import { confirm as confirmDialog } from '@tauri-apps/plugin-dialog'
 import { vocabApi } from '@/lib/tauri-bridge'
 import { toast } from '@/lib/toast'
@@ -45,6 +48,7 @@ export default function WordBookTab() {
   const [addOpen, setAddOpen] = useState(false)
   const [editing, setEditing] = useState<VocabWord | null>(null)
   const [detail, setDetail] = useState<VocabWord | null>(null)
+  const [graphOpen, setGraphOpen] = useState(false)
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -108,6 +112,15 @@ export default function WordBookTab() {
         </div>
 
         <div className="flex-1" />
+
+        <button
+          onClick={() => setGraphOpen(true)}
+          title="以力导向图查看全部单词的近义 / 反义 / 变形关联"
+          className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[13px] text-zinc-200 transition hover:border-indigo-500/40 hover:bg-indigo-500/10 hover:text-indigo-200"
+        >
+          <NetworkIcon className="h-4 w-4" />
+          关联图谱
+        </button>
 
         <button
           onClick={() => {
@@ -181,6 +194,16 @@ export default function WordBookTab() {
 
       {/* 弹层 */}
       <AddWordDialog open={addOpen} editing={editing} onClose={() => setAddOpen(false)} />
+      <WordGraphDialog
+        open={graphOpen}
+        onClose={() => setGraphOpen(false)}
+        onOpenWord={(id) => {
+          vocabApi
+            .get(id)
+            .then(setDetail)
+            .catch(() => toast.error('词条加载失败'))
+        }}
+      />
       <WordDetailDialog
         word={detail}
         onClose={() => setDetail(null)}
@@ -211,6 +234,7 @@ function WordRow({
   onDelete: () => void
 }) {
   const percent = masteryPercent(word)
+  const relationCount = useVocabStore((s) => s.relationCounts[word.id] ?? 0)
   return (
     <div
       onClick={onOpen}
@@ -241,6 +265,17 @@ function WordRow({
       <div className="shrink-0 text-[10.5px] text-zinc-500" title="下次复习">
         {formatNextReview(word.nextReviewAt)}
       </div>
+
+      {/* 关联数徽标（有关联词时显示） */}
+      {relationCount > 0 && (
+        <span
+          title={`${relationCount} 个关联词`}
+          className="flex shrink-0 items-center gap-0.5 rounded-md border border-indigo-500/25 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] text-indigo-300"
+        >
+          <Link2Icon className="h-3 w-3" />
+          {relationCount}
+        </span>
+      )}
 
       {/* 状态标 */}
       <span

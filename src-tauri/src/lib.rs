@@ -281,6 +281,13 @@ pub fn run() {
             commands::vocab::vocab_review,
             commands::vocab::vocab_logs,
             commands::vocab::vocab_stats,
+            commands::vocab::vocab_relations_list,
+            commands::vocab::vocab_relations_add,
+            commands::vocab::vocab_relations_remove,
+            commands::vocab::vocab_relations_suggest,
+            commands::vocab::vocab_relations_counts,
+            commands::vocab::vocab_family_groups,
+            commands::vocab::vocab_relations_graph,
             // ══════ 英语字典（离线词库 + AI 释义）══════
             commands::vocab_dict::dict_status,
             commands::vocab_dict::dict_import,

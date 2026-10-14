@@ -46,6 +46,7 @@ pub mod image_asset_service;
 pub mod schedule_service;
 pub mod search_service;
 pub mod snapshot_service;
+pub mod vocab_relation_service;
 pub mod vocab_service;
 pub mod volume_service;
 pub mod world_card_service;

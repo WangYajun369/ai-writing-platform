@@ -173,7 +173,7 @@ db/         连接与 Schema —— r2d2 连接池、迁移、FTS5 触发器、�
 
 ### 3.3 数据库设计（db/schema.rs + db/mod.rs）
 
-**28 张业务表 + 2 张 FTS5 虚拟表**（v1.1 起新增 `memories`；v1.3 新增 `diaries` / `schedules`；v1.4 新增 `vocab_words` / `vocab_reviews`；v1.5 新增任务卡 13 张；v1.6 新增 `writing_stats`；v1.7 新增 `import_log` + `import_rollback_log`；v1.20 新增 `image_assets` / `agent_traces` / `telemetry_events`；另 sqlite-vec 动态 `chunks_vec` 镜像表）：
+**29 张业务表 + 2 张 FTS5 虚拟表**（v1.1 起新增 `memories`；v1.3 新增 `diaries` / `schedules`；v1.4 新增 `vocab_words` / `vocab_reviews`；v1.5 新增任务卡 13 张；v1.6 新增 `writing_stats`；v1.7 新增 `import_log` + `import_rollback_log`；v1.20 新增 `image_assets` / `agent_traces` / `telemetry_events`；v1.22 新增 `vocab_word_relations`（SCHEMA_VERSION 3，迁移注册表首条真实迁移）；另 sqlite-vec 动态 `chunks_vec` 镜像表）：
 
 | 表 | 关键字段 | 说明 |
 |----|---------|------|
@@ -188,6 +188,7 @@ db/         连接与 Schema —— r2d2 连接池、迁移、FTS5 触发器、�
 | `schedules` | schedule_date, content, done(0/1), created_at, updated_at | 旧个人日程（某天多条；v1.5.0 起仅供迁移） |
 | `vocab_words` | word(唯一), phonetic, meanings JSON, example/example_zh, details_json（AI 精讲缓存）, SM-2 参数（ease_factor/repetitions/interval_days/queue/due_at）, status | 生词本（v1.4.0） |
 | `vocab_reviews` | word_id(FK), rating(0-3), interval_days, reviewed_at | 复习日志（v1.4.0） |
+| `vocab_word_relations` | word_id(FK CASCADE), related_word, relation_type(synonym/antonym/derived/inflection/manual), source(ai/ecdict/manual), UNIQUE(word_id, related_word, relation_type) | 单词关联网络（v1.22） |
 | `projects` / `project_milestones` | name/color/icon/status/pinned；project_id(FK)/name/due_date | 任务项目 + 里程碑（v1.5.0） |
 | `tasks` | project_id(FK), title, description, status(todo/doing/done), priority, due_time, planned_today, completion_summary, deleted_at | 任务卡（v1.5.0） |
 | `tags` / `task_tags` | 标签元数据 + 任务-标签关联 | 任务标签（v1.5.0） |

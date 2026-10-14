@@ -8,6 +8,7 @@ use crate::db::AppDb;
 use crate::error::AppError;
 use crate::models::{VocabKnowledge, VocabMeaning, VocabStats, VocabWord};
 use crate::service::vocab_service;
+use crate::service::vocab_relation_service;
 use crate::service::ServiceCtx;
 use serde::Deserialize;
 use tauri::{AppHandle, State};
@@ -165,4 +166,78 @@ pub fn vocab_logs(
 #[tauri::command]
 pub fn vocab_stats(app: AppHandle, state: State<AppDb>) -> Result<VocabStats, AppError> {
     vocab_service::get_stats(&app, &state)
+}
+
+// ───────────────────────── 单词关联网络 ─────────────────────────
+
+/// 某生词的全部关联（含关联词在生词本中的收录状态）
+#[tauri::command]
+pub fn vocab_relations_list(
+    state: State<AppDb>,
+    word_id: String,
+) -> Result<Vec<crate::models::VocabRelationView>, AppError> {
+    vocab_relation_service::list_relations(&state, &word_id)
+}
+
+/// 手动添加关联（relation_type: synonym/antonym/derived/inflection/manual；幂等）
+#[tauri::command]
+pub fn vocab_relations_add(
+    app: AppHandle,
+    state: State<AppDb>,
+    word_id: String,
+    related_word: String,
+    relation_type: String,
+) -> Result<crate::models::VocabRelation, AppError> {
+    vocab_relation_service::add_relation(&app, &state, &word_id, &related_word, &relation_type)
+}
+
+/// 删除一条关联
+#[tauri::command]
+pub fn vocab_relations_remove(
+    app: AppHandle,
+    state: State<AppDb>,
+    id: String,
+) -> Result<(), AppError> {
+    vocab_relation_service::remove_relation(&app, &state, &id)
+}
+
+/// ECDICT 变形家族建议（标注各成员是否已收录；未收录成员不落库）
+#[tauri::command]
+pub fn vocab_relations_suggest(
+    app: AppHandle,
+    state: State<AppDb>,
+    word: String,
+) -> Result<Vec<crate::models::VocabRelatedCandidate>, AppError> {
+    vocab_relation_service::suggest_family(&app, &state, &word)
+}
+
+/// 全库关联条数（生词列表徽标用）
+#[tauri::command]
+pub fn vocab_relations_counts(
+    state: State<AppDb>,
+) -> Result<Vec<crate::models::VocabRelationCount>, AppError> {
+    vocab_relation_service::relation_counts(&state)
+}
+
+/// 词族复习分组（学习中生词按 ECDICT 原型 lemma 聚族，≥2 成族，按成员数降序）
+#[tauri::command]
+pub fn vocab_family_groups(
+    app: AppHandle,
+    state: State<AppDb>,
+) -> Result<Vec<crate::models::VocabFamilyGroup>, AppError> {
+    vocab_relation_service::family_groups(&app, &state)
+}
+
+/// 关联图谱（include_potential 追加未收录叶子节点；status: all/learning/mastered/suspended；节点封顶 300）
+#[tauri::command]
+pub fn vocab_relations_graph(
+    state: State<AppDb>,
+    include_potential: Option<bool>,
+    status: Option<String>,
+) -> Result<crate::models::VocabGraph, AppError> {
+    vocab_relation_service::graph(
+        &state,
+        include_potential.unwrap_or(false),
+        status.as_deref(),
+    )
 }

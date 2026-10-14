@@ -503,6 +503,84 @@ export interface VocabStats {
   reviewHistory: StatsDay[]
 }
 
+// ==================== 单词关联网络（vocab_word_relations） ====================
+
+/** 关联类型：近义 / 反义 / 派生 / 变形家族 / 手动 */
+export type VocabRelationType = 'synonym' | 'antonym' | 'derived' | 'inflection' | 'manual'
+
+/** 关联来源：AI 释义提取 / ECDICT 变形家族 / 手动添加 */
+export type VocabRelationSource = 'ai' | 'ecdict' | 'manual'
+
+/** 单词关联（对齐 Rust VocabRelation） */
+export interface VocabRelation {
+  id: string
+  /** 关系属主的生词 id */
+  wordId: string
+  /** 关联词文本（可能尚未收录） */
+  relatedWord: string
+  relationType: VocabRelationType
+  source: VocabRelationSource | string
+  createdAt: string
+}
+
+/** 关联词展示视图（对齐 Rust VocabRelationView，relation 字段 serde flatten 展开） */
+export interface VocabRelationView extends VocabRelation {
+  /** 关联词是否已收录进生词本 */
+  inVocab: boolean
+  /** 已收录时的掌握状态 */
+  vocabStatus: VocabStatus | null
+  /** 已收录时的生词 id */
+  vocabWordId: string | null
+}
+
+/** 关联候选词（ECDICT 变形家族建议，对齐 Rust VocabRelatedCandidate） */
+export interface VocabRelatedCandidate {
+  word: string
+  inVocab: boolean
+}
+
+/** 单词关联条数（生词列表徽标，对齐 Rust VocabRelationCount） */
+export interface VocabRelationCount {
+  wordId: string
+  count: number
+}
+
+/** 词族分组（词族复习模式，对齐 Rust VocabFamilyGroup） */
+export interface VocabFamilyGroup {
+  /** 原型 lemma（ECDICT exchange 的 0: 字段） */
+  lemma: string
+  /** 族内成员（≥2，按单词字母序） */
+  words: VocabWord[]
+}
+
+/** 关联图谱节点（对齐 Rust VocabGraphNode） */
+export interface VocabGraphNode {
+  /** 已收录词为 vocab id；潜在关联词为 `p:<word>` 形式 */
+  id: string
+  word: string
+  /** learning / mastered / suspended / potential（未收录） */
+  status: VocabStatus | 'potential'
+  /** 关联度数（参与的去重边数） */
+  degree: number
+}
+
+/** 关联图谱边（对齐 Rust VocabGraphEdge，source/target 为节点 id） */
+export interface VocabGraphEdge {
+  source: string
+  target: string
+  relationType: VocabRelationType
+}
+
+/** 关联图谱载荷（对齐 Rust VocabGraph） */
+export interface VocabGraph {
+  nodes: VocabGraphNode[]
+  edges: VocabGraphEdge[]
+  /** 节点数超上限被按关联度截断时为 true */
+  truncated: boolean
+  /** 全库无任何关联的生词数（不受状态筛选影响的全库口径） */
+  isolatedCount: number
+}
+
 /** 收录生词参数 */
 export interface AddVocabWordArgs {
   word: string

@@ -140,3 +140,70 @@ export function masteryPercent(word: VocabWord): number {
   const p = Math.min(100, Math.round((word.intervalDays / 60) * 55 + (word.repetition / 8) * 45))
   return p
 }
+
+// ───────────────────────── 关联图谱（纯函数，便于单测） ─────────────────────────
+
+/** 图谱视图变换：k 缩放，x/y 平移（屏幕坐标 = 图坐标 * k + (x,y)） */
+export interface GraphView {
+  k: number
+  x: number
+  y: number
+}
+
+/** 图谱缩放范围 */
+export const GRAPH_ZOOM_MIN = 0.2
+export const GRAPH_ZOOM_MAX = 4
+/** 自适应 fit 时的缩放上限（避免小图被放得过大） */
+export const GRAPH_FIT_MAX = 1.5
+
+/** 节点半径：潜在关联固定 4.5，已收录词按度数增长并封顶 16 */
+export function graphNodeRadius(n: { status: string; degree: number }): number {
+  if (n.status === 'potential') return 4.5
+  return Math.min(7 + n.degree * 1.2, 16)
+}
+
+/**
+ * 以光标为锚点的缩放：新 k 钳制在 [GRAPH_ZOOM_MIN, GRAPH_ZOOM_MAX]，
+ * x/y 使光标下的图坐标在缩放前后保持不动。
+ */
+export function zoomViewAt(view: GraphView, mx: number, my: number, zoomIn: boolean): GraphView {
+  const k = Math.min(
+    GRAPH_ZOOM_MAX,
+    Math.max(GRAPH_ZOOM_MIN, view.k * (zoomIn ? 1.15 : 1 / 1.15)),
+  )
+  const s = k / view.k
+  return { k, x: mx - (mx - view.x) * s, y: my - (my - view.y) * s }
+}
+
+/**
+ * 自适应 fit：计算让全部节点包围盒落入视口（留 margin 边距）的视图，
+ * k 钳制在 [GRAPH_ZOOM_MIN, GRAPH_FIT_MAX]；无有效坐标节点时返回默认视图。
+ */
+export function fitViewToNodes(
+  nodes: { x?: number; y?: number }[],
+  width: number,
+  height: number,
+  margin = 60,
+): GraphView {
+  const pts = nodes.filter((n): n is { x: number; y: number } => n.x != null && n.y != null)
+  if (pts.length === 0 || width <= 0 || height <= 0) return { k: 1, x: 0, y: 0 }
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const p of pts) {
+    minX = Math.min(minX, p.x)
+    minY = Math.min(minY, p.y)
+    maxX = Math.max(maxX, p.x)
+    maxY = Math.max(maxY, p.y)
+  }
+  const bw = Math.max(maxX - minX, 1)
+  const bh = Math.max(maxY - minY, 1)
+  const k = Math.min(
+    GRAPH_FIT_MAX,
+    Math.max(GRAPH_ZOOM_MIN, Math.min((width - margin * 2) / bw, (height - margin * 2) / bh)),
+  )
+  const cx = (minX + maxX) / 2
+  const cy = (minY + maxY) / 2
+  return { k, x: width / 2 - cx * k, y: height / 2 - cy * k }
+}

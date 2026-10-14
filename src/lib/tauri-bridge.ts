@@ -7,7 +7,7 @@
  */
 import { invoke } from '@tauri-apps/api/core'
 import type { IpcCommand } from '@/types/ipc-commands'
-import type { Book, Chapter, Volume, Snapshot, WorldCard, Diary, DiaryMeta, DiarySearchHit, DiaryStats, CreateBookParams, UpdateBookParams, SaveDiaryParams, Schedule, SaveScheduleParams, VocabWord, VocabStats, VocabReviewLog, AddVocabWordArgs, UpdateVocabWordArgs, DictStatus, DictLookupResult, AiWordExplain, ExplainWordArgs, WordCheckResult, TtsSpeakResult, TaskProject, ProjectView, TaskCard, TaskSubtask, TaskTag, TaskStatus, TaskTemplate, TodayOverview, MigrateResult, DeletedTaskItem, ProjectStatus, CreateProjectArgs, UpdateProjectArgs, CreateTaskArgs, UpdateTaskArgs, CreateTemplateArgs, UpdateTemplateArgs, Attachment, ActivityLog, ProjectWeeklyStat, UpdateTagArgs, AgentTrace, ProfileMeta } from '@/types'
+import type { Book, Chapter, Volume, Snapshot, WorldCard, Diary, DiaryMeta, DiarySearchHit, DiaryStats, CreateBookParams, UpdateBookParams, SaveDiaryParams, Schedule, SaveScheduleParams, VocabWord, VocabStats, VocabReviewLog, AddVocabWordArgs, UpdateVocabWordArgs, VocabRelation, VocabRelationView, VocabRelationType, VocabRelatedCandidate, VocabRelationCount, VocabFamilyGroup, VocabGraph, DictStatus, DictLookupResult, AiWordExplain, ExplainWordArgs, WordCheckResult, TtsSpeakResult, TaskProject, ProjectView, TaskCard, TaskSubtask, TaskTag, TaskStatus, TaskTemplate, TodayOverview, MigrateResult, DeletedTaskItem, ProjectStatus, CreateProjectArgs, UpdateProjectArgs, CreateTaskArgs, UpdateTaskArgs, CreateTemplateArgs, UpdateTemplateArgs, Attachment, ActivityLog, ProjectWeeklyStat, UpdateTagArgs, AgentTrace, ProfileMeta } from '@/types'
 
 /**
  * 类型化 invoke：命令名接受 IpcCommand 联合类型约束。
@@ -1192,6 +1192,43 @@ export const vocabApi = {
   /** 生词本统计 */
   async stats(): Promise<VocabStats> {
     return typedInvoke<VocabStats>('vocab_stats')
+  },
+
+  // ── 单词关联网络 ──
+
+  /** 某生词的全部关联（含关联词收录状态） */
+  async relationsList(wordId: string): Promise<VocabRelationView[]> {
+    return typedInvoke<VocabRelationView[]>('vocab_relations_list', { wordId })
+  },
+
+  /** 手动添加关联（幂等：同三元组已存在时返回原关系） */
+  async relationsAdd(wordId: string, relatedWord: string, relationType: VocabRelationType): Promise<VocabRelation> {
+    return typedInvoke<VocabRelation>('vocab_relations_add', { wordId, relatedWord, relationType })
+  },
+
+  /** 删除一条关联 */
+  async relationsRemove(id: string): Promise<void> {
+    return typedInvoke<void>('vocab_relations_remove', { id })
+  },
+
+  /** ECDICT 变形家族建议（标注各成员是否已收录） */
+  async relationsSuggest(word: string): Promise<VocabRelatedCandidate[]> {
+    return typedInvoke<VocabRelatedCandidate[]>('vocab_relations_suggest', { word })
+  },
+
+  /** 全库关联条数（生词列表徽标用） */
+  async relationsCounts(): Promise<VocabRelationCount[]> {
+    return typedInvoke<VocabRelationCount[]>('vocab_relations_counts')
+  },
+
+  /** 词族复习分组（学习中生词按 ECDICT 原型 lemma 聚族，≥2 成族） */
+  async familyGroups(): Promise<VocabFamilyGroup[]> {
+    return typedInvoke<VocabFamilyGroup[]>('vocab_family_groups')
+  },
+
+  /** 关联图谱（includePotential 追加未收录叶子节点；status 默认 all；节点封顶 300） */
+  async relationsGraph(includePotential = false, status: string = 'all'): Promise<VocabGraph> {
+    return typedInvoke<VocabGraph>('vocab_relations_graph', { includePotential, status })
   },
 }
 

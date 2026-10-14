@@ -44,16 +44,26 @@ pub struct Migration {
 /// 3. SQL 必须可重入(已应用 → no-op),或写为 `IF NOT EXISTS` 形式;
 /// 4. 提供对应单测(应用 → 重启 → no-op → checksum 一致)。
 ///
-/// 当前为空:全部结构变更均可由 [`crate::db::ddl`] 幂等表达,故 SCHEMA_VERSION 停在 1。
-pub const MIGRATIONS: &[Migration] = &[
-    // 占位示例(实际启用时取消注释并递增 SCHEMA_VERSION):
-    // Migration {
-    //     version: 2,
-    //     name: "add_xxx_column_to_yyy",
-    //     up_sql: "ALTER TABLE yyy ADD COLUMN xxx TEXT NOT NULL DEFAULT ''",
-    //     down_sql: Some("ALTER TABLE yyy DROP COLUMN xxx"),  -- SQLite 3.35+ 支持
-    // },
-];
+/// - v3 `create_vocab_word_relations`:单词关联网络（近反义/变形家族/手动），
+///   表结构的单一真源在此迁移,`ddl` 模块不重复建表。
+pub const MIGRATIONS: &[Migration] = &[Migration {
+    version: 3,
+    name: "create_vocab_word_relations",
+    up_sql: r#"
+        CREATE TABLE IF NOT EXISTS vocab_word_relations (
+            id            TEXT PRIMARY KEY,
+            word_id       TEXT NOT NULL REFERENCES vocab_words(id) ON DELETE CASCADE,
+            related_word  TEXT NOT NULL,
+            relation_type TEXT NOT NULL,
+            source        TEXT NOT NULL,
+            created_at    TEXT NOT NULL,
+            UNIQUE(word_id, related_word, relation_type)
+        );
+        CREATE INDEX IF NOT EXISTS idx_vocab_relations_word ON vocab_word_relations(word_id);
+        CREATE INDEX IF NOT EXISTS idx_vocab_relations_related ON vocab_word_relations(related_word);
+    "#,
+    down_sql: Some("DROP TABLE IF EXISTS vocab_word_relations"),
+}];
 
 /// schema_migrations 表的 DDL(幂等)。
 ///
@@ -328,21 +338,55 @@ mod tests {
     }
 
     #[test]
-    fn run_pending_with_empty_registry_is_noop() {
+    fn run_pending_applies_v3_then_rerun_is_noop() {
         let mut conn = setup();
         record_baseline(&conn).unwrap();
-        // MIGRATIONS 当前为空,任何 from_version 调用都应 no-op
+        // 首次运行:v3 迁移被应用,新增一条历史记录
         run_pending(&mut conn, 0).unwrap();
-        run_pending(&mut conn, 1).unwrap();
         let list = list_applied(&conn).unwrap();
-        assert_eq!(list.len(), 1, "空注册表不应新增迁移");
+        assert_eq!(list.len(), 2, "baseline + v3 应共 2 条记录");
+        assert_eq!(list[1].version, 3);
+        assert_eq!(list[1].name, "create_vocab_word_relations");
+        // v3 建表生效
+        let cnt: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='vocab_word_relations'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cnt, 1, "v3 应创建 vocab_word_relations 表");
+        // 重跑(模拟重启):已应用迁移 checksum 校验通过后跳过,不应新增记录
+        run_pending(&mut conn, 0).unwrap();
+        run_pending(&mut conn, 3).unwrap();
+        assert_eq!(list_applied(&conn).unwrap().len(), 2, "重跑应为 no-op");
     }
 
     #[test]
     fn pending_returns_only_after_from_version() {
-        // 当前 MIGRATIONS 为空,pending 永远返回空 Vec
-        assert_eq!(pending(0).len(), 0);
-        assert_eq!(pending(1).len(), 0);
+        // 当前注册表仅 v3:from_version < 3 时待应用 1 条,>= 3 时为空
+        assert_eq!(pending(0).len(), 1);
+        assert_eq!(pending(2).len(), 1);
+        assert_eq!(pending(3).len(), 0);
+    }
+
+    /// v3 迁移记录的 checksum 与注册表定义一致(防篡改闭环)。
+    #[test]
+    fn v3_checksum_matches_registry_after_apply() {
+        let mut conn = setup();
+        record_baseline(&conn).unwrap();
+        run_pending(&mut conn, 0).unwrap();
+        let m = MIGRATIONS.iter().find(|m| m.version == 3).unwrap();
+        let stored: (String, String) = conn
+            .query_row(
+                "SELECT name, checksum FROM schema_migrations WHERE version = 3",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(stored.0, m.name);
+        assert_eq!(stored.1, checksum(m.up_sql), "已应用迁移的 checksum 应与代码一致");
+        assert_eq!(m.down_sql, Some("DROP TABLE IF EXISTS vocab_word_relations"));
     }
 
     /// 模拟一个 v2 迁移:验证 apply → record → re-run no-op 全链路。

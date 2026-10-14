@@ -15,6 +15,7 @@ import { useVocabStore } from '@/stores/vocabStore'
 import type { VocabReviewLog, VocabWord } from '@/types'
 import { RATING_TEXT, STATUS_TEXT, formatNextReview } from '../vocab-utils'
 import VocabKnowledgeView from '../VocabKnowledgeView'
+import VocabRelationsPanel from '../VocabRelationsPanel'
 import SpeakButton from '../SpeakButton'
 
 interface Props {
@@ -155,6 +156,9 @@ export default function WordDetailDialog({ word, onClose, onEdit }: Props) {
 
           {/* AI 词条精讲（词根词缀/近反义词/词组/动词变形/词性例句） */}
           {word.knowledge && <VocabKnowledgeView knowledge={word.knowledge} />}
+
+          {/* 关联词网络（近反义/变形家族/手动，支持增删与一键收录） */}
+          <VocabRelationsPanel wordId={word.id} word={word.word} />
 
           {/* SM-2 参数 */}
           <div>

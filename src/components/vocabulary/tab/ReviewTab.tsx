@@ -5,7 +5,7 @@
  * 「忘记」的词会回到队列尾部再测一次；「已掌握」的词自动移出队列。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { LoaderIcon, SparklesIcon, PlayCircleIcon, CheckCircle2Icon, BookMarkedIcon, RotateCcwIcon } from 'lucide-react'
+import { LoaderIcon, SparklesIcon, PlayCircleIcon, CheckCircle2Icon, BookMarkedIcon, RotateCcwIcon, NetworkIcon } from 'lucide-react'
 import { vocabApi } from '@/lib/tauri-bridge'
 import { toast } from '@/lib/toast'
 import { errText } from '@/lib/errors'
@@ -14,7 +14,9 @@ import { useVocabStore } from '@/stores/vocabStore'
 import type { VocabRating, VocabWord } from '@/types'
 import { RATING_META, meaningsSummary } from '../vocab-utils'
 import VocabKnowledgeView from '../VocabKnowledgeView'
+import VocabRelationsPanel from '../VocabRelationsPanel'
 import SpeakButton from '../SpeakButton'
+import FamilyReviewDialog from '../dialog/FamilyReviewDialog'
 
 interface QueueItem {
   word: VocabWord
@@ -35,6 +37,10 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
   const [sessionLabel, setSessionLabel] = useState('今日复习')
   // 本场会话四档自评计数（忘记/模糊/记得/轻松），完成页以分布卡片呈现
   const [counts, setCounts] = useState<Record<VocabRating, number>>({ 0: 0, 1: 0, 2: 0, 3: 0 })
+  // 本场已评过分的生词 id（顺带复习去重用）
+  const [reviewedIds, setReviewedIds] = useState<Set<string>>(new Set())
+  // 词族复习选择弹层
+  const [familyOpen, setFamilyOpen] = useState(false)
 
   // 队列头即当前复习的卡片；队列排空且非完成态时回到初始界面
   const current = queue[0]
@@ -61,6 +67,7 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
     setFlipped(false)
     setDone(0)
     setCounts({ 0: 0, 1: 0, 2: 0, 3: 0 })
+    setReviewedIds(new Set())
     setFinished(false)
   }, [])
 
@@ -75,6 +82,7 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
       try {
         const updated = await vocabApi.review(current.word.id, rating)
         setCounts((c) => ({ ...c, [rating]: c[rating] + 1 }))
+        setReviewedIds((s) => new Set(s).add(current.word.id))
         const rest = queue.slice(1)
         if (updated.status === 'mastered') {
           // 自动掌握：移出队列
@@ -98,6 +106,28 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
       }
     },
     [current, queue, busy, flipped, refreshAll],
+  )
+
+  /** 顺带复习：把关联词拉入本轮队列尾部（已在队列 / 本场已评过 → toast 跳过） */
+  const pullIntoSession = useCallback(
+    async (vocabWordId: string, wordText: string) => {
+      if (queue.some((q) => q.word.id === vocabWordId) || reviewedIds.has(vocabWordId)) {
+        toast.info(`「${wordText}」已在本轮复习中，跳过`)
+        return
+      }
+      try {
+        const w = await vocabApi.get(vocabWordId)
+        if (w.status !== 'learning') {
+          toast.info(`「${wordText}」当前不在学习中，已跳过`)
+          return
+        }
+        setQueue((q) => [...q, { word: w, revisit: 0 }])
+        toast.success(`已把「${wordText}」加入本轮队列尾部`)
+      } catch (err) {
+        toast.error(errText(err, '拉取单词失败'))
+      }
+    },
+    [queue, reviewedIds],
   )
 
   // 键盘：空格翻面；1-4 键随时评分（无需翻面）
@@ -194,6 +224,24 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
               )}
             </div>
           )}
+
+          {/* 词族复习入口：按词典原型聚族，整族一起过 */}
+          <div className="mt-5 flex justify-center">
+            <button
+              onClick={() => setFamilyOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-indigo-500/35 px-4 py-2 text-[12.5px] text-indigo-300 transition hover:bg-indigo-500/10"
+            >
+              <NetworkIcon className="h-3.5 w-3.5" /> 词族复习
+            </button>
+          </div>
+          <FamilyReviewDialog
+            open={familyOpen}
+            onClose={() => setFamilyOpen(false)}
+            onStart={(items, label) => {
+              setFamilyOpen(false)
+              startSession(items, label)
+            }}
+          />
         </div>
       </div>
     )
@@ -351,6 +399,15 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
 
             {/* AI 词条精讲（词根词缀/近反义词/词组/动词变形/词性例句） */}
             {current.word.knowledge && <VocabKnowledgeView knowledge={current.word.knowledge} className="mt-3" />}
+
+            {/* 关联词面板（只读：顺带看一眼关联词，未收录的可一键入词库，学习中的可拉入本轮队列） */}
+            <VocabRelationsPanel
+              wordId={current.word.id}
+              word={current.word.word}
+              readonly
+              onPullIntoSession={pullIntoSession}
+              className="mt-3"
+            />
           </div>
         )}
 

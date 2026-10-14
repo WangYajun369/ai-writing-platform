@@ -250,6 +250,16 @@ export default function AddWordDialog({ open, editing, onClose }: Props) {
     }
   }
 
+  /** 保存成功后统计自动建立的关联数，追加到 toast 文案（查询失败静默忽略） */
+  async function relationHint(wordId: string): Promise<string> {
+    try {
+      const rels = await vocabApi.relationsList(wordId)
+      return rels.length > 0 ? `，已建立 ${rels.length} 条关联` : ''
+    } catch {
+      return ''
+    }
+  }
+
   async function handleSave() {
     const w = lookupWord
     if (!w) {
@@ -267,10 +277,10 @@ export default function AddWordDialog({ open, editing, onClose }: Props) {
     setSaving(true)
     try {
       if (isEdit && editing) {
-        await vocabApi.update({ id: editing.id, phonetic: phonetic.trim(), meanings: clean, example: example.trim(), exampleZh: exampleZh.trim(), knowledge })
-        toast.success(`已更新「${w}」`)
+        const saved = await vocabApi.update({ id: editing.id, phonetic: phonetic.trim(), meanings: clean, example: example.trim(), exampleZh: exampleZh.trim(), knowledge })
+        toast.success(`已更新「${w}」${await relationHint(saved.id)}`)
       } else {
-        await vocabApi.add({
+        const saved = await vocabApi.add({
           word: w,
           phonetic: phonetic.trim(),
           meanings: clean,
@@ -279,7 +289,7 @@ export default function AddWordDialog({ open, editing, onClose }: Props) {
           knowledge,
           source: 'manual',
         })
-        toast.success(`已收录「${w}」，明天将进入首次复习`)
+        toast.success(`已收录「${w}」，明天将进入首次复习${await relationHint(saved.id)}`)
       }
       void refreshAll()
       onClose()

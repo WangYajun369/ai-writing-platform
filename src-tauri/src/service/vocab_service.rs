@@ -13,7 +13,7 @@ use crate::error::AppError;
 use crate::models::{StatsDay, VocabKnowledge, VocabMeaning, VocabStats, VocabWord};
 use crate::repository::vocab_repo;
 use crate::service::uow::UnitOfWork;
-use crate::service::ServiceCtx;
+use crate::service::{vocab_relation_service, ServiceCtx};
 use crate::utils::{now, validate_len};
 use chrono::{Duration, Local, NaiveDate};
 use tauri::{AppHandle, Emitter};
@@ -202,6 +202,16 @@ pub fn add_word(
         )?;
         uow.commit()?;
         emit_due_updated(app);
+        // 关联网络同步（尽力而为：失败仅记日志，不影响收录结果）
+        if let Err(e) = vocab_relation_service::sync_auto_relations(
+            app,
+            db,
+            &existing.id,
+            &word,
+            biz.knowledge,
+        ) {
+            crate::app_log_error!("[vocab] 自动关联同步失败 word={word}: {e}");
+        }
         return vocab_repo::find_by_id(&pooled, &existing.id)?
             .ok_or_else(|| AppError::Business("更新后回读失败".to_string()));
     }
@@ -236,6 +246,12 @@ pub fn add_word(
     )?;
     uow.commit()?;
     emit_due_updated(app);
+    // 关联网络同步（尽力而为：失败仅记日志，不影响收录结果）
+    if let Err(e) =
+        vocab_relation_service::sync_auto_relations(app, db, &id, &word, biz.knowledge)
+    {
+        crate::app_log_error!("[vocab] 自动关联同步失败 word={word}: {e}");
+    }
     vocab_repo::find_by_id(&pooled, &id)?
         .ok_or_else(|| AppError::Business("收录后回读失败".to_string()))
 }

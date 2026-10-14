@@ -33,6 +33,7 @@ pub mod image_asset_repo;
 pub mod schedule_repo;
 pub mod snapshot_repo;
 pub mod soft_delete;
+pub mod vocab_relation_repo;
 pub mod vocab_repo;
 pub mod volume_repo;
 pub mod world_card_repo;

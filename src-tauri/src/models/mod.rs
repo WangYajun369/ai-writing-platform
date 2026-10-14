@@ -416,6 +416,102 @@ pub struct VocabKnowledge {
     pub examples: Vec<VocabSentence>,
 }
 
+// ══════════ 单词关联网络（vocab_word_relations，v3 迁移）══════════
+
+/// 单词关联 — 对应 `vocab_word_relations` 表。
+///
+/// - `relation_type`:synonym（近义）/ antonym（反义）/ derived（派生）/
+///   inflection（变形家族）/ manual（手动）;
+/// - `source`:ai（AI 释义提取）/ ecdict（离线词典变形家族）/ manual（手动添加）。
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct VocabRelation {
+    pub id: String,
+    /// 关系属主的生词 id（vocab_words.id）
+    pub word_id: String,
+    /// 关联词文本（小写规范化；可能尚未收录进生词本）
+    pub related_word: String,
+    pub relation_type: String,
+    pub source: String,
+    pub created_at: String,
+}
+
+/// 关联词展示视图：关系本体 + 关联词在生词本中的收录状态
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct VocabRelationView {
+    #[serde(flatten)]
+    pub relation: VocabRelation,
+    /// 关联词是否已收录进生词本
+    pub in_vocab: bool,
+    /// 已收录时的掌握状态（learning / mastered / suspended）
+    pub vocab_status: Option<String>,
+    /// 已收录时的生词 id（供前端跳转详情）
+    pub vocab_word_id: Option<String>,
+}
+
+/// 关联候选词（ECDICT 变形家族建议等场景）
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct VocabRelatedCandidate {
+    pub word: String,
+    /// 是否已收录进生词本
+    pub in_vocab: bool,
+}
+
+/// 单词关联条数（生词列表徽标用）
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct VocabRelationCount {
+    /// 关系属主的生词 id
+    pub word_id: String,
+    pub count: i64,
+}
+
+/// 词族分组（词族复习模式）：同原型 lemma 的学习中生词集合
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct VocabFamilyGroup {
+    /// 原型 lemma（ECDICT exchange 的 0: 字段；无原型信息时为词本身）
+    pub lemma: String,
+    /// 族内成员（≥2，按单词字母序）
+    pub words: Vec<VocabWord>,
+}
+
+/// 关联图谱节点：已收录生词或未收录的潜在关联词
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct VocabGraphNode {
+    /// 已收录词为 vocab id；潜在关联词为 `p:<word>` 形式
+    pub id: String,
+    pub word: String,
+    /// learning / mastered / suspended / potential（未收录）
+    pub status: String,
+    /// 关联度数（参与的去重边数）
+    pub degree: i64,
+}
+
+/// 关联图谱边：无向化处理后的节点对（source/target 为节点 id）
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct VocabGraphEdge {
+    pub source: String,
+    pub target: String,
+    pub relation_type: String,
+}
+
+/// 关联图谱载荷
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct VocabGraph {
+    pub nodes: Vec<VocabGraphNode>,
+    pub edges: Vec<VocabGraphEdge>,
+    /// 节点数超过上限被按关联度截断时为 true
+    pub truncated: bool,
+    /// 全库无任何关联的生词数（不受状态筛选影响的全库口径）
+    pub isolated_count: i64,
+}
+
 // ══════════ 任务卡模块（个人项目管理）══════════
 
 /// 项目 — 对应 projects 表

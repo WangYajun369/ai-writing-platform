@@ -2,7 +2,7 @@
 
 > **适用版本**：`1.21.2`　|　**最后核对**：2026-10-14
 
-TimeWrite 共注册 **200 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用。桥接层导出 **19 个 API 对象**（`bookApi` `volumeApi` `chapterApi` `snapshotApi` `worldCardApi` `diaryApi` `scheduleApi` `windowApi` `aiApi` `agentApi` `imageApi` `importExportApi` `debugApi` `systemApi` `vocabApi` `ttsApi` `dictApi` `taskCardApi` `writingApi`）。
+TimeWrite 共注册 **206 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用。桥接层导出 **19 个 API 对象**（`bookApi` `volumeApi` `chapterApi` `snapshotApi` `worldCardApi` `diaryApi` `scheduleApi` `windowApi` `aiApi` `agentApi` `imageApi` `importExportApi` `debugApi` `systemApi` `vocabApi` `ttsApi` `dictApi` `taskCardApi` `writingApi`）。
 
 > **架构约定**：`tauri-bridge.ts` 是全项目**唯一**允许调用 `invoke` 的模块。禁止在其他文件中直接 import `@tauri-apps/api` 的 `invoke`。
 
@@ -19,7 +19,7 @@ TimeWrite 共注册 **200 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` �
 | [世界观](#世界观-world_card) | 5 | `commands/world_card.rs` |
 | [日记](#日记-diary) | 5 | `commands/diary.rs` |
 | [日程](#日程-schedule) | 4 | `commands/schedule.rs` |
-| [生词本](#生词本-vocab) | 10 | `commands/vocab.rs` |
+| [生词本](#生词本-vocab) | 18 | `commands/vocab.rs` |
 | [离线词典](#离线词典-vocab_dict) | 5 | `commands/vocab_dict.rs` |
 | [语音合成](#语音合成-tts) | 1 | `commands/tts.rs` |
 | [AI](#ai-commandsai) | 8 | `commands/ai/{test,embedding,chat,summarize}.rs` |
@@ -39,7 +39,7 @@ TimeWrite 共注册 **200 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` �
 | [提醒](#提醒-reminder) | 1 | `commands/reminder.rs` |
 | [日程迁移](#日程迁移-migrate) | 1 | `commands/migrate.rs` |
 | [写作统计](#写作统计-writing_stats) | 1 | `commands/writing_stats.rs` |
-| **合计** | **173** | — |
+| **合计** | **207** | — |
 
 ---
 
@@ -297,6 +297,21 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 | `vocab_review` | 提交复习反馈（rating：0 忘记 / 1 模糊 / 2 记得 / 3 轻松），按 SM-2 推进调度 |
 | `vocab_logs` | 某生词的复习历史记录 |
 | `vocab_stats` | 生词本统计（首页角标与统计页共用） |
+| `vocab_relations_list` | 某生词的全部关联（含关联词收录状态，v1.22 单词关联网络） |
+| `vocab_relations_add` | 手动添加关联（synonym/antonym/derived/inflection/manual，幂等） |
+| `vocab_relations_remove` | 删除一条关联 |
+| `vocab_relations_suggest` | ECDICT 变形家族建议（标注各成员是否已收录，未收录不落库） |
+| `vocab_relations_counts` | 全库关联条数（生词列表徽标用） |
+| `vocab_family_groups` | 词族复习分组（学习中生词按 ECDICT 原型 lemma 聚族，≥2 成族，按成员数降序，封顶 50 族） |
+| `vocab_relations_graph` | 关联图谱（全库词为节点、关系为无向去重边；includePotential 追加未收录叶子节点，status 筛选任一端命中保留，节点封顶 300 按关联度截断） |
+
+> 单词关联网络（v1.22）：`vocab_add` 收录后自动建关系——AI 释义近/反义词落成潜在关联（`source=ai`），
+> 存量指向本词的关系反向激活，ECDICT 变形家族仅当成员已在库时双向落库（`source=ecdict`）。
+> 表结构由 v3 迁移 `create_vocab_word_relations` 建立（单一真源在 `db/migrations.rs`）。
+> 关联网络二期（同 v1.22）：复习卡片「顺带复习」拉取评分（零新命令，复用 `vocab_review`）、词族复习模式
+> （`vocab_family_groups`，分组逻辑为纯函数 `group_by_lemma`）、生词列表关联数徽标（`vocab_relations_counts`）。
+> 关联网络三期（同 v1.22）：`vocab_relations_graph` 输出力导向图谱数据（构图逻辑为纯函数 `build_graph`，
+> 对称边无向去重），前端生词本「关联图谱」弹层以 d3-force 渲染。
 
 ## 离线词典 `vocab_dict`
 
