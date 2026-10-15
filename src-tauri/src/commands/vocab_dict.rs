@@ -36,18 +36,6 @@ fn row_to_hit(row: &rusqlite::Row) -> rusqlite::Result<DictHit> {
     })
 }
 
-/// 词条总数
-fn dict_word_count(app: &AppHandle) -> i64 {
-    open_dict_db(app)
-        .ok()
-        .flatten()
-        .and_then(|conn| {
-            conn.query_row("SELECT COUNT(*) FROM stardict", [], |row| row.get(0))
-                .ok()
-        })
-        .unwrap_or(0)
-}
-
 // ───────────────────────── 词典命令 ─────────────────────────
 
 /// 词典状态（只打开一次只读连接，状态与词条数共用）
