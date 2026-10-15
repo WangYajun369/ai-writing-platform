@@ -327,6 +327,15 @@ pub struct VocabStats {
     pub review_history: Vec<StatsDay>,
 }
 
+/// 分页生词列表（前端虚拟滚动用：本页条目 + 匹配总数）
+#[derive(Debug, Clone, Serialize)]
+pub struct VocabPage {
+    /// 本页生词条目
+    pub items: Vec<VocabWord>,
+    /// 满足过滤条件的总条数（与分页无关，用于计算总页数）
+    pub total: i64,
+}
+
 /// 离线词典词条命中（ECDICT stardict）
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DictHit {

@@ -34,8 +34,14 @@ import SpeakButton from '../SpeakButton'
 const inputCls =
   'rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[13px] text-zinc-100 placeholder-zinc-500 outline-none transition focus:border-sky-500/60 focus:bg-white/8'
 
-/** 单词形态检查用轻量模型（仅 DeepSeek 服务商；完整释义仍用设置里的对话模型） */
-const AI_CHECK_MODEL = 'deepseek-v4-flash'
+/**
+ * 单词形态检查用轻量模型（仅 DeepSeek 服务商；完整释义仍用设置里的对话模型）
+ *
+ * 形态检查是「判断是否变形/简写/缩写」的小任务，输出仅几十 token，用快模型最划算。
+ * 注意：模型名必须是服务商真实存在的模型（DeepSeek 公开模型为 deepseek-chat /
+ * deepseek-reasoner），否则每次点翻译都会先吃一次 400 再降级，白白多花一次往返。
+ */
+const AI_CHECK_MODEL = 'deepseek-chat'
 
 interface Props {
   open: boolean

@@ -50,13 +50,21 @@ fn dict_word_count(app: &AppHandle) -> i64 {
 
 // ───────────────────────── 词典命令 ─────────────────────────
 
-/// 词典状态
+/// 词典状态（只打开一次只读连接，状态与词条数共用）
 #[tauri::command]
 pub fn dict_status(app: AppHandle) -> DictStatus {
-    let installed = open_dict_db(&app).ok().flatten().is_some();
+    let conn = open_dict_db(&app).ok().flatten();
+    let installed = conn.is_some();
+    let word_count = conn
+        .as_ref()
+        .and_then(|c| {
+            c.query_row("SELECT COUNT(*) FROM stardict", [], |row| row.get(0))
+                .ok()
+        })
+        .unwrap_or(0);
     DictStatus {
         installed,
-        word_count: if installed { dict_word_count(&app) } else { 0 },
+        word_count,
         db_path: if installed {
             dict_db_path(&app)
                 .map(|p| p.display().to_string())
@@ -101,6 +109,10 @@ pub fn dict_import(app: AppHandle, source_path: String) -> Result<DictStatus, Ap
         fs::create_dir_all(parent)?;
     }
     fs::copy(&src, &dest)?;
+    // 词库被替换：清空 lemma / 变形家族查询缓存，避免读到旧词库结果；
+    // 并重建变形家族侧车索引（一次性全表扫描），以等值查询替代全表 LIKE 扫描。
+    crate::service::vocab_relation_service::invalidate_dict_cache();
+    crate::service::vocab_relation_service::rebuild_lemma_index(&app)?;
     Ok(dict_status(app))
 }
 
@@ -139,18 +151,39 @@ pub fn dict_lookup(app: AppHandle, word: String) -> Result<DictLookupResult, App
          WHERE word LIKE ?1 ESCAPE '\\' AND word != ?2 COLLATE NOCASE \
          ORDER BY length(word) ASC LIMIT 6",
     )?;
-    let pattern = format!(
-        "{}%",
-        word.replace('\\', "\\\\")
-            .replace('%', "\\%")
-            .replace('_', "\\_")
-    );
+    let pattern = format!("{}%", escape_like(&word));
     let items = stmt
         .query_map(rusqlite::params![pattern, word], row_to_hit)?
         .filter_map(Result::ok)
         .collect::<Vec<_>>();
     result.suggestions = items;
+
+    // 前缀建议太少时做一次「包含」兜底（用户只记得片段 / 拼写不完整时仍能给候选）。
+    // 该匹配无法利用索引，需全表扫描，故仅在「前缀命中 <3 条且输入 ≥4 字符」时触发。
+    if result.suggestions.len() < 3 && word.chars().count() >= 4 {
+        let taken: Vec<String> = result.suggestions.iter().map(|s| s.word.clone()).collect();
+        let contains = format!("%{}%", escape_like(&word));
+        let mut stmt2 = conn.prepare(
+            "SELECT word, phonetic, translation, definition, exchange FROM stardict \
+             WHERE word LIKE ?1 ESCAPE '\\' AND word != ?2 COLLATE NOCASE \
+             ORDER BY length(word) ASC LIMIT 12",
+        )?;
+        let extra = stmt2
+            .query_map(rusqlite::params![contains, word], row_to_hit)?
+            .filter_map(Result::ok)
+            .filter(|h| !taken.contains(&h.word))
+            .take(6 - result.suggestions.len())
+            .collect::<Vec<_>>();
+        result.suggestions.extend(extra);
+    }
     Ok(result)
+}
+
+/// 转义 LIKE 模式中的通配符（`\` `%` `_`），配合 SQL 中的 `ESCAPE '\'`
+fn escape_like(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 // ───────────────────────── AI 兜底释义 ─────────────────────────

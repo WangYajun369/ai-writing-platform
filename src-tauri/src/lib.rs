@@ -259,6 +259,8 @@ pub fn run() {
             commands::schedule::delete_schedule,
             // ══════ AI — 连接测试 ══════
             commands::ai::test::test_ai_connection,
+            // ══════ AI — 模型列表拉取 ══════
+            commands::ai::models::fetch_ai_models,
             // ══════ AI — RAG / Embedding ══════
             commands::ai::embedding::rag_search,
             commands::ai::embedding::trigger_embedding,
@@ -275,6 +277,8 @@ pub fn run() {
             commands::vocab::vocab_set_status,
             commands::vocab::vocab_delete,
             commands::vocab::vocab_list,
+            commands::vocab::vocab_list_page,
+            commands::vocab::vocab_mastered_sample,
             commands::vocab::vocab_due,
             commands::vocab::vocab_get,
             commands::vocab::vocab_get_by_word,

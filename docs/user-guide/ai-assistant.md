@@ -7,7 +7,7 @@ TimeWrite 内置 AI 写作助手，支持流式对话、RAG 上下文检索和 A
 | 服务商 | 默认端点 | 可选模型 | 说明 |
 |--------|---------|---------|------|
 | 智谱 BigModel | `https://open.bigmodel.cn/api/paas/v4` | `glm-5.1` | 默认服务商，国产大模型 |
-| DeepSeek | `https://api.deepseek.com` | `deepseek-v4-flash`、`deepseek-v4-pro` | 支持推理思考模式（Thinking） |
+| DeepSeek | `https://api.deepseek.com` | `deepseek-flash`、`deepseek-v4-pro` | 支持推理思考模式（Thinking） |
 | OpenAI | `https://api.openai.com/v1` | `gpt-4o` 等 | 需要 API Key |
 | Ollama | `http://127.0.0.1:11434` | `qwen2.5:7b` 等 | 本地部署，无需 API Key |
 | 自定义 OpenAI 兼容 | 任意 | 任意 | 支持任何 OpenAI 兼容 API |
@@ -21,7 +21,7 @@ TimeWrite 内置 AI 写作助手，支持流式对话、RAG 上下文检索和 A
 ### 对话配置（Chat Config）
 1. **服务商**：当前固定为 DeepSeek（后续将扩展更多服务商）
 2. **API 地址**：API 端点 URL（当前只读展示，随服务商确定）
-3. **对话模型**：模型名称（如 `deepseek-v4-flash`、`deepseek-v4-pro`）
+3. **对话模型**：模型名称（如 `deepseek-flash`、`deepseek-v4-pro`）。点击「获取全部模型」可从服务商实时拉取最新列表并持久化，之后下拉即为服务端真实可选模型；未拉取时显示内置可选项。
 4. **API Key**：各服务商独立管理（加密落库，密码形式展示）
 5. **思考模式**：DeepSeek 推理模型可开启 Thinking，展示推理过程
 6. **高级参数**：Temperature（0-1.0）、最大输出 Token（默认 131072）

@@ -79,7 +79,7 @@
 | 服务商 | 标识 | 默认端点 | 默认模型 | 可选模型 |
 |--------|------|---------|---------|---------|
 | 智谱 BigModel | `bigmodel` | `https://open.bigmodel.cn/api/paas/v4` | `glm-5.1` | `glm-5.1` |
-| DeepSeek | `deepseek` | `https://api.deepseek.com` | `deepseek-v4-flash` | `deepseek-v4-flash`、`deepseek-v4-pro` |
+| DeepSeek | `deepseek` | `https://api.deepseek.com` | `deepseek-flash` | `deepseek-flash`、`deepseek-v4-pro` |
 | Ollama | `ollama` | `http://127.0.0.1:11434` | `qwen2.5:7b` | 任意本地模型 |
 | 自定义 | `custom` | 用户填写 | 用户填写 | — |
 
@@ -106,10 +106,12 @@ RAG 仅支持**智谱 BigModel**（DeepSeek 不提供 Embeddings API）：
 
 | 段 | 默认值 |
 |----|--------|
-| 对话（`chat`） | `provider = deepseek`、`endpoint = https://api.deepseek.com`、`model = deepseek-v4-flash` |
+| 对话（`chat`） | `provider = deepseek`、`endpoint = https://api.deepseek.com`、`model = deepseek-flash` |
 | RAG（`rag`） | `provider = bigmodel`、`endpoint = https://open.bigmodel.cn/api/paas/v4`、`embeddingModel = embedding-3` |
 
 前端 `src/components/settings/constants.ts` 仅保留可选模型列表（`DEEPSEEK_MODELS` / `RAG_BIGMODEL_MODELS`）与 `GITHUB_REPO` re-export，**不再硬编码端点 / 模型默认值**，避免前后端双写漂移。
+
+对话模型下拉的候选项优先取自 `ai_models` 配置段（设置页「获取全部模型」调用 `fetch_ai_models` 拉取 `GET /models` 后写入，结构为 `{ provider, endpoint, fetchedAt, models }`）；尚未拉取时 fallback 到 `DEEPSEEK_MODELS`。旧名 `deepseek-v4-flash` 仍可被路由到 Flash，但属弃用别名，故默认值与内置列表均改用 `deepseek-flash`。
 
 ---
 
@@ -121,6 +123,7 @@ RAG 仅支持**智谱 BigModel**（DeepSeek 不提供 Embeddings API）：
 | `ai/embedding.rs` | `rag_search`、`trigger_embedding`、`check_embedding_status`、`test_rag_connection` | 向量检索、批量索引、状态检查 |
 | `ai/summarize.rs` | `summarize_chapter`、`summarize_conversation` | 章节总结（非流式）、对话压缩（滑动窗口） |
 | `ai/test.rs` | `test_ai_connection`、`test_rag_connection` | 连通性测试 |
+| `ai/models.rs` | `fetch_ai_models` | 拉取服务商全部可用模型（GET {endpoint}/models），供设置页「获取全部模型」 |
 
 ### 核心数据结构
 
@@ -377,6 +380,8 @@ CREATE TABLE IF NOT EXISTS embeddings (
 | `test_rag_connection` | `POST {endpoint}/embeddings`（测试文本） | 向量维度信息 | 15s |
 
 错误区分：401 → "认证失败"；其他 → 原始错误详情。
+
+设置页「获取全部模型」走同端点的 `fetch_ai_models`，返回**完整**模型元数据（`id` / `name` / `context_window` / `max_output_tokens` / 输入·输出模态），不受 `test_ai_connection` 只取前 10 条 `id` 的限制；结果持久化到 `ai_models` 配置段供下次启动复用。
 
 ---
 

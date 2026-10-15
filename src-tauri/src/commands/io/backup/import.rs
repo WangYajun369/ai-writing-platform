@@ -26,6 +26,9 @@ pub(crate) fn validate_backup_row_limits(dbx: &DatabaseExport) -> Result<(), App
         ("worldCards", dbx.world_cards.len()),
         ("embeddings", dbx.embeddings.len()),
         ("appConfig", dbx.app_config.len()),
+        ("vocabWords", dbx.vocab_words.len()),
+        ("vocabReviews", dbx.vocab_reviews.len()),
+        ("vocabRelations", dbx.vocab_relations.len()),
     ];
     for (name, count) in counts {
         let max = MAX_BACKUP_ROWS
@@ -162,6 +165,47 @@ pub(crate) fn validate_references(dbx: &DatabaseExport) -> Vec<String> {
         }
     }
 
+    // 7) vocab_words：重复 id / 重复单词文本（表内 UNIQUE(word)，导入会撞约束）
+    let mut seen_vocab_ids: HashSet<&str> = HashSet::new();
+    let mut seen_vocab_words: HashSet<String> = HashSet::new();
+    for w in &dbx.vocab_words {
+        if !seen_vocab_ids.insert(w.id.as_str()) {
+            issues.push(format!("vocabWords: 重复的生词 id={}", w.id));
+        }
+        let key = w.word.trim().to_lowercase();
+        if !seen_vocab_words.insert(key.clone()) {
+            issues.push(format!("vocabWords: 重复的单词 word=\"{}\"", w.word));
+        }
+    }
+
+    // 8) vocab_reviews / vocab_word_relations：重复 id + word_id 悬空
+    //    （外键开启，悬空行会让整次导入失败，故必须在预览阶段暴露）
+    let mut seen_review_ids: HashSet<&str> = HashSet::new();
+    for r in &dbx.vocab_reviews {
+        if !seen_review_ids.insert(r.id.as_str()) {
+            issues.push(format!("vocabReviews: 重复的复习记录 id={}", r.id));
+        }
+        if !seen_vocab_ids.contains(r.word_id.as_str()) {
+            issues.push(format!(
+                "vocabReviews: 复习记录 {} 引用了不存在的生词 wordId={}",
+                r.id, r.word_id
+            ));
+        }
+    }
+
+    let mut seen_rel_ids: HashSet<&str> = HashSet::new();
+    for r in &dbx.vocab_relations {
+        if !seen_rel_ids.insert(r.id.as_str()) {
+            issues.push(format!("vocabRelations: 重复的关联 id={}", r.id));
+        }
+        if !seen_vocab_ids.contains(r.word_id.as_str()) {
+            issues.push(format!(
+                "vocabRelations: 关联 {} 引用了不存在的生词 wordId={}",
+                r.id, r.word_id
+            ));
+        }
+    }
+
     issues
 }
 
@@ -187,7 +231,7 @@ pub(crate) fn target_updated_at(
     id: &str,
 ) -> Result<Option<String>, AppError> {
     match table {
-        "books" | "chapters" | "world_cards" => {
+        "books" | "chapters" | "world_cards" | "vocab_words" => {
             let mut stmt =
                 conn.prepare(&format!("SELECT updated_at FROM {} WHERE id = ?1", table))?;
             let mut rows = stmt.query_map(params![id], |r| r.get::<_, String>(0))?;
@@ -396,13 +440,178 @@ pub(crate) fn apply_upsert_data(
         }
     }
 
+    // 英语生词本：跨作品学习资产，一律 upsert 合并（不在任何策略下删除目标库数据）
+    let (vocab_words_st, vocab_reviews_st, vocab_relations_st) =
+        apply_vocab_upsert(conn, dbx, insert_only)?;
+
     Ok(serde_json::json!({
         "books": stats_to_json(&books_st),
         "volumes": stats_to_json(&volumes_st),
         "chapters": stats_to_json(&chapters_st),
         "snapshots": stats_to_json(&snapshots_st),
         "worldCards": stats_to_json(&world_cards_st),
+        "vocabWords": stats_to_json(&vocab_words_st),
+        "vocabReviews": stats_to_json(&vocab_reviews_st),
+        "vocabRelations": stats_to_json(&vocab_relations_st),
     }))
+}
+
+/// 按单词文本查找生词 id（大小写不敏感），未收录返回 None
+fn find_vocab_id_by_word(
+    conn: &rusqlite::Connection,
+    word: &str,
+) -> Result<Option<String>, AppError> {
+    let mut stmt = conn.prepare("SELECT id FROM vocab_words WHERE word = ?1 COLLATE NOCASE")?;
+    let mut rows = stmt.query(params![word])?;
+    match rows.next()? {
+        Some(r) => Ok(Some(r.get(0)?)),
+        None => Ok(None),
+    }
+}
+
+/// 生词本三段写入（replace / merge / fill-gaps 共用）—— **只合并，绝不删除**
+///
+/// 与作品数据不同，生词本是跨作品的**持续积累型学习资产**，因此：
+/// - 不参与 `clear_full_tables` 清空，也不进入回退点快照；
+/// - 任何策略下都只做 upsert，旧备份（无 vocab 段）导入时目标库生词**零影响**；
+/// - 外键开启（PRAGMA foreign_keys=ON）：子表（reviews / relations）的 word_id
+///   在目标库不存在时整行跳过（计 skipped），避免孤儿行让整次导入失败。
+pub(crate) fn apply_vocab_upsert(
+    conn: &rusqlite::Connection,
+    dbx: &DatabaseExport,
+    insert_only: bool,
+) -> Result<(WriteStats, WriteStats, WriteStats), AppError> {
+    let mut words_st = WriteStats::default();
+    let mut reviews_st = WriteStats::default();
+    let mut relations_st = WriteStats::default();
+
+    for w in &dbx.vocab_words {
+        let meanings_json = serde_json::to_string(&w.meanings).unwrap_or_else(|_| "[]".to_string());
+        let ai_details = serde_json::to_string(&w.knowledge).unwrap_or_default();
+
+        // 同词不同 id（跨设备收录）时归并到目标库已有行，避免撞 UNIQUE(word)
+        let mut row_id = find_vocab_id_by_word(conn, &w.word)?;
+        if row_id.is_none() && existing_id(conn, "vocab_words", &w.id)? {
+            row_id = Some(w.id.clone());
+        }
+
+        match row_id {
+            Some(rid) => {
+                match target_updated_at(conn, "vocab_words", &rid)? {
+                    Some(target) if !insert_only && backup_is_newer(&w.updated_at, &target) => {
+                        conn.execute(
+                            "UPDATE vocab_words SET phonetic=?2, meanings=?3, example=?4, example_zh=?5, \
+                             repetition=?6, interval_days=?7, ease_factor=?8, status=?9, \
+                             next_review_at=?10, last_review_at=?11, review_count=?12, correct_count=?13, \
+                             source=?14, ai_details=?15, created_at=?16, updated_at=?17 WHERE id=?1",
+                            params![
+                                rid,
+                                w.phonetic,
+                                meanings_json,
+                                w.example,
+                                w.example_zh,
+                                w.repetition,
+                                w.interval_days,
+                                w.ease_factor,
+                                w.status,
+                                w.next_review_at,
+                                w.last_review_at,
+                                w.review_count,
+                                w.correct_count,
+                                w.source,
+                                ai_details,
+                                w.created_at,
+                                w.updated_at,
+                            ],
+                        )?;
+                        words_st.updated += 1;
+                    }
+                    _ => words_st.skipped += 1,
+                }
+            }
+            None => {
+                conn.execute(
+                    "INSERT INTO vocab_words (id, word, phonetic, meanings, example, example_zh, \
+                     repetition, interval_days, ease_factor, status, next_review_at, last_review_at, \
+                     review_count, correct_count, source, ai_details, created_at, updated_at) \
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
+                    params![
+                        w.id,
+                        w.word,
+                        w.phonetic,
+                        meanings_json,
+                        w.example,
+                        w.example_zh,
+                        w.repetition,
+                        w.interval_days,
+                        w.ease_factor,
+                        w.status,
+                        w.next_review_at,
+                        w.last_review_at,
+                        w.review_count,
+                        w.correct_count,
+                        w.source,
+                        ai_details,
+                        w.created_at,
+                        w.updated_at,
+                    ],
+                )?;
+                words_st.inserted += 1;
+            }
+        }
+    }
+
+    // 复习日志：不可变历史，按 id 幂等插入；属主生词缺失（外键）则跳过
+    for r in &dbx.vocab_reviews {
+        if existing_id(conn, "vocab_reviews", &r.id)?
+            || !existing_id(conn, "vocab_words", &r.word_id)?
+        {
+            reviews_st.skipped += 1;
+            continue;
+        }
+        conn.execute(
+            "INSERT OR IGNORE INTO vocab_reviews \
+             (id, word_id, review_date, rating, repetition, interval_days, ease_factor, reviewed_at) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+            params![
+                r.id,
+                r.word_id,
+                r.review_date,
+                r.rating,
+                r.repetition,
+                r.interval_days,
+                r.ease_factor,
+                r.reviewed_at,
+            ],
+        )?;
+        reviews_st.inserted += 1;
+    }
+
+    // 单词关联：按 id 幂等 + UNIQUE 三元组天然去重；属主生词缺失（外键）则跳过
+    for r in &dbx.vocab_relations {
+        if existing_id(conn, "vocab_word_relations", &r.id)?
+            || !existing_id(conn, "vocab_words", &r.word_id)?
+        {
+            relations_st.skipped += 1;
+            continue;
+        }
+        conn.execute(
+            "INSERT OR IGNORE INTO vocab_word_relations \
+             (id, word_id, related_word, relation_type, source, created_at) \
+             VALUES (?1,?2,?3,?4,?5,?6)",
+            params![
+                r.id,
+                r.word_id,
+                r.related_word,
+                r.relation_type,
+                r.source,
+                r.created_at,
+            ],
+        )?;
+        relations_st.inserted += 1;
+    }
+
+    Ok((words_st, reviews_st, relations_st))
 }
 
 /// 将备份数据写入数据库（replace 语义专用：调用方已清空目标范围，直接全量插入）
@@ -578,6 +787,19 @@ pub(crate) fn run_full_import(
 
     write_backup_data(uow, &payload.database)?;
 
+    // 生词本：即使 replace 也走 upsert 合并（作品表已清空重建，学习资产不清空）。
+    // 目标库已有的生词/复习记录/关联绝不因导入而丢失，只被备份中更新的行覆盖。
+    let (w, r, rel) = apply_vocab_upsert(uow.conn(), &payload.database, false)?;
+    if w.inserted + w.updated + r.inserted + rel.inserted > 0 {
+        crate::app_log!(
+            "[Backup] 生词本合并：词条 +{}/~{}，复习记录 +{}，关联 +{}",
+            w.inserted,
+            w.updated,
+            r.inserted,
+            rel.inserted
+        );
+    }
+
     // 业务数据写完后恢复配置段（AI 配置 / TTS / 偏好 / AI 工具箱分类）
     restore_app_config(uow, &payload.database.app_config)?;
     Ok(())
@@ -600,7 +822,11 @@ pub(crate) fn run_single_import(
     );
     clear_book_scope(uow.conn(), book_id)?;
 
-    write_backup_data(uow, &payload.database)
+    write_backup_data(uow, &payload.database)?;
+
+    // 单作品备份不携带生词本（作用域纯净），此处为空操作；保留调用以兼容未来扩展
+    apply_vocab_upsert(uow.conn(), &payload.database, false)?;
+    Ok(())
 }
 
 /// 版本兼容检查（Spec §2.2 / §10）：v1.x / v2.x 可导入；高于当前支持主版本 → E_BACKUP_VERSION
@@ -695,13 +921,17 @@ pub(crate) fn run_upsert_import(
         "MERGE",
         "all content tables",
         format!(
-            "{} import: books={} volumes={} chapters={} snapshots={} worldCards={}",
+            "{} import: books={} volumes={} chapters={} snapshots={} worldCards={} \
+             vocabWords={} vocabReviews={} vocabRelations={}",
             strategy.as_str(),
             payload.database.books.len(),
             payload.database.volumes.len(),
             payload.database.chapters.len(),
             payload.database.snapshots.len(),
             payload.database.world_cards.len(),
+            payload.database.vocab_words.len(),
+            payload.database.vocab_reviews.len(),
+            payload.database.vocab_relations.len(),
         ),
         file!(),
         line!(),
@@ -732,4 +962,219 @@ pub(crate) fn run_upsert_import(
         "stats": stats,
         "rollbackTs": null,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 建生词本三表（与生产 DDL 保持一致，外键开启）
+    fn vocab_conn() -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().expect("open memory db");
+        conn.execute_batch(
+            "PRAGMA foreign_keys=ON;
+             CREATE TABLE vocab_words (
+                id TEXT PRIMARY KEY, word TEXT NOT NULL UNIQUE, phonetic TEXT NOT NULL DEFAULT '',
+                meanings TEXT NOT NULL DEFAULT '[]', example TEXT NOT NULL DEFAULT '',
+                example_zh TEXT NOT NULL DEFAULT '', repetition INTEGER NOT NULL DEFAULT 0,
+                interval_days INTEGER NOT NULL DEFAULT 0, ease_factor REAL NOT NULL DEFAULT 2.5,
+                status TEXT NOT NULL DEFAULT 'learning', next_review_at TEXT, last_review_at TEXT,
+                review_count INTEGER NOT NULL DEFAULT 0, correct_count INTEGER NOT NULL DEFAULT 0,
+                source TEXT NOT NULL DEFAULT 'manual', ai_details TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+             );
+             CREATE TABLE vocab_reviews (
+                id TEXT PRIMARY KEY,
+                word_id TEXT NOT NULL REFERENCES vocab_words(id) ON DELETE CASCADE,
+                review_date TEXT NOT NULL, rating INTEGER NOT NULL, repetition INTEGER NOT NULL,
+                interval_days INTEGER NOT NULL, ease_factor REAL NOT NULL, reviewed_at TEXT NOT NULL
+             );
+             CREATE TABLE vocab_word_relations (
+                id TEXT PRIMARY KEY,
+                word_id TEXT NOT NULL REFERENCES vocab_words(id) ON DELETE CASCADE,
+                related_word TEXT NOT NULL, relation_type TEXT NOT NULL, source TEXT NOT NULL,
+                created_at TEXT NOT NULL, UNIQUE(word_id, related_word, relation_type)
+             );",
+        )
+        .expect("create vocab schema");
+        conn
+    }
+
+    /// 由三段 JSON 构造 DatabaseExport（其余段为空）
+    fn dbx_with(words: serde_json::Value, reviews: serde_json::Value, rels: serde_json::Value) -> DatabaseExport {
+        serde_json::from_value(serde_json::json!({
+            "books": [], "volumes": [], "chapters": [], "snapshots": [],
+            "worldCards": [], "embeddings": [],
+            "vocabWords": words, "vocabReviews": reviews, "vocabRelations": rels,
+        }))
+        .expect("DatabaseExport 构造失败")
+    }
+
+    fn word_row(id: &str, word: &str, updated_at: &str) -> serde_json::Value {
+        serde_json::json!({
+            "id": id, "word": word, "phonetic": "/wɜːd/",
+            "meanings": [{ "pos": "n.", "def": "单词" }],
+            "example": "a new word", "exampleZh": "一个新词",
+            "repetition": 2, "intervalDays": 6, "easeFactor": 2.5, "status": "learning",
+            "nextReviewAt": "2026-10-20", "lastReviewAt": "2026-10-14T00:00:00Z",
+            "reviewCount": 2, "correctCount": 2, "source": "manual",
+            "createdAt": "2026-10-01T00:00:00Z", "updatedAt": updated_at
+        })
+    }
+
+    #[test]
+    fn vocab_upsert_inserts_then_merges_by_updated_at() {
+        let conn = vocab_conn();
+        let dbx = dbx_with(
+            serde_json::json!([word_row("vw1", "alpha", "2026-10-10T00:00:00Z")]),
+            serde_json::json!([{
+                "id": "vr1", "wordId": "vw1", "reviewDate": "2026-10-14", "rating": 3,
+                "repetition": 2, "intervalDays": 6, "easeFactor": 2.5,
+                "reviewedAt": "2026-10-14T00:00:00Z"
+            }]),
+            serde_json::json!([{
+                "id": "rel1", "wordId": "vw1", "relatedWord": "beta",
+                "relationType": "synonym", "source": "ai", "createdAt": "2026-10-14T00:00:00Z"
+            }]),
+        );
+
+        // ① 首次导入：三段各插入 1 条
+        let (w, r, rel) = apply_vocab_upsert(&conn, &dbx, false).unwrap();
+        assert_eq!((w.inserted, w.updated, w.skipped), (1, 0, 0));
+        assert_eq!(r.inserted, 1);
+        assert_eq!(rel.inserted, 1);
+
+        // ② 重复导入同内容：幂等（全部 skipped，不产生重复行）
+        let (w2, r2, rel2) = apply_vocab_upsert(&conn, &dbx, false).unwrap();
+        assert_eq!((w2.inserted, w2.updated, w2.skipped), (0, 0, 1));
+        assert_eq!((r2.inserted, rel2.inserted), (0, 0));
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM vocab_reviews", [], |x| x.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+
+        // ③ 备份更新（updatedAt 更晚）→ merge 覆盖
+        let newer = dbx_with(
+            serde_json::json!([word_row("vw1", "alpha", "2026-10-15T00:00:00Z")]),
+            serde_json::json!([]),
+            serde_json::json!([]),
+        );
+        let (w3, _, _) = apply_vocab_upsert(&conn, &newer, false).unwrap();
+        assert_eq!((w3.inserted, w3.updated, w3.skipped), (0, 1, 0));
+
+        // ④ fill-gaps：已存在行一律跳过，新词插入
+        let gaps = dbx_with(
+            serde_json::json!([
+                word_row("vw1", "alpha", "2026-10-16T00:00:00Z"),
+                word_row("vw2", "gamma", "2026-10-16T00:00:00Z")
+            ]),
+            serde_json::json!([]),
+            serde_json::json!([]),
+        );
+        let (w4, _, _) = apply_vocab_upsert(&conn, &gaps, true).unwrap();
+        assert_eq!((w4.inserted, w4.updated, w4.skipped), (1, 0, 1));
+        // fill-gaps 不覆盖已存在行
+        let status: String = conn
+            .query_row("SELECT updated_at FROM vocab_words WHERE word='alpha'", [], |x| x.get(0))
+            .unwrap();
+        assert_eq!(status, "2026-10-15T00:00:00Z");
+    }
+
+    #[test]
+    fn vocab_upsert_merges_same_word_with_different_id() {
+        let conn = vocab_conn();
+        // 目标库已有 alpha（id=A），备份里的 alpha 是另一台设备生成的 id=B
+        conn.execute(
+            "INSERT INTO vocab_words (id, word, created_at, updated_at) \
+             VALUES ('A','alpha','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        let dbx = dbx_with(
+            serde_json::json!([word_row("B", "alpha", "2026-10-15T00:00:00Z")]),
+            serde_json::json!([]),
+            serde_json::json!([]),
+        );
+        let (w, _, _) = apply_vocab_upsert(&conn, &dbx, false).unwrap();
+        assert_eq!((w.inserted, w.updated, w.skipped), (0, 1, 0), "应按 word 归并更新");
+        // 不产生第二行（UNIQUE(word) 未被撞）
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM vocab_words", [], |x| x.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn vocab_orphan_child_rows_are_skipped_not_error() {
+        let conn = vocab_conn();
+        // 子表属主 vw_missing 既不在备份也不在目标库 → 整行跳过（外键开启下不会报错）
+        let dbx = dbx_with(
+            serde_json::json!([]),
+            serde_json::json!([{
+                "id": "vrx", "wordId": "vw_missing", "reviewDate": "2026-10-14", "rating": 3,
+                "repetition": 1, "intervalDays": 1, "easeFactor": 2.5,
+                "reviewedAt": "2026-10-14T00:00:00Z"
+            }]),
+            serde_json::json!([{
+                "id": "relx", "wordId": "vw_missing", "relatedWord": "beta",
+                "relationType": "synonym", "source": "ai", "createdAt": "2026-10-14T00:00:00Z"
+            }]),
+        );
+        let (_, r, rel) = apply_vocab_upsert(&conn, &dbx, false).unwrap();
+        assert_eq!(r.skipped, 1);
+        assert_eq!(rel.skipped, 1);
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM vocab_word_relations", [], |x| x.get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn vocab_references_detect_duplicate_and_dangling() {
+        let dbx = dbx_with(
+            serde_json::json!([
+                word_row("vw1", "alpha", "2026-10-10T00:00:00Z"),
+                word_row("vw1", "beta", "2026-10-10T00:00:00Z")
+            ]),
+            serde_json::json!([{
+                "id": "vr1", "wordId": "no_such_word", "reviewDate": "2026-10-14", "rating": 3,
+                "repetition": 1, "intervalDays": 1, "easeFactor": 2.5,
+                "reviewedAt": "2026-10-14T00:00:00Z"
+            }]),
+            serde_json::json!([]),
+        );
+        let issues = validate_references(&dbx);
+        assert!(issues.iter().any(|i| i.contains("vocabWords: 重复的生词 id")));
+        assert!(issues.iter().any(|i| i.contains("vocabReviews: 复习记录")));
+    }
+
+    #[test]
+    fn legacy_backup_without_vocab_section_is_noop() {
+        // 旧版备份（无 vocab 三段）：反序列化为空 → 写入零影响
+        let conn = vocab_conn();
+        conn.execute(
+            "INSERT INTO vocab_words (id, word, created_at, updated_at) \
+             VALUES ('keep','keep','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        let dbx: DatabaseExport = serde_json::from_value(serde_json::json!({
+            "books": [], "volumes": [], "chapters": [], "snapshots": [],
+            "worldCards": [], "embeddings": []
+        }))
+        .expect("旧版载荷应能反序列化");
+        assert!(dbx.vocab_words.is_empty());
+        let (w, r, rel) = apply_vocab_upsert(&conn, &dbx, false).unwrap();
+        assert_eq!((w.inserted, w.updated, w.skipped), (0, 0, 0));
+        assert_eq!((r.inserted, rel.inserted), (0, 0));
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM vocab_words", [], |x| x.get::<_, i64>(0))
+                .unwrap(),
+            1,
+            "目标库已有生词必须保留"
+        );
+    }
 }

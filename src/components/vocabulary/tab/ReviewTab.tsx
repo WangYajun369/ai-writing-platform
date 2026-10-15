@@ -26,8 +26,11 @@ interface QueueItem {
 
 export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
   const due = useVocabStore((s) => s.due)
-  const words = useVocabStore((s) => s.words)
+  const freshWords = useVocabStore((s) => s.freshWords)
+  const stats = useVocabStore((s) => s.stats)
   const refreshAll = useVocabStore((s) => s.refreshAll)
+  const pendingReviewSeed = useVocabStore((s) => s.pendingReviewSeed)
+  const clearPendingReview = useVocabStore((s) => s.clearPendingReview)
 
   const [queue, setQueue] = useState<QueueItem[]>([])
   const [flipped, setFlipped] = useState(false)
@@ -45,16 +48,7 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
   // 队列头即当前复习的卡片；队列排空且非完成态时回到初始界面
   const current = queue[0]
 
-  /** 需要首次学习的新词（今天收录/从未开始复习） */
-  const freshWords = useMemo(
-    () =>
-      words
-        .filter((w) => w.status === 'learning' && !w.lastReviewAt)
-        .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
-        .slice(0, 9),
-    [words],
-  )
-
+  /** 需要首次学习的新词（由 store 单独加载：learning 且从未复习，前 9 条） */
   const totalCount = useMemo(() => {
     // 近似总题量 = 已作答 + 剩余（含重测）
     return queue.length + done
@@ -73,6 +67,14 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
 
   // 队列为空且不是展示结果时，展示初始界面（由 startSession 触发）
   const idle = queue.length === 0 && !finished
+
+  // 「复习已掌握词」批量回炉：消费 store 中的种子词，开启临时复习会话后清空
+  useEffect(() => {
+    if (pendingReviewSeed && pendingReviewSeed.length > 0) {
+      startSession(pendingReviewSeed, '复习已掌握词')
+      clearPendingReview()
+    }
+  }, [pendingReviewSeed, startSession, clearPendingReview])
 
   /** 提交自评（不翻面也可直接评分） */
   const submitRating = useCallback(
@@ -185,7 +187,7 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
               <div>
                 <div className="text-[15px] font-semibold text-zinc-100">今日复习已全部完成</div>
                 <div className="mt-1 text-[12.5px] text-zinc-500">
-                  {words.length === 0 ? '去收录今天的第一个生词吧，明天开始第一次复习。' : '新词会在明天进入首次复习队列。'}
+                  {stats && stats.total === 0 ? '去收录今天的第一个生词吧，明天开始第一次复习。' : '新词会在明天进入首次复习队列。'}
                 </div>
               </div>
               {freshWords.length > 0 && (
@@ -214,7 +216,7 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
                   </div>
                 </div>
               )}
-              {words.length > 0 && freshWords.length === 0 && (
+              {(stats && stats.total > 0) && freshWords.length === 0 && (
                 <button
                   onClick={onGotoBook}
                   className="rounded-lg border border-sky-500/40 px-4 py-2 text-[12.5px] text-sky-300 transition hover:bg-sky-500/10"

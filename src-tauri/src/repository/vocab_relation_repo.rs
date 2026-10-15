@@ -121,6 +121,14 @@ pub fn find_one(
     }
 }
 
+/// 全量关联（备份导出用）
+pub fn list_all_relations(conn: &Connection) -> Result<Vec<VocabRelation>> {
+    let sql = format!("SELECT {} FROM vocab_word_relations ORDER BY created_at ASC", RELATION_COLS);
+    let mut stmt = conn.prepare(&sql)?;
+    let items = stmt.query_map([], row_to_relation)?;
+    items.collect()
+}
+
 /// 全库关系统计：每个属主生词的关联条数（生词列表徽标用）
 pub fn count_by_word(conn: &Connection) -> Result<Vec<(String, i64)>> {
     let mut stmt =

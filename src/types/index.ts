@@ -241,6 +241,33 @@ export interface AiConfig {
   rag: RagConfig
 }
 
+/** AI 服务商返回的单条模型元数据（对齐后端 `ModelInfo`） */
+export interface ModelInfo {
+  /** 模型标识，用于 API 请求的 model 字段 */
+  id: string
+  /** 展示名（可能缺失） */
+  name?: string | null
+  /** 所属组织（deepseek 等） */
+  ownedBy?: string | null
+  /** 上下文窗口（tokens） */
+  contextWindow?: number | null
+  /** 最大输出 tokens */
+  maxOutputTokens?: number | null
+  /** 输入模态（text / image 等） */
+  inputModalities?: string[] | null
+  /** 输出模态（text 等） */
+  outputModalities?: string[] | null
+}
+
+/** 持久化的模型列表（`ai_models` 配置段），由设置页「获取全部模型」写入 */
+export interface AiModelsConfig {
+  provider?: string
+  endpoint?: string
+  /** 拉取时间（RFC 3339） */
+  fetchedAt?: string
+  models?: ModelInfo[]
+}
+
 /** AI 工具箱中的单个提示词 */
 export interface AiToolPrompt {
   id: string
@@ -471,6 +498,14 @@ export interface VocabWord {
   updatedAt: string
   /** DeepSeek 翻译附带的学习知识（词根词缀/近反义词/词组/动词变形/词性例句），无则为 null */
   knowledge: VocabKnowledge | null
+}
+
+/** 分页生词列表（对齐 Rust VocabPage，前端虚拟滚动用） */
+export interface VocabPage {
+  /** 本页生词条目 */
+  items: VocabWord[]
+  /** 满足过滤条件的总条数（用于计算总页数） */
+  total: number
 }
 
 /** 复习记录（对齐 Rust VocabReviewLog） */

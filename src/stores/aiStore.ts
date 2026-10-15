@@ -14,7 +14,9 @@
  * - 防抖持久化策略(流式期间避免写放大)
  */
 import { create } from 'zustand'
-import type { AiConfig, AiMessage, ConversationSummary, AiToolCategory } from '../types'
+import type { AiConfig, AiMessage, ConversationSummary, AiToolCategory, ModelInfo, AiModelsConfig } from '../types'
+import { getChatApiKey } from '@/types'
+import { aiApi } from '@/lib/tauri-bridge'
 import {
   aiConversationsStore, aiSummariesStore,
   saveAiConversations,
@@ -27,7 +29,7 @@ export const defaultAiConfig: AiConfig = {
   chat: {
     provider: 'deepseek',
     endpoint: 'https://api.deepseek.com',
-    model: 'deepseek-v4-flash',
+    model: 'deepseek-flash',
     temperature: 0.7,
     maxTokens: 131072,
     thinkingEnabled: true,
@@ -56,6 +58,13 @@ export interface AiState {
    * 见 [preferencesStore] 的同类门控。
    */
   configReady: boolean
+
+  /** 拉取的可用模型列表(来自 ai_models 配置段;空时设置页 fallback 到 DEEPSEEK_MODELS) */
+  availableModels: ModelInfo[]
+  /** 最近一次拉取模型列表的时间(RFC 3339);null = 从未拉取 */
+  modelsFetchedAt: string | null
+  /** 从后端拉取全部可用模型并持久化到 ai_models 配置段 */
+  fetchModels: () => Promise<void>
 
   /** 从后端 config 模块加载 aiConfig + aiToolCategories(AppInit 调用) */
   initFromConfig: () => Promise<void>
@@ -119,6 +128,8 @@ export const useAiStore = create<AiState>()((set, get) => {
     appVersion: '',
     aiConfig: defaultAiConfig,
     configReady: false,
+    availableModels: [],
+    modelsFetchedAt: null,
 
     initFromConfig: async () => {
       try {
@@ -145,6 +156,15 @@ export const useAiStore = create<AiState>()((set, get) => {
       } catch {
         /* 后端读取失败,保持默认值 */
       }
+      // 加载已拉取的可用模型列表（ai_models 段）
+      try {
+        const modelsCfg = await configClient.aiModels.get()
+        if (modelsCfg && Array.isArray(modelsCfg.models)) {
+          set({ availableModels: modelsCfg.models, modelsFetchedAt: modelsCfg.fetchedAt ?? null })
+        }
+      } catch {
+        /* 后端读取失败,保持空列表 */
+      }
       // 无论读取成功与否都开门：表示「加载尝试已完成」，此后 setter 才允许回写后端。
       // 保持默认值不代表配置损坏，继续阻塞写入反而会让用户刚改的配置永远无法保存。
       set({ configReady: true })
@@ -160,6 +180,24 @@ export const useAiStore = create<AiState>()((set, get) => {
         persistAiConfigPatch(config)
         return { aiConfig: merged }
       }),
+
+    fetchModels: async () => {
+      const { aiConfig } = get()
+      const endpoint = aiConfig.chat.endpoint
+      const apiKey = getChatApiKey(aiConfig.chat)
+      const models = await aiApi.fetchModels(endpoint, apiKey || undefined)
+      const cfg: AiModelsConfig = {
+        provider: aiConfig.chat.provider,
+        endpoint,
+        fetchedAt: new Date().toISOString(),
+        models,
+      }
+      set({ availableModels: models, modelsFetchedAt: cfg.fetchedAt })
+      // 配置未加载完成前不回写，避免用空值覆盖后端持久化的模型列表
+      if (get().configReady) {
+        void configClient.aiModels.set(cfg).catch(() => {})
+      }
+    },
 
     // —— AI 对话管理 ——
     // 写入先在内存即时生效，持久化统一走 800ms 防抖合并（Phase 4 问题 4：

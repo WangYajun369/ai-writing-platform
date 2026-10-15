@@ -10,12 +10,12 @@
 
 use crate::db::AppDb;
 use crate::error::AppError;
-use crate::models::{StatsDay, VocabKnowledge, VocabMeaning, VocabStats, VocabWord};
+use crate::models::{StatsDay, VocabKnowledge, VocabMeaning, VocabPage, VocabStats, VocabWord};
 use crate::repository::vocab_repo;
 use crate::service::uow::UnitOfWork;
 use crate::service::{vocab_relation_service, ServiceCtx};
 use crate::utils::{now, validate_len};
-use chrono::{Duration, Local, NaiveDate};
+use chrono::{Duration, Local, NaiveDate, Utc};
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
@@ -252,7 +252,8 @@ pub fn add_word(
     {
         crate::app_log_error!("[vocab] 自动关联同步失败 word={word}: {e}");
     }
-    vocab_repo::find_by_id(&pooled, &id)?
+    // 并发收录时另一窗口可能先落库（word 相同但 id 不同），统一按 word 回读
+    vocab_repo::find_by_word(&pooled, &word)?
         .ok_or_else(|| AppError::Business("收录后回读失败".to_string()))
 }
 
@@ -338,19 +339,20 @@ pub fn set_status(
 /// 删除生词
 pub fn delete_word(app: &AppHandle, db: &AppDb, id: &str) -> Result<(), AppError> {
     let pooled = db.pool.get()?;
-    if vocab_repo::find_by_id(&pooled, id)?.is_none() {
+    let Some(target) = vocab_repo::find_by_id(&pooled, id)? else {
         return Err(AppError::NotFound(format!("生词不存在: {id}")));
-    }
+    };
     // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
     let mut uow = UnitOfWork::new(&pooled, Some(app));
     uow.audit(
         "DELETE",
         "vocab_words",
-        format!("id={id}"),
+        format!("id={id}, word={}", target.word),
         file!(),
         line!(),
     );
-    vocab_repo::delete_word(uow.conn(), id)?;
+    // 一并清理指向本词文本的他人关系（related_word 以文本存储，外键级联覆盖不到）
+    vocab_repo::delete_word(uow.conn(), id, &target.word)?;
     uow.commit()?;
     emit_due_updated(app);
     Ok(())
@@ -381,6 +383,59 @@ pub fn list_words(
         line!(),
     );
     let words = vocab_repo::list_words(uow.conn(), status, query)?;
+    uow.commit()?;
+    Ok(words)
+}
+
+/// 分页列出生词（状态过滤 + 关键词模糊搜索），返回本页条目与匹配总数。
+///
+/// 供前端生词本虚拟滚动：首屏取第一页 + total，滚动到底部按需加载后续页。
+pub fn list_words_page(
+    app: &AppHandle,
+    db: &AppDb,
+    status: Option<&str>,
+    query: Option<&str>,
+    page: i64,
+    page_size: i64,
+) -> Result<VocabPage, AppError> {
+    if let Some(st) = status {
+        if !st.is_empty() && st != "all" {
+            validate_status(st)?;
+        }
+    }
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
+        "SELECT",
+        "vocab_words",
+        format!("page status={status:?}, query={query:?}, page={page}, size={page_size}"),
+        file!(),
+        line!(),
+    );
+    let (items, total) = vocab_repo::list_words_page(uow.conn(), status, query, page, page_size)?;
+    uow.commit()?;
+    Ok(VocabPage { items, total })
+}
+
+/// 随机抽取 N 个已掌握词（「复习已掌握词」批量回炉入口）。
+///
+/// 已掌握词通常不再进入到期队列，长期不复习会遗忘；本接口提供一批随机样本，
+/// 前端拉起临时复习会话重新过一遍。limit 非法时按 1 兜底。
+pub fn mastered_sample(
+    app: &AppHandle,
+    db: &AppDb,
+    limit: i64,
+) -> Result<Vec<VocabWord>, AppError> {
+    let pooled = db.pool.get()?;
+    let mut uow = UnitOfWork::new(&pooled, Some(app));
+    uow.audit(
+        "SELECT",
+        "vocab_words",
+        format!("mastered sample limit={limit}"),
+        file!(),
+        line!(),
+    );
+    let words = vocab_repo::list_mastered_sample(uow.conn(), limit)?;
     uow.commit()?;
     Ok(words)
 }
@@ -498,6 +553,7 @@ pub fn submit_review(
             next_review_at: Some(&sm.next_review_at),
             last_review_at: &reviewed_at,
             correct,
+            updated_at: &reviewed_at,
         },
     )?;
     vocab_repo::insert_review_log(
@@ -525,7 +581,10 @@ pub fn submit_review(
 /// 汇总统计
 pub fn get_stats(app: &AppHandle, db: &AppDb) -> Result<VocabStats, AppError> {
     let today = today_str();
-    let week_ago = date_plus_days(&today, -6).unwrap_or_else(|| today.clone());
+    // 「本周新增」按 created_at 的 UTC 日期前缀比较（utils::now() 写入 RFC3339 UTC），
+    // 若用本地日期会因时区偏移（东八区 8 小时）把当天早间收录的词算到前一天。
+    let utc_today = Utc::now().date_naive().format("%Y-%m-%d").to_string();
+    let week_ago = date_plus_days(&utc_today, -6).unwrap_or_else(|| utc_today.clone());
     let month_ago = date_plus_days(&today, -29).unwrap_or_else(|| today.clone());
 
     // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
@@ -566,4 +625,142 @@ pub fn get_stats(app: &AppHandle, db: &AppDb) -> Result<VocabStats, AppError> {
     };
     uow.commit()?;
     Ok(stats)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── SM-2 调度纯函数（核心算法，此前长期零覆盖）──
+
+    #[test]
+    fn rating_maps_to_quality() {
+        assert_eq!(rating_to_quality(0), 0); // 忘记
+        assert_eq!(rating_to_quality(1), 3); // 模糊
+        assert_eq!(rating_to_quality(2), 4); // 记得
+        assert_eq!(rating_to_quality(3), 5); // 轻松
+        // 越界档位一律按「轻松」处理（命令层已挡在 0-3，此处仅兜底）
+        assert_eq!(rating_to_quality(9), 5);
+    }
+
+    #[test]
+    fn forgotten_resets_repetition_and_interval() {
+        let r = sm2_apply(5, 30, 2.36, 0, "2026-10-15");
+        assert_eq!(r.repetition, 0, "忘记后连续答对次数清零");
+        assert_eq!(r.interval_days, 1, "忘记后间隔回到 1 天");
+        assert_eq!(r.ease_factor, 2.36, "忘记不惩罚 EF（仅清零进度）");
+        assert_eq!(r.next_review_at, "2026-10-16");
+    }
+
+    #[test]
+    fn interval_sequence_follows_sm2_ladder() {
+        let a = sm2_apply(0, 0, 2.5, 5, "2026-10-15");
+        assert_eq!((a.repetition, a.interval_days), (1, 1));
+        let b = sm2_apply(a.repetition, a.interval_days, a.ease_factor, 5, "2026-10-15");
+        assert_eq!((b.repetition, b.interval_days), (2, 6));
+        // 第三次起按 interval × 当前 EF 推进；「轻松」(q=5) 每次给 EF +0.1，
+        // 两次答对后 EF = 2.7，故 6 × 2.7 = 16.2 → 取整 16 天
+        assert_eq!(b.ease_factor, 2.7);
+        let c = sm2_apply(b.repetition, b.interval_days, b.ease_factor, 5, "2026-10-15");
+        assert_eq!((c.repetition, c.interval_days), (3, 16));
+    }
+
+    #[test]
+    fn vague_answer_keeps_progress_but_lowers_ease() {
+        // q=3（模糊）仍算答对：进度推进，但 EF 下降
+        let a = sm2_apply(2, 6, 2.5, 3, "2026-10-15");
+        assert_eq!(a.repetition, 3, "模糊也推进进度");
+        assert!(a.ease_factor < 2.5, "模糊应拉低 EF");
+        assert!(a.interval_days >= 1);
+    }
+
+    #[test]
+    fn ease_factor_clamps_at_minimum() {
+        let (mut rep, mut interval, mut ef) = (2i64, 6i64, 2.5f64);
+        for _ in 0..30 {
+            let r = sm2_apply(rep, interval, ef, 3, "2026-10-15");
+            rep = r.repetition;
+            interval = r.interval_days;
+            ef = r.ease_factor;
+        }
+        assert!(
+            (ef - MIN_EASE_FACTOR).abs() < 1e-9,
+            "EF 应被钳制在下限 {MIN_EASE_FACTOR}，实际 {ef}"
+        );
+    }
+
+    #[test]
+    fn continuous_perfect_ratings_reach_mastery_window() {
+        // 连续「轻松」时，应在 repetition 达到 MASTER_REPETITION 且间隔 ≥ MASTER_INTERVAL_DAYS 时判定掌握
+        let (mut rep, mut interval, mut ef) = (0i64, 0i64, 2.5f64);
+        let mut mastered_at: Option<i64> = None;
+        for _ in 0..15 {
+            let r = sm2_apply(rep, interval, ef, 5, "2026-10-15");
+            rep = r.repetition;
+            interval = r.interval_days;
+            ef = r.ease_factor;
+            if mastered_at.is_none() && rep >= MASTER_REPETITION && interval >= MASTER_INTERVAL_DAYS {
+                mastered_at = Some(rep);
+            }
+        }
+        assert_eq!(
+            mastered_at,
+            Some(MASTER_REPETITION),
+            "自动掌握阈值应在 repetition={MASTER_REPETITION} 处首次达成"
+        );
+        assert!(interval >= MASTER_INTERVAL_DAYS);
+    }
+
+    #[test]
+    fn next_review_date_is_today_plus_interval() {
+        let r = sm2_apply(2, 6, 2.5, 5, "2026-12-28");
+        assert_eq!(r.next_review_at, "2027-01-12", "跨月/跨年日期推进应正确");
+    }
+
+    // ── 校验与工具 ──
+
+    #[test]
+    fn word_and_status_validation() {
+        assert_eq!(normalize_word("  Serendipity ").unwrap(), "serendipity");
+        assert!(normalize_word("   ").is_err());
+        assert!(normalize_word(&"x".repeat(MAX_WORD_LEN + 1)).is_err());
+
+        assert!(validate_status("learning").is_ok());
+        assert!(validate_status("mastered").is_ok());
+        assert!(validate_status("suspended").is_ok());
+        assert!(validate_status("archived").is_err());
+    }
+
+    #[test]
+    fn meanings_validation_bounds() {
+        let ok: Vec<VocabMeaning> = (0..MAX_MEANINGS_COUNT)
+            .map(|i| VocabMeaning {
+                pos: "n.".into(),
+                def: format!("d{i}"),
+            })
+            .collect();
+        assert!(validate_meanings(&ok).is_ok());
+
+        let too_many: Vec<VocabMeaning> = (0..MAX_MEANINGS_COUNT + 1)
+            .map(|_| VocabMeaning {
+                pos: "n.".into(),
+                def: "d".into(),
+            })
+            .collect();
+        assert!(validate_meanings(&too_many).is_err());
+
+        let too_long = vec![VocabMeaning {
+            pos: "n.".into(),
+            def: "x".repeat(MAX_MEANING_LEN + 1),
+        }];
+        assert!(validate_meanings(&too_long).is_err());
+    }
+
+    #[test]
+    fn today_and_date_helpers() {
+        assert_eq!(today_str().len(), 10);
+        assert_eq!(date_plus_days("2026-02-28", 1).unwrap(), "2026-03-01");
+        assert_eq!(date_plus_days("2026-01-01", -1).unwrap(), "2025-12-31");
+        assert!(date_plus_days("not-a-date", 1).is_none());
+    }
 }

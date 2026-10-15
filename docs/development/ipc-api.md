@@ -2,7 +2,7 @@
 
 > **适用版本**：`1.22.0`　|　**最后核对**：2026-10-15
 
-TimeWrite 共注册 **206 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用。桥接层导出 **19 个 API 对象**（`bookApi` `volumeApi` `chapterApi` `snapshotApi` `worldCardApi` `diaryApi` `scheduleApi` `windowApi` `aiApi` `agentApi` `imageApi` `importExportApi` `debugApi` `systemApi` `vocabApi` `ttsApi` `dictApi` `taskCardApi` `writingApi`）。
+TimeWrite 共注册 **210 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用。桥接层导出 **19 个 API 对象**（`bookApi` `volumeApi` `chapterApi` `snapshotApi` `worldCardApi` `diaryApi` `scheduleApi` `windowApi` `aiApi` `agentApi` `imageApi` `importExportApi` `debugApi` `systemApi` `vocabApi` `ttsApi` `dictApi` `taskCardApi` `writingApi`）。
 
 > **架构约定**：`tauri-bridge.ts` 是全项目**唯一**允许调用 `invoke` 的模块。禁止在其他文件中直接 import `@tauri-apps/api` 的 `invoke`。
 
@@ -337,7 +337,8 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 
 | 命令 | 源文件 | 说明 |
 |------|--------|------|
-| `test_ai_connection` | `ai/test.rs` | 测试对话服务连通性（返回可用模型列表） |
+| `test_ai_connection` | `ai/test.rs` | 测试对话服务连通性（返回可用模型列表，最多 10 个 id） |
+| `fetch_ai_models` | `ai/models.rs` | 拉取服务商全部可用模型（完整元数据），供设置页「获取全部模型」 |
 | `test_rag_connection` | `ai/test.rs` | 测试 RAG/Embedding 服务连通性 |
 | `rag_search` | `ai/embedding.rs` | RAG 检索（向量优先，FTS5/LIKE 降级） |
 | `trigger_embedding` | `ai/embedding.rs` | 批量生成 Embedding 向量 |
@@ -473,7 +474,7 @@ io 目录定义的业务码：
 | `vocabApi` | 10 |
 | `dictApi` | 5 |
 | `ttsApi` | 1 |
-| `aiApi` | 8 |
+| `aiApi` | 9 |
 | `agentApi` | 6 |
 | `importExportApi` | 5 |
 | `imageApi` | 3 |

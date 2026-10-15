@@ -4,7 +4,7 @@
 //! 导入作用域（ImportScope）、导入策略（ImportStrategy）、写入统计（WriteStats）与指纹工具。
 
 use crate::error::AppError;
-use crate::models::{Book, Snapshot, Volume, WorldCard};
+use crate::models::{Book, Snapshot, VocabRelation, VocabReviewLog, VocabWord, Volume, WorldCard};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -20,6 +20,9 @@ pub(crate) const MAX_BACKUP_ROWS: &[(&str, usize)] = &[
     ("worldCards", 100_000),
     ("embeddings", 200_000),
     ("appConfig", 1_000),
+    ("vocabWords", 50_000),
+    ("vocabReviews", 500_000),
+    ("vocabRelations", 200_000),
 ];
 
 /// 导入作用域：全库或单个作品（与备份类型解耦，覆盖「replace 语义」的受影响范围）
@@ -115,6 +118,17 @@ pub(crate) struct DatabaseExport {
     /// app_config 段（`#[serde(default)]` 保证旧版备份缺字段时反序列化为空，导入即跳过）
     #[serde(rename = "appConfig", default)]
     pub(crate) app_config: Vec<AppConfigExport>,
+    // ── 英语生词本（v1.23 起纳入备份）──
+    // 生词 / 复习日志 / 单词关联是跨作品的**个人学习资产**，与作品数据同样需要备份。
+    // 三段一律 `#[serde(default)]`：
+    // ① 旧版备份缺字段 → 反序列化为空，导入跳过，不破坏兼容；
+    // ② 单作品备份不携带（作用域纯净），导入时自然为空。
+    #[serde(rename = "vocabWords", default)]
+    pub(crate) vocab_words: Vec<VocabWord>,
+    #[serde(rename = "vocabReviews", default)]
+    pub(crate) vocab_reviews: Vec<VocabReviewLog>,
+    #[serde(rename = "vocabRelations", default)]
+    pub(crate) vocab_relations: Vec<VocabRelation>,
 }
 
 /// 全量导出总载荷（v1 字段兼容保留；v2 新增 schemaVersion / appVersion / payloadHash，均缺失时自动兼容旧文件）

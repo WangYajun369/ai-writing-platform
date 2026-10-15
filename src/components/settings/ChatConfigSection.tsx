@@ -4,13 +4,15 @@
  *
  * 偏好存取：config 由父级传入（SettingsPage ← useAiStore.aiConfig.chat），
  * onChange 仅回传局部变更；aiStore 侧默认值见 aiStore（provider deepseek、
- * model deepseek-v4-flash、temperature 0.7、maxTokens 131072、thinkingEnabled、
+ * model deepseek-flash、temperature 0.7、maxTokens 131072、thinkingEnabled、
  * contextWindowSize 10）。连接测试回调由 SettingsPage 动态 import aiApi.testConnection。
  */
-import { ZapIcon } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ZapIcon, RefreshCwIcon } from 'lucide-react'
 import type { AiChatConfig } from '@/types'
 import { getChatApiKey } from '@/types'
 import { DEEPSEEK_MODELS } from './constants'
+import { useAiStore } from '@/stores/aiStore'
 import { ApiKeyField, ConnectionStatusBadge, ConnectionStatus, StaticInfoRow, Toggle } from './shared'
 
 /** 最大输出 Token 的合法区间与推荐值（推荐值与后端默认值 131072 一致） */
@@ -46,6 +48,43 @@ export function ChatConfigSection({
 
   const currentApiKey = getChatApiKey(config)
 
+  // 已拉取的可用模型（来自 ai_models 配置段；空时 fallback 到内置 DEEPSEEK_MODELS）
+  const availableModels = useAiStore((s) => s.availableModels)
+  const modelsFetchedAt = useAiStore((s) => s.modelsFetchedAt)
+  const fetchModels = useAiStore((s) => s.fetchModels)
+
+  const [fetching, setFetching] = useState(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
+
+  const modelOptions = useMemo(() => {
+    const base = availableModels.length > 0
+      ? availableModels.map((m) => ({
+          value: m.id,
+          label: m.name ? `${m.name}（${m.id}）` : m.id,
+        }))
+      : DEEPSEEK_MODELS.map((m) => ({ value: m, label: m }))
+    // 保证当前选中值一定在下拉中可见（例如旧配置里的旧模型名尚未被新拉取列表覆盖）
+    if (!base.some((o) => o.value === config.model)) {
+      base.unshift({ value: config.model, label: `${config.model}（当前）` })
+    }
+    return base
+  }, [availableModels, config.model])
+
+  const handleFetchModels = async () => {
+    setFetching(true)
+    setFetchError(null)
+    try {
+      await fetchModels()
+    } catch (e) {
+      setFetchError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setFetching(false)
+    }
+  }
+
+  const formatFetchedAt = (iso: string) =>
+    new Date(iso).toLocaleString('zh-CN', { hour12: false })
+
   return (
     <div className="space-y-4">
       <h2 className="text-base font-semibold">AI 对话</h2>
@@ -68,10 +107,34 @@ export function ChatConfigSection({
           onChange={(e) => onChange({ model: e.target.value })}
           className="w-full bg-muted rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
         >
-          {DEEPSEEK_MODELS.map((m) => (
-            <option key={m} value={m}>{m}</option>
+          {modelOptions.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
+
+        {/* 获取全部模型：调用 DeepSeek /models，结果持久化到 ai_models 配置段 */}
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <button
+            type="button"
+            onClick={handleFetchModels}
+            disabled={fetching}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors disabled:opacity-50"
+          >
+            <RefreshCwIcon className={`w-3.5 h-3.5 ${fetching ? 'animate-spin' : ''}`} />
+            {fetching ? '获取中…' : '获取全部模型'}
+          </button>
+          {modelsFetchedAt && availableModels.length > 0 && (
+            <span className="text-xs text-muted-foreground">
+              已获取 {availableModels.length} 个模型 · {formatFetchedAt(modelsFetchedAt)}
+            </span>
+          )}
+        </div>
+        {fetchError && (
+          <p className="text-xs text-destructive">{fetchError}</p>
+        )}
+        <p className="text-xs text-muted-foreground">
+          未获取时显示内置可选项；点击「获取全部模型」从服务商拉取最新列表
+        </p>
       </div>
 
       {/* 思考模式 */}

@@ -10,8 +10,15 @@
 
 export { GITHUB_REPO } from '@/lib/updateApi.ts'
 
-/** DeepSeek 可选模型 */
-export const DEEPSEEK_MODELS = ['deepseek-v4-flash', 'deepseek-v4-pro'] as const
+/**
+ * DeepSeek 内置可选项（fallback）
+ *
+ * 仅在「获取全部模型」尚未拉取成功、或拉取失败时作为下拉兜底。
+ * 当前在售模型（据 DeepSeek 价目表）：`deepseek-flash`（V4.1-Flash）、
+ * `deepseek-v4-pro`（V4-Pro）。旧名 `deepseek-v4-flash` 仍可被路由到 Flash，
+ * 但属弃用别名，故此处不再列入。
+ */
+export const DEEPSEEK_MODELS = ['deepseek-flash', 'deepseek-v4-pro'] as const
 
 /** RAG Embedding 可选模型（智谱） */
 export const RAG_BIGMODEL_MODELS = ['embedding-3'] as const

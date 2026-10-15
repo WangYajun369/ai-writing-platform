@@ -6,7 +6,7 @@
 
 use crate::db::AppDb;
 use crate::error::AppError;
-use crate::models::{VocabKnowledge, VocabMeaning, VocabStats, VocabWord};
+use crate::models::{VocabKnowledge, VocabMeaning, VocabPage, VocabStats, VocabWord};
 use crate::service::vocab_service;
 use crate::service::vocab_relation_service;
 use crate::service::ServiceCtx;
@@ -122,6 +122,38 @@ pub fn vocab_list(
     query: Option<String>,
 ) -> Result<Vec<VocabWord>, AppError> {
     vocab_service::list_words(&app, &state, status.as_deref(), query.as_deref())
+}
+
+/// 分页列出生词（虚拟滚动）：返回本页条目 + 匹配总数
+///
+/// `page` 0 基页码，`page_size` 每页条数。状态过滤 / 模糊搜索与 `vocab_list` 一致。
+#[tauri::command]
+pub fn vocab_list_page(
+    app: AppHandle,
+    state: State<AppDb>,
+    status: Option<String>,
+    query: Option<String>,
+    page: i64,
+    page_size: i64,
+) -> Result<VocabPage, AppError> {
+    vocab_service::list_words_page(
+        &app,
+        &state,
+        status.as_deref(),
+        query.as_deref(),
+        page,
+        page_size,
+    )
+}
+
+/// 随机抽取 N 个已掌握词（「复习已掌握词」批量回炉入口）
+#[tauri::command]
+pub fn vocab_mastered_sample(
+    app: AppHandle,
+    state: State<AppDb>,
+    limit: i64,
+) -> Result<Vec<VocabWord>, AppError> {
+    vocab_service::mastered_sample(&app, &state, limit)
 }
 
 /// 今日到期复习队列
