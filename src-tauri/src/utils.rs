@@ -12,6 +12,14 @@ use std::sync::OnceLock;
 pub const DICT_DIR: &str = "dict";
 pub const DICT_FILE: &str = "ecdict.sqlite";
 
+/// ECDICT 变形家族侧车索引库文件名。
+///
+/// 该库为一次性从 `ecdict.sqlite` 预解析的产物（`word → lemma` 全量映射，
+/// 仅收录 `exchange` 含 `0:` 原型的词条），用于把 `dict_family_uncached`
+/// 中的 `exchange LIKE '%0:lemma%'` 全表扫描替换为等值查询，彻底消灭全表扫描。
+/// 重新导入词典时由 [`rebuild_lemma_index`](crate::service::vocab_relation_service::rebuild_lemma_index) 重建。
+pub const DICT_LEMMA_INDEX_FILE: &str = "ecdict-lemma.db";
+
 /// 获取 ECDICT 词典文件完整路径
 pub fn dict_db_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, AppError> {
     use tauri::Manager;
@@ -20,6 +28,16 @@ pub fn dict_db_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, AppErr
         .app_data_dir()
         .map_err(|e| AppError::Business(format!("无法获取应用数据目录: {e}")))?;
     Ok(dir.join(DICT_DIR).join(DICT_FILE))
+}
+
+/// 获取 ECDICT 变形家族侧车索引库完整路径（与 [`dict_db_path`] 同目录）
+pub fn dict_lemma_index_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, AppError> {
+    use tauri::Manager;
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Business(format!("无法获取应用数据目录: {e}")))?;
+    Ok(dir.join(DICT_DIR).join(DICT_LEMMA_INDEX_FILE))
 }
 
 /// 打开 ECDICT 词典库（只读），校验 stardict 表存在；未安装或缺表返回 None。
@@ -147,8 +165,16 @@ fn detect_proxy() -> Option<reqwest::Proxy> {
 
 /// 构建通用 HTTP 客户端基础配置
 fn http_client_builder() -> reqwest::ClientBuilder {
-    let mut builder =
-        reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(15));
+    // 与 SSE 客户端保持一致：关闭透明解压（服务端 / 中间代理返回的压缩体在解码阶段
+    // 失败时，reqwest 只报 "error decoding response body"，难以定位）；固定 HTTP/1.1 +
+    // TCP keepalive，规避长响应传输途中被中间设备提前断流（同样表现为该报错）。
+    let mut builder = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .http1_only()
+        .tcp_keepalive(std::time::Duration::from_secs(120));
     if let Some(proxy) = detect_proxy() {
         builder = builder.proxy(proxy);
     }

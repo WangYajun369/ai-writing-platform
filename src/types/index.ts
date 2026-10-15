@@ -217,7 +217,7 @@ export function getChatApiKey(config: AiChatConfig): string | undefined {
  * RAG / Embedding 检索服务商（智谱 BigModel）
  *
  * 预留能力：向量索引/语义检索尚未接入对话（当前对话由 Agent 引擎通过内置
- * 工具检索章节与世界观资料）。保留配置用于连接测试与未来接入。
+ * 工具检索章节与世界观资料）。配置与后端命令保留，设置页入口已移除。
  */
 export type RagProvider = 'bigmodel'
 
@@ -230,15 +230,37 @@ export interface RagConfig {
   bigmodelApiKey?: string
 }
 
-/** 获取当前 RAG 服务商的 API Key */
-export function getRagApiKey(config: RagConfig): string | undefined {
-  return config.bigmodelApiKey
-}
-
 /** AI 总配置（对话与 RAG 解耦） */
 export interface AiConfig {
   chat: AiChatConfig
   rag: RagConfig
+}
+
+/** AI 服务商返回的单条模型元数据（对齐后端 `ModelInfo`） */
+export interface ModelInfo {
+  /** 模型标识，用于 API 请求的 model 字段 */
+  id: string
+  /** 展示名（可能缺失） */
+  name?: string | null
+  /** 所属组织（deepseek 等） */
+  ownedBy?: string | null
+  /** 上下文窗口（tokens） */
+  contextWindow?: number | null
+  /** 最大输出 tokens */
+  maxOutputTokens?: number | null
+  /** 输入模态（text / image 等） */
+  inputModalities?: string[] | null
+  /** 输出模态（text 等） */
+  outputModalities?: string[] | null
+}
+
+/** 持久化的模型列表（`ai_models` 配置段），由设置页「获取全部模型」写入 */
+export interface AiModelsConfig {
+  provider?: string
+  endpoint?: string
+  /** 拉取时间（RFC 3339） */
+  fetchedAt?: string
+  models?: ModelInfo[]
 }
 
 /** AI 工具箱中的单个提示词 */
@@ -473,6 +495,14 @@ export interface VocabWord {
   knowledge: VocabKnowledge | null
 }
 
+/** 分页生词列表（对齐 Rust VocabPage，前端虚拟滚动用） */
+export interface VocabPage {
+  /** 本页生词条目 */
+  items: VocabWord[]
+  /** 满足过滤条件的总条数（用于计算总页数） */
+  total: number
+}
+
 /** 复习记录（对齐 Rust VocabReviewLog） */
 export interface VocabReviewLog {
   id: string
@@ -648,6 +678,49 @@ export interface ExplainWordArgs {
   temperature?: number
   /** 释义语言：zh（默认）/ en */
   lang?: string
+  /**
+   * DeepSeek 思考模式开关：结构化词典任务显式传 false 关闭思考，
+   * 避免思考 token 挤占 max_tokens 预算并显著拉长首字延迟；
+   * 非 DeepSeek 端点请留空（不下发该字段，免受未知字段影响）。
+   */
+  thinkingEnabled?: boolean
+}
+
+/**
+ * 流式释义事件名（Rust 侧 `commands::vocab_dict::DICT_EXPLAIN_EVENT` 的镜像）。
+ * 事件名属跨端契约，集中在类型层定义避免字面量漂移。
+ */
+export const DICT_EXPLAIN_STREAM_EVENT = 'dict-explain-chunk'
+
+/**
+ * 流式释义的单行 NDJSON 对象（Rust 侧 `type` 已归一化为小写）。
+ * 每行是一个独立的语义单元，前端收到即增量渲染对应字段。
+ */
+export type DictExplainLine =
+  | { type: 'phonetic'; text?: string }
+  | { type: 'meaning'; pos?: string; def?: string }
+  | { type: 'example'; text?: string; translation?: string }
+  | { type: 'morph'; kind?: string; part?: string; meaning?: string }
+  | { type: 'synonym'; text?: string }
+  | { type: 'antonym'; text?: string }
+  | { type: 'phrase'; phrase?: string; meaning?: string }
+  | { type: 'verbform'; text?: string }
+  | { type: 'examplebypos'; pos?: string; sentence?: string; translation?: string }
+
+/** 流式释义事件载荷 */
+export interface DictExplainStreamEvent {
+  /** 目标单词（用于前端过滤过期事件） */
+  word: string
+  /** 本次新增的原始文本（未形成完整行时用于显示进度） */
+  delta: string
+  /** 本次已完整输出的一行 NDJSON 对象（可解析时非空） */
+  line: DictExplainLine | null
+  /** 流是否结束 */
+  done: boolean
+  /** 降级/中断提示（正常完成时为 null） */
+  error: string | null
+  /** 结束时带回的完整释义（与 `dict_explain_ai` 同构），进行中为 null */
+  result: AiWordExplain | null
 }
 
 /** AI 单词形态检查结果类型 */

@@ -259,7 +259,6 @@ check('AiToolboxSection.tsx', fileExists('src/components/settings/AiToolboxSecti
 check('AppearanceSection.tsx', fileExists('src/components/settings/AppearanceSection.tsx'))
 check('ChatConfigSection.tsx', fileExists('src/components/settings/ChatConfigSection.tsx'))
 check('EditorConfigSection.tsx', fileExists('src/components/settings/EditorConfigSection.tsx'))
-check('RagConfigSection.tsx', fileExists('src/components/settings/RagConfigSection.tsx'))
 check('StorageSection.tsx', fileExists('src/components/settings/StorageSection.tsx'))
 check('VersionSection.tsx', fileExists('src/components/settings/VersionSection.tsx'))
 check('settings/constants.ts', fileExists('src/components/settings/constants.ts'))

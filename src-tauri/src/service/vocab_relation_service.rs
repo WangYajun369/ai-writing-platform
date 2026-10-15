@@ -18,7 +18,10 @@ use crate::models::{
 };
 use crate::repository::{vocab_relation_repo, vocab_repo};
 use crate::service::uow::UnitOfWork;
-use crate::utils::{now, open_dict_db, validate_len};
+use crate::utils::{dict_lemma_index_path, now, open_dict_db, validate_len};
+use std::collections::HashMap;
+use std::fs;
+use std::sync::{Mutex, OnceLock};
 use tauri::AppHandle;
 use uuid::Uuid;
 
@@ -51,8 +54,14 @@ fn normalize_related(raw: &str) -> Result<String, AppError> {
 /// 从 AI 近/反义词条目提取英文词（剥离中文小注与括号，小写规范化）。
 ///
 /// 条目形如 "happy（高兴的）" / "well-known"；取首个非 `[a-zA-Z-']` 字符前的部分，
-/// 过滤空串与自身。词组类条目（如 "take off"）会退化为中心词 "take"。
+/// 过滤空串与自身。
+///
+/// **词组条目直接丢弃**：关联表只存单词，"take off" 若退化成中心词 "take"
+/// 会建出语义错误的关联，与其错关联不如不关联。
 pub(crate) fn extract_english_word(entry: &str, own_word: &str) -> Option<String> {
+    if entry.trim().contains(char::is_whitespace) {
+        return None;
+    }
     let mut end = entry.len();
     for (i, c) in entry.char_indices() {
         if !(c.is_ascii_alphabetic() || c == '-' || c == '\'') {
@@ -84,11 +93,219 @@ fn exchange_lemma(exchange: &str) -> Option<String> {
     None
 }
 
+// ── ECDICT 查询缓存 ──
+//
+// `stardict.exchange` 没有索引，`exchange LIKE '%0:lemma%'` 需全表扫描（46.8 万行级），
+// 而收录单词（`sync_inflection_family`）与词族复习（`family_groups`）都会按词查询。
+// 词典是只读静态数据，故按词缓存 lemma / 变形家族结果：
+// 首次查询付出一次扫描代价，后续命中内存；重新导入词典时由 `invalidate_dict_cache` 清空。
+static LEMMA_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+static FAMILY_CACHE: OnceLock<Mutex<HashMap<String, Vec<String>>>> = OnceLock::new();
+
+fn lemma_cache() -> &'static Mutex<HashMap<String, String>> {
+    LEMMA_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn family_cache() -> &'static Mutex<HashMap<String, Vec<String>>> {
+    FAMILY_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// 清空词典查询结果缓存（导入/替换 ECDICT 词库后调用，避免读到旧词库结果）
+pub fn invalidate_dict_cache() {
+    if let Some(c) = LEMMA_CACHE.get() {
+        if let Ok(mut g) = c.lock() {
+            g.clear();
+        }
+    }
+    if let Some(c) = FAMILY_CACHE.get() {
+        if let Ok(mut g) = c.lock() {
+            g.clear();
+        }
+    }
+}
+
+// ── ECDICT 变形家族侧车索引（消灭全表扫描）──
+//
+// `dict_family_uncached` 用 `exchange LIKE '%0:lemma%'` 在约 46.8 万行的 stardict
+// 上全表扫描，每次按词查变形家族都付出一次扫描代价。侧车库 `ecdict-lemma.db`
+// 预存 `word → lemma` 全量映射（仅 `exchange` 含 `0:` 原型的词条），查询改为
+// 对 `lemma` 列的等值查询（有索引），复杂度从 O(N) 降为 O(log N)。
+//
+// 构建策略：导入/替换词典时由 `rebuild_lemma_index` 一次性重建；若因旧版本
+// 未构建而缺失，则首次查询时由 `ensure_lemma_index` 惰性重建（之后命中缓存）。
+
+/// 序列化一次性构建，避免并发首查重复全表扫描
+static LEMMA_INDEX_BUILD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+/// 重建变形家族侧车索引：删除旧文件后从 `ecdict.sqlite` 全量预解析 `0:` 原型。
+///
+/// 词典未安装时仅删除旧索引并返回（查询自动回退 LIKE 扫描）。导入命令
+/// [`dict_import`](crate::commands::vocab_dict::dict_import) 在替换词库后调用。
+pub fn rebuild_lemma_index(app: &AppHandle) -> Result<(), AppError> {
+    let path = dict_lemma_index_path(app)?;
+    if path.exists() {
+        let _ = fs::remove_file(&path);
+    }
+    build_lemma_index(app)
+}
+
+/// 从 `ecdict.sqlite` 一次性预解析 `word → lemma` 全量映射写入侧车索引库。
+fn build_lemma_index(app: &AppHandle) -> Result<(), AppError> {
+    let Some(dict_conn) = open_dict_db(app)? else {
+        // 词典未安装：无索引可用，查询方会回退到 LIKE 扫描
+        return Ok(());
+    };
+    let path = dict_lemma_index_path(app)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let idx = rusqlite::Connection::open(&path)?;
+    idx.execute(
+        "CREATE TABLE IF NOT EXISTS lemma_index (word TEXT NOT NULL, lemma TEXT NOT NULL)",
+        [],
+    )?;
+    idx.execute("DELETE FROM lemma_index", [])?;
+    let mut insert = idx.prepare("INSERT INTO lemma_index (word, lemma) VALUES (?1, ?2)")?;
+    let mut stmt = dict_conn.prepare("SELECT word, exchange FROM stardict")?;
+    let rows = stmt.query_map([], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?.unwrap_or_default()))
+    })?;
+    for row in rows {
+        let (word, exchange) = row?;
+        if let Some(lemma) = exchange_lemma(&exchange) {
+            insert.execute(rusqlite::params![word.to_lowercase(), lemma])?;
+        }
+    }
+    idx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_lemma_index_lemma ON lemma_index (lemma)",
+        [],
+    )?;
+    idx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_lemma_index_word ON lemma_index (word)",
+        [],
+    )?;
+    Ok(())
+}
+
+/// 确保侧车索引存在：缺失时惰性重建（一次性全表扫描），随后以只读方式打开。
+///
+/// 返回 `Some(conn)` 表示索引可用；词典未安装或构建失败返回 `None`，
+/// 调用方应回退到 [`dict_family_uncached`]/[`dict_lemma`] 的 LIKE 扫描路径。
+fn ensure_lemma_index(app: &AppHandle) -> Result<Option<rusqlite::Connection>, AppError> {
+    let path = dict_lemma_index_path(app)?;
+    if !path.exists() {
+        let lock = LEMMA_INDEX_BUILD_LOCK.get_or_init(|| Mutex::new(()));
+        let _guard = lock.lock().ok();
+        // 二次检查：同批并发中先获锁者已构建完毕
+        if !path.exists() {
+            let _ = build_lemma_index(app);
+        }
+    }
+    if !path.exists() {
+        return Ok(None);
+    }
+    let conn = rusqlite::Connection::open_with_flags(
+        &path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+    let ok: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='lemma_index')",
+        [],
+        |row| row.get(0),
+    )?;
+    if ok {
+        Ok(Some(conn))
+    } else {
+        Ok(None)
+    }
+}
+
+/// 经侧车索引查单词的 ECDICT 原型 lemma（`word` 列等值查询）。无记录返回 None。
+fn dict_lemma_via_index(conn: &rusqlite::Connection, word: &str) -> Option<String> {
+    conn.query_row(
+        "SELECT lemma FROM lemma_index WHERE word = ?1 COLLATE NOCASE LIMIT 1",
+        rusqlite::params![word],
+        |r| r.get::<_, String>(0),
+    )
+    .ok()
+}
+
+/// 经侧车索引查变形家族：由本词 lemma 列等值查询所有同族词（排除自身，上限 12）。
+///
+/// 与 [`dict_family_uncached`] 同款后处理：补入 lemma 自身（若非本词）、过滤空格、
+/// 去重、按长度排序并截断，保证两类实现行为一致。
+fn dict_family_via_index(conn: &rusqlite::Connection, word: &str) -> Vec<String> {
+    let lemma = dict_lemma_via_index(conn, word).unwrap_or_else(|| word.to_string());
+    let mut stmt = match conn.prepare("SELECT word FROM lemma_index WHERE lemma = ?1 COLLATE NOCASE")
+    {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let rows = stmt
+        .query_map(rusqlite::params![lemma], |r| r.get::<_, String>(0))
+        .ok();
+    let mut family: Vec<String> = rows
+        .into_iter()
+        .flatten()
+        .filter_map(std::result::Result::ok)
+        .map(|w| w.to_lowercase())
+        .collect();
+    if lemma != word {
+        family.push(lemma);
+    }
+    family.retain(|w| w != word && !w.contains(' '));
+    family.sort();
+    family.dedup();
+    family.sort_by_key(|w| w.len());
+    family.truncate(FAMILY_LIMIT);
+    family
+}
+
+/// 带缓存的 ECDICT 原型查询（优先侧车索引等值查询，缺失时回退 LIKE 扫描）
+fn dict_lemma_cached(app: &AppHandle, word: &str) -> String {
+    let key = word.trim().to_lowercase();
+    if let Some(v) = lemma_cache().lock().ok().and_then(|g| g.get(&key).cloned()) {
+        return v;
+    }
+    let v = ensure_lemma_index(app)
+        .ok()
+        .flatten()
+        .and_then(|c| dict_lemma_via_index(&c, &key))
+        .unwrap_or_else(|| {
+            open_dict_db(app)
+                .ok()
+                .flatten()
+                .map(|c| dict_lemma(&c, &key))
+                .unwrap_or_else(|| key.clone())
+        });
+    if let Ok(mut g) = lemma_cache().lock() {
+        g.insert(key, v.clone());
+    }
+    v
+}
+
+/// 带缓存的变形家族查询（优先侧车索引等值查询，缺失时回退 LIKE 扫描）
+fn dict_family(app: &AppHandle, word: &str) -> Vec<String> {
+    let key = word.trim().to_lowercase();
+    if let Some(v) = family_cache().lock().ok().and_then(|g| g.get(&key).cloned()) {
+        return v;
+    }
+    let v = ensure_lemma_index(app)
+        .ok()
+        .flatten()
+        .map(|c| dict_family_via_index(&c, &key))
+        .unwrap_or_else(|| dict_family_uncached(app, &key));
+    if let Ok(mut g) = family_cache().lock() {
+        g.insert(key, v.clone());
+    }
+    v
+}
+
 /// 查询 ECDICT 变形家族：本词原型 lemma + 所有指向该 lemma 的变形词（排除自身，上限 12）。
 ///
 /// LIKE 粗筛后在 Rust 侧精确解析 exchange 过滤，避免 `%0:at%` 误中 lemma=ate 之类前缀碰撞。
 /// 词典未安装或本词未收录时返回空。
-fn dict_family(app: &AppHandle, word: &str) -> Vec<String> {
+fn dict_family_uncached(app: &AppHandle, word: &str) -> Vec<String> {
     let Ok(Some(conn)) = open_dict_db(app) else {
         return Vec::new();
     };
@@ -438,10 +655,14 @@ pub fn family_groups(app: &AppHandle, db: &AppDb) -> Result<Vec<VocabFamilyGroup
     if words.len() < 2 {
         return Ok(Vec::new());
     }
-    let Ok(Some(dict)) = open_dict_db(app) else {
+    // 词典未安装时不聚族（缓存版 lemma 查询会回退为词本身，导致每个词自成一族）
+    let Ok(path) = crate::utils::dict_db_path(app) else {
         return Ok(Vec::new());
     };
-    Ok(group_by_lemma(words, |w| dict_lemma(&dict, w)))
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    Ok(group_by_lemma(words, |w| dict_lemma_cached(app, w)))
 }
 
 // ───────────────────────── 关联图谱 ─────────────────────────
@@ -602,6 +823,68 @@ mod tests {
         )
         .unwrap();
         conn
+    }
+
+    /// 内存侧车索引：构造 `word → lemma` 映射（仅收录含 `0:` 原型的变形词）
+    fn setup_lemma_index() -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE lemma_index (word TEXT NOT NULL, lemma TEXT NOT NULL);
+             INSERT INTO lemma_index VALUES
+                ('worked','work'),
+                ('working','work'),
+                ('works','work'),
+                ('watches','watch'),
+                ('watched','watch'),
+                ('better','good'),
+                ('went','go');",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn exchange_lemma_parses_zero_prefix() {
+        assert_eq!(
+            exchange_lemma("p:worked/d:worked/i:working/3:works/0:work/1:ABC"),
+            Some("work".to_string())
+        );
+        assert_eq!(exchange_lemma("p:worked/d:worked"), None);
+        // 原型本身小写归一化
+        assert_eq!(exchange_lemma("0:Work"), Some("work".to_string()));
+    }
+
+    #[test]
+    fn lemma_via_index_returns_stored_lemma() {
+        let conn = setup_lemma_index();
+        assert_eq!(dict_lemma_via_index(&conn, "worked"), Some("work".to_string()));
+        assert_eq!(dict_lemma_via_index(&conn, "went"), Some("go".to_string()));
+        // 不在索引中的词（无 0: 原型）返回 None
+        assert_eq!(dict_lemma_via_index(&conn, "xyzzy"), None);
+    }
+
+    #[test]
+    fn family_via_index_excludes_self_and_adds_lemma() {
+        let conn = setup_lemma_index();
+        let fam = dict_family_via_index(&conn, "worked");
+        // 同族：working / works / （补入的）work 自身原型
+        assert!(fam.contains(&"work".to_string()));
+        assert!(fam.contains(&"working".to_string()));
+        assert!(fam.contains(&"works".to_string()));
+        // 排除查询词自身
+        assert!(!fam.contains(&"worked".to_string()));
+        // 不同 lemma 的族不应混入
+        assert!(!fam.contains(&"watch".to_string()));
+    }
+
+    #[test]
+    fn family_via_index_for_lemma_word() {
+        let conn = setup_lemma_index();
+        // 查询原型本身（不在索引里）：lemma 回退为词自身，族应含其全部变形
+        let fam = dict_family_via_index(&conn, "watch");
+        assert!(fam.contains(&"watches".to_string()));
+        assert!(fam.contains(&"watched".to_string()));
+        assert!(!fam.contains(&"watch".to_string()));
     }
 
     #[test]

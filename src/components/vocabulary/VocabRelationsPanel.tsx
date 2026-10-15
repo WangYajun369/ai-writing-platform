@@ -7,14 +7,14 @@
  * 数据随 wordId/word 变化即时重取；收录动作后同步刷新生词本 store。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link2Icon, PlusIcon, XIcon, LoaderIcon, SparklesIcon, ListPlusIcon } from 'lucide-react'
-import { vocabApi } from '@/lib/tauri-bridge'
+import { Link2Icon, PlusIcon, XIcon, LoaderIcon, SparklesIcon, ListPlusIcon, ExternalLinkIcon } from 'lucide-react'
+import { dictApi, vocabApi } from '@/lib/tauri-bridge'
 import { toast } from '@/lib/toast'
 import { errText } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { useVocabStore } from '@/stores/vocabStore'
-import type { VocabRelationType, VocabRelationView, VocabRelatedCandidate } from '@/types'
-import { STATUS_TEXT } from './vocab-utils'
+import type { VocabMeaning, VocabRelationType, VocabRelationView, VocabRelatedCandidate } from '@/types'
+import { STATUS_TEXT, parseDictTranslation } from './vocab-utils'
 
 /** 分组展示顺序与中文名 */
 const GROUPS: { type: VocabRelationType; label: string }[] = [
@@ -34,10 +34,22 @@ interface Props {
   readonly?: boolean
   /** 复习场景：把「在库·学习中」的关联词拉入本轮复习队列（传入才显示按钮） */
   onPullIntoSession?: (vocabWordId: string, wordText: string) => void
+  /** 详情页场景：点击已收录关联词 → 原地打开其详情（不传则不可导航） */
+  onNavigateWord?: (vocabWordId: string) => void
+  /** 外部刷新触发：值变化时重新拉取关联（WordDetailDialog 协调子组件间状态同步用） */
+  refreshTrigger?: number
   className?: string
 }
 
-export default function VocabRelationsPanel({ wordId, word, readonly = false, onPullIntoSession, className }: Props) {
+export default function VocabRelationsPanel({
+  wordId,
+  word,
+  readonly = false,
+  onPullIntoSession,
+  onNavigateWord,
+  refreshTrigger,
+  className,
+}: Props) {
   const refreshAll = useVocabStore((s) => s.refreshAll)
   const [relations, setRelations] = useState<VocabRelationView[]>([])
   const [suggestions, setSuggestions] = useState<VocabRelatedCandidate[]>([])
@@ -68,7 +80,7 @@ export default function VocabRelationsPanel({ wordId, word, readonly = false, on
   useEffect(() => {
     setLoading(true)
     void reload()
-  }, [reload])
+  }, [reload, refreshTrigger])
 
   /** 按类型分组（仅保留非空组） */
   const grouped = useMemo(
@@ -80,13 +92,33 @@ export default function VocabRelationsPanel({ wordId, word, readonly = false, on
     [relations],
   )
 
-  /** 一键收录关联词进生词库（来源标记 related，明日进入首次复习） */
+  /** 一键收录关联词进生词库（来源标记 related，明日进入首次复习）。
+   *
+   * 先查本地离线词库带出音标与基础释义（与「收录新词」对话框的自动带出行为一致），
+   * 避免产出只有单词、没有任何信息的空壳词条；词库未安装 / 未命中时降级为仅收录单词。
+   */
   async function collectWord(w: string) {
     if (busy) return
     setBusy(true)
     try {
-      await vocabApi.add({ word: w, source: 'related' })
-      toast.success(`已收录「${w}」，明天进入首次复习`)
+      let phonetic: string | undefined
+      let meanings: VocabMeaning[] | undefined
+      try {
+        const res = await dictApi.lookup(w)
+        if (res.hit) {
+          if (res.hit.phonetic) phonetic = res.hit.phonetic
+          const parsed = parseDictTranslation(res.hit)
+          if (parsed.length) meanings = parsed
+        }
+      } catch {
+        /* 离线词库不可用时静默降级 */
+      }
+      await vocabApi.add({ word: w, phonetic, meanings, source: 'related' })
+      toast.success(
+        meanings?.length
+          ? `已收录「${w}」（已带出离线词典释义），明天进入首次复习`
+          : `已收录「${w}」，明天进入首次复习`,
+      )
       void refreshAll()
       await reload()
     } catch (err) {
@@ -172,7 +204,18 @@ export default function VocabRelationsPanel({ wordId, word, readonly = false, on
                   key={v.id}
                   className="inline-flex items-center gap-1 rounded-lg border border-white/8 bg-white/3 px-2 py-1 text-[12px] text-zinc-200"
                 >
-                  <span>{v.relatedWord}</span>
+                  {v.inVocab && v.vocabWordId && onNavigateWord ? (
+                    <button
+                      onClick={() => onNavigateWord(v.vocabWordId as string)}
+                      title={`打开「${v.relatedWord}」的详情`}
+                      className="flex items-center gap-0.5 font-medium text-sky-300 transition hover:text-sky-200 hover:underline"
+                    >
+                      {v.relatedWord}
+                      <ExternalLinkIcon className="h-2.5 w-2.5 opacity-50" />
+                    </button>
+                  ) : (
+                    <span>{v.relatedWord}</span>
+                  )}
                   {v.inVocab ? (
                     <span
                       className={cn(

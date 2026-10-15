@@ -13,7 +13,7 @@ pub fn default_ai_config() -> AiConfig {
         chat: super::model::AiChatConfig {
             provider: "deepseek".into(),
             endpoint: "https://api.deepseek.com".into(),
-            model: "deepseek-v4-flash".into(),
+            model: "deepseek-flash".into(),
             temperature: 0.7,
             max_tokens: 131072,
             bigmodel_api_key: None,
@@ -72,6 +72,7 @@ pub fn default_value(section: super::model::ConfigSection) -> Value {
         super::model::ConfigSection::Tts => json!(default_tts_config()),
         super::model::ConfigSection::Preferences => json!(default_preferences()),
         super::model::ConfigSection::AiToolCategories => json!(default_ai_tool_categories()),
+        super::model::ConfigSection::AiModels => json!({}),
     }
 }
 
@@ -156,6 +157,7 @@ mod tests {
             super::super::model::ConfigSection::Tts,
             super::super::model::ConfigSection::Preferences,
             super::super::model::ConfigSection::AiToolCategories,
+            super::super::model::ConfigSection::AiModels,
         ] {
             let v = default_value(s);
             assert!(

@@ -127,6 +127,21 @@ export function parseDictTranslation(hit: DictHit): VocabMeaning[] {
   return out
 }
 
+/**
+ * 从 ECDICT `exchange` 字段解析原型 lemma（`0:` 段，与 Rust `exchange_lemma` 同规则）。
+ *
+ * 形如 `p:worked/d:worked/i:working/3:works/0:work/1:ABC` → `work`；
+ * 无 `0:` 段（该词本身就是词头）返回 null。
+ */
+export function parseLemmaFromExchange(exchange: string): string | null {
+  for (const part of (exchange || '').split('/')) {
+    if (!part.startsWith('0:')) continue
+    const lemma = part.slice(2).trim().toLowerCase()
+    if (lemma) return lemma
+  }
+  return null
+}
+
 /** 词条一行中的释义摘要 */
 export function meaningsSummary(word: VocabWord, max = 2): string {
   const parts = word.meanings.map((m) => (m.pos ? `${m.pos} ${m.def}` : m.def)).filter(Boolean)

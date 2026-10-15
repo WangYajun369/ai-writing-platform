@@ -25,6 +25,9 @@ const TABLE_ROWS: { key: keyof BackupInspectReport['counts']; label: string; rec
   { key: 'volumes', label: '卷', reconcileKey: 'volumes' },
   { key: 'snapshots', label: '快照', reconcileKey: 'snapshots' },
   { key: 'worldCards', label: '世界卡', reconcileKey: 'worldCards' },
+  { key: 'vocabWords', label: '生词', reconcileKey: 'vocabWords' },
+  { key: 'vocabReviews', label: '复习记录', reconcileKey: 'vocabReviews' },
+  { key: 'vocabRelations', label: '单词关联', reconcileKey: 'vocabRelations' },
 ]
 
 function fmtBytes(n: number): string {
@@ -59,6 +62,9 @@ export default function ImportPreviewDialog({
     { label: '章节', r: rec.chapters },
     { label: '快照', r: rec.snapshots },
     { label: '世界卡', r: rec.worldCards },
+    { label: '生词', r: rec.vocabWords },
+    { label: '复习记录', r: rec.vocabReviews },
+    { label: '单词关联', r: rec.vocabRelations },
   ]
   const totalMatched = rc.reduce((s, x) => s + x.r.matched, 0)
   const totalMissing = rc.reduce((s, x) => s + x.r.missing, 0)

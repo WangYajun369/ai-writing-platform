@@ -1,14 +1,16 @@
 /**
- * AI 配置区块 —— 对话与 RAG 解耦
+ * AI 配置区块 —— 对话配置
  *
- * 纯组合容器：分别渲染 ChatConfigSection 与 RagConfigSection，并把子区块的
- * 局部变更合并回外层 AiConfig（不可变更新）。
+ * 组合容器：渲染 ChatConfigSection，并把子区块的局部变更合并回外层
+ * AiConfig（不可变更新）。
  * 数据来源：config 由 SettingsPage 传入 useAiStore 的 aiConfig；
- * onChange 冒泡回 setAiConfig 持久化。config.chat/rag 缺失时给出降级提示。
+ * onChange 冒泡回 setAiConfig 持久化。config.chat 缺失时给出降级提示。
+ *
+ * 注：语义检索（RAG/Embedding）区块已从设置页移除，仅保留后端命令与
+ * 配置项（未接入对话），待未来接入时再恢复入口。
  */
 import type { AiConfig } from '@/types'
 import { ChatConfigSection } from './ChatConfigSection'
-import { RagConfigSection } from './RagConfigSection'
 import { ConnectionStatus } from './shared'
 
 interface AiConfigSectionProps {
@@ -26,7 +28,7 @@ export function AiConfigSection({
   connectionDetail,
   onTestConnection,
 }: AiConfigSectionProps) {
-  if (!config.chat || !config.rag) {
+  if (!config.chat) {
     return <div className="p-4 text-sm text-muted-foreground">AI 配置数据异常，请在「版本」页重新初始化配置，或重启应用后重试。</div>
   }
 
@@ -38,13 +40,6 @@ export function AiConfigSection({
         connectionStatus={connectionStatus}
         connectionDetail={connectionDetail}
         onTestConnection={onTestConnection}
-      />
-
-      <hr className="border-border/40" />
-
-      <RagConfigSection
-        config={config.rag}
-        onChange={(partial) => onChange({ rag: { ...config.rag, ...partial } })}
       />
     </div>
   )

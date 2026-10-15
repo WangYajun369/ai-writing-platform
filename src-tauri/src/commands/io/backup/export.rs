@@ -11,7 +11,8 @@ use super::types::{
 use crate::commands::io::crypto::build_encrypted_file;
 use crate::error::{AppError, ErrCode};
 use crate::repository::{
-    book_repo, chapter_repo, embedding_repo, snapshot_repo, volume_repo, world_card_repo,
+    book_repo, chapter_repo, embedding_repo, snapshot_repo, vocab_relation_repo, vocab_repo,
+    volume_repo, world_card_repo,
 };
 use crate::service::uow::UnitOfWork;
 use chrono::Utc;
@@ -144,6 +145,34 @@ pub(crate) fn load_full_export_data(uow: &mut UnitOfWork) -> Result<DatabaseExpo
         })
         .collect();
 
+    // 英语生词本：跨作品的个人学习资产，仅随全量备份导出
+    uow.audit(
+        "SELECT",
+        "vocab_words",
+        "full export via repo".to_string(),
+        file!(),
+        line!(),
+    );
+    let vocab_words = vocab_repo::list_all_words(uow.conn())?;
+
+    uow.audit(
+        "SELECT",
+        "vocab_reviews",
+        "full export via repo".to_string(),
+        file!(),
+        line!(),
+    );
+    let vocab_reviews = vocab_repo::list_all_review_logs(uow.conn())?;
+
+    uow.audit(
+        "SELECT",
+        "vocab_word_relations",
+        "full export via repo".to_string(),
+        file!(),
+        line!(),
+    );
+    let vocab_relations = vocab_relation_repo::list_all_relations(uow.conn())?;
+
     Ok(DatabaseExport {
         books,
         volumes,
@@ -152,6 +181,9 @@ pub(crate) fn load_full_export_data(uow: &mut UnitOfWork) -> Result<DatabaseExpo
         world_cards,
         embeddings,
         app_config,
+        vocab_words,
+        vocab_reviews,
+        vocab_relations,
     })
 }
 
@@ -201,6 +233,10 @@ pub(crate) fn filter_single_book_data(data: &DatabaseExport, book_id: &str) -> D
             .collect(),
         // 单作品备份不携带全局配置（导入方也不会恢复），保持作用域纯净
         app_config: Vec::new(),
+        // 生词本是全局学习资产，不属于任何作品，单作品备份一律不携带
+        vocab_words: Vec::new(),
+        vocab_reviews: Vec::new(),
+        vocab_relations: Vec::new(),
     }
 }
 

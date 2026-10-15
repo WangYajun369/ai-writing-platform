@@ -5,13 +5,16 @@
  * 由后端统计后经 refreshAll 拉取；本页纯只读展示，不触发任何写操作。
  */
 import { useMemo } from 'react'
-import { BookMarkedIcon, GraduationCapIcon, ClockIcon, FlameIcon } from 'lucide-react'
+import { BookMarkedIcon, GraduationCapIcon, ClockIcon, FlameIcon, RepeatIcon } from 'lucide-react'
 import { useVocabStore } from '@/stores/vocabStore'
 import { cn } from '@/lib/utils'
 import { RATING_TEXT } from '../vocab-utils'
+import { vocabApi } from '@/lib/tauri-bridge'
+import { toast } from '@/lib/toast'
 
 export default function StatsTab() {
   const stats = useVocabStore((s) => s.stats)
+  const requestReview = useVocabStore((s) => s.requestReview)
 
   const history = useMemo(() => stats?.reviewHistory ?? [], [stats])
   const maxCount = useMemo(() => Math.max(1, ...history.map((h) => h.count)), [history])
@@ -45,6 +48,28 @@ export default function StatsTab() {
           </div>
         ))}
       </div>
+
+      {/* 复习已掌握词（批量回炉，对抗遗忘） */}
+      {stats.mastered > 0 && (
+        <button
+          onClick={async () => {
+            try {
+              const words = await vocabApi.masteredSample(20)
+              if (words.length === 0) {
+                toast.info('暂时没有可复习的已掌握词')
+                return
+              }
+              requestReview(words)
+            } catch {
+              toast.error('拉取已掌握词失败')
+            }
+          }}
+          className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/8 px-4 py-2.5 text-[13px] font-medium text-emerald-200 transition hover:bg-emerald-500/15"
+        >
+          <RepeatIcon className="h-4 w-4" />
+          复习已掌握词（随机抽取 {Math.min(20, stats.mastered)} 个）
+        </button>
+      )}
 
       {/* 掌握率 + 周新增 */}
       <div className="mt-2.5 grid grid-cols-2 gap-2.5">

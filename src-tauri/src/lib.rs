@@ -259,6 +259,8 @@ pub fn run() {
             commands::schedule::delete_schedule,
             // ══════ AI — 连接测试 ══════
             commands::ai::test::test_ai_connection,
+            // ══════ AI — 模型列表拉取 ══════
+            commands::ai::models::fetch_ai_models,
             // ══════ AI — RAG / Embedding ══════
             commands::ai::embedding::rag_search,
             commands::ai::embedding::trigger_embedding,
@@ -275,6 +277,8 @@ pub fn run() {
             commands::vocab::vocab_set_status,
             commands::vocab::vocab_delete,
             commands::vocab::vocab_list,
+            commands::vocab::vocab_list_page,
+            commands::vocab::vocab_mastered_sample,
             commands::vocab::vocab_due,
             commands::vocab::vocab_get,
             commands::vocab::vocab_get_by_word,
@@ -293,7 +297,9 @@ pub fn run() {
             commands::vocab_dict::dict_import,
             commands::vocab_dict::dict_lookup,
             commands::vocab_dict::dict_explain_ai,
+            commands::vocab_dict::dict_explain_stream,
             commands::vocab_dict::check_word_ai,
+            commands::vocab_dict::dict_ai_cancel,
             // ══════ TTS 朗读（豆包语音合成）══════
             commands::tts::tts_speak,
             // ══════ 导入导出 — 格式导出 ══════

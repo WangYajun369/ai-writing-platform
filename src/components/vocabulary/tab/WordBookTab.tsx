@@ -1,11 +1,13 @@
 /**
  * 生词本 Tab — 检索、筛选、收录、查看生词
  *
- * 数据来源：words / stats 来自 useVocabStore；新增、删除、暂停/恢复、
- * 标记掌握等写操作走 vocabApi（IPC）后 refreshAll 刷新。
+ * 数据来源：words / stats 来自 useVocabStore。words 为后端按「状态 + 搜索词」
+ * 过滤并分页的缓冲（虚拟滚动按需 loadMore）；新增、删除、暂停/恢复、标记掌握
+ * 等写操作后走 refreshAll 重新加载当前过滤下的第一页。
  * 弹层：AddWordDialog（收录/编辑）、WordDetailDialog（详情：SM-2 参数与复习历史）。
  */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import {
   PlusIcon,
   SearchIcon,
@@ -40,34 +42,56 @@ const FILTERS: { key: Filter; label: string }[] = [
 
 export default function WordBookTab() {
   const words = useVocabStore((s) => s.words)
+  const wordsTotal = useVocabStore((s) => s.wordsTotal)
+  const wordsHasMore = useVocabStore((s) => s.wordsHasMore)
   const stats = useVocabStore((s) => s.stats)
   const refreshAll = useVocabStore((s) => s.refreshAll)
+  const setFilter = useVocabStore((s) => s.setFilter)
+  const setQuery = useVocabStore((s) => s.setQuery)
+  const loadMoreWords = useVocabStore((s) => s.loadMoreWords)
 
-  const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<Filter>('all')
+  // 本地输入态（即时响应），经防抖后写入 store 触发服务端过滤 + 分页
+  const [query, setQueryLocal] = useState('')
+  const [filter, setFilterLocal] = useState<Filter>('all')
   const [addOpen, setAddOpen] = useState(false)
   const [editing, setEditing] = useState<VocabWord | null>(null)
   const [detail, setDetail] = useState<VocabWord | null>(null)
   const [graphOpen, setGraphOpen] = useState(false)
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return words.filter((w) => {
-      if (filter !== 'all' && w.status !== filter) return false
-      if (!q) return true
-      return (
-        w.word.toLowerCase().includes(q) ||
-        w.phonetic.toLowerCase().includes(q) ||
-        w.meanings.some((m) => m.def.toLowerCase().includes(q))
-      )
-    })
-  }, [words, query, filter])
+  useEffect(() => {
+    const t = setTimeout(() => setQuery(query), 250)
+    return () => clearTimeout(t)
+  }, [query, setQuery])
+
+  function changeFilter(f: Filter) {
+    setFilterLocal(f)
+    setFilter(f)
+  }
 
   async function handleDelete(target: VocabWord) {
     await vocabApi.delete(target.id)
     toast.success(`已删除「${target.word}」`)
     void refreshAll()
   }
+
+  // ── 虚拟滚动 ──
+  const parentRef = useRef<HTMLDivElement>(null)
+  const rowVirtualizer = useVirtualizer({
+    count: words.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 56,
+    overscan: 10,
+  })
+
+  const virtualItems = rowVirtualizer.getVirtualItems()
+  // 滚到接近末行时追加下一页（loadMoreWords 内部以 wordsTotal 兜底，重复触发安全）
+  useEffect(() => {
+    const last = virtualItems[virtualItems.length - 1]
+    if (!last) return
+    if (last.index >= words.length - 8 && wordsHasMore) {
+      void loadMoreWords()
+    }
+  }, [virtualItems, words.length, wordsHasMore, loadMoreWords])
 
   const counts: Record<Filter, number> = useMemo(
     () => ({
@@ -79,6 +103,9 @@ export default function WordBookTab() {
     [stats],
   )
 
+  const isEmpty = words.length === 0
+  const noMatch = isEmpty && (filter !== 'all' || query.trim() !== '' || wordsTotal === 0)
+
   return (
     <div className="flex h-full flex-col">
       {/* 工具栏 */}
@@ -87,7 +114,7 @@ export default function WordBookTab() {
           <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
           <input
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => setQueryLocal(e.target.value)}
             placeholder="搜索单词 / 音标 / 释义…"
             className="w-full rounded-lg border border-white/10 bg-white/5 py-1.5 pl-8 pr-3 text-[13px] text-zinc-100 placeholder-zinc-500 outline-none transition focus:border-sky-500/60 focus:bg-white/8"
           />
@@ -97,7 +124,7 @@ export default function WordBookTab() {
           {FILTERS.map((f) => (
             <button
               key={f.key}
-              onClick={() => setFilter(f.key)}
+              onClick={() => changeFilter(f.key)}
               className={cn(
                 'rounded-lg px-2.5 py-1.5 text-[12px] transition',
                 filter === f.key
@@ -134,17 +161,15 @@ export default function WordBookTab() {
         </button>
       </div>
 
-      {/* 列表 */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-3 vocab-scroll">
-        {filtered.length === 0 ? (
+      {/* 列表（虚拟滚动） */}
+      <div ref={parentRef} className="flex-1 min-h-0 overflow-y-auto px-3 pb-3 vocab-scroll">
+        {isEmpty ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-zinc-500">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/5 border border-white/10">
               <BookMarkedIcon className="h-6 w-6 text-zinc-400" />
             </div>
-            <div className="text-sm">
-              {words.length === 0 ? '还没有收录生词' : '没有符合条件的单词'}
-            </div>
-            {words.length === 0 && (
+            <div className="text-sm">{noMatch ? '没有符合条件的单词' : '还没有收录生词'}</div>
+            {!noMatch && (
               <button
                 onClick={() => setAddOpen(true)}
                 className="mt-1 flex items-center gap-1.5 rounded-lg border border-sky-500/40 px-3 py-1.5 text-[12.5px] text-sky-300 transition hover:bg-sky-500/10"
@@ -155,40 +180,59 @@ export default function WordBookTab() {
             )}
           </div>
         ) : (
-          <div className="space-y-1">
-            {filtered.map((w) => (
-              <WordRow
-                key={w.id}
-                word={w}
-                onOpen={() => setDetail(w)}
-                onEdit={() => {
-                  setEditing(w)
-                  setAddOpen(true)
-                }}
-                onTogglePause={async () => {
-                  const next = w.status === 'suspended' ? 'learning' : 'suspended'
-                  await vocabApi.setStatus(w.id, next)
-                  toast.success(next === 'suspended' ? `已暂停「${w.word}」` : `已恢复「${w.word}」`)
-                  void refreshAll()
-                }}
-                onMaster={async () => {
-                  const next = w.status === 'mastered' ? 'learning' : 'mastered'
-                  await vocabApi.setStatus(w.id, next)
-                  toast.success(next === 'mastered' ? `已将「${w.word}」标记为掌握` : `已将「${w.word}」恢复学习`)
-                  void refreshAll()
-                }}
-                onDelete={async () => {
-                  const ok = await confirmDialog(`确定删除「${w.word}」吗？其复习记录将一并清除。`, {
-                    title: '删除生词',
-                    kind: 'warning',
-                    okLabel: '删除',
-                    cancelLabel: '取消',
-                  })
-                  if (ok) await handleDelete(w)
-                }}
-              />
-            ))}
+          <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
+            {virtualItems.map((vi) => {
+              const w = words[vi.index]
+              return (
+                <div
+                  key={vi.key}
+                  data-index={vi.index}
+                  ref={rowVirtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${vi.start}px)`,
+                  }}
+                  className="py-0.5"
+                >
+                  <WordRow
+                    word={w}
+                    onOpen={() => setDetail(w)}
+                    onEdit={() => {
+                      setEditing(w)
+                      setAddOpen(true)
+                    }}
+                    onTogglePause={async () => {
+                      const next = w.status === 'suspended' ? 'learning' : 'suspended'
+                      await vocabApi.setStatus(w.id, next)
+                      toast.success(next === 'suspended' ? `已暂停「${w.word}」` : `已恢复「${w.word}」`)
+                      void refreshAll()
+                    }}
+                    onMaster={async () => {
+                      const next = w.status === 'mastered' ? 'learning' : 'mastered'
+                      await vocabApi.setStatus(w.id, next)
+                      toast.success(next === 'mastered' ? `已将「${w.word}」标记为掌握` : `已将「${w.word}」恢复学习`)
+                      void refreshAll()
+                    }}
+                    onDelete={async () => {
+                      const ok = await confirmDialog(`确定删除「${w.word}」吗？其复习记录将一并清除。`, {
+                        title: '删除生词',
+                        kind: 'warning',
+                        okLabel: '删除',
+                        cancelLabel: '取消',
+                      })
+                      if (ok) await handleDelete(w)
+                    }}
+                  />
+                </div>
+              )
+            })}
           </div>
+        )}
+        {wordsHasMore && !isEmpty && (
+          <div className="py-3 text-center text-[11px] text-zinc-600">下滑加载更多…</div>
         )}
       </div>
 
@@ -211,6 +255,12 @@ export default function WordBookTab() {
           setDetail(null)
           setEditing(w)
           setAddOpen(true)
+        }}
+        onNavigateWord={(id) => {
+          vocabApi
+            .get(id)
+            .then(setDetail)
+            .catch(() => toast.error('词条加载失败'))
         }}
       />
     </div>

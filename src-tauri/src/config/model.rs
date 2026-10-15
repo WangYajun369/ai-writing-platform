@@ -21,6 +21,8 @@ pub enum ConfigSection {
     Preferences,
     /// AI 工具箱分类(用户自定义提示词)
     AiToolCategories,
+    /// 拉取的 AI 模型列表(DeepSeek /models 返回,持久化供下拉复用)
+    AiModels,
 }
 
 impl ConfigSection {
@@ -31,6 +33,7 @@ impl ConfigSection {
             Self::Tts => "tts",
             Self::Preferences => "preferences",
             Self::AiToolCategories => "ai_tool_categories",
+            Self::AiModels => "ai_models",
         }
     }
 
@@ -41,7 +44,7 @@ impl ConfigSection {
     /// 不做全字段严格反序列化 —— 避免老前端写入新结构时被误拒导致配置静默丢失。
     pub fn validate_value(self, value: &serde_json::Value) -> Result<(), String> {
         match self {
-            Self::Ai | Self::Tts | Self::Preferences => {
+            Self::Ai | Self::Tts | Self::Preferences | Self::AiModels => {
                 if !value.is_object() {
                     return Err(format!("应为 JSON 对象，实际为 {}", json_kind(value)));
                 }
@@ -116,6 +119,7 @@ impl std::str::FromStr for ConfigSection {
             "tts" => Ok(Self::Tts),
             "preferences" => Ok(Self::Preferences),
             "ai_tool_categories" => Ok(Self::AiToolCategories),
+            "ai_models" => Ok(Self::AiModels),
             _ => Err(()),
         }
     }
@@ -253,6 +257,10 @@ mod tests {
             serde_json::to_string(&ConfigSection::AiToolCategories).unwrap(),
             "\"ai_tool_categories\""
         );
+        assert_eq!(
+            serde_json::to_string(&ConfigSection::AiModels).unwrap(),
+            "\"ai_models\""
+        );
     }
 
     #[test]
@@ -262,6 +270,7 @@ mod tests {
             ConfigSection::Tts,
             ConfigSection::Preferences,
             ConfigSection::AiToolCategories,
+            ConfigSection::AiModels,
         ] {
             let str = s.as_str();
             let back: ConfigSection = str.parse().unwrap();

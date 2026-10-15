@@ -64,12 +64,16 @@ pub struct CreateWordArgs<'a> {
 }
 
 /// 新增生词（初始 learning，按传入的首次复习日期排期）
+///
+/// 用 `ON CONFLICT(word) DO NOTHING` 而非裸 INSERT：多窗口并发收录同一单词时，
+/// 后到的请求不再撞 UNIQUE(word) 报错，而是静默让先到者胜出（调用方按 word 回读）。
 pub fn create_word(conn: &Connection, args: CreateWordArgs<'_>) -> Result<()> {
     conn.execute(
         "INSERT INTO vocab_words (id, word, phonetic, meanings, example, example_zh, repetition, \
             interval_days, ease_factor, status, next_review_at, last_review_at, review_count, correct_count, \
             source, ai_details, created_at, updated_at) \
-         VALUES (?1,?2,?3,?4,?5,?6,0,0,2.5,'learning',?7,NULL,0,0,?8,?9,?10,?10)",
+         VALUES (?1,?2,?3,?4,?5,?6,0,0,2.5,'learning',?7,NULL,0,0,?8,?9,?10,?10) \
+         ON CONFLICT(word) DO NOTHING",
         params![
             args.id,
             args.word,
@@ -146,6 +150,8 @@ pub struct UpdateReviewStateArgs<'a> {
     pub next_review_at: Option<&'a str>,
     pub last_review_at: &'a str,
     pub correct: bool,
+    /// 本次写入的 updated_at（与 last_review_at 分离，避免复用导致语义混淆）
+    pub updated_at: &'a str,
 }
 
 /// 复习后推进记忆状态（SM-2 参数 + 统计）
@@ -165,14 +171,21 @@ pub fn update_review_state(conn: &Connection, args: UpdateReviewStateArgs<'_>) -
             args.next_review_at,
             args.last_review_at,
             args.correct as i64,
-            args.last_review_at,
+            args.updated_at,
         ],
     )?;
     Ok(())
 }
 
 /// 删除生词（复习记录由外键级联删除）
-pub fn delete_word(conn: &Connection, id: &str) -> Result<()> {
+///
+/// 同时清理**他人关系中指向本词文本**的孤儿行（`related_word` 以文本存储，
+/// 不受 `word_id` 外键级联保护），避免删除后残留永远显示为「未收录」的虚假关联。
+pub fn delete_word(conn: &Connection, id: &str, word: &str) -> Result<()> {
+    conn.execute(
+        "DELETE FROM vocab_word_relations WHERE related_word = ?1 COLLATE NOCASE",
+        params![word],
+    )?;
     conn.execute("DELETE FROM vocab_words WHERE id = ?1", params![id])?;
     Ok(())
 }
@@ -209,6 +222,136 @@ pub fn list_words(
     let mut stmt = conn.prepare(&sql)?;
     let arg_refs: Vec<&dyn rusqlite::types::ToSql> = args.iter().map(|b| b.as_ref()).collect();
     let items = stmt.query_map(arg_refs.as_slice(), row_to_word)?;
+    items.collect()
+}
+
+/// 统计匹配（状态过滤 + 模糊搜索）的生词总数（分页场景的总量）
+pub fn count_words(
+    conn: &Connection,
+    status: Option<&str>,
+    query: Option<&str>,
+) -> Result<i64> {
+    let mut conditions: Vec<String> = Vec::new();
+    let mut args: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    if let Some(st) = status {
+        if !st.is_empty() && st != "all" {
+            conditions.push(format!("status = ?{}", args.len() + 1));
+            args.push(Box::new(st.to_string()));
+        }
+    }
+    if let Some(q) = query {
+        let q = q.trim();
+        if !q.is_empty() {
+            // 与前端旧版一致：单词 / 音标 / 释义三字段子串匹配（同一参数占位符复用）
+            let ph = format!("?{}", args.len() + 1);
+            conditions.push(format!(
+                "(word LIKE {ph} COLLATE NOCASE OR phonetic LIKE {ph} COLLATE NOCASE OR meanings LIKE {ph} COLLATE NOCASE)"
+            ));
+            args.push(Box::new(format!("%{}%", q)));
+        }
+    }
+    let where_clause = if conditions.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", conditions.join(" AND "))
+    };
+    let sql = format!("SELECT COUNT(*) FROM vocab_words{}", where_clause);
+    let mut stmt = conn.prepare(&sql)?;
+    let arg_refs: Vec<&dyn rusqlite::types::ToSql> = args.iter().map(|b| b.as_ref()).collect();
+    stmt.query_row(arg_refs.as_slice(), |r| r.get(0)).map_err(Into::into)
+}
+
+/// 分页列出生词（虚拟滚动）：状态过滤 + 模糊搜索，返回 (本页条目, 匹配总数)。
+///
+/// `page` 为 0 基页码，`page_size` 每页条数；二者非法时按 page=0 / size=1 兜底。
+pub fn list_words_page(
+    conn: &Connection,
+    status: Option<&str>,
+    query: Option<&str>,
+    page: i64,
+    page_size: i64,
+) -> Result<(Vec<VocabWord>, i64)> {
+    let total = count_words(conn, status, query)?;
+    let mut conditions: Vec<String> = Vec::new();
+    let mut args: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    if let Some(st) = status {
+        if !st.is_empty() && st != "all" {
+            conditions.push(format!("status = ?{}", args.len() + 1));
+            args.push(Box::new(st.to_string()));
+        }
+    }
+    if let Some(q) = query {
+        let q = q.trim();
+        if !q.is_empty() {
+            let ph = format!("?{}", args.len() + 1);
+            conditions.push(format!(
+                "(word LIKE {ph} COLLATE NOCASE OR phonetic LIKE {ph} COLLATE NOCASE OR meanings LIKE {ph} COLLATE NOCASE)"
+            ));
+            args.push(Box::new(format!("%{}%", q)));
+        }
+    }
+    let where_clause = if conditions.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", conditions.join(" AND "))
+    };
+    let offset = page.max(0) * page_size.max(1);
+    let sql = format!(
+        "SELECT {} FROM vocab_words{} ORDER BY created_at DESC LIMIT ?{} OFFSET ?{}",
+        WORD_COLS,
+        where_clause,
+        args.len() + 1,
+        args.len() + 2
+    );
+    args.push(Box::new(page_size.max(1)));
+    args.push(Box::new(offset));
+    let arg_refs: Vec<&dyn rusqlite::types::ToSql> = args.iter().map(|b| b.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql)?;
+    let items = stmt.query_map(arg_refs.as_slice(), row_to_word)?;
+    let items = items.collect::<Result<Vec<VocabWord>, _>>()?;
+    Ok((items, total))
+}
+
+/// 全量生词（备份导出用：不限状态、不分页）
+pub fn list_all_words(conn: &Connection) -> Result<Vec<VocabWord>> {
+    let sql = format!("SELECT {} FROM vocab_words ORDER BY created_at ASC", WORD_COLS);
+    let mut stmt = conn.prepare(&sql)?;
+    let items = stmt.query_map([], row_to_word)?;
+    items.collect()
+}
+
+/// 随机抽取 N 个已掌握词（回炉复习用）：`ORDER BY RANDOM()` 让每次回炉的批次不同，
+/// 避免总是复习同一批已掌握词。limit 非法时按 1 兜底。
+pub fn list_mastered_sample(conn: &Connection, limit: i64) -> Result<Vec<VocabWord>> {
+    let sql = format!(
+        "SELECT {} FROM vocab_words WHERE status = 'mastered' ORDER BY RANDOM() LIMIT ?1",
+        WORD_COLS
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let items = stmt.query_map(rusqlite::params![limit.max(1)], row_to_word)?;
+    items.collect()
+}
+
+/// 全量复习记录（备份导出用）
+pub fn list_all_review_logs(
+    conn: &Connection,
+) -> Result<Vec<crate::models::VocabReviewLog>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT id, word_id, review_date, rating, repetition, interval_days, ease_factor, reviewed_at \
+         FROM vocab_reviews ORDER BY reviewed_at ASC",
+    )?;
+    let items = stmt.query_map([], |row| {
+        Ok(crate::models::VocabReviewLog {
+            id: row.get(0)?,
+            word_id: row.get(1)?,
+            review_date: row.get(2)?,
+            rating: row.get(3)?,
+            repetition: row.get(4)?,
+            interval_days: row.get(5)?,
+            ease_factor: row.get(6)?,
+            reviewed_at: row.get(7)?,
+        })
+    })?;
     items.collect()
 }
 
@@ -328,3 +471,4 @@ pub fn review_history(conn: &Connection, start_date: &str) -> Result<Vec<StatsDa
     })?;
     items.collect()
 }
+

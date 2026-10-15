@@ -4,9 +4,9 @@
 
 面向网络小说作者和文学创作者，提供从书库管理、章节编辑到 AI 辅助创作的完整写作工作流。
 
-**当前版本：`1.22.0`**　|　🌐 **项目介绍**：[https://wangyajun369.github.io/ai-writing-platform/](https://wangyajun369.github.io/ai-writing-platform/)　|　📦 **下载**：[GitHub Releases](https://github.com/WangYajun369/ai-writing-platform/releases)
+**当前版本：`1.23.0`**　|　🌐 **项目介绍**：[https://wangyajun369.github.io/ai-writing-platform/](https://wangyajun369.github.io/ai-writing-platform/)　|　📦 **下载**：[GitHub Releases](https://github.com/WangYajun369/ai-writing-platform/releases)
 
-> **v1.22.0 亮点**：英语生词本新增**单词关联网络**——收录单词时自动从 AI 释义与 ECDICT 词典建立近义 / 反义 / 派生 / 变形关联，词条详情可手动增删关联、顺带复习把关联词一键拉入本轮 SM-2 队列、按 lemma 词族批量复习，并提供 d3-force 力导向**关联图谱**（节点按掌握状态着色、边按类型着色，支持缩放平移与双击开词条）。详见 [更新日志](./docs/CHANGELOG.md)。
+> **v1.23.0 亮点**：AI 词典释义改为**流式上屏**——音标 / 释义 / 例句 / 变形 / 近反义逐行即时填表，不再等整段 JSON 返回，随时可中途取消止损；**关联网络全面可交互**——关联词一键跳详情、知识视图标签一键建关联、图谱内直接收录生词与手动加关联（含缩放工具栏与键盘快捷键）；设置页支持**一键拉取并持久化全部可用模型**，下拉不再受限于内置清单。详见 [更新日志](./docs/CHANGELOG.md)。
 
 ## 技术栈
 
@@ -90,16 +90,16 @@
 
 ### AI 助手
 - 多服务商支持：智谱 BigModel / DeepSeek + 自定义 OpenAI 兼容端点
-- 推理模型 Thinking 展示，对话/RAG 配置完全解耦，API Key 按服务商独立管理
+- 推理模型 Thinking 展示，API Key 按服务商独立管理
 - SSE 流式对话，自动重试与网络容错（2 次指数退避 + 60s 断流保底 + 保留已生成内容）
-- RAG 语义检索：sqlite-vec KNN 向量检索 + FTS5 双轨降级（v1.6.0），Embedding 索引管理（连接独立测试 + stale 过期提示）
+- RAG 语义检索：后端能力保留（sqlite-vec KNN + FTS5/LIKE 双轨降级），**当前未接入对话**（设置页入口已移除）
 - AI 工具箱：29 个预设快捷提示词，5 大分类（续写/润色/扩写/剧情推演/角色分析/章末总结 等）
 - 滑动窗口上下文管理（自动截断保护），对话总结压缩
 - 章节总结缓存、Token 用量统计、连接状态指示器
 - 请求详情面板：查看完整 AI 请求/响应内容
 - AI 对话一键导出 Markdown / JSON（v1.6.0）
 - 离线草稿保护：对话 800ms 防抖持久化 + 窗口关闭兜底 flush（v1.6.0）
-- 默认对话模型：`glm-5.1`，Embedding：`embedding-3`
+- 默认对话模型：`glm-5.1`（RAG 默认 Embedding 模型 `embedding-3`，仅后端配置保留）
 
 ### Agent 智能助手（Rust 原生引擎）
 Agent 引擎已完全内置于 Rust 后端（无 Python / 外部进程依赖），基于 OpenAI function calling 协议实现流式 ReAct 工具循环，调用云端模型 + 数据库工具链完成多步写作任务：
@@ -201,7 +201,7 @@ Agent 引擎已完全内置于 Rust 后端（无 Python / 外部进程依赖）�
 |------|------|
 | 应用名称 | TimeWrite |
 | 应用标识 | `com.ukcoder.timewrite` |
-| 版本 | 1.22.0 |
+| 版本 | 1.23.0 |
 | 窗口默认尺寸 | 1280 × 800 |
 | 窗口最小尺寸 | 960 × 600 |
 | 深度链接协议 | `com.ukcoder.timewrite://` |

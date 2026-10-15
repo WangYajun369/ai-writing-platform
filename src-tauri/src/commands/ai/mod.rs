@@ -4,6 +4,7 @@
 
 pub mod chat;
 pub mod embedding;
+pub mod models;
 pub mod summarize;
 pub mod test;
 
@@ -57,6 +58,35 @@ pub struct EmbeddingProgress {
 pub struct ConnectionTestResult {
     pub ok: bool,
     pub detail: String,
+}
+
+/// AI 服务商返回的单条模型元数据（GET /models）
+///
+/// 字段与 DeepSeek list-models 文档对齐；可选字段在无对应元数据时序列化为 `null` 并跳过，
+/// 避免前端拿到无意义的默认值。前端类型见 `src/types/index.ts` 的 `ModelInfo`。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelInfo {
+    /// 模型标识（用于 API 请求的 model 字段）
+    pub id: String,
+    /// 展示名（可能缺失）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// 所属组织（deepseek 等）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owned_by: Option<String>,
+    /// 上下文窗口（tokens）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u64>,
+    /// 最大输出 tokens
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<u64>,
+    /// 输入模态（text / image 等）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_modalities: Option<Vec<String>>,
+    /// 输出模态（text 等）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_modalities: Option<Vec<String>>,
 }
 
 /// 单条消息

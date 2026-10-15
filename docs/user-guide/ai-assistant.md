@@ -7,34 +7,35 @@ TimeWrite 内置 AI 写作助手，支持流式对话、RAG 上下文检索和 A
 | 服务商 | 默认端点 | 可选模型 | 说明 |
 |--------|---------|---------|------|
 | 智谱 BigModel | `https://open.bigmodel.cn/api/paas/v4` | `glm-5.1` | 默认服务商，国产大模型 |
-| DeepSeek | `https://api.deepseek.com` | `deepseek-v4-flash`、`deepseek-v4-pro` | 支持推理思考模式（Thinking） |
+| DeepSeek | `https://api.deepseek.com` | `deepseek-flash`、`deepseek-v4-pro` | 支持推理思考模式（Thinking） |
 | OpenAI | `https://api.openai.com/v1` | `gpt-4o` 等 | 需要 API Key |
 | Ollama | `http://127.0.0.1:11434` | `qwen2.5:7b` 等 | 本地部署，无需 API Key |
 | 自定义 OpenAI 兼容 | 任意 | 任意 | 支持任何 OpenAI 兼容 API |
 
-> 上表默认值的单一真源在后端 `src-tauri/src/config/defaults.rs`（前端 `constants.ts` 仅维护可选模型列表）。**当前设置页对话服务商固定为 DeepSeek、RAG 固定为智谱 BigModel**，上表其余服务商为后端 OpenAI 兼容协议预留能力，选择控件暂未开放。
+> 上表默认值的单一真源在后端 `src-tauri/src/config/defaults.rs`（前端 `constants.ts` 仅维护可选模型列表）。**当前设置页对话服务商固定为 DeepSeek**，上表其余服务商为后端 OpenAI 兼容协议预留能力，选择控件暂未开放。
 
 ## 配置 AI 服务
 
-在**设置 → AI 配置**页面完成配置。v0.4.0 起 AI 配置拆分为两大独立模块：
+在**设置 → AI 配置**页面完成配置。v0.4.0 起 AI 配置按模块拆分（对话配置；RAG 配置项仍在后端保留，但设置页入口已移除）：
 
 ### 对话配置（Chat Config）
 1. **服务商**：当前固定为 DeepSeek（后续将扩展更多服务商）
 2. **API 地址**：API 端点 URL（当前只读展示，随服务商确定）
-3. **对话模型**：模型名称（如 `deepseek-v4-flash`、`deepseek-v4-pro`）
+3. **对话模型**：模型名称（如 `deepseek-flash`、`deepseek-v4-pro`）。点击「获取全部模型」可从服务商实时拉取最新列表并持久化，之后下拉即为服务端真实可选模型；未拉取时显示内置可选项。
 4. **API Key**：各服务商独立管理（加密落库，密码形式展示）
 5. **思考模式**：DeepSeek 推理模型可开启 Thinking，展示推理过程
 6. **高级参数**：Temperature（0-1.0）、最大输出 Token（默认 131072）
 
-### RAG / Embedding 配置（独立模块）
-1. **Embedding 模型**：向量化模型名称（如 `embedding-3`）
-2. **API Key**：独立于对话的 API Key（当前仅支持智谱 BigModel）
-3. **生成索引**：一键触发对当前作品所有章节和世界观卡片的 Embedding 向量生成
-4. **索引状态**：查看已索引/总计章节和世界观卡片数量
-5. **连通性测试**：独立测试 RAG 服务的连接状态
+### 语义检索（RAG）—— 设置页入口已移除
+
+后端仍保留 RAG 相关命令与配置项（`rag_search` / `trigger_embedding` / `check_embedding_status` / `test_rag_connection`，默认 Embedding 模型 `embedding-3`），但**未接入对话**，因此设置页不再提供「语义检索」区块：
+
+1. 向量索引不会自动生成，`embeddings` 表通常为空
+2. AI 对话的上下文始终由 Agent 引擎内置工具（章节读取 / 世界观卡搜索）提供
+3. 如未来接入语义检索，可恢复设置页入口或并入 Agent 工具
 
 ### API Key
-各服务商对话和 RAG 独立管理 API Key，以密码形式安全存储。
+对话 API Key 按服务商独立管理，以密码形式加密落库。
 
 ### 连接测试
 配置完成后点击「测试连接」按钮：
@@ -73,7 +74,7 @@ AI 对话会自动检索当前作品的相关内容作为上下文：
 2. 检索结果作为工具结果注入推理过程
 3. AI 回复时参考你的实际写作内容
 
-> 检索基于 SQLite FTS5 全文搜索与 Agent 工具自主决策；v1.0 的向量索引（RAG）已降级为预留能力，不参与对话。
+> 检索基于 SQLite FTS5 全文搜索与 Agent 工具自主决策；向量索引（RAG）未接入对话，设置页入口已移除。
 
 ### 对话管理
 - 对话按作品独立存储，切换作品时自动加载对应对话历史

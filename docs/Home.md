@@ -2,13 +2,13 @@
 
 > 跨平台桌面端小说写作软件 —— Tauri v2 + React 19 + TipTap + Rust 原生 AI Agent
 
-> **适用版本**：`1.22.0`　|　**最后核对**：2026-10-15
+> **适用版本**：`1.23.0`　|　**最后核对**：2026-10-15
 
 欢迎来到 TimeWrite 的官方文档！TimeWrite 是一款面向网络小说作者和文学创作者的桌面写作工具，提供从书库管理、章节编辑到 AI 辅助创作的完整写作工作流。
 
-> 🚀 [**查看项目介绍**](https://wangyajun369.github.io/ai-writing-platform/)　·　📦 [**下载最新版 v1.22.0**](https://github.com/WangYajun369/ai-writing-platform/releases)
+> 🚀 [**查看项目介绍**](https://wangyajun369.github.io/ai-writing-platform/)　·　📦 [**下载最新版 v1.23.0**](https://github.com/WangYajun369/ai-writing-platform/releases)
 
-> 🆕 **v1.22.0 — 单词关联网络**：英语生词本收录时自动从 AI 释义与 ECDICT 词典建立近义 / 反义 / 派生 / 变形关联，词条详情可手动增删、顺带复习一键拉入本轮 SM-2 队列、按 lemma 词族批量复习，并提供 d3-force 力导向关联图谱；新增 `vocab_word_relations` 表，207 IPC 命令 / 11 项词图单测。详见 [更新日志](CHANGELOG)。
+> 🆕 **v1.23.0 — AI 释义流式上屏 + 关联网络可交互**：AI 词典释义逐行即时填表并可中途取消止损；关联词一键跳详情、知识视图标签一键建关联、图谱内直接收录生词与手动加关联；设置页支持一键拉取并持久化全部可用模型。详见 [更新日志](CHANGELOG)。
 
 ---
 
@@ -64,7 +64,7 @@ WebView 前端  ──Tauri IPC──►  Rust Core（SQLite 独占 + 内置 Age
 |------|-----|
 | 应用名称 | TimeWrite（智写时光） |
 | 应用标识 | `com.ukcoder.timewrite` |
-| 当前版本 | 1.22.0 |
+| 当前版本 | 1.23.0 |
 | 许可证 | MIT |
 | 仓库地址 | [github.com/WangYajun369/ai-writing-platform](https://github.com/WangYajun369/ai-writing-platform) |
 

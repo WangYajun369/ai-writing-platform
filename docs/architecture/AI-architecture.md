@@ -1,6 +1,6 @@
 # AI 模块架构
 
-> **适用版本**：`1.22.0`　|　**最后核对**：2026-10-15
+> **适用版本**：`1.23.0`　|　**最后核对**：2026-10-15
 >
 > 涵盖 AI 流式对话（工具箱）、AI 侧面板对话（经 Agent 引擎）、RAG 向量检索（预留）、内容总结、连接测试。
 > Agent 自动化引擎（Rust 原生）另见 [Agent 引擎架构](architecture/agent-architecture)。
@@ -61,7 +61,7 @@
 1. 流式请求**完全在 Rust 端**通过 `reqwest` 处理，前端只通过 Tauri 事件接收增量文本，规避浏览器 CORS / 流式解析问题
 2. 支持 Ollama 原生协议（NDJSON）与 OpenAI 兼容协议（SSE）两条路径（工具箱/总结直连场景）
 3. **v1.2 起 AI 侧面板对话统一由 Agent 引擎驱动**：`useAiChat.handleSend()` → `execute_agent_skill`（默认 `writing` 技能），Prompt 构建与上下文检索由引擎内部完成；工具箱保留 `stream_ai_chat` 直连
-4. **RAG/Embedding 为预留能力**：后端 `rag_search` / `trigger_embedding` / `check_embedding_status` 命令已实现并注册，但设置页标记「预留」，当前对话上下文由 Agent 引擎内置工具（章节读取/搜索）提供，`triggerEmbedding` 无前端 UI 接线
+4. **RAG/Embedding 为预留能力（设置页入口已移除）**：后端 `rag_search` / `trigger_embedding` / `check_embedding_status` 命令与配置项保留，但前端已无任何 UI 接线（设置页「语义检索」区块移除，`useAiChat` 的 `ragContext` 恒为 `undefined`），当前对话上下文由 Agent 引擎内置工具（章节读取/搜索）提供
 5. 对话配置（AiChatConfig）与 RAG/Embedding 配置（RagConfig）完全解耦，各自独立管理 API Key、端点、模型
 6. 各服务商 API Key 独立存储（`bigmodelApiKey` / `deepseekApiKey`）
 7. AI 配置经 localStorage 持久化，自动兼容旧版扁平格式迁移
@@ -79,7 +79,7 @@
 | 服务商 | 标识 | 默认端点 | 默认模型 | 可选模型 |
 |--------|------|---------|---------|---------|
 | 智谱 BigModel | `bigmodel` | `https://open.bigmodel.cn/api/paas/v4` | `glm-5.1` | `glm-5.1` |
-| DeepSeek | `deepseek` | `https://api.deepseek.com` | `deepseek-v4-flash` | `deepseek-v4-flash`、`deepseek-v4-pro` |
+| DeepSeek | `deepseek` | `https://api.deepseek.com` | `deepseek-flash` | `deepseek-flash`、`deepseek-v4-pro` |
 | Ollama | `ollama` | `http://127.0.0.1:11434` | `qwen2.5:7b` | 任意本地模型 |
 | 自定义 | `custom` | 用户填写 | 用户填写 | — |
 
@@ -106,10 +106,12 @@ RAG 仅支持**智谱 BigModel**（DeepSeek 不提供 Embeddings API）：
 
 | 段 | 默认值 |
 |----|--------|
-| 对话（`chat`） | `provider = deepseek`、`endpoint = https://api.deepseek.com`、`model = deepseek-v4-flash` |
+| 对话（`chat`） | `provider = deepseek`、`endpoint = https://api.deepseek.com`、`model = deepseek-flash` |
 | RAG（`rag`） | `provider = bigmodel`、`endpoint = https://open.bigmodel.cn/api/paas/v4`、`embeddingModel = embedding-3` |
 
-前端 `src/components/settings/constants.ts` 仅保留可选模型列表（`DEEPSEEK_MODELS` / `RAG_BIGMODEL_MODELS`）与 `GITHUB_REPO` re-export，**不再硬编码端点 / 模型默认值**，避免前后端双写漂移。
+前端 `src/components/settings/constants.ts` 仅保留可选模型列表（`DEEPSEEK_MODELS`）与 `GITHUB_REPO` re-export，**不再硬编码端点 / 模型默认值**，避免前后端双写漂移。
+
+对话模型下拉的候选项优先取自 `ai_models` 配置段（设置页「获取全部模型」调用 `fetch_ai_models` 拉取 `GET /models` 后写入，结构为 `{ provider, endpoint, fetchedAt, models }`）；尚未拉取时 fallback 到 `DEEPSEEK_MODELS`。旧名 `deepseek-v4-flash` 仍可被路由到 Flash，但属弃用别名，故默认值与内置列表均改用 `deepseek-flash`。
 
 ---
 
@@ -121,6 +123,7 @@ RAG 仅支持**智谱 BigModel**（DeepSeek 不提供 Embeddings API）：
 | `ai/embedding.rs` | `rag_search`、`trigger_embedding`、`check_embedding_status`、`test_rag_connection` | 向量检索、批量索引、状态检查 |
 | `ai/summarize.rs` | `summarize_chapter`、`summarize_conversation` | 章节总结（非流式）、对话压缩（滑动窗口） |
 | `ai/test.rs` | `test_ai_connection`、`test_rag_connection` | 连通性测试 |
+| `ai/models.rs` | `fetch_ai_models` | 拉取服务商全部可用模型（GET {endpoint}/models），供设置页「获取全部模型」 |
 
 ### 核心数据结构
 
@@ -378,6 +381,8 @@ CREATE TABLE IF NOT EXISTS embeddings (
 
 错误区分：401 → "认证失败"；其他 → 原始错误详情。
 
+设置页「获取全部模型」走同端点的 `fetch_ai_models`，返回**完整**模型元数据（`id` / `name` / `context_window` / `max_output_tokens` / 输入·输出模态），不受 `test_ai_connection` 只取前 10 条 `id` 的限制；结果持久化到 `ai_models` 配置段供下次启动复用。
+
 ---
 
 ## 8. 前端组件
@@ -528,7 +533,7 @@ interface AiMessage {
 | 系统默认工具 | 预设 29 个工具不可删除/重置 | 增加「恢复默认」功能 |
 | 请求参数可配置性 | Temperature 等为全局设置 | 每个工具可独立覆盖参数 |
 | `useAiChat` 体积 | 425 行（v1.2 移除 Embedding 逻辑），仍职责较多 | 拆分为 `useChapterValidation` / `useChapterSummary` / `useStreamChat` / `useConversationCompression` |
-| RAG 接线 | 后端命令已实现、前端标记预留 | 明确 RAG 定位（接入设置页或并入 Agent 工具），或移除冗余命令 |
+| RAG 接线 | ✅ 已收敛（设置页入口移除，仅保留后端命令与配置） | 后续若接入，可并入 Agent 工具或恢复设置页入口 |
 
 ### 12.3 安全注意
 

@@ -5,7 +5,7 @@
 
 use super::types::{backup_is_newer, ChapterExport, DatabaseExport};
 use crate::error::AppError;
-use crate::models::{Book, Snapshot, Volume, WorldCard};
+use crate::models::{Book, Snapshot, VocabRelation, VocabReviewLog, VocabWord, Volume, WorldCard};
 use rusqlite::params;
 use serde::Serialize;
 
@@ -33,6 +33,12 @@ pub(crate) struct ReconcileReport {
     pub(crate) snapshots: RowReconcile,
     #[serde(rename = "worldCards")]
     pub(crate) world_cards: RowReconcile,
+    #[serde(rename = "vocabWords")]
+    pub(crate) vocab_words: RowReconcile,
+    #[serde(rename = "vocabReviews")]
+    pub(crate) vocab_reviews: RowReconcile,
+    #[serde(rename = "vocabRelations")]
+    pub(crate) vocab_relations: RowReconcile,
 }
 
 /// 归一化可选字符串：None 与 Some("") 等价（跨库存储差异容忍）
@@ -291,6 +297,165 @@ pub(crate) fn reconcile_world_cards(
     Ok(out)
 }
 
+// ── 英语生词本对账 ──
+
+/// 生词行指纹（与 DB 列序一致：word → source，含学习状态字段）
+fn vocab_word_fp(w: &VocabWord) -> String {
+    let meanings = serde_json::to_string(&w.meanings).unwrap_or_default();
+    [
+        w.word.clone(),
+        w.phonetic.clone(),
+        meanings,
+        w.example.clone(),
+        w.example_zh.clone(),
+        w.status.clone(),
+        w.next_review_at.clone().unwrap_or_default(),
+        w.repetition.to_string(),
+        w.interval_days.to_string(),
+        format!("{:.4}", w.ease_factor),
+        w.source.clone(),
+    ]
+    .join("\u{1}")
+}
+
+/// 生词对账：按 id 查，未命中再按单词文本查（跨设备同词不同 id 的归并场景）
+pub(crate) fn reconcile_vocab_words(
+    conn: &rusqlite::Connection,
+    rows: &[VocabWord],
+) -> Result<RowReconcile, AppError> {
+    const COLS: &str = "updated_at, word, phonetic, meanings, example, example_zh, status, \
+        next_review_at, repetition, interval_days, ease_factor, source";
+    // 行读取器（列序与 COLS 一致：0 → updated_at，11 → source）
+    let read_row = |r: &rusqlite::Row| -> rusqlite::Result<(String, String)> {
+        let fp = [
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, String>(3)?,
+            r.get::<_, String>(4)?,
+            r.get::<_, String>(5)?,
+            r.get::<_, String>(6)?,
+            fp_opt(r.get::<_, Option<String>>(7)?),
+            r.get::<_, i64>(8)?.to_string(),
+            r.get::<_, i64>(9)?.to_string(),
+            format!("{:.4}", r.get::<_, f64>(10)?),
+            r.get::<_, String>(11)?,
+        ]
+        .join("\u{1}");
+        Ok((r.get::<_, String>(0)?, fp))
+    };
+
+    let mut out = RowReconcile::default();
+    let mut by_id = conn.prepare(&format!(
+        "SELECT {} FROM vocab_words WHERE id = ?1",
+        COLS
+    ))?;
+    let mut by_word = conn.prepare(&format!(
+        "SELECT {} FROM vocab_words WHERE word = ?1 COLLATE NOCASE",
+        COLS
+    ))?;
+    for w in rows {
+        let target = {
+            let mut q = by_id.query(params![w.id])?;
+            match q.next()? {
+                Some(r) => Some(read_row(r)?),
+                None => {
+                    let mut q2 = by_word.query(params![w.word])?;
+                    match q2.next()? {
+                        Some(r) => Some(read_row(r)?),
+                        None => None,
+                    }
+                }
+            }
+        };
+        classify_ts_row(&mut out, &w.updated_at, &vocab_word_fp(w), target);
+    }
+    Ok(out)
+}
+
+/// 复习日志对账（无内容时钟：存在即视为目标优先，仅区分 missing / matched / targetNewer）
+pub(crate) fn reconcile_vocab_reviews(
+    conn: &rusqlite::Connection,
+    rows: &[VocabReviewLog],
+) -> Result<RowReconcile, AppError> {
+    let mut stmt = conn.prepare(
+        "SELECT word_id, review_date, rating, repetition, interval_days, ease_factor, reviewed_at \
+         FROM vocab_reviews WHERE id = ?1",
+    )?;
+    let mut out = RowReconcile::default();
+    for r in rows {
+        let target = {
+            let mut q = stmt.query(params![r.id])?;
+            match q.next()? {
+                None => None,
+                Some(row) => Some(
+                    [
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?.to_string(),
+                        row.get::<_, i64>(3)?.to_string(),
+                        row.get::<_, i64>(4)?.to_string(),
+                        format!("{:.4}", row.get::<_, f64>(5)?),
+                        row.get::<_, String>(6)?,
+                    ]
+                    .join("\u{1}"),
+                ),
+            }
+        };
+        let backup_fp = [
+            r.word_id.clone(),
+            r.review_date.clone(),
+            r.rating.to_string(),
+            r.repetition.to_string(),
+            r.interval_days.to_string(),
+            format!("{:.4}", r.ease_factor),
+            r.reviewed_at.clone(),
+        ]
+        .join("\u{1}");
+        classify_plain_row(&mut out, &backup_fp, target);
+    }
+    Ok(out)
+}
+
+/// 单词关联对账（同复习日志：按 id 幂等，存在即保留目标）
+pub(crate) fn reconcile_vocab_relations(
+    conn: &rusqlite::Connection,
+    rows: &[VocabRelation],
+) -> Result<RowReconcile, AppError> {
+    let mut stmt = conn.prepare(
+        "SELECT word_id, related_word, relation_type, source, created_at \
+         FROM vocab_word_relations WHERE id = ?1",
+    )?;
+    let mut out = RowReconcile::default();
+    for r in rows {
+        let target = {
+            let mut q = stmt.query(params![r.id])?;
+            match q.next()? {
+                None => None,
+                Some(row) => Some(
+                    [
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                    ]
+                    .join("\u{1}"),
+                ),
+            }
+        };
+        let backup_fp = [
+            r.word_id.clone(),
+            r.related_word.clone(),
+            r.relation_type.clone(),
+            r.source.clone(),
+            r.created_at.clone(),
+        ]
+        .join("\u{1}");
+        classify_plain_row(&mut out, &backup_fp, target);
+    }
+    Ok(out)
+}
+
 /// 只读对账：备份各行 vs 目标库（Spec §5.5 快速预判：id + updated_at + 内容指纹）
 pub(crate) fn reconcile_backup(
     conn: &rusqlite::Connection,
@@ -302,5 +467,8 @@ pub(crate) fn reconcile_backup(
         chapters: reconcile_chapters(conn, &dbx.chapters)?,
         snapshots: reconcile_snapshots(conn, &dbx.snapshots)?,
         world_cards: reconcile_world_cards(conn, &dbx.world_cards)?,
+        vocab_words: reconcile_vocab_words(conn, &dbx.vocab_words)?,
+        vocab_reviews: reconcile_vocab_reviews(conn, &dbx.vocab_reviews)?,
+        vocab_relations: reconcile_vocab_relations(conn, &dbx.vocab_relations)?,
     })
 }

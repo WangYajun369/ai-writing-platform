@@ -1,7 +1,8 @@
 /**
  * 英语字典 · 生词本 — 独立窗口
  *
- * 顶部：标题 + 离线词典状态（导入入口）+ 今日摘要 + 关闭
+ * 顶部：标题 + 离线词典状态（导入入口）+ 朗读设置 + 今日摘要
+ * （窗口关闭走系统标题栏，顶栏不重复提供关闭按钮）
  * Tab：生词本 / 今日复习（带到期角标）/ 统计
  * 数据：useVocabStore 全量管理；监听 vocab-due-updated 事件自动刷新
  *      （该事件由后端在任何影响到期数的写操作后广播，主窗口徽标同步刷新）
@@ -50,6 +51,7 @@ export default function VocabularyWindow() {
   const [ttsOpen, setTtsOpen] = useState(false)
   const stats = useVocabStore((s) => s.stats)
   const refreshAll = useVocabStore((s) => s.refreshAll)
+  const pendingReviewSeed = useVocabStore((s) => s.pendingReviewSeed)
 
   // 进入窗口：置激活态 + 首次全量加载
   useEffect(() => {
@@ -74,6 +76,11 @@ export default function VocabularyWindow() {
     if (stats && stats.dueToday > 0 && tab === 'book') setTab('review')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stats])
+
+  // 「复习已掌握词」批量回炉：种子词就绪时切到复习页（实际开会话由复习 Tab 消费）
+  useEffect(() => {
+    if (pendingReviewSeed && pendingReviewSeed.length > 0) setTab('review')
+  }, [pendingReviewSeed])
 
   /** 导入离线词典（ECDICT sqlite） */
   async function handleImportDict() {

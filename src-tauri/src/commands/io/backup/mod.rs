@@ -330,6 +330,9 @@ pub async fn inspect_backup(
         "snapshots": payload.database.snapshots.len(),
         "worldCards": payload.database.world_cards.len(),
         "embeddings": payload.database.embeddings.len(),
+        "vocabWords": payload.database.vocab_words.len(),
+        "vocabReviews": payload.database.vocab_reviews.len(),
+        "vocabRelations": payload.database.vocab_relations.len(),
     });
 
     let single_book = if payload.backup_type == "single" {
@@ -630,6 +633,28 @@ mod tests {
                 imported_at TEXT NOT NULL
             );
             CREATE INDEX idx_import_log_hash ON import_log(payload_hash);
+            CREATE TABLE vocab_words (
+                id TEXT PRIMARY KEY, word TEXT NOT NULL UNIQUE, phonetic TEXT NOT NULL DEFAULT '',
+                meanings TEXT NOT NULL DEFAULT '[]', example TEXT NOT NULL DEFAULT '',
+                example_zh TEXT NOT NULL DEFAULT '', repetition INTEGER NOT NULL DEFAULT 0,
+                interval_days INTEGER NOT NULL DEFAULT 0, ease_factor REAL NOT NULL DEFAULT 2.5,
+                status TEXT NOT NULL DEFAULT 'learning', next_review_at TEXT, last_review_at TEXT,
+                review_count INTEGER NOT NULL DEFAULT 0, correct_count INTEGER NOT NULL DEFAULT 0,
+                source TEXT NOT NULL DEFAULT 'manual', ai_details TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            CREATE TABLE vocab_reviews (
+                id TEXT PRIMARY KEY,
+                word_id TEXT NOT NULL REFERENCES vocab_words(id) ON DELETE CASCADE,
+                review_date TEXT NOT NULL, rating INTEGER NOT NULL, repetition INTEGER NOT NULL,
+                interval_days INTEGER NOT NULL, ease_factor REAL NOT NULL, reviewed_at TEXT NOT NULL
+            );
+            CREATE TABLE vocab_word_relations (
+                id TEXT PRIMARY KEY,
+                word_id TEXT NOT NULL REFERENCES vocab_words(id) ON DELETE CASCADE,
+                related_word TEXT NOT NULL, relation_type TEXT NOT NULL, source TEXT NOT NULL,
+                created_at TEXT NOT NULL, UNIQUE(word_id, related_word, relation_type)
+            );
             "#,
         )
         .expect("create full schema");

@@ -21,7 +21,7 @@
  */
 
 import { configApi, type LegacyMigrationResult } from '@/lib/tauri-bridge'
-import type { AiConfig, AiToolCategory, TtsConfig } from '@/types'
+import type { AiConfig, AiToolCategory, TtsConfig, AiModelsConfig } from '@/types'
 
 // ─── 旧 localStorage key 清单(用于一次性迁移) ───
 
@@ -211,6 +211,16 @@ export const configClient = {
     },
     async reset(): Promise<AiToolCategory[]> {
       return configApi.reset<AiToolCategory[]>('ai_tool_categories')
+    },
+  },
+
+  /** 拉取的 AI 模型列表段(DeepSeek /models 返回,供对话模型下拉复用) */
+  aiModels: {
+    async get(): Promise<AiModelsConfig> {
+      return configApi.get<AiModelsConfig>('ai_models')
+    },
+    async set(value: AiModelsConfig): Promise<void> {
+      return configApi.set('ai_models', value)
     },
   },
 }
