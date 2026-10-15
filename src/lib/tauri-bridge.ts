@@ -6,8 +6,10 @@
  * 所有 IPC 调用必须通过此模块的 API 对象进行。
  */
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import type { IpcCommand } from '@/types/ipc-commands'
-import type { Book, Chapter, Volume, Snapshot, WorldCard, Diary, DiaryMeta, DiarySearchHit, DiaryStats, CreateBookParams, UpdateBookParams, SaveDiaryParams, Schedule, SaveScheduleParams, VocabWord, VocabStats, VocabPage, VocabReviewLog, AddVocabWordArgs, UpdateVocabWordArgs, VocabRelation, VocabRelationView, VocabRelationType, VocabRelatedCandidate, VocabRelationCount, VocabFamilyGroup, VocabGraph, DictStatus, DictLookupResult, AiWordExplain, ExplainWordArgs, WordCheckResult, TtsSpeakResult, TaskProject, ProjectView, TaskCard, TaskSubtask, TaskTag, TaskStatus, TaskTemplate, TodayOverview, MigrateResult, DeletedTaskItem, ProjectStatus, CreateProjectArgs, UpdateProjectArgs, CreateTaskArgs, UpdateTaskArgs, CreateTemplateArgs, UpdateTemplateArgs, Attachment, ActivityLog, ProjectWeeklyStat, UpdateTagArgs, AgentTrace, ProfileMeta, ModelInfo } from '@/types'
+import type { Book, Chapter, Volume, Snapshot, WorldCard, Diary, DiaryMeta, DiarySearchHit, DiaryStats, CreateBookParams, UpdateBookParams, SaveDiaryParams, Schedule, SaveScheduleParams, VocabWord, VocabStats, VocabPage, VocabReviewLog, AddVocabWordArgs, UpdateVocabWordArgs, VocabRelation, VocabRelationView, VocabRelationType, VocabRelatedCandidate, VocabRelationCount, VocabFamilyGroup, VocabGraph, DictStatus, DictLookupResult, AiWordExplain, ExplainWordArgs, WordCheckResult, TtsSpeakResult, TaskProject, ProjectView, TaskCard, TaskSubtask, TaskTag, TaskStatus, TaskTemplate, TodayOverview, MigrateResult, DeletedTaskItem, ProjectStatus, CreateProjectArgs, UpdateProjectArgs, CreateTaskArgs, UpdateTaskArgs, CreateTemplateArgs, UpdateTemplateArgs, Attachment, ActivityLog, ProjectWeeklyStat, UpdateTagArgs, AgentTrace, ProfileMeta, ModelInfo, DictExplainStreamEvent } from '@/types'
+import { DICT_EXPLAIN_STREAM_EVENT } from '@/types'
 
 /**
  * 类型化 invoke：命令名接受 IpcCommand 联合类型约束。
@@ -1188,7 +1190,7 @@ export const vocabApi = {
       status: status ?? null,
       query: query ?? null,
       page,
-      page_size: pageSize,
+      pageSize,
     })
   },
 
@@ -1308,6 +1310,35 @@ export const dictApi = {
   /** AI 单词形态检查（轻量模型判定：完整单词 / 简写 / 缩写 / 不存在） */
   async checkWord(args: ExplainWordArgs): Promise<WordCheckResult> {
     return typedInvoke<WordCheckResult>('check_word_ai', { args })
+  },
+
+  /**
+   * AI 流式释义：边接收边通过 `onEvent` 回调增量渲染（事件名 `dict-explain-chunk`），
+   * 结束时返回与非流式 `explainAi` 完全一致的结果。
+   *
+   * 事件监听在本函数内建立/销毁，调用方无需管理生命周期；回调异常只告警不中断请求。
+   */
+  async explainAiStream(
+    args: ExplainWordArgs,
+    onEvent: (evt: DictExplainStreamEvent) => void,
+  ): Promise<AiWordExplain> {
+    const unlisten = await listen<DictExplainStreamEvent>(DICT_EXPLAIN_STREAM_EVENT, (e) => {
+      try {
+        onEvent(e.payload)
+      } catch (err) {
+        console.warn('[dictApi] 流式释义事件回调异常:', err)
+      }
+    })
+    try {
+      return await typedInvoke<AiWordExplain>('dict_explain_stream', { args })
+    } finally {
+      unlisten()
+    }
+  },
+
+  /** 取消进行中的词典 AI 请求（形态检查 / 流式释义共用同一取消令牌，幂等） */
+  async cancelAi(): Promise<void> {
+    await typedInvoke<void>('dict_ai_cancel')
   },
 }
 

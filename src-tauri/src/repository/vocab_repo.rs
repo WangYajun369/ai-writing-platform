@@ -471,3 +471,4 @@ pub fn review_history(conn: &Connection, start_date: &str) -> Result<Vec<StatsDa
     })?;
     items.collect()
 }
+

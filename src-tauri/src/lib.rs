@@ -297,7 +297,9 @@ pub fn run() {
             commands::vocab_dict::dict_import,
             commands::vocab_dict::dict_lookup,
             commands::vocab_dict::dict_explain_ai,
+            commands::vocab_dict::dict_explain_stream,
             commands::vocab_dict::check_word_ai,
+            commands::vocab_dict::dict_ai_cancel,
             // ══════ TTS 朗读（豆包语音合成）══════
             commands::tts::tts_speak,
             // ══════ 导入导出 — 格式导出 ══════

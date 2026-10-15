@@ -135,6 +135,10 @@ pub enum ErrCode {
     /// 前端值得为它给出针对性提示，而非笼统归入清单错误。
     PluginConflict,
 
+    // ── AI 请求 ──
+    /// AI 请求被用户取消（`E_AI_CANCELLED`，关闭对话框触发，属正常流程而非错误）。
+    AiCancelled,
+
     // ── 兜底 ──
     /// 业务逻辑错误兜底码（`E_BUSINESS`）。
     Business,
@@ -186,6 +190,7 @@ impl ErrCode {
             Self::ConfigCrypto => "E_CONFIG_CRYPTO",
             Self::PluginManifest => "E_PLUGIN_MANIFEST",
             Self::PluginConflict => "E_PLUGIN_CONFLICT",
+            Self::AiCancelled => "E_AI_CANCELLED",
             Self::Business => "E_BUSINESS",
             Self::General => "E_GENERAL",
         }

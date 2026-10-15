@@ -678,6 +678,49 @@ export interface ExplainWordArgs {
   temperature?: number
   /** 释义语言：zh（默认）/ en */
   lang?: string
+  /**
+   * DeepSeek 思考模式开关：结构化词典任务显式传 false 关闭思考，
+   * 避免思考 token 挤占 max_tokens 预算并显著拉长首字延迟；
+   * 非 DeepSeek 端点请留空（不下发该字段，免受未知字段影响）。
+   */
+  thinkingEnabled?: boolean
+}
+
+/**
+ * 流式释义事件名（Rust 侧 `commands::vocab_dict::DICT_EXPLAIN_EVENT` 的镜像）。
+ * 事件名属跨端契约，集中在类型层定义避免字面量漂移。
+ */
+export const DICT_EXPLAIN_STREAM_EVENT = 'dict-explain-chunk'
+
+/**
+ * 流式释义的单行 NDJSON 对象（Rust 侧 `type` 已归一化为小写）。
+ * 每行是一个独立的语义单元，前端收到即增量渲染对应字段。
+ */
+export type DictExplainLine =
+  | { type: 'phonetic'; text?: string }
+  | { type: 'meaning'; pos?: string; def?: string }
+  | { type: 'example'; text?: string; translation?: string }
+  | { type: 'morph'; kind?: string; part?: string; meaning?: string }
+  | { type: 'synonym'; text?: string }
+  | { type: 'antonym'; text?: string }
+  | { type: 'phrase'; phrase?: string; meaning?: string }
+  | { type: 'verbform'; text?: string }
+  | { type: 'examplebypos'; pos?: string; sentence?: string; translation?: string }
+
+/** 流式释义事件载荷 */
+export interface DictExplainStreamEvent {
+  /** 目标单词（用于前端过滤过期事件） */
+  word: string
+  /** 本次新增的原始文本（未形成完整行时用于显示进度） */
+  delta: string
+  /** 本次已完整输出的一行 NDJSON 对象（可解析时非空） */
+  line: DictExplainLine | null
+  /** 流是否结束 */
+  done: boolean
+  /** 降级/中断提示（正常完成时为 null） */
+  error: string | null
+  /** 结束时带回的完整释义（与 `dict_explain_ai` 同构），进行中为 null */
+  result: AiWordExplain | null
 }
 
 /** AI 单词形态检查结果类型 */

@@ -165,8 +165,16 @@ fn detect_proxy() -> Option<reqwest::Proxy> {
 
 /// 构建通用 HTTP 客户端基础配置
 fn http_client_builder() -> reqwest::ClientBuilder {
-    let mut builder =
-        reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(15));
+    // 与 SSE 客户端保持一致：关闭透明解压（服务端 / 中间代理返回的压缩体在解码阶段
+    // 失败时，reqwest 只报 "error decoding response body"，难以定位）；固定 HTTP/1.1 +
+    // TCP keepalive，规避长响应传输途中被中间设备提前断流（同样表现为该报错）。
+    let mut builder = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .http1_only()
+        .tcp_keepalive(std::time::Duration::from_secs(120));
     if let Some(proxy) = detect_proxy() {
         builder = builder.proxy(proxy);
     }

@@ -21,12 +21,13 @@ import {
 } from 'lucide-react'
 import { dictApi, vocabApi } from '@/lib/tauri-bridge'
 import { toast } from '@/lib/toast'
-import { errText } from '@/lib/errors'
+import { errText, parseError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { useAiStore } from '@/stores/aiStore'
 import { getChatApiKey } from '@/types'
-import type { VocabKnowledge, VocabMeaning, VocabWord, WordCheckKind } from '@/types'
-import { parseDictTranslation, normalizeAiMeaning } from '../vocab-utils'
+import type { AiChatConfig, AiWordExplain, DictExplainStreamEvent, VocabKnowledge, VocabMeaning, VocabWord, WordCheckKind } from '@/types'
+import { DEEPSEEK_MODELS } from '@/components/settings/constants'
+import { parseDictTranslation, parseLemmaFromExchange, normalizeAiMeaning } from '../vocab-utils'
 import { useVocabStore } from '@/stores/vocabStore'
 import VocabKnowledgeView from '../VocabKnowledgeView'
 import SpeakButton from '../SpeakButton'
@@ -35,13 +36,23 @@ const inputCls =
   'rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[13px] text-zinc-100 placeholder-zinc-500 outline-none transition focus:border-sky-500/60 focus:bg-white/8'
 
 /**
- * 单词形态检查用轻量模型（仅 DeepSeek 服务商；完整释义仍用设置里的对话模型）
+ * 单词形态检查用轻量模型；完整释义仍用设置里的对话模型。
  *
  * 形态检查是「判断是否变形/简写/缩写」的小任务，输出仅几十 token，用快模型最划算。
- * 注意：模型名必须是服务商真实存在的模型（DeepSeek 公开模型为 deepseek-chat /
- * deepseek-reasoner），否则每次点翻译都会先吃一次 400 再降级，白白多花一次往返。
+ * 但**不能硬编码模型名**：DeepSeek 会随版本更名（旧名 deepseek-v4-flash / deepseek-chat
+ * 均已过时），名字一旦过期，每次点翻译都会先吃一次 400 再降级，白白多花一次往返。
+ * 故从内置可选项（单一真源 `components/settings/constants.ts`）里挑 flash 档，
+ * 取不到时复用配置的对话模型（该模型必然可用）。
  */
-const AI_CHECK_MODEL = 'deepseek-chat'
+function resolveCheckModel(chat: AiChatConfig): string {
+  if (chat.provider !== 'deepseek') return chat.model
+  return DEEPSEEK_MODELS.find((m) => m.includes('flash')) ?? chat.model
+}
+
+/** 判断是否为「用户取消」（关闭对话框触发，错误码 E_AI_CANCELLED）：静默收场，不回退同步接口、不弹错 */
+function isCancelledError(err: unknown): boolean {
+  return parseError(err).code === 'E_AI_CANCELLED'
+}
 
 interface Props {
   open: boolean
@@ -69,6 +80,12 @@ export default function AddWordDialog({ open, editing, onClose }: Props) {
   /** 用户是否手动编辑过释义（手动编辑后不再自动带出覆盖） */
   const [touched, setTouched] = useState(false)
   const wordRef = useRef<HTMLInputElement>(null)
+  /** AI 请求进行中标记（关闭对话框时据此触发取消） */
+  const aiInFlightRef = useRef(false)
+  /** 用户已中止标记：阻断取消后的回退链（不再发起同步释义） */
+  const aiAbortRef = useRef(false)
+  /** AI 请求序号：防止旧请求的 finally 清掉新请求的进行中标记 */
+  const aiSeqRef = useRef(0)
 
   const isEdit = Boolean(editing)
 
@@ -108,6 +125,23 @@ export default function AddWordDialog({ open, editing, onClose }: Props) {
     setKnowledge(null)
     setAiError('')
   }, [lookupWord])
+
+  // 对话框关闭时取消仍在进行的 AI 请求（形态检查 / 流式释义共用后端取消令牌），
+  // 后端即刻断流止损；标记中止以防「取消落地前」又发起下一阶段请求
+  useEffect(() => {
+    if (open) return
+    if (aiInFlightRef.current) {
+      aiAbortRef.current = true
+      dictApi.cancelAi().catch(() => {})
+    }
+  }, [open])
+  // 组件卸载兜底（父组件直接移除本对话框的场景）
+  useEffect(
+    () => () => {
+      if (aiInFlightRef.current) dictApi.cancelAi().catch(() => {})
+    },
+    [],
+  )
 
   // 新增模式：单词输入后从离线词典自动带出（防抖；用户手动编辑过则跳过）
   useEffect(() => {
@@ -153,6 +187,9 @@ export default function AddWordDialog({ open, editing, onClose }: Props) {
     )
     setAiBusy(true)
     setAiError('')
+    aiInFlightRef.current = true
+    aiAbortRef.current = false
+    const seq = ++aiSeqRef.current
     try {
       // ① 新增模式先查生词本是否已收录（编辑模式跳过——本来就是在改已有词条）
       if (!isEdit) {
@@ -190,48 +227,185 @@ export default function AddWordDialog({ open, editing, onClose }: Props) {
         }
       }
 
-      // ② 单词形态检查（轻量模型）：判定是完整单词 / 简写 / 缩写 / 不存在。
-      //    检查服务不可用时降级为直接翻译，不阻断主流程。
+      // ② 单词形态判定：先查本地离线词库，本地命中即说明该词真实存在，且 ECDICT
+      //    `exchange` 的 `0:` 段直接给出原型——等价于 AI 检查结果，无需再花一次云端往返；
+      //    仅本地未命中时才回退 AI 轻量检查（判定简写 / 缩写 / 不存在）。
       const endpoint = aiConfig.chat.endpoint
-      const checkModel = aiConfig.chat.provider === 'deepseek' ? AI_CHECK_MODEL : aiConfig.chat.model
+      // 词典任务是结构化短输出任务：DeepSeek 下显式关闭思考模式（thinking: disabled），
+      // 避免思考 token 挤占 max_tokens 预算（易触发截断重试，等于耗时翻倍）并拉长首字延迟；
+      // 非 DeepSeek 端点不下发该字段，免受未知字段影响。
+      const thinkingEnabled = aiConfig.chat.provider === 'deepseek' ? false : undefined
       let target = w
+
+      let localResolved = false
       try {
-        const chk = await dictApi.checkWord({ word: w, endpoint, model: checkModel, apiKey: chatApiKey })
-        if (chk.kind === 'not_a_word') {
-          const msg = `没有这个单词「${w}」${chk.note ? `（${chk.note}）` : '，请检查拼写'}`
-          setAiError(msg)
-          toast.error(msg)
-          return
-        }
-        if (chk.kind !== 'word' && chk.canonical) {
-          const canonical = chk.canonical.trim().toLowerCase()
-          if (canonical && canonical !== w) {
-            target = canonical
-            setWord(canonical)
-            const map: Partial<Record<WordCheckKind, [string, string]>> = {
-              inflected: ['变形词', '原形'],
-              abbreviation: ['简写', '完整形式'],
-              acronym: ['缩写', '全称'],
-            }
-            const [form, repl] = map[chk.kind] ?? []
-            if (form && repl) {
-              const note = chk.note ? `（${chk.note}）` : ''
-              toast.info(`「${w}」是${form}${note}，已切换为${repl}「${canonical}」`)
-            }
+        const local = await dictApi.lookup(w)
+        if (local.hit) {
+          localResolved = true
+          const lemma = parseLemmaFromExchange(local.hit.exchange)
+          if (lemma && lemma !== w.toLowerCase()) {
+            target = lemma
+            setWord(lemma)
+            toast.info(`「${w}」是变形词，已切换为原形「${lemma}」`)
           }
         }
       } catch (err) {
-        console.warn('[Vocab·翻译] 单词形态检查失败，降级为直接翻译:', err)
+        // 本地预判失败不影响结果，降级到 AI 检查
+        console.warn('[Vocab·翻译] 本地词库预判失败，降级为 AI 检查:', err)
       }
 
-      // ② 用主对话模型生成完整学习卡片
-      const explain = await dictApi.explainAi({
+      if (!localResolved) {
+        const checkModel = resolveCheckModel(aiConfig.chat)
+        try {
+          const chk = await dictApi.checkWord({
+            word: w,
+            endpoint,
+            model: checkModel,
+            apiKey: chatApiKey,
+            thinkingEnabled,
+          })
+          if (chk.kind === 'not_a_word') {
+            const msg = `没有这个单词「${w}」${chk.note ? `（${chk.note}）` : '，请检查拼写'}`
+            setAiError(msg)
+            toast.error(msg)
+            return
+          }
+          if (chk.kind !== 'word' && chk.canonical) {
+            const canonical = chk.canonical.trim().toLowerCase()
+            if (canonical && canonical !== w) {
+              target = canonical
+              setWord(canonical)
+              const map: Partial<Record<WordCheckKind, [string, string]>> = {
+                inflected: ['变形词', '原形'],
+                abbreviation: ['简写', '完整形式'],
+                acronym: ['缩写', '全称'],
+              }
+              const [form, repl] = map[chk.kind] ?? []
+              if (form && repl) {
+                const note = chk.note ? `（${chk.note}）` : ''
+                toast.info(`「${w}」是${form}${note}，已切换为${repl}「${canonical}」`)
+              }
+            }
+          }
+        } catch (err) {
+          if (isCancelledError(err)) return
+          console.warn('[Vocab·翻译] 单词形态检查失败，降级为直接翻译:', err)
+        }
+      }
+
+      // ③ 用主对话模型生成完整学习卡片
+      //
+      // 走流式（NDJSON 逐行返回）：每收到一行就即时上屏，音标 / 释义 / 例句先到先显示，
+      // 消掉原来「整段 JSON 生成完毕才渲染」的全白等待。
+      // 流式不可用时（代理网关忽略 stream、模型未按 NDJSON 输出等）自动回退到同步接口
+      // ——同步接口带「自动重试 + 强制 JSON + 扩大输出上限」，保证不会比优化前更差。
+      const explainArgs = {
         word: target,
         endpoint,
         model: aiConfig.chat.model,
         temperature: aiConfig.chat.temperature,
         apiKey: chatApiKey,
-      })
+        thinkingEnabled,
+      }
+      const streamWord = target
+      /** 是否已收到首条流式释义（首条替换表单原有内容，后续逐条追加） */
+      let meaningStarted = false
+      const acc: VocabKnowledge = {
+        morphology: [],
+        synonyms: [],
+        antonyms: [],
+        phrases: [],
+        verbForms: [],
+        examples: [],
+      }
+      /** 把增量累加的知识快照写入表单（知识类字段每来一行刷新一次，其余行不触发重渲染） */
+      const syncKnowledge = () =>
+        setKnowledge({
+          morphology: [...acc.morphology],
+          synonyms: [...acc.synonyms],
+          antonyms: [...acc.antonyms],
+          phrases: [...acc.phrases],
+          verbForms: [...acc.verbForms],
+          examples: [...acc.examples],
+        })
+      const onStreamEvent = (evt: DictExplainStreamEvent) => {
+        if (evt.word !== streamWord || !evt.line) return
+        const line = evt.line
+        switch (line.type) {
+          case 'phonetic':
+            if (line.text) setPhonetic(line.text)
+            break
+          case 'meaning': {
+            const m = normalizeAiMeaning({ pos: line.pos ?? '', def: line.def ?? '' })
+            if (!m.def && !m.pos) break
+            // 首条替换掉表单原有内容（含空占位行），后续逐条追加
+            if (meaningStarted) {
+              setMeanings((cur) => [...cur, m])
+            } else {
+              meaningStarted = true
+              setMeanings([m])
+            }
+            setDictSource(false)
+            setTouched(true)
+            break
+          }
+          case 'example': {
+            // 与同步路径一致：用户已手填的例句/翻译不被 AI 覆盖；
+            // 函数式更新读取最新值，规避闭包捕获发起时的过期 state
+            const text = line.text
+            const trans = line.translation
+            if (text) setExample((cur) => (cur.trim() ? cur : text))
+            if (trans) setExampleZh((cur) => (cur.trim() ? cur : trans))
+            break
+          }
+          case 'morph':
+            if (line.part) {
+              acc.morphology.push({ kind: line.kind ?? '', part: line.part, meaning: line.meaning ?? '' })
+              syncKnowledge()
+            }
+            break
+          case 'synonym':
+            if (line.text) {
+              acc.synonyms.push(line.text)
+              syncKnowledge()
+            }
+            break
+          case 'antonym':
+            if (line.text) {
+              acc.antonyms.push(line.text)
+              syncKnowledge()
+            }
+            break
+          case 'phrase':
+            if (line.phrase) {
+              acc.phrases.push({ phrase: line.phrase, meaning: line.meaning ?? '' })
+              syncKnowledge()
+            }
+            break
+          case 'verbform':
+            if (line.text) {
+              acc.verbForms.push(line.text)
+              syncKnowledge()
+            }
+            break
+          case 'examplebypos':
+            if (line.sentence) {
+              acc.examples.push({ pos: line.pos ?? '', sentence: line.sentence, translation: line.translation ?? '' })
+              syncKnowledge()
+            }
+            break
+        }
+      }
+
+      let explain: AiWordExplain
+      try {
+        if (aiAbortRef.current) return
+        explain = await dictApi.explainAiStream(explainArgs, onStreamEvent)
+      } catch (streamErr) {
+        if (aiAbortRef.current || isCancelledError(streamErr)) return
+        console.warn('[Vocab·翻译] 流式释义失败，回退同步接口:', streamErr)
+        explain = await dictApi.explainAi(explainArgs)
+      }
       if (explain.phonetic) setPhonetic(explain.phonetic)
       if (explain.meanings.length) {
         setMeanings(
@@ -242,8 +416,8 @@ export default function AddWordDialog({ open, editing, onClose }: Props) {
         setDictSource(false)
         setTouched(true)
       }
-      if (explain.example && !example.trim()) setExample(explain.example)
-      if (explain.exampleZh && !exampleZh.trim()) setExampleZh(explain.exampleZh)
+      if (explain.example) setExample((cur) => (cur.trim() ? cur : explain.example))
+      if (explain.exampleZh) setExampleZh((cur) => (cur.trim() ? cur : explain.exampleZh))
       setKnowledge(explain.knowledge)
       toast.success('翻译完成：已整理音标 / 词根词缀 / 近反义词 / 常用搭配 / 词性例句')
     } catch (err) {
@@ -253,6 +427,8 @@ export default function AddWordDialog({ open, editing, onClose }: Props) {
       toast.error('翻译失败，详情见输入框下方提示')
     } finally {
       setAiBusy(false)
+      // 仅当没有更新的请求发起时才清除标记，避免旧请求的收尾清掉新请求的状态
+      if (aiSeqRef.current === seq) aiInFlightRef.current = false
     }
   }
 

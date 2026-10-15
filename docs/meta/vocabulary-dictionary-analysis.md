@@ -3,7 +3,7 @@
 > **适用版本**：`1.22.0`（`package.json`）　|　**分析日期**：2026-10-15　|　**分析范围**：`src-tauri/src/{commands,service,repository,db}` 的 vocab 模块 + `src/components/vocabulary/**` + `src/plugins/dictionary/**` + `src/stores/vocabStore.ts`
 > **综合评级**：⭐ **88 / 100（A-）** → 优化后 **96 / 100（A+）**（2026-10-15 已实施，见[第九节](#九优化实施记录-2026-10-15)）
 >
-> 架构分层干净、AI 兜底健壮、关联网络设计精巧；原主要失分项（**数据不进备份**、**核心 SM-2 算法零单测**、**ECDICT 全表扫描**、**形态检查模型名不存在**）已全部修复。
+> 架构分层干净、AI 兜底健壮、关联网络设计精巧；原主要失分项（**数据不进备份**、**核心 SM-2 算法零单测**、**ECDICT 全表扫描**、**形态检查模型名不存在**）已全部修复；后续又修掉**翻译链路两次串行往返 / 思考 token 拖慢首字 / `error decoding response body`** 三项延迟与稳定性问题。
 
 ---
 
@@ -90,9 +90,13 @@ rusqlite（r2d2 池，max_size=10）
  ├─ ① 离线词典自动带出（450ms 防抖，dict_lookup）→ 标「离线词库带出」绿标
  ├─ ② 点「DeepSeek 翻译」
  │    ├─ 2.1 生词本查重（已收录 → 回填表单 + toast 提示，不重复计费）
- │    ├─ 2.2 形态检查 check_word_ai（轻量模型）→ word / inflected / abbreviation / acronym / not_a_word
+ │    ├─ 2.2 形态判定：**先查本地离线词库**（命中即真实存在，且 `exchange` 的 `0:` 段直接给出原型，零网络往返）
+ │    │      未命中才走 check_word_ai（轻量模型，显式 `thinking: disabled`，**内部走 SSE 流式读体**：已到达内容不因中途断流丢失）→ word / inflected / abbreviation / acronym / not_a_word
  │    │      → 变形词自动替换为原型（如 worked → work），并 toast 解释
  │    └─ 2.3 主模型生成完整学习卡片（音标 / 词性释义 / 例句+中译 / 词根词缀 / 近反义 / 词组 / 动词变形 / 按词性例句）
+ │           **流式 NDJSON**：`dict_explain_stream` 边收边推 `dict-explain-chunk` 事件，
+ │           每收到一整行就即时上屏（音标 → 释义 → 例句 → 知识块），消掉整段 JSON 的全程白屏；
+ │           全程可取消：关闭对话框即调 `dict_ai_cancel` 断流止损（`E_AI_CANCELLED` 静默收场）；
  └─ ③ 全程失败可手动录入
 ```
 
@@ -102,6 +106,9 @@ rusqlite（r2d2 池，max_size=10）
 - `finish_reason == "length"` 时追加"被截断"原因；错误回显原始内容头尾各 200/160 字符便于排查；
 - 日志**只记 api_key 长度**（`api_key_len=`），不落明文 ✅；
 - HTTP 状态码分级提示：401/403 → Key 失效；402/429 → 余额/限流；400 含 model 关键词 → 模型不存在。
+- **流式传输统一 + 诊断**：`check_word_ai` / `dict_explain_ai` / `dict_explain_stream` 三条链路全部走 SSE 流式读体（`request_chat_stream_text` / `stream_explain_sse`）——非流式 `BodyExt::collect` 遇「响应头已到、正文传输中断」会丢弃全部已收字节并只报 `error decoding response body`（reqwest `Kind::Decode` 的笼统文案，`Display` 看不到底层原因），流式则保留已收内容。传输失败（未收到任何内容）重试 3 次、退避 1s / 2s；HTTP 状态错误 / 超时 / 用户取消不重试；中断原因以 `err={:?}` 展开 reqwest source 链记录 hyper 真实原因。原非流式实现（`send_chat_request` / `request_chat_content` / `response_meta`）已删除。
+- **耗时打点**：每次调用日志带 `耗时=xxx ms`（含 `content_bytes` / `finish_reason` / `reasoning_bytes`），便于把等待时间归因到传输 / 生成 / 思考 token。
+- **流式三层回退链**：① 网关忽略 `stream: true`（返回的 Content-Type 非 `text/event-stream`）→ 按整体 JSON 解析；② 模型未按 NDJSON 输出（逐行累加器收不到释义）→ 结尾回退整段 `parse_explain`；③ 前端流式请求失败 → 再回退同步 `dict_explain_ai`（自带自动重试 + 强制 `json_object` + 8192 上限）。任一层兜底生效都不会比优化前更差。
 
 ### 2. SM-2 复习调度（`vocab_service.rs:71-108`）
 
@@ -226,7 +233,7 @@ d3-force 力导向：link(72) / charge(-160) / center / collide(r+16)、`alphaDe
 | 🔴 P0 | 1 | 生词本不进备份 | ✅ 已修复 | `DatabaseExport` 增 `vocabWords/vocabReviews/vocabRelations` 三段（`#[serde(default)]` 保证旧备份兼容）；全量导出收集、单作品备份不携带；导入走 **upsert 合并**（不在 `clear_full_tables` 清空、不进回退点快照），因此 replace 与旧版备份导入都不会丢本机生词；新增 6 项单测（含"旧备份 no-op""同词不同 id 归并""孤儿子行跳过"） |
 | 🟠 P1 | 2 | SM-2 零单测 | ✅ 已修复 | `vocab_service.rs` 新增 10 项单测：忘记重置、间隔阶梯、EF 下限、掌握阈值、跨年日期、入参与状态校验 |
 | 🟠 P1 | 3 | ECDICT 全表扫描 | ✅ 已修复 | 新增 `LEMMA_CACHE` / `FAMILY_CACHE`（`OnceLock<Mutex<HashMap>>`）按词缓存查询结果，`dict_import` 后 `invalidate_dict_cache()` 失效；并进一步引入侧车索引 `dict/ecdict-lemma.db`（导入时一次性预解析 `exchange` 的 `0:` 项，`dict_family`/`dict_lemma` 优先等值查询，未命中才回退 LIKE 扫描） |
-| 🟠 P1 | 4 | 形态检查模型名不存在 | ✅ 已修复 | `AI_CHECK_MODEL` 由 `deepseek-v4-flash`（不存在）改为 `deepseek-chat` |
+| 🟠 P1 | 4 | 形态检查模型名不存在 | ✅ 已修复 | 先由 `deepseek-v4-flash`（不存在）改为 `deepseek-chat`；后者亦随 DeepSeek 更名过时，故进一步**去掉硬编码**：`AI_CHECK_MODEL` 常量改为 `resolveCheckModel()`，从单一真源 `settings/constants.ts` 的 `DEEPSEEK_MODELS` 里挑 flash 档，取不到时复用配置的对话模型 |
 | 🟡 P2 | 5 | 并发收录撞 UNIQUE | ✅ 已修复 | `create_word` 改 `INSERT ... ON CONFLICT(word) DO NOTHING`，回读改为按 word |
 | 🟡 P2 | 6 | 本周新增时区偏差 | ✅ 已修复 | `get_stats` 的 `week_ago` 改用 UTC 日期（`utils::now()` 写 UTC），与 `created_at` 同口径 |
 | 🟡 P2 | 7 | `updated_at` 复用 `last_review_at` | ✅ 已修复 | `UpdateReviewStateArgs` 增加独立 `updated_at` 字段 |
@@ -237,8 +244,20 @@ d3-force 力导向：link(72) / charge(-160) / center / collide(r+16)、`alphaDe
 | 🟡 P2 | 13 | 注释与实现不一致 | ✅ 已修复 | `VocabularyWindow` 头部注释去掉不存在的「关闭」按钮描述 |
 | 🟡 P2 | 11 | 全量刷新无分页 | ✅ 已修复 | 后端新增 `vocab_list_page`（status/query 过滤 + `LIMIT/OFFSET` 分页，搜索覆盖 word/phonetic/meanings）；前端 store 维护分页缓冲 + `loadMoreWords`，生词本 Tab 用 `@tanstack/react-virtual` 虚拟滚动 + 防抖搜索；`refreshAll` 改为首屏 + 按需加载，不再全量拉取 |
 | 🟡 P2 | 14 | 已掌握词无法回炉 | ✅ 已修复 | 后端新增 `vocab_mastered_sample(limit)`（`ORDER BY RANDOM()` 抽 N 个已掌握词）；统计页加「复习已掌握词」按钮，经 store `requestReview` 种子 + 窗口切到复习页 + 复习 Tab 消费开会话，实现批量回炉 |
+| 🟡 P2 | 15 | 关联词面板「收录」按钮产出空壳词条：只传 `{ word, source }` 入库，点开后无音标 / 释义 / 例句 | ✅ 已修复 | `collectWord` 收录前先查本地 ECDICT（`dictApi.lookup`）带出音标与基础释义（复用 `parseDictTranslation`，与「收录新词」对话框的自动带出行为一致）；词库未安装 / 未命中时优雅降级为仅收录单词，toast 区分提示；全项目仅存的两个 `vocabApi.add` 入口均已核对（AddWordDialog 传全量字段） |
+| 🟠 P1 | 15 | 翻译链路慢：每次点击两次串行云端往返 | ✅ 已修复 | `handleTranslate` 先本地 `dict_lookup` 预判形态（命中即真实存在，`exchange` 的 `0:` 段由 `parseLemmaFromExchange` 解析出原型），命中时**完全跳过** `check_word_ai` 往返；未命中才回退 AI 检查 |
+| 🟠 P1 | 16 | 思考 token 挤占输出预算、拉长首字延迟 | ✅ 已修复 | `ExplainWordArgs` 增 `thinkingEnabled`，DeepSeek 下词典两条链路均下发 `thinking: { type: "disabled" }`（非 DeepSeek 端点不下发该字段）；顺带消除因思考占满 `max_tokens` 触发的整卡截断重试（原等于耗时翻倍） |
+| 🟠 P1 | 17 | `解析 AI 响应失败: error decoding response body` | ✅ 已修复 | 共享 HTTP 客户端对齐 SSE 客户端（`no_gzip/no_brotli/no_deflate` + `http1_only` + `tcp_keepalive`），规避透明解压失败与中途断流；`request_chat_content` 拆出 `send_chat_request` 做传输层重试，并改为读字节后自行解析 JSON，错误信息附带原始片段 |
+| 🟠 P1 | 18 | 生成期间全程白屏：整段 JSON 必须等最后一个 `}` 才可渲染 | ✅ 已修复 | 新增流式命令 `dict_explain_stream`（SSE + NDJSON 逐行返回），模型每行一个 `{"type":...}` 对象，后端按行推送 `dict-explain-chunk` 事件、前端增量上屏（音标/释义/例句先到先显示）；结尾用逐行累加器组装出与同步路径同构的 `AiWordExplain`（无释义行时回退整段 `parse_explain`），并带三层回退链 |
+| 🟠 P1 | 19 | 形态检查复现 `读取 AI 响应失败: error decoding response body`（非流式读体=硬失败） | ✅ 已修复 | 根因定位：reqwest `response.rs` 的 `bytes()`/`chunk()` 均 `map_err(error::decode)`，故该文案只表示「响应体读取失败」，与 JSON 解析、gzip 解压（`no_gzip/no_brotli/no_deflate` 已生效）、模型名（`deepseek-flash` 为现役 V4.1-Flash）、代理无关；且 `BodyExt::collect` 一旦遇到「响应头已到、正文传输中断」会**丢弃全部已收字节**并硬失败。改为 `check_word_ai` 内部走 SSE 流式（`stream: true` + `bytes_stream()` 边收边累积，30s 单帧空闲超时），已到达内容不因后续断流丢失，中途断流降级为「内容可能不完整」记录而非失败（顺带省掉整段等体延迟）；后续（P1-21）统一到 `request_chat_stream_text`，非流式传输代码整体删除 |
+| 🟠 P1 | 20 | 流式释义无取消机制：关闭对话框后后端仍持续消费 token 至 300s 超时 | ✅ 已修复 | 按 Agent 引擎同构约定新增 `CancelToken`（原子标志 + `Notify`）+ 全局注册表 + RAII 注销（`CancelGuard`，超时被丢弃 / `?` 提前返回均自动摘除，`Arc::ptr_eq` 防误删后续令牌）+ 新命令 `dict_ai_cancel`；三个 AI 命令（check / explain_ai / explain_stream）注册令牌，SSE 读循环以 `tokio::select!` 与 `notified()` 竞争实现「不等下一帧」的即刻断流；错误码 `E_AI_CANCELLED`；前端对话框关闭 / 卸载触发取消，取消错误静默收场（不回退同步接口、不弹错），并以请求序号防止旧请求的 finally 清掉新请求的进行中标记 |
+| 🟠 P1 | 21 | 同步兜底路径 `dict_explain_ai` 仍走非流式读体（Decode 硬失败窗口）；前端流式回调与最终覆盖以闭包捕获发起时的过期 state | ✅ 已修复 | `dict_explain_ai` 切到 `request_chat_stream_text`（携带 finish_reason 捕获与「无内容传输失败重试 3 次 / 退避 1s-2s」，与流式释义同构），`send_chat_request` / `request_chat_content` / `response_meta` 约 180 行冗余非流式代码删除；`AddWordDialog` 例句字段改函数式更新（`setExample(cur => cur.trim() ? cur : …)`），流式回调与最终覆盖均读取最新值，用户手填内容不再被过期闭包误覆盖 |
+| 🟠 P1 | 22 | SSE 心跳续命单帧空闲超时：服务端只发 `: keep-alive` 注释行而不产出内容时，单帧超时被心跳无限续期，`check_word_ai` 全链路无总超时 → invoke 永不返回（用户感知：一直转圈） | ✅ 已修复 | 空闲超时改为「**无内容进度**超时」：`select!` 中以 `sleep_until(deadline)` 竞争，仅当收到新的非空 delta 内容才刷新 deadline（`stream_explain_sse` 60s / `request_chat_stream_once` 45s，心跳注释行不刷新）；`check_word_ai` 另加 90s 总超时兜底（传输重试 × 解析重试叠加也不过数分钟 → 现在 90s 封顶），超时报「DeepSeek 服务可能拥堵无响应」。新增 2 项回归测试：仅心跳流在 no_progress 阈值附近止损（Retryable）、慢速内容（400ms 间隔）不被误杀 |
+| 🟠 P1 | 23 | 生词本有词不显示：`vocab_list_page` 前端传参误用 snake_case（`page_size`），Tauri v2 命令参数按 camelCase 匹配 → 必填参数 `page_size` 缺失 → invoke 每次必然 reject → `refreshWordList` 静默 catch → 列表永远空（stats / due 为无参命令故正常） | ✅ 已修复 | 逐层取证定位：库内数据与 SQL 实测正常（repo 层直连真实库返回全部词条）、stats 按钮数字正常、重启无效，锁定到「唯一带多词参数的词典命令」；[tauri-bridge.ts](../../src/lib/tauri-bridge.ts) 改回 `pageSize`。该 bug 自分页功能落地（9400961）即存在，此前词库为空、列表从未被真正观察故未暴露。教训：bridge 层传参一律 camelCase（Tauri v2 默认 `rename_all = camelCase`），且前端 catch 静默吞 IPC 错误会掩盖此类故障 |
 
-**验证结果**：`cargo test --lib` **313 项全绿**（新增 16 项）；`tsc --noEmit` 无错误；`vitest run` 全绿。
+**验证结果**：`cargo test --lib` **330 项全绿**（含 8 项流式传输层端到端测试：本地 mini SSE 服务器 + 真实全局 SSE 客户端，覆盖分帧解析 / [DONE] / finish_reason / 断流保留内容 / 失败分类 / 取消即时返回 / 心跳免疫 / 慢内容不误杀）；`tsc --noEmit` 无错误；`pnpm check` **233/233 通过**（IPC 212 命令注册一致）；`vitest run` **145 项全绿**；`cargo clippy` 无新增告警。
+
+**外部故障排查记录（2026-10-15）**：曾报「翻译一直转圈无输出」。逐层取证：传输层端到端测试全绿 → 从 `app_config` 解密真实 key 用 curl 直连验证——`GET /models` 0.11s 正常返回（账号有效）、无 key 的请求 0.17s 返回 401（网络通畅），但**带 key 的 `chat/completions` 对 `deepseek-flash` / `deepseek-v4-pro` / `deepseek-chat` 三个模型、流式与非流式、thinking 开关全部「200 响应头 + 正文 0 字节挂死」**；流式形态下可观察到服务端持续发 `: keep-alive` SSE 心跳注释行但推理内容 0 字节——DeepSeek 服务端推理管道故障（仅切换服务商可绕过，用户确认全程使用 DeepSeek，故转而修复 App 侧止损能力，见 P1-22）。修复后：服务端此类故障时，形态检查 90s 内报「DeepSeek 服务可能拥堵无响应」（不再无限转圈），流式释义 60s 无内容进度即止损并保留已生成内容。DeepSeek 恢复后功能自动回到正常水位，无需任何操作。
 
 **遗留建议（已全部完成 ✅）**
 

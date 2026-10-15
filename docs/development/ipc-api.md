@@ -2,7 +2,7 @@
 
 > **适用版本**：`1.22.0`　|　**最后核对**：2026-10-15
 
-TimeWrite 共注册 **210 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用。桥接层导出 **19 个 API 对象**（`bookApi` `volumeApi` `chapterApi` `snapshotApi` `worldCardApi` `diaryApi` `scheduleApi` `windowApi` `aiApi` `agentApi` `imageApi` `importExportApi` `debugApi` `systemApi` `vocabApi` `ttsApi` `dictApi` `taskCardApi` `writingApi`）。
+TimeWrite 共注册 **212 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` 的 `invoke_handler` 中集中注册，前端通过 `src/lib/tauri-bridge.ts` 调用。桥接层导出 **19 个 API 对象**（`bookApi` `volumeApi` `chapterApi` `snapshotApi` `worldCardApi` `diaryApi` `scheduleApi` `windowApi` `aiApi` `agentApi` `imageApi` `importExportApi` `debugApi` `systemApi` `vocabApi` `ttsApi` `dictApi` `taskCardApi` `writingApi`）。
 
 > **架构约定**：`tauri-bridge.ts` 是全项目**唯一**允许调用 `invoke` 的模块。禁止在其他文件中直接 import `@tauri-apps/api` 的 `invoke`。
 
@@ -20,7 +20,7 @@ TimeWrite 共注册 **210 个 IPC 命令**，全部在 `src-tauri/src/lib.rs` �
 | [日记](#日记-diary) | 5 | `commands/diary.rs` |
 | [日程](#日程-schedule) | 4 | `commands/schedule.rs` |
 | [生词本](#生词本-vocab) | 18 | `commands/vocab.rs` |
-| [离线词典](#离线词典-vocab_dict) | 5 | `commands/vocab_dict.rs` |
+| [离线词典](#离线词典-vocab_dict) | 7 | `commands/vocab_dict.rs` |
 | [语音合成](#语音合成-tts) | 1 | `commands/tts.rs` |
 | [AI](#ai-commandsai) | 8 | `commands/ai/{test,embedding,chat,summarize}.rs` |
 | [导入导出](#导入导出-commandsio) | 8（export 2 / import_txt 1 / backup 5） | `commands/io/{export,import_txt,backup}.rs` |
@@ -324,6 +324,8 @@ React 组件 → Zustand/Jotai → tauri-bridge.ts → invoke()
 | `dict_lookup` | 离线查词（音标 + 释义 + 例句） |
 | `check_word_ai` | 单词拼写检查 + 首条英文释义 + 例句翻译（AI，兜底与录入提示用） |
 | `dict_explain_ai` | AI 精讲：词根词缀 / 同反义词 / 固定搭配 / 词形变化 / 词性例句（DeepSeek） |
+| `dict_explain_stream` | 同上，但走 SSE + NDJSON 逐行返回，边生成边推 `dict-explain-chunk` 事件供前端增量上屏 |
+| `dict_ai_cancel` | 取消进行中的词典 AI 请求（形态检查 / 流式释义共用取消令牌；关闭对话框即断流止损，错误码 `E_AI_CANCELLED`） |
 
 ## 语音合成 `tts`
 

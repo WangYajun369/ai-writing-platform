@@ -8,13 +8,13 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link2Icon, PlusIcon, XIcon, LoaderIcon, SparklesIcon, ListPlusIcon } from 'lucide-react'
-import { vocabApi } from '@/lib/tauri-bridge'
+import { dictApi, vocabApi } from '@/lib/tauri-bridge'
 import { toast } from '@/lib/toast'
 import { errText } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import { useVocabStore } from '@/stores/vocabStore'
-import type { VocabRelationType, VocabRelationView, VocabRelatedCandidate } from '@/types'
-import { STATUS_TEXT } from './vocab-utils'
+import type { VocabMeaning, VocabRelationType, VocabRelationView, VocabRelatedCandidate } from '@/types'
+import { STATUS_TEXT, parseDictTranslation } from './vocab-utils'
 
 /** 分组展示顺序与中文名 */
 const GROUPS: { type: VocabRelationType; label: string }[] = [
@@ -80,13 +80,33 @@ export default function VocabRelationsPanel({ wordId, word, readonly = false, on
     [relations],
   )
 
-  /** 一键收录关联词进生词库（来源标记 related，明日进入首次复习） */
+  /** 一键收录关联词进生词库（来源标记 related，明日进入首次复习）。
+   *
+   * 先查本地离线词库带出音标与基础释义（与「收录新词」对话框的自动带出行为一致），
+   * 避免产出只有单词、没有任何信息的空壳词条；词库未安装 / 未命中时降级为仅收录单词。
+   */
   async function collectWord(w: string) {
     if (busy) return
     setBusy(true)
     try {
-      await vocabApi.add({ word: w, source: 'related' })
-      toast.success(`已收录「${w}」，明天进入首次复习`)
+      let phonetic: string | undefined
+      let meanings: VocabMeaning[] | undefined
+      try {
+        const res = await dictApi.lookup(w)
+        if (res.hit) {
+          if (res.hit.phonetic) phonetic = res.hit.phonetic
+          const parsed = parseDictTranslation(res.hit)
+          if (parsed.length) meanings = parsed
+        }
+      } catch {
+        /* 离线词库不可用时静默降级 */
+      }
+      await vocabApi.add({ word: w, phonetic, meanings, source: 'related' })
+      toast.success(
+        meanings?.length
+          ? `已收录「${w}」（已带出离线词典释义），明天进入首次复习`
+          : `已收录「${w}」，明天进入首次复习`,
+      )
       void refreshAll()
       await reload()
     } catch (err) {
