@@ -90,16 +90,16 @@
 
 ### AI 助手
 - 多服务商支持：智谱 BigModel / DeepSeek + 自定义 OpenAI 兼容端点
-- 推理模型 Thinking 展示，对话/RAG 配置完全解耦，API Key 按服务商独立管理
+- 推理模型 Thinking 展示，API Key 按服务商独立管理
 - SSE 流式对话，自动重试与网络容错（2 次指数退避 + 60s 断流保底 + 保留已生成内容）
-- RAG 语义检索：sqlite-vec KNN 向量检索 + FTS5 双轨降级（v1.6.0），Embedding 索引管理（连接独立测试 + stale 过期提示）
+- RAG 语义检索：后端能力保留（sqlite-vec KNN + FTS5/LIKE 双轨降级），**当前未接入对话**（设置页入口已移除）
 - AI 工具箱：29 个预设快捷提示词，5 大分类（续写/润色/扩写/剧情推演/角色分析/章末总结 等）
 - 滑动窗口上下文管理（自动截断保护），对话总结压缩
 - 章节总结缓存、Token 用量统计、连接状态指示器
 - 请求详情面板：查看完整 AI 请求/响应内容
 - AI 对话一键导出 Markdown / JSON（v1.6.0）
 - 离线草稿保护：对话 800ms 防抖持久化 + 窗口关闭兜底 flush（v1.6.0）
-- 默认对话模型：`glm-5.1`，Embedding：`embedding-3`
+- 默认对话模型：`glm-5.1`（RAG 默认 Embedding 模型 `embedding-3`，仅后端配置保留）
 
 ### Agent 智能助手（Rust 原生引擎）
 Agent 引擎已完全内置于 Rust 后端（无 Python / 外部进程依赖），基于 OpenAI function calling 协议实现流式 ReAct 工具循环，调用云端模型 + 数据库工具链完成多步写作任务：

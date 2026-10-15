@@ -73,7 +73,7 @@ src/
 | `ai/` | `AiSidePanel`、`AiToolboxPanel`、`MessageBubble`、`RequestDetailModal`、`useAiChat`、`hooks/useAgentChatStream`、`hooks/useAiChatMessages`、`hooks/useConversationSummarizer` | AI 对话面板、工具箱、请求详情（useAiChat 拆分流式 / 消息 / 总结逻辑，v1.6.0） |
 | `agent/` | `useAgent`、`AgentMemoryPanel`、`AgentMessageBubble`、`types.ts` | Agent Skill 交互（Rust 原生引擎）、流式输出、记忆管理 |
 | `worldbuilding/` | `WorldbuildingPanel`、`WorldCardEditor` | 6 类世界观卡片管理 |
-| `settings/` | `AiConfigSection`、`RagConfigSection`、`AppearanceSection`、`AiToolboxSection` 等 12 个 | 设置页分区 |
+| `settings/` | `AiConfigSection`、`AppearanceSection`、`AiToolboxSection` 等 11 个 | 设置页分区 |
 | `app/` | `AppInit`、`AppClosingOverlay`、`windowDetection` | 应用初始化、关闭遮罩、窗口类型检测 |
 | `common/` | `ContextMenu`、`DebugPanel`、`ToastContainer` | 通用组件 |
 | `layout/` | `EditorLayout`、`StatusBar` | 编辑器三栏布局、底部状态栏 |

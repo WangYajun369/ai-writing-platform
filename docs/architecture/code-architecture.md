@@ -100,7 +100,7 @@ main.tsx
 | `diary/` | DiaryPanel, DiaryDialog, DiaryBookPage, DayTasksPanel | 首页右栏：按月日历 + 日记 + 当日任务（v1.5.0 任务卡驱动），「看日记」独立窗口 |
 | `vocabulary/` | VocabularyWindow, WordBookTab, ReviewTab, StatsTab | 英语字典·生词本独立窗口（v1.4.0） |
 | `taskCards/` | TaskCardsWindow, TaskCardView, AllTasksView, TodayView, SettingsDrawer 等 | 任务卡·项目管理独立窗口（v1.5.0） |
-| `settings/` | AiConfigSection, RagConfigSection, AppearanceSection 等 12 个 | 设置页分区 |
+| `settings/` | AiConfigSection, AppearanceSection 等 11 个 | 设置页分区 |
 | `app/` | AppInit, AppClosingOverlay, windowDetection | 应用初始化、关闭遮罩、窗口检测 |
 | `common/` | ContextMenu, DebugPanel, ToastContainer | 通用组件 |
 | `layout/` | EditorLayout, StatusBar | 编辑器布局、状态栏 |
@@ -241,8 +241,8 @@ Python 子进程时代已整体移除，替换为 8 个 Rust 子模块（+ `mod.
 - DeepSeek 思考模式：`reasoning_content` 独立累积并推送 thinking 阶段事件；KV Cache 命中统计（`prompt_cache_hit_tokens`）
 - 事件协议：`ai-stream-chunk`，StreamEvent { content, thinking, phase: thinking/answering/retrying/done, done, error, usage }
 
-> v1.2 现状：Embedding/RAG 后端命令已实现并注册，但前端设置页将其标为「预留能力」——
-> 当前对话上下文由 Agent 引擎内置工具全文检索提供，`triggerEmbedding` 无 UI 接线。
+> RAG 现状：Embedding/RAG 后端命令与配置项保留，**设置页入口已移除**——
+> 当前对话上下文由 Agent 引擎内置工具全文检索提供，前端无任何 RAG UI 接线。
 
 ### 3.6 错误处理（error.rs）
 

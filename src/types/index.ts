@@ -217,7 +217,7 @@ export function getChatApiKey(config: AiChatConfig): string | undefined {
  * RAG / Embedding 检索服务商（智谱 BigModel）
  *
  * 预留能力：向量索引/语义检索尚未接入对话（当前对话由 Agent 引擎通过内置
- * 工具检索章节与世界观资料）。保留配置用于连接测试与未来接入。
+ * 工具检索章节与世界观资料）。配置与后端命令保留，设置页入口已移除。
  */
 export type RagProvider = 'bigmodel'
 
@@ -228,11 +228,6 @@ export interface RagConfig {
   embeddingModel: string
   /** 智谱 API Key */
   bigmodelApiKey?: string
-}
-
-/** 获取当前 RAG 服务商的 API Key */
-export function getRagApiKey(config: RagConfig): string | undefined {
-  return config.bigmodelApiKey
 }
 
 /** AI 总配置（对话与 RAG 解耦） */
