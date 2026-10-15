@@ -4,7 +4,7 @@
  * 弹层为只读+管理态：内容展示 + 底部状态操作（标记掌握 / 恢复学习 / 暂停 / 删除）；
  * 复习历史 logs 随 word 打开即时从后端拉取；删除走系统级 confirm 二次确认。
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { XIcon, PencilIcon, HistoryIcon, Trash2Icon, CheckCircle2Icon, PauseIcon, PlayIcon } from 'lucide-react'
 import { confirm as confirmDialog } from '@tauri-apps/plugin-dialog'
 import { vocabApi } from '@/lib/tauri-bridge'
@@ -25,21 +25,33 @@ interface Props {
   onClose: () => void
   /** 点击「编辑」时回调，携带当前单词交由父级打开编辑对话框 */
   onEdit: (word: VocabWord) => void
+  /** 点击关联词 → 原地切换详情（不传则不可导航） */
+  onNavigateWord?: (wordId: string) => void
 }
 
-export default function WordDetailDialog({ word, onClose, onEdit }: Props) {
+export default function WordDetailDialog({ word, onClose, onEdit, onNavigateWord }: Props) {
   const refreshAll = useVocabStore((s) => s.refreshAll)
   // 复习历史日志：word 变化（含首次打开）时清空并重新拉取，失败按空列表兜底
   const [logs, setLogs] = useState<VocabReviewLog[]>([])
+  // 内容区滚动容器 ref：单词切换时滚回顶部
+  const contentRef = useRef<HTMLDivElement>(null)
+  // 关联面板刷新触发：VocabKnowledgeView 手动加关联后 +1，驱动 VocabRelationsPanel 重拉
+  const [relationsRefreshNonce, setRelationsRefreshNonce] = useState(0)
 
   useEffect(() => {
     if (!word) return
     setLogs([])
+    setRelationsRefreshNonce(0)
     vocabApi
       .logs(word.id)
       .then(setLogs)
       .catch(() => setLogs([]))
   }, [word])
+
+  // 切换单词时滚到内容区顶部（从关联词跳转场景）
+  useEffect(() => {
+    if (word && contentRef.current) contentRef.current.scrollTop = 0
+  }, [word?.id])
 
   if (!word) return null
 
@@ -124,7 +136,7 @@ export default function WordDetailDialog({ word, onClose, onEdit }: Props) {
           </div>
         </div>
 
-        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4 vocab-scroll">
+        <div ref={contentRef} className="flex-1 space-y-4 overflow-y-auto px-5 py-4 vocab-scroll">
           {/* 释义 */}
           <div>
             <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">释义</div>
@@ -154,11 +166,22 @@ export default function WordDetailDialog({ word, onClose, onEdit }: Props) {
             )}
           </div>
 
-          {/* AI 词条精讲（词根词缀/近反义词/词组/动词变形/词性例句） */}
-          {word.knowledge && <VocabKnowledgeView knowledge={word.knowledge} />}
+          {/* AI 词条精讲（词根词缀/近反义词/词组/动词变形/词性例句；传 wordId 可手动补关联） */}
+          {word.knowledge && (
+            <VocabKnowledgeView
+              knowledge={word.knowledge}
+              wordId={word.id}
+              onRelationChanged={() => setRelationsRefreshNonce((n) => n + 1)}
+            />
+          )}
 
           {/* 关联词网络（近反义/变形家族/手动，支持增删与一键收录） */}
-          <VocabRelationsPanel wordId={word.id} word={word.word} />
+          <VocabRelationsPanel
+            wordId={word.id}
+            word={word.word}
+            onNavigateWord={onNavigateWord}
+            refreshTrigger={relationsRefreshNonce}
+          />
 
           {/* SM-2 参数 */}
           <div>

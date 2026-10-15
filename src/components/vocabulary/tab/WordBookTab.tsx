@@ -256,6 +256,12 @@ export default function WordBookTab() {
           setEditing(w)
           setAddOpen(true)
         }}
+        onNavigateWord={(id) => {
+          vocabApi
+            .get(id)
+            .then(setDetail)
+            .catch(() => toast.error('词条加载失败'))
+        }}
       />
     </div>
   )

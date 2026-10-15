@@ -16,16 +16,25 @@ import {
   type SimulationLinkDatum,
   type SimulationNodeDatum,
 } from 'd3-force'
-import { XIcon, NetworkIcon, LoaderIcon, RefreshCwIcon } from 'lucide-react'
-import { vocabApi } from '@/lib/tauri-bridge'
+import { XIcon, NetworkIcon, LoaderIcon, RefreshCwIcon, PlusIcon, Link2Icon, ZoomInIcon, ZoomOutIcon, Maximize2Icon } from 'lucide-react'
+import { dictApi, vocabApi } from '@/lib/tauri-bridge'
 import { toast } from '@/lib/toast'
 import { errText } from '@/lib/errors'
 import { cn } from '@/lib/utils'
-import type { VocabGraph, VocabGraphEdge, VocabGraphNode, VocabStatus, VocabWord } from '@/types'
+import type {
+  VocabGraph,
+  VocabGraphEdge,
+  VocabGraphNode,
+  VocabMeaning,
+  VocabRelationType,
+  VocabStatus,
+  VocabWord,
+} from '@/types'
 import {
   fitViewToNodes,
   graphNodeRadius,
   meaningsSummary,
+  parseDictTranslation,
   STATUS_TEXT,
   zoomViewAt,
 } from '../vocab-utils'
@@ -82,6 +91,10 @@ export default function WordGraphDialog({ open, onClose, onOpenWord }: Props) {
   const [selectedWord, setSelectedWord] = useState<VocabWord | null>(null)
   const [view, setView] = useState({ k: 1, x: 0, y: 0 })
   const [nonce, setNonce] = useState(0)
+  // 信息卡内的表单状态
+  const [busy, setBusy] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [draftType, setDraftType] = useState<VocabRelationType>('synonym')
 
   const wrapRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -160,6 +173,8 @@ export default function WordGraphDialog({ open, onClose, onOpenWord }: Props) {
   }, [graph])
 
   // 滚轮缩放（向光标位置；原生监听以便 preventDefault）
+  // deps 必须包含 graph?.nodes.length：SVG 条件渲染在数据到达后才挂载，
+  // 仅 [open] 会让 effect 在 svgRef.current 还是 null 时就执行，监听器永远绑不上。
   useEffect(() => {
     const svg = svgRef.current
     if (!svg || !open) return
@@ -172,7 +187,7 @@ export default function WordGraphDialog({ open, onClose, onOpenWord }: Props) {
     }
     svg.addEventListener('wheel', onWheel, { passive: false })
     return () => svg.removeEventListener('wheel', onWheel)
-  }, [open])
+  }, [open, graph?.nodes.length])
 
   // 容器尺寸变化时重新居中（模拟未收敛则只更新中心力，由继续的 tick 生效）
   useEffect(() => {
@@ -196,6 +211,32 @@ export default function WordGraphDialog({ open, onClose, onOpenWord }: Props) {
     [],
   )
 
+  // 键盘快捷键：+/- 缩放、F 全景适应、Esc 关闭
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose()
+        return
+      }
+      // 跳过输入框聚焦时的快捷键（输入框内 +/-/F 不应触发缩放）
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return
+      if (e.key === '+' || e.key === '=' || e.key === 'PageUp') {
+        e.preventDefault()
+        zoomAtCenter(true)
+      } else if (e.key === '-' || e.key === '_' || e.key === 'PageDown') {
+        e.preventDefault()
+        zoomAtCenter(false)
+      } else if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault()
+        fitAll()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, graph?.nodes.length, view.k])
+
   // 信息卡：点击已收录节点时拉取完整词条（音标 / 释义摘要）
   useEffect(() => {
     if (!selected || selected.status === 'potential') {
@@ -207,6 +248,79 @@ export default function WordGraphDialog({ open, onClose, onOpenWord }: Props) {
       .then(setSelectedWord)
       .catch(() => setSelectedWord(null))
   }, [selected])
+
+  // 选中节点切换时清空表单草稿
+  useEffect(() => {
+    setDraft('')
+    setDraftType('synonym')
+  }, [selected])
+
+  /** 收录 potential 节点的词进生词本（先查 ECDICT 带音标/释义），
+   *  收录后 vocabApi.add 后端会自动 sync_auto_relations 双向补齐关联，
+   *  此处仅触发图谱刷新即可看到新节点 + 新边。 */
+  async function collectPotentialWord(w: string) {
+    if (busy) return
+    setBusy(true)
+    try {
+      let phonetic: string | undefined
+      let meanings: VocabMeaning[] | undefined
+      try {
+        const res = await dictApi.lookup(w)
+        if (res.hit) {
+          if (res.hit.phonetic) phonetic = res.hit.phonetic
+          const parsed = parseDictTranslation(res.hit)
+          if (parsed.length) meanings = parsed
+        }
+      } catch {
+        /* 离线词库不可用时静默降级 */
+      }
+      await vocabApi.add({ word: w, phonetic, meanings, source: 'related' })
+      toast.success(
+        meanings?.length
+          ? `已收录「${w}」（已带出离线词典释义），图谱将自动补全关联`
+          : `已收录「${w}」，图谱将自动补全关联`,
+      )
+      setSelected(null)
+      setNonce((n) => n + 1)
+    } catch (err) {
+      toast.error(errText(err, '收录失败'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 给已收录节点手动加关联词（成功后刷新图谱，新关系自动布局） */
+  async function addManualRelation() {
+    if (!selected || selected.status === 'potential' || busy) return
+    const related = draft.trim()
+    if (!related) return
+    setBusy(true)
+    try {
+      await vocabApi.relationsAdd(selected.id, related, draftType)
+      setDraft('')
+      toast.success(`已为「${selected.word}」添加${EDGE_TYPE_TEXT[draftType] ?? draftType}关联「${related}」`)
+      setSelected(null)
+      setNonce((n) => n + 1)
+    } catch (err) {
+      toast.error(errText(err, '添加关联失败'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 全景适应：重新把全部节点 fit 进视口（工具栏按钮回调） */
+  function fitAll() {
+    const box = wrapRef.current
+    if (!box || nodes.length === 0) return
+    setView(fitViewToNodes(nodes, box.clientWidth, box.clientHeight))
+  }
+
+  /** 以视口中心为锚点的缩放（+/- 按钮回调） */
+  function zoomAtCenter(zoomIn: boolean) {
+    const box = wrapRef.current
+    if (!box) return
+    setView((v) => zoomViewAt(v, box.clientWidth / 2, box.clientHeight / 2, zoomIn))
+  }
 
   if (!open) return null
 
@@ -301,7 +415,7 @@ export default function WordGraphDialog({ open, onClose, onOpenWord }: Props) {
           <div>
             <div className="text-[14px] font-semibold">单词关联图谱</div>
             <div className="text-[10.5px] text-zinc-500">
-              滚轮缩放 · 拖拽平移 · 单击看详情 · 双击打开词条
+              滚轮缩放 · 拖拽平移 · 全景适应（F）· +/- 缩放 · 单击详情 · 双击打开词条
             </div>
           </div>
 
@@ -336,6 +450,37 @@ export default function WordGraphDialog({ open, onClose, onOpenWord }: Props) {
           </button>
 
           <div className="flex-1" />
+
+          {/* 缩放工具栏（有图谱数据才启用） */}
+          {graph && (
+            <div className="mr-2 flex items-center gap-0.5 rounded-lg border border-white/6 bg-white/3 p-0.5">
+              <button
+                onClick={() => zoomAtCenter(false)}
+                title="缩小（-）"
+                className="flex h-6 w-6 items-center justify-center rounded text-zinc-400 transition hover:bg-white/10 hover:text-zinc-100"
+              >
+                <ZoomOutIcon className="h-3.5 w-3.5" />
+              </button>
+              <span className="min-w-[36px] px-1 text-center text-[10.5px] tabular-nums text-zinc-400">
+                {Math.round(view.k * 100)}%
+              </span>
+              <button
+                onClick={() => zoomAtCenter(true)}
+                title="放大（+）"
+                className="flex h-6 w-6 items-center justify-center rounded text-zinc-400 transition hover:bg-white/10 hover:text-zinc-100"
+              >
+                <ZoomInIcon className="h-3.5 w-3.5" />
+              </button>
+              <div className="mx-0.5 h-4 w-px bg-white/10" />
+              <button
+                onClick={fitAll}
+                title="全景适应（F）"
+                className="flex h-6 w-6 items-center justify-center rounded text-zinc-400 transition hover:bg-white/10 hover:text-zinc-100"
+              >
+                <Maximize2Icon className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
 
           {graph && (
             <span className="text-[11px] text-zinc-500">
@@ -468,9 +613,19 @@ export default function WordGraphDialog({ open, onClose, onOpenWord }: Props) {
                 </button>
               </div>
               {selected.status === 'potential' ? (
-                <p className="text-[11.5px] leading-relaxed text-zinc-500">
-                  该词尚未收录进生词本，收录后会自动补齐双向关联。
-                </p>
+                <>
+                  <p className="text-[11.5px] leading-relaxed text-zinc-500">
+                    该词尚未收录进生词本，收录后会自动补齐双向关联。
+                  </p>
+                  <button
+                    onClick={() => collectPotentialWord(selected.word)}
+                    disabled={busy}
+                    className="mt-3 flex w-full items-center justify-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[12px] text-amber-300 transition hover:bg-amber-500/20 disabled:opacity-50"
+                  >
+                    <PlusIcon className="h-3.5 w-3.5" />
+                    {busy ? '收录中…' : `收录「${selected.word}」进生词本`}
+                  </button>
+                </>
               ) : (
                 <>
                   {selectedWord?.phonetic && <div className="mb-1 text-[11.5px] text-zinc-500">{selectedWord.phonetic}</div>}
@@ -496,6 +651,42 @@ export default function WordGraphDialog({ open, onClose, onOpenWord }: Props) {
                   >
                     打开词条详情
                   </button>
+
+                  {/* 精简手动关联表单（图谱内直接加，不用跳详情） */}
+                  <div className="mt-3 space-y-1.5 rounded-lg border border-white/6 bg-white/3 px-2 py-2">
+                    <div className="flex items-center gap-1 text-[10.5px] text-zinc-500">
+                      <Link2Icon className="h-3 w-3" /> 手动加关联
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <input
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') void addManualRelation()
+                        }}
+                        placeholder="输入关联词"
+                        className="h-7 flex-1 rounded-md border border-white/10 bg-white/5 px-2 text-[11.5px] text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-sky-500/40"
+                      />
+                      <select
+                        value={draftType}
+                        onChange={(e) => setDraftType(e.target.value as VocabRelationType)}
+                        className="h-7 rounded-md border border-white/10 bg-white/5 px-1 text-[10.5px] text-zinc-300 outline-none focus:border-sky-500/40"
+                      >
+                        {(['synonym', 'antonym', 'derived', 'inflection', 'manual'] as VocabRelationType[]).map((t) => (
+                          <option key={t} value={t} className="bg-zinc-900">
+                            {EDGE_TYPE_TEXT[t] ?? t}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => void addManualRelation()}
+                        disabled={busy || !draft.trim()}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-400 transition hover:bg-sky-500/10 hover:text-sky-300 disabled:opacity-40"
+                      >
+                        <PlusIcon className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
                 </>
               )}
             </div>

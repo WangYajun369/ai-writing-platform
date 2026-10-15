@@ -17,6 +17,7 @@ import VocabKnowledgeView from '../VocabKnowledgeView'
 import VocabRelationsPanel from '../VocabRelationsPanel'
 import SpeakButton from '../SpeakButton'
 import FamilyReviewDialog from '../dialog/FamilyReviewDialog'
+import WordDetailDialog from '../dialog/WordDetailDialog'
 
 interface QueueItem {
   word: VocabWord
@@ -44,9 +45,18 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
   const [reviewedIds, setReviewedIds] = useState<Set<string>>(new Set())
   // 词族复习选择弹层
   const [familyOpen, setFamilyOpen] = useState(false)
+  // 关联词跳转详情弹层
+  const [detail, setDetail] = useState<VocabWord | null>(null)
+  // 关联面板刷新触发：VocabKnowledgeView 手动加关联后 +1，驱动 VocabRelationsPanel 重拉
+  const [relationsRefreshNonce, setRelationsRefreshNonce] = useState(0)
 
   // 队列头即当前复习的卡片；队列排空且非完成态时回到初始界面
   const current = queue[0]
+
+  // 切换复习卡片时重置关联面板刷新计数器
+  useEffect(() => {
+    setRelationsRefreshNonce(0)
+  }, [current?.word.id])
 
   /** 需要首次学习的新词（由 store 单独加载：learning 且从未复习，前 9 条） */
   const totalCount = useMemo(() => {
@@ -399,15 +409,29 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
               </div>
             )}
 
-            {/* AI 词条精讲（词根词缀/近反义词/词组/动词变形/词性例句） */}
-            {current.word.knowledge && <VocabKnowledgeView knowledge={current.word.knowledge} className="mt-3" />}
+            {/* AI 词条精讲（词根词缀/近反义词/词组/动词变形/词性例句；传 wordId 可手动补关联） */}
+            {current.word.knowledge && (
+              <VocabKnowledgeView
+                knowledge={current.word.knowledge}
+                wordId={current.word.id}
+                onRelationChanged={() => setRelationsRefreshNonce((n) => n + 1)}
+                className="mt-3"
+              />
+            )}
 
-            {/* 关联词面板（只读：顺带看一眼关联词，未收录的可一键入词库，学习中的可拉入本轮队列） */}
+            {/* 关联词面板（只读：顺带看一眼关联词，未收录的可一键入词库，学习中的可拉入本轮队列，已收录可点击跳转详情） */}
             <VocabRelationsPanel
               wordId={current.word.id}
               word={current.word.word}
               readonly
               onPullIntoSession={pullIntoSession}
+              onNavigateWord={(id) => {
+                vocabApi
+                  .get(id)
+                  .then(setDetail)
+                  .catch(() => toast.error('词条加载失败'))
+              }}
+              refreshTrigger={relationsRefreshNonce}
               className="mt-3"
             />
           </div>
@@ -450,6 +474,22 @@ export default function ReviewTab({ onGotoBook }: { onGotoBook: () => void }) {
           </div>
         </div>
       </div>
+
+      {/* 从关联词跳转的词条详情弹层（覆盖在复习页上方，关掉回到复习） */}
+      <WordDetailDialog
+        word={detail}
+        onClose={() => setDetail(null)}
+        onEdit={() => {
+          setDetail(null)
+          toast.info('复习中无法编辑词条，请到生词本操作')
+        }}
+        onNavigateWord={(id) => {
+          vocabApi
+            .get(id)
+            .then(setDetail)
+            .catch(() => toast.error('词条加载失败'))
+        }}
+      />
     </div>
   )
 }

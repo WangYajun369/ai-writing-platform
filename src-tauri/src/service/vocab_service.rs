@@ -278,9 +278,8 @@ pub fn update_word(
     let meanings_json = serde_json::to_string(meanings)?;
     let ai_details = serde_json::to_string(&knowledge).unwrap_or_default();
     let pooled = db.pool.get()?;
-    if vocab_repo::find_by_id(&pooled, id)?.is_none() {
-        return Err(AppError::NotFound(format!("生词不存在: {id}")));
-    }
+    let existing = vocab_repo::find_by_id(&pooled, id)?
+        .ok_or_else(|| AppError::NotFound(format!("生词不存在: {id}")))?;
     // v1.9：迁移到 UnitOfWork（autocommit 模式，审计统一收口）。
     let mut uow = UnitOfWork::new(&pooled, Some(app));
     uow.audit(
@@ -303,6 +302,17 @@ pub fn update_word(
         },
     )?;
     uow.commit()?;
+    // 补充 AI knowledge 时同步关联网络（幂等 INSERT IGNORE，重复调用安全）
+    // 解决历史单词后来生成 knowledge 但关联表未同步的问题
+    if let Err(e) = vocab_relation_service::sync_auto_relations(
+        app,
+        db,
+        id,
+        &existing.word,
+        knowledge,
+    ) {
+        crate::app_log_error!("[vocab] 自动关联同步失败 id={id}: {e}");
+    }
     vocab_repo::find_by_id(&pooled, id)?
         .ok_or_else(|| AppError::Business("更新后回读失败".to_string()))
 }
