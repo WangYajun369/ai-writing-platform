@@ -1,6 +1,6 @@
 # 英语字典 · 生词本 —— 深度分析报告
 
-> **适用版本**：`1.22.0`（`package.json`）　|　**分析日期**：2026-10-15　|　**分析范围**：`src-tauri/src/{commands,service,repository,db}` 的 vocab 模块 + `src/components/vocabulary/**` + `src/plugins/dictionary/**` + `src/stores/vocabStore.ts`
+> **适用版本**：`1.23.0`（`package.json`）　|　**分析日期**：2026-10-15　|　**分析范围**：`src-tauri/src/{commands,service,repository,db}` 的 vocab 模块 + `src/components/vocabulary/**` + `src/plugins/dictionary/**` + `src/stores/vocabStore.ts`
 > **综合评级**：⭐ **88 / 100（A-）** → 优化后 **96 / 100（A+）**（2026-10-15 已实施，见[第九节](#九优化实施记录-2026-10-15)）
 >
 > 架构分层干净、AI 兜底健壮、关联网络设计精巧；原主要失分项（**数据不进备份**、**核心 SM-2 算法零单测**、**ECDICT 全表扫描**、**形态检查模型名不存在**）已全部修复；后续又修掉**翻译链路两次串行往返 / 思考 token 拖慢首字 / `error decoding response body`** 三项延迟与稳定性问题。

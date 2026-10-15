@@ -1,5 +1,32 @@
 # 更新日志
 
+## v1.23.0 (2026-10-15) — AI 释义流式上屏 + 关联网络可交互维护 + 模型拉取
+
+### 新增
+- **AI 词典释义流式上屏**（`dict_explain_stream`）：新增 SSE 流式命令 + NDJSON 逐行累加器，每解析出一整行即推送 `dict-explain-chunk` 事件，音标 / 释义 / 例句 / 变形 / 近反义逐行即时填表，消掉整段 JSON 返回前的全程白屏；未收到释义行时回退整段解析（三层回退链的第二层）
+- **释义请求可中途取消**：新增 `CancelToken`（原子标志 + Notify + 全局注册表 + RAII 注销）与 `dict_ai_cancel` 命令，SSE 读循环用 `tokio::select!` 与取消信号竞争，关闭弹层即刻断流止损；新增 `ErrCode::AiCancelled`（`E_AI_CANCELLED`）标识正常取消而非错误
+- **统一流式传输层**：抽出 `request_chat_stream_text` / `request_chat_stream_once`（无内容进度超时 45s、心跳注释行不刷新 deadline、传输失败重试 3 次退避 1s/2s），删除约 180 行非流式冗余代码；新增 8 项端到端单测（本地 mini SSE 服务器）覆盖分帧解析 / `[DONE]` / 断流保留已收内容 / 取消即时返回 / 心跳免疫 / 慢内容不误杀
+- **模型拉取与选择**（`fetch_ai_models`）：设置页可 GET `{endpoint}/models` 拉取全部可用模型（含上下文窗口、输出上限、输入输出模态），结果持久化到新增的 `ai_models` 配置段，下次启动直接复用；下拉由拉取结果填充，未拉取时回退内置选项且保留当前选中值
+- **图谱内直接维护关联**（`WordGraphDialog`）：新增缩放工具栏（放大 / 缩小 / 全景适应 + 实时百分比）与键盘快捷键（`+`/`-` 缩放、`F` 适应、`Esc` 关闭）；potential 节点支持「收录进生词本」（先查 ECDICT 带出音标释义，词库不可用时静默降级），已收录节点支持内联「手动加关联」表单，无需跳出图谱
+- **关联词可跳转详情**：`VocabRelationsPanel` 已收录关联词渲染为可点击链接，`WordDetailDialog` 支持从关联词原地切换词条（切换时滚回顶部），生词本列表与复习卡片同步接入跳转
+- **近/反义词标签一键建关联**（`WordTag`）：知识视图中的近反义标签支持「＋加入关联」直接写入 `vocab_word_relations`；前端 `extractEnglishWord` 与后端 `extract_english_word` 同规则（剥离中文小注与括号、含空格词组返回 null），避免建出 `take off → take` 这类错关联
+- **生词本遗留优化落地**：分页虚拟滚动（`vocab_list_page`）、已掌握词批量回炉（`vocab_mastered_sample`）、ECDICT 侧车索引消灭全表扫描、SM-2 单测 10 项、生词本进备份载荷（三段导出 + upsert 合并导入）
+
+### 修复
+- **生词本列表恒空**：`vocabApi.listPage` 传参误用 `page_size`，Tauri v2 命令参数按 camelCase 匹配导致必填参数缺失、invoke 必 reject；改回 `pageSize`
+- **历史单词关联表未同步**：`vocab_service::update_word` 提交后补调 `sync_auto_relations`（幂等 INSERT IGNORE），修复「后来生成 AI knowledge 但关联表未同步」；同步失败仅记日志不影响更新结果
+- **图谱滚轮缩放失效**：effect deps 仅 `[open]` 时 SVG 因条件渲染在数据到达后才挂载，监听器绑在 null 上；补 `graph?.nodes.length` 依赖
+- **流式回调覆盖手填内容**：例句 / 翻译字段改函数式更新（`setExample(cur => cur.trim() ? cur : …)`），修复闭包捕获过期 state 的问题
+- **关联词收录产出空壳词条**：`collectWord` 收录前先 `dictApi.lookup` 带出音标与基础释义，词库未命中时静默降级
+- **长响应中途断流**：共享 HTTP 客户端对齐 SSE 客户端（关闭 gzip/brotli/deflate + `http1_only` + tcp_keepalive 120s），规避透明解压失败引发的 `error decoding response body`
+- **形态判定多一次串行往返**：改为先查本地离线词库，命中即由 exchange 取原型并完全跳过云端，未命中才回退 AI 检查；硬编码 `AI_CHECK_MODEL` 改为 `resolveCheckModel()` 从 `settings/constants.ts` 单一真源取 flash 档，DeepSeek 下下发 `thinking: disabled` 避免思考 token 挤占输出预算
+
+### 优化
+- **移除设置页语义检索（RAG）入口**：后端能力完备但前端零接线（`useAiChat` 的 `ragContext` 恒为 undefined），按「仅隐藏入口」处理 —— 后端命令、`embeddings` 表、`chunks_vec`、sqlite-vec 依赖与备份载荷字段全部保留（载荷字段序参与 `payloadHash` 重算，删除会导致存量 v2 备份被判篡改而拒绝导入）；删除 `RagConfigSection.tsx` 及随之无引用的常量，文档口径统一为「后端保留、未接入对话、入口已移除」
+- **清理未引用代码**：移除无调用点的 `dict_word_count`（词条总数已由词典状态命令一并返回）
+- **前后端默认模型名对齐**：`deepseek-v4-flash`（弃用别名）→ `deepseek-flash`（在售名）
+- **IPC 命令 210 → 212**（新增 `dict_explain_stream` / `dict_ai_cancel`），同步 `ipc-api.md` 与 23 个文档的适用版本基线
+
 ## v1.22.0 (2026-10-15) — 单词关联网络 + 词族复习 + 关联图谱
 
 ### 新增
